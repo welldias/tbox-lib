@@ -1,0 +1,6 @@
+# Normalize text files to LF regardless of platform so byte-exact golden-file
+# comparisons in tests/main.c behave the same on Linux and Windows checkouts.
+* text=auto eol=lf
+
+*.ttf binary
+*.png binary

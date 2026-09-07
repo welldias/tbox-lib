@@ -1,0 +1,62 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug html_parser (example)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/example/html_parser",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "preLaunchTask": "cmake: build"
+        },
+        {
+            "name": "Debug html_xpath (example)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/example/html_xpath",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "preLaunchTask": "cmake: build"
+        },
+        {
+            "name": "Debug tbox_tests (choose group)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/tests/tbox_tests",
+            "args": ["${input:testGroup}"],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "preLaunchTask": "cmake: build"
+        },
+        {
+            "name": "Debug tbox_tests (Native Debug / gdb ext, choose group)",
+            "type": "gdb",
+            "request": "launch",
+            "target": "${workspaceFolder}/build/tests/tbox_tests",
+            "arguments": "${input:testGroup}",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "cmake: build"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "testGroup",
+            "type": "pickString",
+            "description": "tbox_tests group to run",
+            "options": ["arena", "list", "vector", "string", "html_parser_tokenizer", "html_parser_tree", "html_xpath"],
+            "default": "html_xpath"
+        }
+    ]
+}

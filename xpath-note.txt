@@ -1,0 +1,19 @@
+Gramática suportada (XPath 1.0, subconjunto)
+    LocationPath          ::= ('/' | '//')? RelativeLocationPath
+    RelativeLocationPath   ::= Step (('/' | '//') Step)*
+    Step                   ::= '.' | '..' | AxisAndNodeTest Predicate*
+    AxisAndNodeTest        ::= '@' (Name | '*')     -- eixo atributo; DEVE ser o último Step do path
+                            | Name                 -- eixo child (ou descendant-or-self se veio de '//'), testa tag_name
+                            | '*'                  -- idem, casa qualquer ELEMENT
+                            | 'text()'             -- casa nós TEXT
+                            | 'node()'             -- casa qualquer tipo de nó
+    Predicate              ::= '[' (Number | '@' Name ('=' ('"'.."'|"'".."'"))?) ']'
+
+ - / no início ou entre passos = eixo child a partir do nó de contexto (ou raiz, se prefixo).
+ - // no início ou entre passos = abreviação de "descendant-or-self" antes do próximo passo (ex.: //div = descendente div em qualquer profundidade a partir da raiz; a//b = b descendente de a em qualquer profundidade).
+ - . = nó de contexto atual (self); .. = pai do nó de contexto (vazio se não houver pai). Nenhum dos dois aceita predicado (colchete logo depois é erro de sintaxe).
+ - Nomes de tag/atributo comparados case-insensitive (tbox_string_view_equal_ascii_ci), já que a árvore normaliza tags/atributos para lowercase.
+ - [n] (posicional, 1-based): crítico — a posição é relativa à lista de candidatos gerada pelo eixo+teste para cada nó de contexto individualmente (não um índice global sobre o node-set final mesclado). Ex.: //div/p[1] pega o primeiro p de CADA div, não só o primeiro p globalmente.
+ - [@attr] = existência do atributo; [@attr='valor']/[@attr="valor"] = igualdade byte-exata do valor (tbox_string_view_equal), nome comparado case-insensitive.
+ - "/" ou "//" sozinhos (sem Step depois) são erro de sintaxe (a gramática exige pelo menos um Step) — desvio deliberado do XPath completo (que trataria / sozinho como "selecionar a raiz"), documentar no código.
+ 
