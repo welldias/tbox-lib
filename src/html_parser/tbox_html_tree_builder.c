@@ -102,8 +102,8 @@ static void tbox_html_tree_builder_handle_start_tag(tbox_html_tree_builder *buil
 tbox_html_node *tbox_html_tree_builder_run(tbox_html_tree_builder *builder) {
     tbox_html_document *document  = builder->document;
     tbox_html_node *document_node = tbox_html_node_create(document, TBOX_HTML_NODE_DOCUMENT);
-    
-    document->root                = document_node;
+
+    document->root = document_node;
 
     tbox_html_tree_builder_push(builder, document_node);
 

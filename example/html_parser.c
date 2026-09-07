@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -44,18 +45,23 @@ static char *read_file(const char *path, size_t *out_size) {
     return buffer;
 }
 
-static bool text_node_is_only_line_breaks(const tbox_string_view *text) {
+static void print_text(const tbox_string_view *text) {
     if (text->size == 0) {
-        return true;
+        return;
     }
 
+    printf("#text: \"");
     for (size_t i = 0; i < text->size; i++) {
         char c = text->data[i];
-        if (c != '\n' && c != '\r' && c != ' ') {
-            return false;
+        if (c == '\n') {
+            printf("↵");
+        } else if (c == '\t') {
+            printf("⇥");
+        } else if (isprint((unsigned char)c)) {
+            printf("%c", c);
         }
     }
-    return true;
+    printf("\"\n");
 }
 
 static void print_indent(int depth) {
@@ -80,9 +86,7 @@ static void print_node(const tbox_html_node *node, int depth) {
         printf("\n");
         break;
     case TBOX_HTML_NODE_TEXT:
-        if (!text_node_is_only_line_breaks(&node->text.text)) {
-            printf("#text: \"%.*s\"\n", (int)node->text.text.size, node->text.text.data);
-        }
+        print_text(&node->text.text);
         break;
     case TBOX_HTML_NODE_COMMENT:
         printf("#comment: \"%.*s\"\n", (int)node->text.text.size, node->text.text.data);

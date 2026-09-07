@@ -6,5 +6,9 @@
     "C_Cpp.default.cStandard": "c23",
     "files.associations": {
         "*.h": "c"
-    }
+    },
+    "editor.inlayHints.enabled": "off",
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "editor.formatOnType": false,
 }

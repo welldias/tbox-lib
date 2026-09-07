@@ -1,3 +1,4 @@
+#include "tbox/html_parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,9 +48,7 @@ static char *read_file(const char *path, size_t *out_size) {
 
 static void print_item(const tbox_xpath_item *item) {
     if (item->type == TBOX_XPATH_ITEM_ATTRIBUTE) {
-        printf("  @%.*s=\"%.*s\" (on <%.*s>)\n", (int)item->attribute.attribute->name.size, item->attribute.attribute->name.data,
-               (int)item->attribute.attribute->value.size, item->attribute.attribute->value.data,
-               (int)item->attribute.owner->element.tag_name.size, item->attribute.owner->element.tag_name.data);
+        printf("  @%.*s=\"%.*s\" (on <%.*s>)\n", (int)item->attribute.attribute->name.size, item->attribute.attribute->name.data, (int)item->attribute.attribute->value.size, item->attribute.attribute->value.data, (int)item->attribute.owner->element.tag_name.size, item->attribute.owner->element.tag_name.data);
         return;
     }
 
@@ -92,6 +91,49 @@ static void run_query(const tbox_html_node *context, const char *expr) {
     printf("\n");
 }
 
+static void find_and_append(const tbox_html_node *root, tbox_html_document *document) {
+    printf("finding <body> and appending a new <p> via tbox_html_node_append_child...\n\n");
+    tbox_xpath_node_set body_set = tbox_xpath_select(root, "//body", strlen("//body"));
+    if (body_set.count == 1) {
+        tbox_html_node *body = (tbox_html_node *)body_set.items[0].node;
+
+        tbox_html_node *paragraph   = tbox_html_node_create(document, TBOX_HTML_NODE_ELEMENT);
+        paragraph->element.tag_name = tbox_string_view_make("p", strlen("p"));
+
+        tbox_html_node *paragraph_text = tbox_html_node_create(document, TBOX_HTML_NODE_TEXT);
+        paragraph_text->text.text      = tbox_string_view_make("Added by tbox_html_node_create", strlen("Added by tbox_html_node_create"));
+        tbox_html_node_append_child(paragraph, paragraph_text);
+
+        tbox_html_node_append_child(body, paragraph);
+    }
+    tbox_xpath_node_set_destroy(&body_set);
+
+    run_query(root, "//body/p[2]/text()");
+}
+
+static void find_and_rewrite(const tbox_html_node *root) {
+    printf("finding //title/text() and rewriting it in place...\n\n");
+    tbox_xpath_node_set title_text = tbox_xpath_select(root, "//title/text()", strlen("//title/text()"));
+    if (title_text.count == 1) {
+        tbox_html_node *text_node = (tbox_html_node *)title_text.items[0].node;
+        text_node->text.text      = tbox_string_view_make("Modified page", strlen("Modified page"));
+    }
+    tbox_xpath_node_set_destroy(&title_text);
+
+    run_query(root, "//title/text()");
+}
+
+static void find_and_destroy(const tbox_html_node *root) {
+    printf("removing every <script> via tbox_html_node_remove...\n\n");
+    tbox_xpath_node_set scripts = tbox_xpath_select(root, "//script", strlen("//script"));
+    for (size_t i = 0; i < scripts.count; i++) {
+        tbox_html_node_remove((tbox_html_node *)scripts.items[i].node);
+    }
+    tbox_xpath_node_set_destroy(&scripts);
+
+    run_query(root, "//script");
+}
+
 int main(void) {
     size_t html_size;
     char *html = read_file(TBOX_EXAMPLE_HTML_PATH, &html_size);
@@ -126,16 +168,19 @@ int main(void) {
     /* text() reaches into an element to read its direct text content. */
     run_query(root, "//title/text()");
 
+    /* Locate-then-edit: find <body>, build a new <p> node via
+     * tbox_html_node_create and attach it with tbox_html_node_append_child,
+     * then confirm a re-query finds it in the tree. */
+    find_and_append(root, document);
+
+    /* Locate-then-edit: find //title/text() and rewrite its text.text field
+     * in place -- nodes returned by tbox_xpath_select are plain structs, so
+     * editing one is just assigning a new tbox_string_view. */
+    find_and_rewrite(root);
+
     /* Locate-then-edit: find every <script>, detach it from the tree with
      * tbox_html_node_remove, then confirm a re-query no longer finds it. */
-    printf("removing every <script> via tbox_html_node_remove...\n\n");
-    tbox_xpath_node_set scripts = tbox_xpath_select(root, "//script", strlen("//script"));
-    for (size_t i = 0; i < scripts.count; i++) {
-        tbox_html_node_remove((tbox_html_node *)scripts.items[i].node);
-    }
-    tbox_xpath_node_set_destroy(&scripts);
-
-    run_query(root, "//script");
+    find_and_destroy(root);
 
     tbox_html_document_destroy(document);
     return 0;
