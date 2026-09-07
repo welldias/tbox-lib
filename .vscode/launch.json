@@ -28,11 +28,26 @@
             "preLaunchTask": "cmake: build"
         },
         {
+            "name": "Debug css_parser (example)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/example/css_parser",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "preLaunchTask": "cmake: build"
+        },
+        {
             "name": "Debug tbox_tests (choose group)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/tests/tbox_tests",
-            "args": ["${input:testGroup}"],
+            "args": [
+                "${input:testGroup}"
+            ],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,
             "externalConsole": false,
@@ -55,7 +70,15 @@
             "id": "testGroup",
             "type": "pickString",
             "description": "tbox_tests group to run",
-            "options": ["arena", "list", "vector", "string", "html_parser_tokenizer", "html_parser_tree", "html_xpath"],
+            "options": [
+                "arena",
+                "list",
+                "vector",
+                "string",
+                "html_parser_tokenizer",
+                "html_parser_tree",
+                "html_xpath"
+            ],
             "default": "html_xpath"
         }
     ]

@@ -1,0 +1,72 @@
+/* CSS 2.1 demo fixture for tbox_css_parse -- deliberately exercises every
+ * selector/combinator/declaration construct this module understands, plus
+ * one at-rule with a block and one without (to prove both are skipped
+ * harmlessly) and one malformed rule (to prove recovery doesn't lose the
+ * rule that follows it). */
+
+/* multiple selectors per ruleset (selector group) */
+h1, h2, .section-title {
+    color: #1e293b;
+    font-weight: 700;
+}
+
+/* type selector, descendant combinator */
+.navbar a {
+    text-decoration: none;
+    color: #334155;
+}
+
+/* child combinator */
+.navbar > ul {
+    display: flex;
+}
+
+/* adjacent-sibling combinator */
+h1 + p {
+    margin-top: 0;
+}
+
+/* id selector, pseudo-class, fused compound (no combinator between them) */
+#main-nav.collapsed:hover {
+    background-color: #f8fafc;
+}
+
+/* universal selector */
+* {
+    box-sizing: border-box;
+}
+
+/* attribute selectors: exists, =, ~=, |= */
+input[disabled] { opacity: 0.5; }
+a[target=_blank] { color: red; }
+[class~=btn] { cursor: pointer; }
+[lang|=en] { font-style: normal; }
+
+/* single-colon pseudo-element (CSS2.1 style) and a functional pseudo-class */
+p:before { content: "> "; }
+:lang(en) { quotes: '"' '"'; }
+
+/* declaration-value edge cases: a ';' inside a quoted string, and a url()
+ * with unescaped '.'/'/' characters */
+.quote:before { content: ";"; }
+.logo { background: url(../img/logo.png) no-repeat; }
+
+/* an at-rule with a block -- must be skipped whole, without disturbing the
+ * rulesets before or after it */
+@media screen and (max-width: 768px) {
+    .navbar { flex-direction: column; }
+}
+
+/* an at-rule with no block -- must be skipped up to its ';' */
+@import url(base.css);
+
+/* an intentionally malformed ruleset (selector can't start with a digit) --
+ * must be dropped whole, without disturbing the ruleset that follows */
+1invalid-selector {
+    color: green;
+}
+
+/* proves the malformed rule above didn't swallow this one */
+.footer {
+    text-align: center;
+}
