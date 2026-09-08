@@ -4,7 +4,7 @@
 #include <tbox/tbox.h>
 
 #ifndef TBOX_EXAMPLE_CSS_PATH
-#define TBOX_EXAMPLE_CSS_PATH "css_parser.css"
+#define TBOX_EXAMPLE_CSS_PATH "style.css"
 #endif
 
 /* Reads the whole file into a malloc'd buffer (not NUL-terminated:
@@ -149,10 +149,10 @@ int main(void) {
     size_t ruleset_count             = tbox_css_stylesheet_ruleset_count(stylesheet);
     const tbox_css_ruleset *rulesets = tbox_css_stylesheet_rulesets(stylesheet);
 
-    /* The @media and @import at-rules in example/css_parser.css contribute
-     * nothing here (skipped whole), and the "1invalid-selector { ... }"
-     * rule is silently dropped by error recovery -- .footer, the rule right
-     * after it, still shows up below. */
+    /* The @media at-rule in example/style.css contributes nothing here
+     * (skipped whole), and ".section-title::after" -- CSS2.1 has no "::"
+     * syntax -- is silently dropped by error recovery; the ruleset right
+     * after it still shows up below. */
     printf("%zu ruleset(s) parsed from %s\n\n", ruleset_count, TBOX_EXAMPLE_CSS_PATH);
     for (size_t i = 0; i < ruleset_count; i++) {
         print_ruleset(&rulesets[i]);

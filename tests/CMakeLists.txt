@@ -15,6 +15,6 @@ else()
     target_link_libraries(tbox_tests PRIVATE tbox tbox_warnings tbox_sanitizers)
 endif()
 
-foreach(tbox_test_group arena list vector string html_parser_tokenizer html_parser_tree html_xpath css_parser_tokenizer css_parser_parser)
+foreach(tbox_test_group arena list vector string html_parser_tokenizer html_parser_tree html_xpath css_parser_tokenizer css_parser_parser css_selector)
     add_test(NAME ${tbox_test_group} COMMAND tbox_tests ${tbox_test_group})
 endforeach()

@@ -6,7 +6,7 @@
 #include <tbox/tbox.h>
 
 #ifndef TBOX_EXAMPLE_HTML_PATH
-#define TBOX_EXAMPLE_HTML_PATH "example.html"
+#define TBOX_EXAMPLE_HTML_PATH "index.html"
 #endif
 
 /* Reads the whole file into a malloc'd buffer (not NUL-terminated:
@@ -108,7 +108,9 @@ static void find_and_append(const tbox_html_node *root, tbox_html_document *docu
     }
     tbox_xpath_node_set_destroy(&body_set);
 
-    run_query(root, "//body/p[2]/text()");
+    /* index.html's <body> has no <p> of its own (its content lives inside
+     * <header>/<main>/<footer>), so the node just appended is the only match. */
+    run_query(root, "//body/p[1]/text()");
 }
 
 static void find_and_rewrite(const tbox_html_node *root) {
@@ -124,14 +126,14 @@ static void find_and_rewrite(const tbox_html_node *root) {
 }
 
 static void find_and_destroy(const tbox_html_node *root) {
-    printf("removing every <script> via tbox_html_node_remove...\n\n");
-    tbox_xpath_node_set scripts = tbox_xpath_select(root, "//script", strlen("//script"));
-    for (size_t i = 0; i < scripts.count; i++) {
-        tbox_html_node_remove((tbox_html_node *)scripts.items[i].node);
+    printf("removing every <span> via tbox_html_node_remove...\n\n");
+    tbox_xpath_node_set spans = tbox_xpath_select(root, "//span", strlen("//span"));
+    for (size_t i = 0; i < spans.count; i++) {
+        tbox_html_node_remove((tbox_html_node *)spans.items[i].node);
     }
-    tbox_xpath_node_set_destroy(&scripts);
+    tbox_xpath_node_set_destroy(&spans);
 
-    run_query(root, "//script");
+    run_query(root, "//span");
 }
 
 int main(void) {
@@ -158,12 +160,11 @@ int main(void) {
     run_query(root, "//a/@href");
 
     /* '*' with a predicate: any element, anywhere, that has a given
-     * attribute -- matches <html name=...>, <form name=...> and
-     * <output name=...> at once. */
-    run_query(root, "//*[@name]");
+     * attribute -- matches the three <section id="..."> elements at once. */
+    run_query(root, "//*[@id]");
 
-    /* Chaining two child steps: the <a> that is a direct child of <p>. */
-    run_query(root, "//p/a");
+    /* Chaining two child steps: the <a> that is a direct child of <li>. */
+    run_query(root, "//li/a");
 
     /* text() reaches into an element to read its direct text content. */
     run_query(root, "//title/text()");
@@ -178,7 +179,7 @@ int main(void) {
      * editing one is just assigning a new tbox_string_view. */
     find_and_rewrite(root);
 
-    /* Locate-then-edit: find every <script>, detach it from the tree with
+    /* Locate-then-edit: find every <span>, detach it from the tree with
      * tbox_html_node_remove, then confirm a re-query no longer finds it. */
     find_and_destroy(root);
 

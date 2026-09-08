@@ -1,3 +1,7 @@
+# Every example below shares the same two fixtures -- example/index.html and
+# example/style.css -- so there is exactly one HTML document and one
+# stylesheet to keep up to date as the library grows new example material.
+
 add_executable(html_parser
     html_parser.c
 )
@@ -6,7 +10,7 @@ target_link_libraries(html_parser
     PRIVATE tbox tbox_warnings tbox_sanitizers
 )
 
-target_compile_definitions(html_parser PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/example.html")
+target_compile_definitions(html_parser PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html")
 
 set_target_properties(html_parser PROPERTIES OUTPUT_NAME html_parser)
 
@@ -18,7 +22,7 @@ target_link_libraries(html_xpath
     PRIVATE tbox tbox_warnings tbox_sanitizers
 )
 
-target_compile_definitions(html_xpath PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/example.html")
+target_compile_definitions(html_xpath PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html")
 
 set_target_properties(html_xpath PROPERTIES OUTPUT_NAME html_xpath)
 
@@ -30,6 +34,18 @@ target_link_libraries(css_parser
     PRIVATE tbox tbox_warnings tbox_sanitizers
 )
 
-target_compile_definitions(css_parser PRIVATE TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/css_parser.css")
+target_compile_definitions(css_parser PRIVATE TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
 
 set_target_properties(css_parser PROPERTIES OUTPUT_NAME css_parser)
+
+add_executable(css_selector
+    css_selector.c
+)
+
+target_link_libraries(css_selector
+    PRIVATE tbox tbox_warnings tbox_sanitizers
+)
+
+target_compile_definitions(css_selector PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html" TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
+
+set_target_properties(css_selector PROPERTIES OUTPUT_NAME css_selector)

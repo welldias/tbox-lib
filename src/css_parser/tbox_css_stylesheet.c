@@ -16,8 +16,8 @@ tbox_css_stylesheet *tbox_css_parse(const char *input, size_t length) {
     stylesheet->ruleset_count = 0;
 
     tbox_css_parser parser;
-    tbox_css_parser_init(&parser, input, length, stylesheet);
-    tbox_css_parser_run(&parser);
+    tbox_css_parser_init(&parser, input, length, &stylesheet->arena);
+    tbox_css_parser_run(&parser, &stylesheet->rulesets, &stylesheet->ruleset_count);
 
     return stylesheet;
 }

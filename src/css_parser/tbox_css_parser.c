@@ -31,22 +31,22 @@ static void tbox_css_parser_advance(tbox_css_parser *parser) {
     tbox_css_tokenizer_next(&parser->tokenizer, &parser->current);
 }
 
-void tbox_css_parser_init(tbox_css_parser *parser, const char *input, size_t length, tbox_css_stylesheet *stylesheet) {
+void tbox_css_parser_init(tbox_css_parser *parser, const char *input, size_t length, tbox_arena *arena) {
     tbox_css_tokenizer_init(&parser->tokenizer, input, length);
-    parser->stylesheet = stylesheet;
+    parser->arena = arena;
     tbox_css_parser_advance(parser);
 }
 
 static tbox_string_view tbox_css_parser_copy(tbox_css_parser *parser, tbox_string_view view) {
     tbox_string_builder builder;
-    tbox_string_builder_init(&builder, &parser->stylesheet->arena, view.size);
+    tbox_string_builder_init(&builder, parser->arena, view.size);
     tbox_string_builder_append_view(&builder, view);
     return tbox_string_builder_finish(&builder);
 }
 
 static tbox_string_view tbox_css_parser_copy_lower(tbox_css_parser *parser, tbox_string_view view) {
     tbox_string_builder builder;
-    tbox_string_builder_init(&builder, &parser->stylesheet->arena, view.size);
+    tbox_string_builder_init(&builder, parser->arena, view.size);
     tbox_string_builder_append_view_lower_ascii(&builder, view);
     return tbox_string_builder_finish(&builder);
 }
@@ -349,7 +349,7 @@ static bool tbox_css_parser_parse_compound(tbox_css_parser *parser, tbox_vector 
  * the descendant-combinator signal. */
 static bool tbox_css_parser_parse_selector(tbox_css_parser *parser, tbox_css_selector *out_selector) {
     tbox_vector simple_selectors;
-    tbox_vector_init(&simple_selectors, &parser->stylesheet->arena, sizeof(tbox_css_simple_selector), 0);
+    tbox_vector_init(&simple_selectors, parser->arena, sizeof(tbox_css_simple_selector), 0);
 
     tbox_css_combinator combinator = TBOX_CSS_COMBINATOR_NONE;
 
@@ -493,7 +493,7 @@ static void tbox_css_parser_parse_declaration_list(tbox_css_parser *parser, tbox
     tbox_css_parser_advance(parser); /* '{' */
 
     tbox_vector declarations;
-    tbox_vector_init(&declarations, &parser->stylesheet->arena, sizeof(tbox_css_declaration), 0);
+    tbox_vector_init(&declarations, parser->arena, sizeof(tbox_css_declaration), 0);
 
     while (parser->current.type != TBOX_CSS_TOKEN_RBRACE && parser->current.type != TBOX_CSS_TOKEN_EOF) {
         if (parser->current.type == TBOX_CSS_TOKEN_S || parser->current.type == TBOX_CSS_TOKEN_SEMICOLON) {
@@ -527,7 +527,7 @@ static void tbox_css_parser_parse_declaration_list(tbox_css_parser *parser, tbox
  * whole ruleset. */
 static bool tbox_css_parser_parse_ruleset(tbox_css_parser *parser, tbox_css_ruleset *out_ruleset) {
     tbox_vector selectors;
-    tbox_vector_init(&selectors, &parser->stylesheet->arena, sizeof(tbox_css_selector), 0);
+    tbox_vector_init(&selectors, parser->arena, sizeof(tbox_css_selector), 0);
 
     if (!tbox_css_parser_parse_selector_group(parser, &selectors) || parser->current.type != TBOX_CSS_TOKEN_LBRACE) {
         tbox_css_parser_recover_ruleset(parser);
@@ -548,9 +548,9 @@ static bool tbox_css_parser_parse_ruleset(tbox_css_parser *parser, tbox_css_rule
  * past where it started (recovery always finds a block to discard or
  * reaches EOF). So the parser can never spin without making progress on
  * malformed input. */
-void tbox_css_parser_run(tbox_css_parser *parser) {
+void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_rulesets, size_t *out_ruleset_count) {
     tbox_vector rulesets;
-    tbox_vector_init(&rulesets, &parser->stylesheet->arena, sizeof(tbox_css_ruleset), 0);
+    tbox_vector_init(&rulesets, parser->arena, sizeof(tbox_css_ruleset), 0);
 
     for (;;) {
         while (parser->current.type == TBOX_CSS_TOKEN_S || parser->current.type == TBOX_CSS_TOKEN_CDO || parser->current.type == TBOX_CSS_TOKEN_CDC) {
@@ -571,6 +571,38 @@ void tbox_css_parser_run(tbox_css_parser *parser) {
         }
     }
 
-    parser->stylesheet->rulesets      = rulesets.data;
-    parser->stylesheet->ruleset_count = rulesets.length;
+    *out_rulesets      = rulesets.data;
+    *out_ruleset_count = rulesets.length;
+}
+
+/* selector_group with no trailing declaration block; see the header comment
+ * for the hard-fail-on-error rationale. */
+bool tbox_css_parser_parse_standalone_selector_group(const char *input, size_t length, tbox_arena *arena,
+                                                       tbox_css_selector **out_selectors, size_t *out_count,
+                                                       size_t *out_error_offset) {
+    tbox_css_parser parser;
+    tbox_css_parser_init(&parser, input, length, arena);
+    tbox_css_parser_skip_s(&parser);
+
+    tbox_vector selectors;
+    tbox_vector_init(&selectors, arena, sizeof(tbox_css_selector), 0);
+
+    if (!tbox_css_parser_parse_selector_group(&parser, &selectors)) {
+        if (out_error_offset != NULL) {
+            *out_error_offset = parser.current.offset;
+        }
+        return false;
+    }
+
+    tbox_css_parser_skip_s(&parser);
+    if (parser.current.type != TBOX_CSS_TOKEN_EOF) {
+        if (out_error_offset != NULL) {
+            *out_error_offset = parser.current.offset;
+        }
+        return false;
+    }
+
+    *out_selectors = selectors.data;
+    *out_count     = selectors.length;
+    return true;
 }

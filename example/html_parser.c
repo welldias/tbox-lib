@@ -5,7 +5,7 @@
 #include <tbox/tbox.h>
 
 #ifndef TBOX_EXAMPLE_HTML_PATH
-#define TBOX_EXAMPLE_HTML_PATH "example.html"
+#define TBOX_EXAMPLE_HTML_PATH "index.html"
 #endif
 
 /* Reads the whole file into a malloc'd buffer (not NUL-terminated:
