@@ -18,6 +18,7 @@ int tbox_test_html_xpath_run(void);
 int tbox_test_css_parser_tokenizer_run(void);
 int tbox_test_css_parser_parser_run(void);
 int tbox_test_css_selector_run(void);
+int tbox_test_css_cascade_run(void);
 
 static const tbox_test_group tbox_test_groups[] = {
     { "arena",                 tbox_test_arena_run                 },
@@ -30,6 +31,7 @@ static const tbox_test_group tbox_test_groups[] = {
     { "css_parser_tokenizer",  tbox_test_css_parser_tokenizer_run  },
     { "css_parser_parser",     tbox_test_css_parser_parser_run     },
     { "css_selector",          tbox_test_css_selector_run          },
+    { "css_cascade",           tbox_test_css_cascade_run           },
 };
 
 int main(int argc, char **argv) {

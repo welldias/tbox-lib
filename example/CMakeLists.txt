@@ -61,3 +61,32 @@ target_link_libraries(css_style_by_node
 target_compile_definitions(css_style_by_node PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html" TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
 
 set_target_properties(css_style_by_node PROPERTIES OUTPUT_NAME css_style_by_node)
+
+add_executable(css_cascade
+    css_cascade.c
+)
+
+target_link_libraries(css_cascade
+    PRIVATE tbox tbox_warnings tbox_sanitizers
+)
+
+target_compile_definitions(css_cascade PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html" TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
+
+set_target_properties(css_cascade PROPERTIES OUTPUT_NAME css_cascade)
+
+add_executable(css_cascade_origins
+    css_cascade_origins.c
+)
+
+target_link_libraries(css_cascade_origins
+    PRIVATE tbox tbox_warnings tbox_sanitizers
+)
+
+target_compile_definitions(css_cascade_origins PRIVATE
+    TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html"
+    TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css"
+    TBOX_EXAMPLE_USER_AGENT_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/user-agent.css"
+    TBOX_EXAMPLE_USER_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/user.css"
+)
+
+set_target_properties(css_cascade_origins PROPERTIES OUTPUT_NAME css_cascade_origins)

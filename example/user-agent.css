@@ -1,0 +1,18 @@
+/* A tiny, illustrative user-agent (browser default) stylesheet. Real
+   browsers ship something like this for plain HTML elements before any
+   page or user styling is considered -- it only knows about bare tag
+   names, never about a given page's classes (.navbar, .btn, ...), since a
+   real user-agent stylesheet is written long before any page exists. */
+
+a {
+    color: blue;
+    text-decoration: underline;
+}
+
+/* Illustrative only: modeling a browser accessibility safeguard -- a
+   minimum text size no page or user stylesheet is allowed to shrink below.
+   Real user-agent stylesheets almost never use !important; this kind of
+   unoverridable floor is one of the few well-known exceptions. */
+html {
+    font-size: 16px !important;
+}

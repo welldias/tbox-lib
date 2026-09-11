@@ -10,6 +10,7 @@ extern "C" {
 #include <tbox/html_xpath.h>
 #include <tbox/css_parser.h>
 #include <tbox/css_selector.h>
+#include <tbox/css_cascade.h>
 
 #ifdef __cplusplus
 }

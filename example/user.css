@@ -1,0 +1,16 @@
+/* A hypothetical user stylesheet, as a browser's "customize with your own
+   CSS" feature (or a userstyle extension) would load it. Real user
+   stylesheets almost always reach for !important, because -- as this
+   example demonstrates -- a plain (non-important) user rule is weaker than
+   the page's own author CSS. */
+
+a {
+    color: orange !important;
+}
+
+/* Tries to shrink text far below the user-agent's accessibility floor
+   declared in user-agent.css -- and loses: this library ranks a
+   user-agent !important above even a user !important. */
+html {
+    font-size: 8px !important;
+}
