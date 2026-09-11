@@ -22,7 +22,7 @@ tbox_xpath_node_set tbox_xpath_query_evaluate(const tbox_xpath_query *query, con
 }
 
 tbox_xpath_node_set tbox_xpath_select(const tbox_html_node *context_node, const char *expr, size_t length) {
-    tbox_xpath_query *query = tbox_xpath_compile(expr, length, NULL);
+    tbox_xpath_query *query    = tbox_xpath_compile(expr, length, NULL);
     tbox_xpath_node_set result = tbox_xpath_query_evaluate(query, context_node);
     tbox_xpath_query_destroy(query);
     return result;

@@ -23,7 +23,7 @@ void tbox_xpath_lexer_init(tbox_xpath_lexer *lexer, const char *input, size_t le
 }
 
 static tbox_xpath_token tbox_xpath_make_token(tbox_xpath_token_type type, const char *data, size_t size, size_t offset) {
-    return (tbox_xpath_token){.type = type, .text = tbox_string_view_make(data, size), .offset = offset};
+    return (tbox_xpath_token){ .type = type, .text = tbox_string_view_make(data, size), .offset = offset };
 }
 
 tbox_xpath_token tbox_xpath_lexer_next(tbox_xpath_lexer *lexer) {
@@ -86,7 +86,7 @@ tbox_xpath_token tbox_xpath_lexer_next(tbox_xpath_lexer *lexer) {
     }
 
     if (c == '"' || c == '\'') {
-        char quote  = c;
+        char quote = c;
         size_t pos = start + 1;
         while (pos < lexer->length && lexer->input[pos] != quote) {
             pos++;

@@ -70,7 +70,7 @@ static const tbox_html_node *select_one(const tbox_html_node *root, const char *
  * and prints one line: the step's label, then the winning value (or
  * "(not set)" if no source in this stage declares the property at all). */
 static void print_resolved(const char *step_label, const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *property) {
-    tbox_css_computed_style style        = tbox_css_cascade_resolve(sources, source_count, node);
+    tbox_css_computed_style style                    = tbox_css_cascade_resolve(sources, source_count, node);
     const tbox_css_resolved_declaration *declaration = tbox_css_computed_style_find(&style, tbox_string_view_make(property, strlen(property)));
 
     if (declaration != NULL) {
@@ -99,8 +99,8 @@ int main(void) {
     const tbox_html_node *root = tbox_html_document_root(document);
 
     char *author_css = read_file(TBOX_EXAMPLE_CSS_PATH, &author_css_size);
-    char *ua_css      = read_file(TBOX_EXAMPLE_USER_AGENT_CSS_PATH, &ua_css_size);
-    char *user_css    = read_file(TBOX_EXAMPLE_USER_CSS_PATH, &user_css_size);
+    char *ua_css     = read_file(TBOX_EXAMPLE_USER_AGENT_CSS_PATH, &ua_css_size);
+    char *user_css   = read_file(TBOX_EXAMPLE_USER_CSS_PATH, &user_css_size);
     if (author_css == NULL || ua_css == NULL || user_css == NULL) {
         fprintf(stderr, "failed to read one of the CSS fixtures (%s, %s, %s)\n", TBOX_EXAMPLE_CSS_PATH, TBOX_EXAMPLE_USER_AGENT_CSS_PATH, TBOX_EXAMPLE_USER_CSS_PATH);
         free(author_css);
@@ -148,27 +148,27 @@ int main(void) {
     printf("<a href=\"#hero\"> (a nav link) -- resolving \"color\" as each origin is added:\n");
     {
         const tbox_css_cascade_source stage1[] = {
-            {.stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT},
+            { .stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT },
         };
         print_resolved("1) user-agent only:", stage1, 1, nav_link, "color");
 
         const tbox_css_cascade_source stage2[] = {
-            {.stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT},
-            {.stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR},
+            { .stylesheet = ua_sheet,     .origin = TBOX_CSS_ORIGIN_USER_AGENT },
+            { .stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR     },
         };
         print_resolved("2) + author (style.css):", stage2, 2, nav_link, "color");
 
         const tbox_css_cascade_source stage3[] = {
-            {.stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT},
-            {.stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR},
-            {.stylesheet = user_sheet_plain, .origin = TBOX_CSS_ORIGIN_USER},
+            { .stylesheet = ua_sheet,         .origin = TBOX_CSS_ORIGIN_USER_AGENT },
+            { .stylesheet = author_sheet,     .origin = TBOX_CSS_ORIGIN_AUTHOR     },
+            { .stylesheet = user_sheet_plain, .origin = TBOX_CSS_ORIGIN_USER       },
         };
         print_resolved("3) + user, WITHOUT !important:", stage3, 3, nav_link, "color");
 
         const tbox_css_cascade_source stage4[] = {
-            {.stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT},
-            {.stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR},
-            {.stylesheet = user_sheet, .origin = TBOX_CSS_ORIGIN_USER},
+            { .stylesheet = ua_sheet,     .origin = TBOX_CSS_ORIGIN_USER_AGENT },
+            { .stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR     },
+            { .stylesheet = user_sheet,   .origin = TBOX_CSS_ORIGIN_USER       },
         };
         print_resolved("4) + user, WITH !important:", stage4, 3, nav_link, "color");
     }
@@ -180,20 +180,20 @@ int main(void) {
     printf("<html> -- resolving \"font-size\" as each origin is added:\n");
     {
         const tbox_css_cascade_source stage1[] = {
-            {.stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT},
+            { .stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT },
         };
         print_resolved("1) user-agent only:", stage1, 1, html_node, "font-size");
 
         const tbox_css_cascade_source stage2[] = {
-            {.stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT},
-            {.stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR},
+            { .stylesheet = ua_sheet,     .origin = TBOX_CSS_ORIGIN_USER_AGENT },
+            { .stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR     },
         };
         print_resolved("2) + author (style.css):", stage2, 2, html_node, "font-size");
 
         const tbox_css_cascade_source stage3[] = {
-            {.stylesheet = ua_sheet, .origin = TBOX_CSS_ORIGIN_USER_AGENT},
-            {.stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR},
-            {.stylesheet = user_sheet, .origin = TBOX_CSS_ORIGIN_USER},
+            { .stylesheet = ua_sheet,     .origin = TBOX_CSS_ORIGIN_USER_AGENT },
+            { .stylesheet = author_sheet, .origin = TBOX_CSS_ORIGIN_AUTHOR     },
+            { .stylesheet = user_sheet,   .origin = TBOX_CSS_ORIGIN_USER       },
         };
         print_resolved("3) + user, trying 8px !important:", stage3, 3, html_node, "font-size");
     }

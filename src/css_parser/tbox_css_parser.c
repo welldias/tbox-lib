@@ -577,9 +577,7 @@ void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_ruleset
 
 /* selector_group with no trailing declaration block; see the header comment
  * for the hard-fail-on-error rationale. */
-bool tbox_css_parser_parse_standalone_selector_group(const char *input, size_t length, tbox_arena *arena,
-                                                       tbox_css_selector **out_selectors, size_t *out_count,
-                                                       size_t *out_error_offset) {
+bool tbox_css_parser_parse_standalone_selector_group(const char *input, size_t length, tbox_arena *arena, tbox_css_selector **out_selectors, size_t *out_count, size_t *out_error_offset) {
     tbox_css_parser parser;
     tbox_css_parser_init(&parser, input, length, arena);
     tbox_css_parser_skip_s(&parser);

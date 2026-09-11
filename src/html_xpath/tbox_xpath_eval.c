@@ -5,8 +5,7 @@
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 
-static bool tbox_xpath_node_matches_test(const tbox_html_node *node, tbox_xpath_node_test_kind test_kind,
-                                          tbox_string_view test_name) {
+static bool tbox_xpath_node_matches_test(const tbox_html_node *node, tbox_xpath_node_test_kind test_kind, tbox_string_view test_name) {
     switch (test_kind) {
     case TBOX_XPATH_TEST_NAME:
         return node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_ascii_ci(node->element.tag_name, test_name);
@@ -39,9 +38,7 @@ static void tbox_xpath_push_node(tbox_vector *out, const tbox_html_node *node) {
  * an ancestor's full child list before descending into any of them would
  * interleave shallow matches ahead of deeper matches that actually occur
  * earlier in the document. */
-static void tbox_xpath_collect_child_axis(const tbox_html_node *base, tbox_xpath_combinator combinator,
-                                           tbox_xpath_node_test_kind test_kind, tbox_string_view test_name,
-                                           tbox_vector *out) {
+static void tbox_xpath_collect_child_axis(const tbox_html_node *base, tbox_xpath_combinator combinator, tbox_xpath_node_test_kind test_kind, tbox_string_view test_name, tbox_vector *out) {
     for (const tbox_html_node *child = base->first_child; child != NULL; child = child->next_sibling) {
         if (tbox_xpath_node_matches_test(child, test_kind, test_name)) {
             tbox_xpath_push_node(out, child);
@@ -63,16 +60,13 @@ static void tbox_xpath_collect_self_and_descendants(const tbox_html_node *node, 
     }
 }
 
-static void tbox_xpath_collect_non_child_axis(const tbox_html_node *search_node, tbox_xpath_axis axis,
-                                               tbox_xpath_node_test_kind test_kind, tbox_string_view test_name,
-                                               tbox_vector *out) {
+static void tbox_xpath_collect_non_child_axis(const tbox_html_node *search_node, tbox_xpath_axis axis, tbox_xpath_node_test_kind test_kind, tbox_string_view test_name, tbox_vector *out) {
     switch (axis) {
     case TBOX_XPATH_AXIS_ATTRIBUTE:
         if (search_node->type == TBOX_HTML_NODE_ELEMENT) {
             for (size_t i = 0; i < search_node->element.attribute_count; i++) {
                 const tbox_html_attribute *attribute = &search_node->element.attributes[i];
-                bool match = test_kind == TBOX_XPATH_TEST_WILDCARD ||
-                             (test_kind == TBOX_XPATH_TEST_NAME && tbox_string_view_equal_ascii_ci(attribute->name, test_name));
+                bool match                           = test_kind == TBOX_XPATH_TEST_WILDCARD || (test_kind == TBOX_XPATH_TEST_NAME && tbox_string_view_equal_ascii_ci(attribute->name, test_name));
                 if (match) {
                     tbox_xpath_item *item     = tbox_vector_push(out);
                     item->type                = TBOX_XPATH_ITEM_ATTRIBUTE;
@@ -155,8 +149,7 @@ static void tbox_xpath_push_unique(tbox_vector *set, const tbox_xpath_item *item
     *(tbox_xpath_item *)tbox_vector_push(set) = *item;
 }
 
-static void tbox_xpath_collect_step_candidates(const tbox_html_node *base, const tbox_xpath_step *step,
-                                                tbox_vector *candidates, tbox_arena *scratch) {
+static void tbox_xpath_collect_step_candidates(const tbox_html_node *base, const tbox_xpath_step *step, tbox_vector *candidates, tbox_arena *scratch) {
     if (step->axis == TBOX_XPATH_AXIS_CHILD) {
         tbox_xpath_collect_child_axis(base, step->combinator_before, step->test_kind, step->test_name, candidates);
         return;
@@ -178,7 +171,7 @@ static void tbox_xpath_collect_step_candidates(const tbox_html_node *base, const
 }
 
 tbox_xpath_node_set tbox_xpath_eval_run(const tbox_xpath_query *query, const tbox_html_node *context_node) {
-    tbox_xpath_node_set result = {.items = NULL, .count = 0, .reserved_ = NULL};
+    tbox_xpath_node_set result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (query == NULL || context_node == NULL) {
         return result;
     }
@@ -203,7 +196,7 @@ tbox_xpath_node_set tbox_xpath_eval_run(const tbox_xpath_query *query, const tbo
         size_t current_length = tbox_vector_length(&current);
         for (size_t i = 0; i < current_length; i++) {
             const tbox_xpath_item *item = tbox_vector_at_const(&current, i);
-            const tbox_html_node *base   = item->node; /* attribute axis is always the last step */
+            const tbox_html_node *base  = item->node; /* attribute axis is always the last step */
 
             tbox_vector candidates;
             tbox_vector_init(&candidates, &scratch, sizeof(tbox_xpath_item), 0);
@@ -225,8 +218,8 @@ tbox_xpath_node_set tbox_xpath_eval_run(const tbox_xpath_query *query, const tbo
     size_t count = tbox_vector_length(&current);
     if (count > 0) {
         tbox_arena *out_arena = malloc(sizeof(tbox_arena));
-        *out_arena             = tbox_arena_create(0);
-        result.items           = tbox_arena_alloc(out_arena, count * sizeof(tbox_xpath_item));
+        *out_arena            = tbox_arena_create(0);
+        result.items          = tbox_arena_alloc(out_arena, count * sizeof(tbox_xpath_item));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_xpath_item *)tbox_vector_at_const(&current, i);
         }

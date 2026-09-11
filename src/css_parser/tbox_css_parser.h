@@ -39,9 +39,7 @@ void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_ruleset
  * Returns false, leaving out_selectors/out_count untouched, on failure;
  * if out_error_offset is non-NULL, receives the byte offset where parsing
  * stopped. */
-bool tbox_css_parser_parse_standalone_selector_group(const char *input, size_t length, tbox_arena *arena,
-                                                       tbox_css_selector **out_selectors, size_t *out_count,
-                                                       size_t *out_error_offset);
+bool tbox_css_parser_parse_standalone_selector_group(const char *input, size_t length, tbox_arena *arena, tbox_css_selector **out_selectors, size_t *out_count, size_t *out_error_offset);
 
 #ifdef __cplusplus
 }

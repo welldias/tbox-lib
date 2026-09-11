@@ -15,7 +15,7 @@ static bool tbox_css_cascade_is_space(char byte) {
 }
 
 static bool tbox_css_cascade_is_known_pseudo_element(tbox_string_view name) {
-    static const char *const pseudo_elements[] = {"before", "after", "first-line", "first-letter"};
+    static const char *const pseudo_elements[] = { "before", "after", "first-line", "first-letter" };
     for (size_t i = 0; i < sizeof(pseudo_elements) / sizeof(pseudo_elements[0]); i++) {
         if (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr(pseudo_elements[i]))) {
             return true;
@@ -25,7 +25,7 @@ static bool tbox_css_cascade_is_known_pseudo_element(tbox_string_view name) {
 }
 
 tbox_css_specificity tbox_css_cascade_specificity(const tbox_css_selector *selector) {
-    tbox_css_specificity spec = {0, 0, 0};
+    tbox_css_specificity spec = { 0, 0, 0 };
     if (selector == NULL) {
         return spec;
     }
@@ -75,8 +75,8 @@ tbox_string_view tbox_css_cascade_strip_important(tbox_string_view value, bool *
         *out_important = false;
     }
 
-    static const char keyword[]  = "important";
-    const size_t keyword_length  = sizeof(keyword) - 1;
+    static const char keyword[] = "important";
+    const size_t keyword_length = sizeof(keyword) - 1;
 
     if (value.size < keyword_length) {
         return value;
@@ -116,9 +116,11 @@ tbox_string_view tbox_css_cascade_strip_important(tbox_string_view value, bool *
  * priority -- rank[origin][important ? 1 : 0]. */
 static int tbox_css_cascade_rank(tbox_css_origin origin, bool important) {
     static const int rank[3][2] = {
-        /* USER_AGENT */ {0, 5},
-        /* USER       */ {1, 4},
-        /* AUTHOR     */ {2, 3},
+        /* USER_AGENT */ { 0, 5 },
+        /* USER       */
+        { 1, 4 },
+        /* AUTHOR     */
+        { 2, 3 },
     };
     return rank[origin][important ? 1 : 0];
 }
@@ -133,7 +135,7 @@ static bool tbox_css_cascade_wins_or_ties(const tbox_css_resolved_declaration *c
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node) {
-    tbox_css_computed_style result = {.items = NULL, .count = 0, .reserved_ = NULL};
+    tbox_css_computed_style result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (node == NULL) {
         return result;
     }
@@ -157,7 +159,7 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
             const tbox_css_ruleset *ruleset = &rulesets[r];
 
             const tbox_css_selector *best_selector = NULL;
-            tbox_css_specificity best_specificity   = {0, 0, 0};
+            tbox_css_specificity best_specificity  = { 0, 0, 0 };
             for (size_t s = 0; s < ruleset->selector_count; s++) {
                 const tbox_css_selector *selector = &ruleset->selectors[s];
                 if (!tbox_css_selector_matches(selector, node)) {
@@ -178,15 +180,15 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
                 const tbox_css_declaration *declaration = &ruleset->declarations[d];
 
                 tbox_css_resolved_declaration candidate;
-                candidate.ruleset      = ruleset;
-                candidate.selector     = best_selector;
-                candidate.origin       = origin;
-                candidate.property     = declaration->property;
-                candidate.value        = tbox_css_cascade_strip_important(declaration->value, &candidate.important);
-                candidate.specificity  = best_specificity;
+                candidate.ruleset     = ruleset;
+                candidate.selector    = best_selector;
+                candidate.origin      = origin;
+                candidate.property    = declaration->property;
+                candidate.value       = tbox_css_cascade_strip_important(declaration->value, &candidate.important);
+                candidate.specificity = best_specificity;
 
                 tbox_css_resolved_declaration *existing = NULL;
-                size_t winner_count = tbox_vector_length(&winners);
+                size_t winner_count                     = tbox_vector_length(&winners);
                 for (size_t w = 0; w < winner_count; w++) {
                     tbox_css_resolved_declaration *item = tbox_vector_at(&winners, w);
                     if (tbox_string_view_equal(item->property, candidate.property)) {
@@ -207,8 +209,8 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
     size_t count = tbox_vector_length(&winners);
     if (count > 0) {
         tbox_arena *out_arena = malloc(sizeof(tbox_arena));
-        *out_arena    = tbox_arena_create(0);
-        result.items  = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_resolved_declaration));
+        *out_arena            = tbox_arena_create(0);
+        result.items          = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_resolved_declaration));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_css_resolved_declaration *)tbox_vector_at_const(&winners, i);
         }
@@ -221,7 +223,7 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_stylesheet(const tbox_css_stylesheet *stylesheet, const tbox_html_node *node) {
-    tbox_css_cascade_source source = {.stylesheet = stylesheet, .origin = TBOX_CSS_ORIGIN_AUTHOR};
+    tbox_css_cascade_source source = { .stylesheet = stylesheet, .origin = TBOX_CSS_ORIGIN_AUTHOR };
     return tbox_css_cascade_resolve(&source, stylesheet != NULL ? 1 : 0, node);
 }
 

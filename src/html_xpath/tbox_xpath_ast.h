@@ -21,7 +21,7 @@ typedef enum tbox_xpath_combinator {
 typedef enum tbox_xpath_axis {
     TBOX_XPATH_AXIS_CHILD,
     TBOX_XPATH_AXIS_ATTRIBUTE,
-    TBOX_XPATH_AXIS_SELF,  /* '.' */
+    TBOX_XPATH_AXIS_SELF,   /* '.' */
     TBOX_XPATH_AXIS_PARENT, /* '..' */
 } tbox_xpath_axis;
 
@@ -41,9 +41,9 @@ typedef enum tbox_xpath_predicate_kind {
 
 typedef struct tbox_xpath_predicate {
     tbox_xpath_predicate_kind kind;
-    size_t position;             /* POSITION only; 1-based */
-    tbox_string_view attr_name;  /* ATTR_EXISTS/ATTR_EQUALS only; copied into the query's arena */
-    tbox_string_view attr_value; /* ATTR_EQUALS only; copied into the query's arena */
+    size_t position;                   /* POSITION only; 1-based */
+    tbox_string_view attr_name;        /* ATTR_EXISTS/ATTR_EQUALS only; copied into the query's arena */
+    tbox_string_view attr_value;       /* ATTR_EQUALS only; copied into the query's arena */
     struct tbox_xpath_predicate *next; /* in source order; applied in sequence */
 } tbox_xpath_predicate;
 
@@ -51,7 +51,7 @@ typedef struct tbox_xpath_step {
     tbox_xpath_combinator combinator_before;
     tbox_xpath_axis axis;
     tbox_xpath_node_test_kind test_kind;
-    tbox_string_view test_name; /* only when test_kind == TBOX_XPATH_TEST_NAME; copied into the query's arena */
+    tbox_string_view test_name;       /* only when test_kind == TBOX_XPATH_TEST_NAME; copied into the query's arena */
     tbox_xpath_predicate *predicates; /* may be NULL */
     struct tbox_xpath_step *next;
 } tbox_xpath_step;

@@ -129,7 +129,7 @@ static tbox_xpath_step *tbox_xpath_parse_step(tbox_xpath_parser *parser, tbox_xp
         tbox_xpath_parser_advance(parser);
     } else if (parser->current.type == TBOX_XPATH_TOKEN_NAME) {
         tbox_string_view name = parser->current.text;
-        size_t name_offset     = parser->current.offset;
+        size_t name_offset    = parser->current.offset;
         tbox_xpath_parser_advance(parser);
 
         if (parser->current.type == TBOX_XPATH_TOKEN_LPAREN) {
@@ -177,8 +177,7 @@ static tbox_xpath_step *tbox_xpath_parse_step(tbox_xpath_parser *parser, tbox_xp
     return step;
 }
 
-static tbox_xpath_step *tbox_xpath_parse_relative_location_path(tbox_xpath_parser *parser,
-                                                                  tbox_xpath_combinator first_combinator) {
+static tbox_xpath_step *tbox_xpath_parse_relative_location_path(tbox_xpath_parser *parser, tbox_xpath_combinator first_combinator) {
     if (parser->has_error) {
         return NULL;
     }
@@ -195,9 +194,7 @@ static tbox_xpath_step *tbox_xpath_parse_relative_location_path(tbox_xpath_parse
             return NULL;
         }
 
-        tbox_xpath_combinator combinator = (parser->current.type == TBOX_XPATH_TOKEN_SLASH_SLASH)
-                                                ? TBOX_XPATH_COMBINATOR_DESCENDANT_OR_SELF
-                                                : TBOX_XPATH_COMBINATOR_IDENTITY;
+        tbox_xpath_combinator combinator = (parser->current.type == TBOX_XPATH_TOKEN_SLASH_SLASH) ? TBOX_XPATH_COMBINATOR_DESCENDANT_OR_SELF : TBOX_XPATH_COMBINATOR_IDENTITY;
         tbox_xpath_parser_advance(parser);
 
         tbox_xpath_step *step = tbox_xpath_parse_step(parser, combinator);
@@ -220,7 +217,7 @@ tbox_xpath_query *tbox_xpath_parser_parse(const char *expr, size_t length, size_
     query->absolute   = false;
     query->first_step = NULL;
 
-    tbox_xpath_parser parser = {.has_error = false, .error_offset = 0, .query = query};
+    tbox_xpath_parser parser = { .has_error = false, .error_offset = 0, .query = query };
     tbox_xpath_lexer_init(&parser.lexer, expr, length);
     tbox_xpath_parser_advance(&parser);
 

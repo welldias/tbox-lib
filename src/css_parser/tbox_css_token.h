@@ -18,7 +18,7 @@ extern "C" {
  * the tokenizer free of multi-token lookahead. */
 typedef enum tbox_css_token_type {
     TBOX_CSS_TOKEN_EOF,
-    TBOX_CSS_TOKEN_S,          /* a run of whitespace and/or comments, collapsed into one token */
+    TBOX_CSS_TOKEN_S, /* a run of whitespace and/or comments, collapsed into one token */
     TBOX_CSS_TOKEN_IDENT,
     TBOX_CSS_TOKEN_FUNCTION,   /* ident immediately followed by '(' (the '(' is consumed too); text = ident only */
     TBOX_CSS_TOKEN_URL,        /* url(...) per the CSS2.1 URI grammar, consumed atomically */

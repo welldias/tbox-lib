@@ -87,7 +87,7 @@ static void apply_stylesheet(const tbox_css_stylesheet *stylesheet, const tbox_h
     printf("applying %s to %s via tbox_css_selector_match_stylesheet (grouped by ruleset)...\n\n", TBOX_EXAMPLE_CSS_PATH, TBOX_EXAMPLE_HTML_PATH);
 
     tbox_css_selector_match_set matches = tbox_css_selector_match_stylesheet(stylesheet, root);
-    size_t total = matches.count;
+    size_t total                        = matches.count;
 
     size_t i = 0;
     while (i < matches.count) {
@@ -126,13 +126,13 @@ int main(void) {
 
     /* Standalone compiled selectors, evaluated directly against the HTML
      * tree -- same lifecycle as tbox_xpath_select. */
-    run_query(root, "a");                  /* every anchor: 3 nav links + the hero "Explore Features" button */
-    run_query(root, "nav a");              /* descendant combinator: just the 3 nav links */
-    run_query(root, ".navbar > ul");       /* child combinator: the <ul> directly inside <nav class="navbar"> */
-    run_query(root, "h2.section-title");   /* compound selector: tag + class together */
-    run_query(root, "[id]");               /* attribute existence: the 3 <section id="..."> elements */
+    run_query(root, "a");                    /* every anchor: 3 nav links + the hero "Explore Features" button */
+    run_query(root, "nav a");                /* descendant combinator: just the 3 nav links */
+    run_query(root, ".navbar > ul");         /* child combinator: the <ul> directly inside <nav class="navbar"> */
+    run_query(root, "h2.section-title");     /* compound selector: tag + class together */
+    run_query(root, "[id]");                 /* attribute existence: the 3 <section id="..."> elements */
     run_query(root, ".gallery-item.item-1"); /* compound with two classes, both required */
-    run_query(root, "footer p");           /* the copyright paragraph */
+    run_query(root, "footer p");             /* the copyright paragraph */
 
     size_t css_size;
     char *css = read_file(TBOX_EXAMPLE_CSS_PATH, &css_size);

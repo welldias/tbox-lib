@@ -14,8 +14,7 @@ extern "C" {
  * that satisfies at least one of `selectors[0..selector_count)` (comma-group
  * semantics: OR across the group). Used by both tbox_css_selector_query_evaluate
  * and the node-collection half of tbox_css_selector_match_stylesheet. */
-void tbox_css_selector_collect_matching_nodes(const tbox_html_node *root, const tbox_css_selector *selectors,
-                                               size_t selector_count, tbox_vector *out);
+void tbox_css_selector_collect_matching_nodes(const tbox_html_node *root, const tbox_css_selector *selectors, size_t selector_count, tbox_vector *out);
 
 #ifdef __cplusplus
 }

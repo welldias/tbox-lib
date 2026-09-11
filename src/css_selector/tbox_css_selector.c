@@ -31,7 +31,7 @@ bool tbox_css_selector_query_matches(const tbox_css_selector_query *query, const
 }
 
 tbox_css_selector_node_set tbox_css_selector_query_evaluate(const tbox_css_selector_query *query, const tbox_html_node *root) {
-    tbox_css_selector_node_set result = {.items = NULL, .count = 0, .reserved_ = NULL};
+    tbox_css_selector_node_set result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (query == NULL || root == NULL) {
         return result;
     }
@@ -45,8 +45,8 @@ tbox_css_selector_node_set tbox_css_selector_query_evaluate(const tbox_css_selec
     size_t count = tbox_vector_length(&matches);
     if (count > 0) {
         tbox_arena *out_arena = malloc(sizeof(tbox_arena));
-        *out_arena  = tbox_arena_create(0);
-        result.items = tbox_arena_alloc(out_arena, count * sizeof(const tbox_html_node *));
+        *out_arena            = tbox_arena_create(0);
+        result.items          = tbox_arena_alloc(out_arena, count * sizeof(const tbox_html_node *));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_html_node **)tbox_vector_at_const(&matches, i);
         }
@@ -59,7 +59,7 @@ tbox_css_selector_node_set tbox_css_selector_query_evaluate(const tbox_css_selec
 }
 
 tbox_css_selector_node_set tbox_css_selector_select(const tbox_html_node *root, const char *text, size_t length) {
-    tbox_css_selector_query *query   = tbox_css_selector_compile(text, length, NULL);
+    tbox_css_selector_query *query    = tbox_css_selector_compile(text, length, NULL);
     tbox_css_selector_node_set result = tbox_css_selector_query_evaluate(query, root);
     tbox_css_selector_query_destroy(query);
     return result;
@@ -78,7 +78,7 @@ void tbox_css_selector_node_set_destroy(tbox_css_selector_node_set *set) {
 }
 
 tbox_css_selector_match_set tbox_css_selector_match_stylesheet(const tbox_css_stylesheet *stylesheet, const tbox_html_node *root) {
-    tbox_css_selector_match_set result = {.items = NULL, .count = 0, .reserved_ = NULL};
+    tbox_css_selector_match_set result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (stylesheet == NULL || root == NULL) {
         return result;
     }
@@ -88,8 +88,8 @@ tbox_css_selector_match_set tbox_css_selector_match_stylesheet(const tbox_css_st
     tbox_vector matches;
     tbox_vector_init(&matches, &scratch, sizeof(tbox_css_selector_match), 0);
 
-    size_t ruleset_count               = tbox_css_stylesheet_ruleset_count(stylesheet);
-    const tbox_css_ruleset *rulesets   = tbox_css_stylesheet_rulesets(stylesheet);
+    size_t ruleset_count             = tbox_css_stylesheet_ruleset_count(stylesheet);
+    const tbox_css_ruleset *rulesets = tbox_css_stylesheet_rulesets(stylesheet);
 
     for (size_t r = 0; r < ruleset_count; r++) {
         const tbox_css_ruleset *ruleset = &rulesets[r];
@@ -114,8 +114,8 @@ tbox_css_selector_match_set tbox_css_selector_match_stylesheet(const tbox_css_st
     size_t count = tbox_vector_length(&matches);
     if (count > 0) {
         tbox_arena *out_arena = malloc(sizeof(tbox_arena));
-        *out_arena  = tbox_arena_create(0);
-        result.items = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_selector_match));
+        *out_arena            = tbox_arena_create(0);
+        result.items          = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_selector_match));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_css_selector_match *)tbox_vector_at_const(&matches, i);
         }
