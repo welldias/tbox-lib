@@ -54,6 +54,19 @@
             "preLaunchTask": "cmake: build"
         },
         {
+            "name": "Debug css_style_by_node (example)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/example/css_style_by_node",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "preLaunchTask": "cmake: build"
+        },
+        {
             "name": "Debug tbox_tests (choose group)",
             "type": "cppdbg",
             "request": "launch",

@@ -49,3 +49,15 @@ target_link_libraries(css_selector
 target_compile_definitions(css_selector PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html" TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
 
 set_target_properties(css_selector PROPERTIES OUTPUT_NAME css_selector)
+
+add_executable(css_style_by_node
+    css_style_by_node.c
+)
+
+target_link_libraries(css_style_by_node
+    PRIVATE tbox tbox_warnings tbox_sanitizers
+)
+
+target_compile_definitions(css_style_by_node PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html" TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
+
+set_target_properties(css_style_by_node PROPERTIES OUTPUT_NAME css_style_by_node)
