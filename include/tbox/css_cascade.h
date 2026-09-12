@@ -162,6 +162,144 @@ void tbox_css_computed_style_destroy(tbox_css_computed_style *style);
  * style->items and remains valid exactly as long as `style` does. */
 const tbox_css_resolved_declaration *tbox_css_computed_style_find(const tbox_css_computed_style *style, tbox_string_view property);
 
+/* One of the 140 CSS extended color keywords (CSS Color Module Level 3
+ * "Extended color keywords", a superset of CSS2.1's own 17 keywords), as its
+ * resolved sRGB channels plus alpha (0 == fully transparent, 255 == fully
+ * opaque). Every one of the 140 keywords is fully opaque (a == 255) -- none
+ * of them carries built-in transparency -- but the field is here so this
+ * type also fits colors with an alpha component, such as CSS3's
+ * "transparent" keyword or an rgba()/hsla() value, without a second type. */
+typedef struct tbox_css_rgba {
+    unsigned char r;
+    unsigned char g;
+    unsigned char b;
+    unsigned char a;
+} tbox_css_rgba;
+
+/* Looks up `name` among the 140 CSS extended color keywords (e.g.
+ * "cornflowerblue", "CornflowerBlue", "CORNFLOWERBLUE" -- matching is ASCII
+ * case-insensitive, per CSS2.1 keyword matching). On a match, writes the
+ * keyword's RGB value (with a == 255, since every keyword is opaque) to
+ * *out_color (when out_color != NULL) and returns true. Returns false,
+ * leaving *out_color untouched, if `name` doesn't match any of the 140
+ * keywords, or name.data == NULL. */
+bool tbox_css_named_color_find(tbox_string_view name, tbox_css_rgba *out_color);
+
+/* Reverse of tbox_css_named_color_find: returns the keyword for `color`'s
+ * exact RGBA value (alpha included -- a color with a != 255 can never match,
+ * since every keyword is opaque), or an empty view (size == 0) if no keyword
+ * has that value. A handful of keyword pairs alias the same RGB value
+ * (Aqua/Cyan are both #00FFFF, Fuchsia/Magenta are both #FF00FF); for those
+ * this consistently returns whichever of the pair is declared first in
+ * tbox_css_named_color.c. The returned view aliases static storage that
+ * lives for the whole program -- never free it. */
+tbox_string_view tbox_css_named_color_name(tbox_css_rgba color);
+
+/* Parses a CSS2.1/CSS3 <hex-color> token -- '#' followed by exactly 3, 4, 6,
+ * or 8 hex digits (0-9, a-f, A-F; case-insensitive) -- into *out_color (when
+ * out_color != NULL), and returns true. The 3- and 4-digit forms are
+ * shorthand: each digit is duplicated to make a byte (e.g. "#0af" is the
+ * same color as "#00aaff"); 4 and 8 digits add an alpha channel as the last
+ * component ("#0000" is fully transparent black), while 3 and 6 digits
+ * leave a == 255 (fully opaque). Returns false, leaving *out_color
+ * untouched, for anything else -- missing '#', a digit count other than 3/4/
+ * 6/8, a non-hex character, or hex.data == NULL -- including a leading/
+ * trailing '#' or whitespace that a caller hasn't already trimmed. */
+bool tbox_css_hex_to_rgba(tbox_string_view hex, tbox_css_rgba *out_color);
+
+/* HSL(A) color components as already-parsed numbers, for tbox_css_hsla_to_rgba
+ * -- this does not parse the "hsla(...)" functional-notation text itself
+ * (that belongs to tokenizing/parsing a CSS value, not this conversion), only
+ * converts the four numbers a caller has already extracted from it.
+ *   h: hue in degrees. Any real value is accepted; it is taken modulo 360
+ *      (negative values wrap the same way CSS itself defines hue to), so
+ *      e.g. -90 and 270 are equivalent.
+ *   s, l, a: saturation, lightness, and alpha, each clamped into [0, 1] if
+ *      outside that range (e.g. CSS "hsla(0, 150%, 50%, 1)" -- s == 1.5 --
+ *      clamps to s == 1.0, matching how out-of-range CSS color components
+ *      are commonly handled rather than rejected). */
+typedef struct tbox_css_hsla {
+    double h;
+    double s;
+    double l;
+    double a;
+} tbox_css_hsla;
+
+/* Converts `hsla` to sRGBA via the standard CSS/SVG HSL-to-RGB algorithm
+ * (CSS Color Module Level 3 section 4.2), rounding each of r/g/b to the
+ * nearest byte and clamping `hsla.a` into [0, 1] before scaling it to a
+ * byte. Pure function of its input; always succeeds. */
+tbox_css_rgba tbox_css_hsla_to_rgba(tbox_css_hsla hsla);
+
+/* Which of the CSS2.1/CSS3 color value syntaxes a <color> string uses, per
+ * tbox_css_color_detect_format. TBOX_CSS_COLOR_FORMAT_UNKNOWN covers both "not
+ * a color at all" and "looks like none of the other four shapes". Detecting
+ * a format doesn't guarantee the value parses -- e.g. "#zz" is detected as
+ * HEXA (it starts with '#') but tbox_css_hex_to_rgba still rejects it. */
+typedef enum tbox_css_color_format {
+    TBOX_CSS_COLOR_FORMAT_UNKNOWN = 0,
+    TBOX_CSS_COLOR_FORMAT_HEXA,       /* "#rgb", "#rgba", "#rrggbb", "#rrggbbaa" */
+    TBOX_CSS_COLOR_FORMAT_RGBA,       /* "rgb(...)" or "rgba(...)" */
+    TBOX_CSS_COLOR_FORMAT_HSLA,       /* "hsl(...)" or "hsla(...)" */
+    TBOX_CSS_COLOR_FORMAT_COLOR_NAME, /* one of the 140 keywords, e.g. "CornflowerBlue" */
+} tbox_css_color_format;
+
+/* Classifies `value` by shape alone, cheaply and without allocating:
+ *   - starts with '#'                                -> HEXA
+ *   - case-insensitively starts with "rgb(" / "rgba(" -> RGBA
+ *   - case-insensitively starts with "hsl(" / "hsla(" -> HSLA
+ *   - otherwise, an exact match (case-insensitive) against one of the 140
+ *     CSS extended color keywords (via tbox_css_named_color_find)
+ *                                                      -> COLOR_NAME
+ *   - anything else, or value.size == 0                -> UNKNOWN
+ * `value` must already have any leading/trailing whitespace trimmed by the
+ * caller (as tbox_css_parse already does for tbox_css_declaration.value) --
+ * this never trims it itself, matching tbox_css_hex_to_rgba's contract. */
+tbox_css_color_format tbox_css_color_detect_format(tbox_string_view value);
+
+/* Parses a CSS2.1/CSS3 functional rgb()/rgba() color: "rgb(R, G, B)" or
+ * "rgba(R, G, B, A)" (the two names are accepted interchangeably regardless
+ * of whether an alpha argument follows, matching how browsers treat them).
+ * Each of R/G/B is a plain number or a percentage (0%-100%); either way it
+ * is clamped into [0, 255] after scaling. A is a plain number (0-1) or a
+ * percentage (0%-100%), clamped into [0, 1] and scaled to a byte. When A
+ * is omitted, a == 255. Internal whitespace around commas/parens is
+ * tolerated ("rgb( 10 , 20,30 )" is fine), but `value` itself must already
+ * be trimmed of leading/trailing whitespace and have no other surrounding
+ * text. Writes to *out_color (when out_color != NULL) and returns true on
+ * success; returns false, leaving *out_color untouched, if `value` isn't
+ * "rgb("/"rgba(" followed by 3 or 4 comma-separated components and a closing
+ * ')', or any component fails to parse as a number/percentage. */
+bool tbox_css_rgb_to_rgba(tbox_string_view value, tbox_css_rgba *out_color);
+
+/* Parses a CSS2.1/CSS3 functional hsl()/hsla() color: "hsl(H, S%, L%)" or
+ * "hsla(H, S%, L%, A)" (the two names are accepted interchangeably regardless
+ * of whether an alpha argument follows). H is a plain number of degrees (see
+ * tbox_css_hsla.h -- no unit suffix is accepted); S and L must each carry a
+ * '%' suffix (that's required by the CSS grammar, unlike rgb()'s R/G/B).
+ * A is a plain number (0-1) or a percentage (0%-100%); when omitted, a ==
+ * 255. Converts via tbox_css_hsla_to_rgba, so H/S/L/A are wrapped/clamped
+ * exactly as that function documents. Same whitespace contract as
+ * tbox_css_rgb_to_rgba (internal whitespace tolerated, `value` itself must
+ * already be trimmed). Writes to *out_color (when out_color != NULL) and
+ * returns true on success; returns false, leaving *out_color untouched, if
+ * `value` isn't "hsl("/"hsla(" followed by 3 or 4 comma-separated components
+ * and a closing ')', H carries a '%' suffix, S or L is missing its '%'
+ * suffix, or any component fails to parse. */
+bool tbox_css_hsl_to_rgba(tbox_string_view value, tbox_css_rgba *out_color);
+
+/* Parses any CSS2.1/CSS3 <color> value -- hex, rgb()/rgba(), hsl()/hsla(),
+ * or one of the 140 named keywords -- into *out_color (when out_color !=
+ * NULL), and returns true. Dispatches on tbox_css_color_detect_format(value)
+ * to tbox_css_hex_to_rgba, tbox_css_rgb_to_rgba, tbox_css_hsl_to_rgba, or
+ * tbox_css_named_color_find respectively, so see those for exactly what each
+ * syntax accepts; `value` must already be trimmed the same way their
+ * contracts require. Returns false, leaving *out_color untouched, if the
+ * format can't be detected (TBOX_CSS_COLOR_FORMAT_UNKNOWN) or the detected
+ * format's own parser rejects `value` (e.g. "#zz" is detected as HEXA but
+ * still fails to parse). */
+bool tbox_css_color_parse(tbox_string_view value, tbox_css_rgba *out_color);
+
 #ifdef __cplusplus
 }
 #endif

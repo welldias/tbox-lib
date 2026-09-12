@@ -19,19 +19,25 @@ int tbox_test_css_parser_tokenizer_run(void);
 int tbox_test_css_parser_parser_run(void);
 int tbox_test_css_selector_run(void);
 int tbox_test_css_cascade_run(void);
+int tbox_test_css_cascade_named_color_run(void);
+int tbox_test_css_cascade_color_convert_run(void);
+int tbox_test_css_cascade_color_parse_run(void);
 
 static const tbox_test_group tbox_test_groups[] = {
-    { "arena",                 tbox_test_arena_run                 },
-    { "list",                  tbox_test_list_run                  },
-    { "vector",                tbox_test_vector_run                },
-    { "string",                tbox_test_string_run                },
-    { "html_parser_tokenizer", tbox_test_html_parser_tokenizer_run },
-    { "html_parser_tree",      tbox_test_html_parser_tree_run      },
-    { "html_xpath",            tbox_test_html_xpath_run            },
-    { "css_parser_tokenizer",  tbox_test_css_parser_tokenizer_run  },
-    { "css_parser_parser",     tbox_test_css_parser_parser_run     },
-    { "css_selector",          tbox_test_css_selector_run          },
-    { "css_cascade",           tbox_test_css_cascade_run           },
+    { "arena",                     tbox_test_arena_run                     },
+    { "list",                      tbox_test_list_run                      },
+    { "vector",                    tbox_test_vector_run                    },
+    { "string",                    tbox_test_string_run                    },
+    { "html_parser_tokenizer",     tbox_test_html_parser_tokenizer_run     },
+    { "html_parser_tree",          tbox_test_html_parser_tree_run          },
+    { "html_xpath",                tbox_test_html_xpath_run                },
+    { "css_parser_tokenizer",      tbox_test_css_parser_tokenizer_run      },
+    { "css_parser_parser",         tbox_test_css_parser_parser_run         },
+    { "css_selector",              tbox_test_css_selector_run              },
+    { "css_cascade",               tbox_test_css_cascade_run               },
+    { "css_cascade_named_color",   tbox_test_css_cascade_named_color_run   },
+    { "css_cascade_color_convert", tbox_test_css_cascade_color_convert_run },
+    { "css_cascade_color_parse",   tbox_test_css_cascade_color_parse_run   },
 };
 
 int main(int argc, char **argv) {

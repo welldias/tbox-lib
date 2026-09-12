@@ -6,6 +6,11 @@ file(GLOB TBOX_CSS_SELECTOR_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR
 file(GLOB TBOX_CSS_CASCADE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/css_cascade/*.c)
 set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XPATH_SOURCES} ${TBOX_CSS_PARSER_SOURCES} ${TBOX_CSS_SELECTOR_SOURCES} ${TBOX_CSS_CASCADE_SOURCES})
 
+# tbox_css_hsla_to_rgba (css_cascade/tbox_css_color_convert.c) uses fmod(),
+# which pre-C99-merge glibc and some other libcs ship in a separate math
+# library rather than folding into libc itself.
+find_library(TBOX_MATH_LIBRARY m)
+
 option(TBOX_BUILD_STATIC "Build the static tbox library (libtbox.a)" ON)
 option(TBOX_BUILD_SHARED "Build the shared tbox library (libtbox.so)" ON)
 
@@ -18,6 +23,9 @@ if(TBOX_BUILD_STATIC)
     target_include_directories(tbox_static PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_include_directories(tbox_static PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/external/utf8.h)
     target_link_libraries(tbox_static PRIVATE tbox_warnings tbox_sanitizers)
+    if(TBOX_MATH_LIBRARY)
+        target_link_libraries(tbox_static PRIVATE ${TBOX_MATH_LIBRARY})
+    endif()
     set_target_properties(tbox_static PROPERTIES OUTPUT_NAME tbox)
 endif()
 
@@ -26,6 +34,9 @@ if(TBOX_BUILD_SHARED)
     target_include_directories(tbox_shared PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_include_directories(tbox_shared PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/external/utf8.h)
     target_link_libraries(tbox_shared PRIVATE tbox_warnings tbox_sanitizers)
+    if(TBOX_MATH_LIBRARY)
+        target_link_libraries(tbox_shared PRIVATE ${TBOX_MATH_LIBRARY})
+    endif()
     set_target_properties(tbox_shared PROPERTIES OUTPUT_NAME tbox)
 endif()
 
