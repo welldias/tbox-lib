@@ -303,6 +303,22 @@ camadas um dia percorrerem a árvore em ordens diferentes).
 ainda (só `px` e palavras-chave/percent) — unidades relativas a fonte
 entram junto com a camada de texto/fonte.
 
+**Valor inicial de `display` — decisão explícita:** o CSS2.1 real define o
+inicial de `display` como `inline`, mas isso pressupõe uma UA stylesheet
+que declara `div`/`p`/`h1`-`h6`/etc. como `block` — e v0 não tem UA
+stylesheet nenhuma (ver Orchestration). Se `tbox_style_resolve` seguisse o
+inicial padrão à risca, todo elemento sem `display` explícito no CSS do
+autor viraria `inline`, e o Layout Tree (que só implementa fluxo de bloco
+em v0) não teria o que fazer com ele. Por isso, **o inicial de `display`
+em v0 é `TBOX_STYLE_DISPLAY_BLOCK`**, não `inline` — simplificação
+deliberada, coerente com "todo elemento vira block-level box igual a
+qualquer outro" já decidido para a Fatia vertical v0. `display: none`
+continua funcionando normalmente quando declarado explicitamente no CSS
+do autor. Fica marcado aqui porque diverge da spec real; quando uma UA
+stylesheet existir (próxima fatia), o inicial correto (`inline`) passa a
+fazer sentido de novo, já que os elementos block ganham `display: block`
+por herança de uma folha de estilo, não por default do motor.
+
 **Shorthand:** decidido — expande aqui, na Style layer, no momento de tipar
 cada propriedade (`margin: 1px 2px` vira `margin[4]` já resolvido). O CSS
 Parser continua agnóstico de propriedade (não sabe o que é shorthand); a
