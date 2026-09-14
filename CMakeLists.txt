@@ -47,6 +47,24 @@ if(TBOX_ENABLE_SANITIZERS)
     endif()
 endif()
 
+# FreeType is a core dependency of libtbox (the Fonte/Texto layer wraps
+# FT_Face for metrics/rasterization), not just an example concern -- it used
+# to be fetched only by example/CMakeLists.txt for the tbox_wayland smoke
+# test, but now src/ links it too, so it is declared once here, before
+# add_subdirectory(src), and reused by both. Fetched and built from source
+# (rather than found on the system) so its build can be forced to produce
+# only a static library, regardless of how the system package happens to be
+# built.
+include(FetchContent)
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(freetype
+    GIT_REPOSITORY https://github.com/freetype/freetype.git
+    GIT_TAG VER-2-14-3
+)
+FetchContent_MakeAvailable(freetype)
+
 add_subdirectory(src)
 
 if(TBOX_BUILD_EXAMPLES)
