@@ -65,6 +65,12 @@ FetchContent_Declare(freetype
 )
 FetchContent_MakeAvailable(freetype)
 
+# Force PIC even though freetype is a static archive: tbox_shared (a .so)
+# links it in, and without this its object files aren't relocatable enough
+# for a shared object (surfaces as an "R_X86_64_PC32 ... recompile with
+# -fPIC" link error the moment anything actually calls into FreeType).
+set_target_properties(freetype PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 add_subdirectory(src)
 
 if(TBOX_BUILD_EXAMPLES)

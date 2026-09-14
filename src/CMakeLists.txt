@@ -4,23 +4,23 @@ file(GLOB TBOX_HTML_XPATH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/
 file(GLOB TBOX_CSS_PARSER_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/css_parser/*.c)
 file(GLOB TBOX_CSS_SELECTOR_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/css_selector/*.c)
 file(GLOB TBOX_CSS_CASCADE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/css_cascade/*.c)
-set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XPATH_SOURCES} ${TBOX_CSS_PARSER_SOURCES} ${TBOX_CSS_SELECTOR_SOURCES} ${TBOX_CSS_CASCADE_SOURCES})
+file(GLOB TBOX_STYLE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/style/*.c)
+file(GLOB TBOX_FONT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/font/*.c)
+set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XPATH_SOURCES} ${TBOX_CSS_PARSER_SOURCES} ${TBOX_CSS_SELECTOR_SOURCES} ${TBOX_CSS_CASCADE_SOURCES} ${TBOX_STYLE_SOURCES} ${TBOX_FONT_SOURCES})
 
 # tbox_css_hsla_to_rgba (css_cascade/tbox_css_color_convert.c) uses fmod(),
 # which pre-C99-merge glibc and some other libcs ship in a separate math
 # library rather than folding into libc itself.
 find_library(TBOX_MATH_LIBRARY m)
 
-# Fontconfig backs the Fontconfig font source backend (Fonte/Texto layer:
-# tbox_font_source_fontconfig.c, not written yet) that resolves a generic
-# family like "sans-serif" to a real font file on Linux. It is optional,
-# same graceful-skip pattern as the Wayland dependency detection in
-# example/CMakeLists.txt: absence must never fail configure, because the
-# test suite only ever exercises the embedded font backend and has to keep
-# building in a CI container without Fontconfig installed. This only
-# detects and exposes TBOX_FONTCONFIG_FOUND for now -- there is no source
-# file to gate yet, a later task conditions tbox_font_source_fontconfig.c's
-# inclusion in TBOX_SOURCES on it.
+# Fontconfig backs tbox_font_source_fontconfig.c (Fonte/Texto layer), which
+# resolves a generic family like "sans-serif" to a real font file on Linux.
+# It is optional, same graceful-skip pattern as the Wayland dependency
+# detection in example/CMakeLists.txt: absence must never fail configure,
+# because the test suite only ever exercises the embedded font backend and
+# has to keep building in a CI container without Fontconfig installed --
+# when absent, tbox_font_source_fontconfig.c is excluded from TBOX_SOURCES
+# below rather than compiled and left to fail.
 find_package(PkgConfig QUIET)
 
 set(TBOX_FONTCONFIG_FOUND FALSE)
@@ -33,11 +33,12 @@ if(PkgConfig_FOUND)
 endif()
 
 if(NOT TBOX_FONTCONFIG_FOUND)
+    list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_source_fontconfig.c)
     message(WARNING
-        "Fontconfig (pkg-config module 'fontconfig') not found: the "
-        "Fontconfig-backed font source will be excluded from the build once "
-        "it exists (tbox_font_source_fontconfig.c) -- libtbox and its test "
-        "suite still build fine against the embedded font backend alone.\n"
+        "Fontconfig (pkg-config module 'fontconfig') not found: "
+        "tbox_font_source_fontconfig.c is excluded from this build -- "
+        "libtbox and its test suite still build fine against the embedded "
+        "font backend alone.\n"
         "  Arch Linux:    sudo pacman -S fontconfig\n"
         "  Debian/Ubuntu: sudo apt install libfontconfig1-dev"
     )
@@ -58,6 +59,11 @@ if(TBOX_BUILD_STATIC)
     if(TBOX_MATH_LIBRARY)
         target_link_libraries(tbox_static PRIVATE ${TBOX_MATH_LIBRARY})
     endif()
+    if(TBOX_FONTCONFIG_FOUND)
+        target_include_directories(tbox_static PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
+        target_link_directories(tbox_static PRIVATE ${FONTCONFIG_LIBRARY_DIRS})
+        target_link_libraries(tbox_static PRIVATE ${FONTCONFIG_LIBRARIES})
+    endif()
     set_target_properties(tbox_static PROPERTIES OUTPUT_NAME tbox)
 endif()
 
@@ -68,6 +74,11 @@ if(TBOX_BUILD_SHARED)
     target_link_libraries(tbox_shared PRIVATE tbox_warnings tbox_sanitizers freetype)
     if(TBOX_MATH_LIBRARY)
         target_link_libraries(tbox_shared PRIVATE ${TBOX_MATH_LIBRARY})
+    endif()
+    if(TBOX_FONTCONFIG_FOUND)
+        target_include_directories(tbox_shared PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
+        target_link_directories(tbox_shared PRIVATE ${FONTCONFIG_LIBRARY_DIRS})
+        target_link_libraries(tbox_shared PRIVATE ${FONTCONFIG_LIBRARIES})
     endif()
     set_target_properties(tbox_shared PROPERTIES OUTPUT_NAME tbox)
 endif()
