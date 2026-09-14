@@ -25,6 +25,7 @@ int tbox_test_css_cascade_color_convert_run(void);
 int tbox_test_css_cascade_color_parse_run(void);
 int tbox_test_style_run(void);
 int tbox_test_font_run(void);
+int tbox_test_layout_run(void);
 
 static const tbox_test_group tbox_test_groups[] = {
     { "arena",                     tbox_test_arena_run                     },
@@ -44,6 +45,7 @@ static const tbox_test_group tbox_test_groups[] = {
     { "css_cascade_color_parse",   tbox_test_css_cascade_color_parse_run   },
     { "style",                     tbox_test_style_run                     },
     { "font",                      tbox_test_font_run                      },
+    { "layout",                    tbox_test_layout_run                    },
 };
 
 int main(int argc, char **argv) {
