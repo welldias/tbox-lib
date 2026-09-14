@@ -110,5 +110,57 @@ int tbox_test_string_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* 10: collapse_whitespace -- no extra whitespace is unchanged. */
+    {
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view result = tbox_string_collapse_whitespace(&arena, tbox_string_view_from_cstr("hello world"));
+        TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(result, "hello world"));
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 11: collapse_whitespace -- multiple internal spaces collapse to one. */
+    {
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view result =
+            tbox_string_collapse_whitespace(&arena, tbox_string_view_from_cstr("hello   world"));
+        TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(result, "hello world"));
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 12: collapse_whitespace -- tabs and newlines are whitespace too. */
+    {
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view result =
+            tbox_string_collapse_whitespace(&arena, tbox_string_view_from_cstr("hello\t\nworld"));
+        TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(result, "hello world"));
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 13: collapse_whitespace -- leading/trailing whitespace is stripped. */
+    {
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view result =
+            tbox_string_collapse_whitespace(&arena, tbox_string_view_from_cstr("  hello world  "));
+        TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(result, "hello world"));
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 14: collapse_whitespace -- empty string stays empty. */
+    {
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view result = tbox_string_collapse_whitespace(&arena, tbox_string_view_make("", 0));
+        TBOX_TEST_ASSERT(result.size == 0);
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 15: collapse_whitespace -- string that is only whitespace becomes empty. */
+    {
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view result =
+            tbox_string_collapse_whitespace(&arena, tbox_string_view_from_cstr("   \t\n  "));
+        TBOX_TEST_ASSERT(result.size == 0);
+        tbox_arena_destroy(&arena);
+    }
+
     return failures;
 }

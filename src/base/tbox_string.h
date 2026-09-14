@@ -52,6 +52,12 @@ void tbox_string_builder_append_codepoint(tbox_string_builder *builder, utf8_int
  * owned by the arena; no copy is made. */
 tbox_string_view tbox_string_builder_finish(const tbox_string_builder *builder);
 
+/* Collapses runs of ASCII whitespace (space, tab, '\n', '\r', form feed,
+ * vertical tab) into a single ' ' and trims leading/trailing whitespace --
+ * equivalent to CSS `white-space: normal` text collapsing. Builds a fresh
+ * copy in `arena`; `text` is a non-owning view and is never modified. */
+tbox_string_view tbox_string_collapse_whitespace(tbox_arena *arena, tbox_string_view text);
+
 #ifdef __cplusplus
 }
 #endif
