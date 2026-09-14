@@ -360,6 +360,16 @@ typedef struct tbox_layout_box {
 
     tbox_rect margin_box, border_box, padding_box, content_box;
 
+    /* v0: só preenchido para heading/parágrafo (ver "Regra explícita"
+     * abaixo) -- `text` é o resultado já passado por
+     * tbox_html_node_text_content + tbox_string_collapse_whitespace,
+     * pronto pra medir/desenhar; `font` é a face usada pra medi-lo. Vazio
+     * (text.size == 0, font == NULL) pra qualquer outra caixa. O Render
+     * Pipeline (próxima camada) lê os dois pra montar o TEXT_RUN -- não
+     * mede nem resolve nada de novo. */
+    tbox_string_view text;
+    const tbox_font_face *font;
+
     struct tbox_layout_box *parent, *first_child, *last_child, *next_sibling;
 } tbox_layout_box;
 
