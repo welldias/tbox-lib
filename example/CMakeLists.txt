@@ -158,19 +158,10 @@ if(TBOX_WAYLAND_DEPS_FOUND)
         DEPENDS "${XDG_SHELL_PROTOCOL_C}" "${XDG_SHELL_PROTOCOL_H}"
     )
 
-    # FreeType is fetched and built from source (rather than found on the
-    # system) so its build can be forced to produce only a static library,
-    # regardless of how the system package happens to be built.
-    include(FetchContent)
-
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
-    FetchContent_Declare(freetype
-        GIT_REPOSITORY https://github.com/freetype/freetype.git
-        GIT_TAG VER-2-14-3
-    )
-    FetchContent_MakeAvailable(freetype)
-
+    # FreeType is declared once in the root CMakeLists.txt (a core libtbox
+    # dependency now, not just an example concern) and made available before
+    # add_subdirectory(example) runs, so the `freetype` target already exists
+    # here -- just link it.
     add_executable(tbox_wayland
         tbox_wayland.c
         "${XDG_SHELL_PROTOCOL_C}"

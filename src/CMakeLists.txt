@@ -11,6 +11,38 @@ set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XP
 # library rather than folding into libc itself.
 find_library(TBOX_MATH_LIBRARY m)
 
+# Fontconfig backs the Fontconfig font source backend (Fonte/Texto layer:
+# tbox_font_source_fontconfig.c, not written yet) that resolves a generic
+# family like "sans-serif" to a real font file on Linux. It is optional,
+# same graceful-skip pattern as the Wayland dependency detection in
+# example/CMakeLists.txt: absence must never fail configure, because the
+# test suite only ever exercises the embedded font backend and has to keep
+# building in a CI container without Fontconfig installed. This only
+# detects and exposes TBOX_FONTCONFIG_FOUND for now -- there is no source
+# file to gate yet, a later task conditions tbox_font_source_fontconfig.c's
+# inclusion in TBOX_SOURCES on it.
+find_package(PkgConfig QUIET)
+
+set(TBOX_FONTCONFIG_FOUND FALSE)
+
+if(PkgConfig_FOUND)
+    pkg_check_modules(FONTCONFIG QUIET fontconfig)
+    if(FONTCONFIG_FOUND)
+        set(TBOX_FONTCONFIG_FOUND TRUE)
+    endif()
+endif()
+
+if(NOT TBOX_FONTCONFIG_FOUND)
+    message(WARNING
+        "Fontconfig (pkg-config module 'fontconfig') not found: the "
+        "Fontconfig-backed font source will be excluded from the build once "
+        "it exists (tbox_font_source_fontconfig.c) -- libtbox and its test "
+        "suite still build fine against the embedded font backend alone.\n"
+        "  Arch Linux:    sudo pacman -S fontconfig\n"
+        "  Debian/Ubuntu: sudo apt install libfontconfig1-dev"
+    )
+endif()
+
 option(TBOX_BUILD_STATIC "Build the static tbox library (libtbox.a)" ON)
 option(TBOX_BUILD_SHARED "Build the shared tbox library (libtbox.so)" ON)
 
@@ -22,7 +54,7 @@ if(TBOX_BUILD_STATIC)
     add_library(tbox_static STATIC ${TBOX_SOURCES})
     target_include_directories(tbox_static PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_include_directories(tbox_static PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/external/utf8.h)
-    target_link_libraries(tbox_static PRIVATE tbox_warnings tbox_sanitizers)
+    target_link_libraries(tbox_static PRIVATE tbox_warnings tbox_sanitizers freetype)
     if(TBOX_MATH_LIBRARY)
         target_link_libraries(tbox_static PRIVATE ${TBOX_MATH_LIBRARY})
     endif()
@@ -33,7 +65,7 @@ if(TBOX_BUILD_SHARED)
     add_library(tbox_shared SHARED ${TBOX_SOURCES})
     target_include_directories(tbox_shared PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_include_directories(tbox_shared PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/external/utf8.h)
-    target_link_libraries(tbox_shared PRIVATE tbox_warnings tbox_sanitizers)
+    target_link_libraries(tbox_shared PRIVATE tbox_warnings tbox_sanitizers freetype)
     if(TBOX_MATH_LIBRARY)
         target_link_libraries(tbox_shared PRIVATE ${TBOX_MATH_LIBRARY})
     endif()
