@@ -546,9 +546,18 @@ de Output Display", acima).
 
 ## Orchestration / Main Loop (novo)
 
-**Responsabilidade:** dono do pipeline inteiro (parse → style → layout →
-render → display), do event loop da plataforma, e da decisão de *quando*
-re-executar cada etapa.
+**Responsabilidade:** dona do pipeline de *cômputo* (parse → style →
+layout → render, produzindo uma `tbox_display_list`) e da decisão de
+*quando* re-executar cada etapa. **Não é dona do event loop da
+plataforma nem do backend de apresentação** — essa correção veio depois
+da primeira versão desta seção, escrita antes do Output Display (Tarefa
+8) existir de verdade: `tbox_backend_wayland_*` já nasceu como uma API
+autossuficiente (`open`/`poll`/`should_close`/`size`/`present`), e é a
+Application (Tarefa 10) quem possui tanto um `tbox_context` quanto um
+`tbox_backend_wayland`, rodando o loop de verdade e ligando os dois —
+chama `tbox_context_run_frame` a cada resize/evento relevante, depois
+`tbox_backend_wayland_present` com o resultado. `tbox_context` em si não
+sabe que Wayland existe.
 
 **v0 — política mais simples possível:** sem invalidação incremental
 nenhuma. Qualquer coisa que mude (resize da janela é o único gatilho que
@@ -564,13 +573,27 @@ tomar bem.
 **Tipos-chave (proposta, mínima):**
 ```c
 typedef struct tbox_context {
-    tbox_html_document *document;
-    const tbox_css_stylesheet *stylesheet; /* author; user-agent default entra depois */
-    tbox_font_face *font;   /* carregado uma vez na abertura (tbox_app_open), NÃO por frame */
+    tbox_html_document *document;    /* dono: parseado em tbox_context_open, destruído em tbox_context_close */
+    tbox_css_stylesheet *stylesheet; /* dono, mesmo ciclo de vida; author-only (ver abaixo) */
+    tbox_font_face *font;   /* emprestado -- carregado e destruído por quem chama (Application/Tarefa 10), NÃO por frame nem pelo tbox_context */
+    tbox_layout_box *root;  /* último layout calculado (vive em frame_arena); usado por tbox_context_hit_test entre frames */
     tbox_arena frame_arena; /* backing de tbox_style_table + tbox_layout_box + tbox_display_list; resetada no início de cada tbox_context_run_frame */
 } tbox_context;
 
+/* Parseia `html`/`css` e guarda o resultado -- `font` é emprestado (ver
+ * acima). Retorna NULL só em falha de alocação. */
+tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face *font);
+
+/* Destrói document/stylesheet e a frame_arena. NÃO destrói `font` (não é
+ * dono dele). */
+void tbox_context_close(tbox_context *ctx);
+
 void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double viewport_height, tbox_display_list *out_list);
+
+/* Busca linear em `ctx->root` (o último layout computado) pela caixa mais
+ * profunda cujo `border_box` contém (x, y). NULL se não houver layout
+ * ainda ou nada sob o ponto. */
+const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, double y);
 ```
 
 **Confirmado: v0 não usa nenhuma folha de estilo user-agent.** O array de
