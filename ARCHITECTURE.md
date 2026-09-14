@@ -385,6 +385,20 @@ mesma arena por-frame (`tbox_context.frame_arena`, ver Orchestration),
 resetada uma vez a cada frame em vez de cada camada destruir/recriar a
 própria.)
 
+**`root` e documentos com múltiplas tags soltas no nível raiz.** Se `root`
+for um `TBOX_HTML_NODE_DOCUMENT`, `tbox_layout_build` constrói a caixa só
+para o **primeiro** filho ELEMENT do documento (tipicamente `<html>`, se o
+HTML de entrada tiver um) — filhos ELEMENT adicionais no mesmo nível são
+ignorados. O HTML Parser não insere `<html>`/`<body>` implicitamente
+(diferente da árvore de construção HTML5 completa), então um documento com
+múltiplas tags soltas no nível raiz (`<div>...</div><h1>...</h1>`, sem
+contêiner nenhum) perde tudo depois da primeira. Não é bug do Layout Tree:
+é a mesma expectativa de qualquer HTML real (que sempre tem exatamente um
+`<html>` de topo) — só precisa estar explícita aqui, já que este parser
+não a impõe sozinho. Todo HTML de teste/exemplo em v0 deve envolver seu
+conteúdo num único elemento de topo (`<body>`, `<div>`, tanto faz,
+contanto que seja um só).
+
 **Escopo mínimo (v0):** só fluxo normal — block-level boxes empilhadas
 verticalmente (largura = do pai, salvo `width` explícito). `<h1>`…`<h6>` e
 `<p>` viram block-level boxes iguais a qualquer outro elemento (mesmo
