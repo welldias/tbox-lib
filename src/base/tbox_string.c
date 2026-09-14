@@ -111,3 +111,31 @@ void tbox_string_builder_append_codepoint(tbox_string_builder *builder, utf8_int
 tbox_string_view tbox_string_builder_finish(const tbox_string_builder *builder) {
     return tbox_string_view_make(builder->data, builder->length);
 }
+
+static bool tbox_is_ascii_whitespace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+tbox_string_view tbox_string_collapse_whitespace(tbox_arena *arena, tbox_string_view text) {
+    tbox_string_builder builder;
+    tbox_string_builder_init(&builder, arena, text.size);
+
+    bool pending_space = false;
+    for (size_t i = 0; i < text.size; i++) {
+        char c = text.data[i];
+        if (tbox_is_ascii_whitespace(c)) {
+            /* Defer emitting the collapsed space until we know there is more
+             * non-whitespace content ahead, so trailing runs are dropped. */
+            pending_space = true;
+            continue;
+        }
+
+        if (pending_space && builder.length > 0) {
+            tbox_string_builder_append_byte(&builder, ' ');
+        }
+        pending_space = false;
+        tbox_string_builder_append_byte(&builder, c);
+    }
+
+    return tbox_string_builder_finish(&builder);
+}
