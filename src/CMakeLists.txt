@@ -8,7 +8,8 @@ file(GLOB TBOX_STYLE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/style
 file(GLOB TBOX_FONT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/font/*.c)
 file(GLOB TBOX_LAYOUT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/layout/*.c)
 file(GLOB TBOX_RENDER_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/render/*.c)
-set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XPATH_SOURCES} ${TBOX_CSS_PARSER_SOURCES} ${TBOX_CSS_SELECTOR_SOURCES} ${TBOX_CSS_CASCADE_SOURCES} ${TBOX_STYLE_SOURCES} ${TBOX_FONT_SOURCES} ${TBOX_LAYOUT_SOURCES} ${TBOX_RENDER_SOURCES})
+file(GLOB TBOX_OUTPUT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/output/*.c)
+set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XPATH_SOURCES} ${TBOX_CSS_PARSER_SOURCES} ${TBOX_CSS_SELECTOR_SOURCES} ${TBOX_CSS_CASCADE_SOURCES} ${TBOX_STYLE_SOURCES} ${TBOX_FONT_SOURCES} ${TBOX_LAYOUT_SOURCES} ${TBOX_RENDER_SOURCES} ${TBOX_OUTPUT_SOURCES})
 
 # tbox_css_hsla_to_rgba (css_cascade/tbox_css_color_convert.c) uses fmod(),
 # which pre-C99-merge glibc and some other libcs ship in a separate math
@@ -46,6 +47,19 @@ if(NOT TBOX_FONTCONFIG_FOUND)
     )
 endif()
 
+# tbox_backend_wayland.c (Output Display's real Wayland backend) needs
+# wayland-client/xkbcommon plus the generated xdg-shell protocol glue --
+# TBOX_WAYLAND_FOUND and the associated variables/targets are detected once
+# in the root CMakeLists.txt (before add_subdirectory(src) runs), same
+# reasoning as TBOX_FONTCONFIG_FOUND above: this can't fail configure when
+# absent, since the test suite (tbox_raster_* only, no Wayland) must keep
+# building without these system packages installed.
+if(NOT TBOX_WAYLAND_FOUND)
+    list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/output/tbox_backend_wayland.c)
+else()
+    list(APPEND TBOX_SOURCES ${TBOX_XDG_SHELL_PROTOCOL_C})
+endif()
+
 option(TBOX_BUILD_STATIC "Build the static tbox library (libtbox.a)" ON)
 option(TBOX_BUILD_SHARED "Build the shared tbox library (libtbox.so)" ON)
 
@@ -66,6 +80,22 @@ if(TBOX_BUILD_STATIC)
         target_link_directories(tbox_static PRIVATE ${FONTCONFIG_LIBRARY_DIRS})
         target_link_libraries(tbox_static PRIVATE ${FONTCONFIG_LIBRARIES})
     endif()
+    if(TBOX_WAYLAND_FOUND)
+        add_dependencies(tbox_static tbox_wayland_xdg_shell_protocol)
+        target_include_directories(tbox_static PRIVATE
+            "${TBOX_XDG_SHELL_PROTOCOL_DIR}"
+            ${WAYLAND_CLIENT_INCLUDE_DIRS}
+            ${XKBCOMMON_INCLUDE_DIRS}
+        )
+        target_link_directories(tbox_static PRIVATE
+            ${WAYLAND_CLIENT_LIBRARY_DIRS}
+            ${XKBCOMMON_LIBRARY_DIRS}
+        )
+        target_link_libraries(tbox_static PRIVATE
+            ${WAYLAND_CLIENT_LIBRARIES}
+            ${XKBCOMMON_LIBRARIES}
+        )
+    endif()
     set_target_properties(tbox_static PROPERTIES OUTPUT_NAME tbox)
 endif()
 
@@ -81,6 +111,22 @@ if(TBOX_BUILD_SHARED)
         target_include_directories(tbox_shared PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
         target_link_directories(tbox_shared PRIVATE ${FONTCONFIG_LIBRARY_DIRS})
         target_link_libraries(tbox_shared PRIVATE ${FONTCONFIG_LIBRARIES})
+    endif()
+    if(TBOX_WAYLAND_FOUND)
+        add_dependencies(tbox_shared tbox_wayland_xdg_shell_protocol)
+        target_include_directories(tbox_shared PRIVATE
+            "${TBOX_XDG_SHELL_PROTOCOL_DIR}"
+            ${WAYLAND_CLIENT_INCLUDE_DIRS}
+            ${XKBCOMMON_INCLUDE_DIRS}
+        )
+        target_link_directories(tbox_shared PRIVATE
+            ${WAYLAND_CLIENT_LIBRARY_DIRS}
+            ${XKBCOMMON_LIBRARY_DIRS}
+        )
+        target_link_libraries(tbox_shared PRIVATE
+            ${WAYLAND_CLIENT_LIBRARIES}
+            ${XKBCOMMON_LIBRARIES}
+        )
     endif()
     set_target_properties(tbox_shared PROPERTIES OUTPUT_NAME tbox)
 endif()

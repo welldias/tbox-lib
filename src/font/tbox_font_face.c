@@ -78,6 +78,18 @@ double tbox_font_face_line_height(const tbox_font_face *face) {
     return face->ft_face->size->metrics.height / 64.0;
 }
 
+double tbox_font_face_ascent(const tbox_font_face *face) {
+    if (face == NULL) {
+        return 0.0;
+    }
+
+    /* face->size->metrics.ascender is the distance from the baseline up to
+     * the top of the line box, already scaled to the active pixel size, in
+     * 26.6 fixed-point -- same conversion as tbox_font_face_line_height
+     * above. */
+    return face->ft_face->size->metrics.ascender / 64.0;
+}
+
 double tbox_font_measure_text(const tbox_font_face *face, tbox_string_view text) {
     if (face == NULL || text.size == 0) {
         return 0.0;
