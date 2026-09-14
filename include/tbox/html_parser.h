@@ -10,6 +10,12 @@
 extern "C" {
 #endif
 
+/* Opaque here: tbox_html_node_text_content only needs a pointer to it. Full
+ * definition lives in Base (src/base/tbox_arena.h); the region-based
+ * allocator every tbox structure is built on (see ownership convention in
+ * ARCHITECTURE.md's "Convenções"). */
+typedef struct tbox_arena tbox_arena;
+
 typedef enum tbox_html_node_type {
     TBOX_HTML_NODE_DOCUMENT,
     TBOX_HTML_NODE_ELEMENT,
@@ -82,6 +88,22 @@ void tbox_html_node_append_child(tbox_html_node *parent, tbox_html_node *child);
  * Safe to call on a node with no parent (the document root, or an already
  * detached node): a no-op. */
 void tbox_html_node_remove(tbox_html_node *node);
+
+/* Equivalent to DOM's `textContent`: walks `node`'s descendants in document
+ * order and concatenates the text of every TEXT node found, ignoring the
+ * nested element structure entirely (ELEMENT nodes are recursed into but
+ * contribute no text of their own; COMMENT and DOCTYPE nodes, and their
+ * subtrees, are skipped). E.g. `<p>oi <b>mundo</b></p>` yields "oi mundo".
+ * If `node` itself is a TEXT node, its own text is returned as-is (no
+ * descendants to walk); if it's a COMMENT or DOCTYPE, the result is empty,
+ * matching how those types are skipped everywhere else in this function.
+ * The typical caller passes an ELEMENT (e.g. a `<p>` or `<h1>`).
+ *
+ * The result is built with a tbox_string_builder backed by `arena`, which
+ * need not be (and typically isn't) the same arena that owns `node`'s
+ * document -- the returned view stays valid for as long as `arena` does,
+ * independent of the source document's lifetime. */
+tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_node *node);
 
 #ifdef __cplusplus
 }

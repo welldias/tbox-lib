@@ -73,3 +73,36 @@ void tbox_html_node_remove(tbox_html_node *node) {
     node->prev_sibling = NULL;
     node->next_sibling = NULL;
 }
+
+/* Appends the text of every TEXT descendant of `node` (not `node` itself) to
+ * `builder`, in document order, recursing through ELEMENT children and
+ * skipping COMMENT/DOCTYPE children (and their subtrees) entirely. */
+static void tbox_html_node_append_descendant_text(const tbox_html_node *node, tbox_string_builder *builder) {
+    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+        switch (child->type) {
+        case TBOX_HTML_NODE_TEXT:
+            tbox_string_builder_append_view(builder, child->text.text);
+            break;
+        case TBOX_HTML_NODE_ELEMENT:
+            tbox_html_node_append_descendant_text(child, builder);
+            break;
+        case TBOX_HTML_NODE_DOCUMENT:
+        case TBOX_HTML_NODE_COMMENT:
+        case TBOX_HTML_NODE_DOCTYPE:
+            break;
+        }
+    }
+}
+
+tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_node *node) {
+    tbox_string_builder builder;
+    tbox_string_builder_init(&builder, arena, 0);
+
+    if (node->type == TBOX_HTML_NODE_TEXT) {
+        tbox_string_builder_append_view(&builder, node->text.text);
+    } else {
+        tbox_html_node_append_descendant_text(node, &builder);
+    }
+
+    return tbox_string_builder_finish(&builder);
+}

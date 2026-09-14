@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "base/tbox_arena.h"
 #include "test_support.h"
 
 static bool text_eq(tbox_string_view view, const char *expected) {
@@ -270,6 +271,82 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(p->parent == div2);
         TBOX_TEST_ASSERT(div2->first_child == p);
         tbox_html_document_destroy(doc);
+    }
+
+    /* 19: text_content on a simple element with direct text. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>Hello</p>");
+        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view content = tbox_html_node_text_content(&arena, p);
+        TBOX_TEST_ASSERT(text_eq(content, "Hello"));
+        tbox_arena_destroy(&arena);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 20: text_content concatenates across a nested element in the middle,
+     * dropping the element structure -- the ARCHITECTURE.md example. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>oi <b>mundo</b></p>");
+        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view content = tbox_html_node_text_content(&arena, p);
+        TBOX_TEST_ASSERT(text_eq(content, "oi mundo"));
+        tbox_arena_destroy(&arena);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 21: text_content walks multiple levels of nesting. */
+    {
+        tbox_html_document *doc = parse_cstr("<div>a<span>b<em>c</em>d</span>e</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view content = tbox_html_node_text_content(&arena, div);
+        TBOX_TEST_ASSERT(text_eq(content, "abcde"));
+        tbox_arena_destroy(&arena);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 22: text_content on a node with no text descendants returns an empty
+     * view. */
+    {
+        tbox_html_document *doc = parse_cstr("<div><span></span></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view content = tbox_html_node_text_content(&arena, div);
+        TBOX_TEST_ASSERT(content.size == 0);
+        tbox_arena_destroy(&arena);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 23: a comment in the middle of the content is skipped, its text never
+     * contributes. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>oi <!--nope--> mundo</p>");
+        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view content = tbox_html_node_text_content(&arena, p);
+        TBOX_TEST_ASSERT(text_eq(content, "oi  mundo"));
+        tbox_arena_destroy(&arena);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 24: result stays valid independent of the source document's own
+     * arena -- built entirely from the caller-supplied arena. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>oi <b>mundo</b></p>");
+        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_string_view content = tbox_html_node_text_content(&arena, p);
+        tbox_html_document_destroy(doc);
+        TBOX_TEST_ASSERT(text_eq(content, "oi mundo"));
+        tbox_arena_destroy(&arena);
     }
 
     return failures;
