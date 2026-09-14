@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include <tbox/context.h>
 #include <tbox/css_cascade.h>
 #include <tbox/css_parser.h>
 #include <tbox/css_selector.h>

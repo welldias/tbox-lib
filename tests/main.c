@@ -28,6 +28,7 @@ int tbox_test_font_run(void);
 int tbox_test_layout_run(void);
 int tbox_test_render_run(void);
 int tbox_test_output_raster_run(void);
+int tbox_test_context_run(void);
 
 static const tbox_test_group tbox_test_groups[] = {
     { "arena",                     tbox_test_arena_run                     },
@@ -50,6 +51,7 @@ static const tbox_test_group tbox_test_groups[] = {
     { "layout",                    tbox_test_layout_run                    },
     { "render",                    tbox_test_render_run                    },
     { "output_raster",             tbox_test_output_raster_run             },
+    { "context",                   tbox_test_context_run                   },
 };
 
 int main(int argc, char **argv) {
