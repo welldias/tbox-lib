@@ -104,6 +104,15 @@ void tbox_font_face_destroy(tbox_font_face *face);
  * height. */
 double tbox_font_face_line_height(const tbox_font_face *face);
 
+/* The distance from the top of a text line box down to its baseline
+ * (FreeType's face->size->metrics.ascender, scaled to the active pixel size
+ * and converted out of 26.6 fixed-point, same as tbox_font_face_line_height
+ * above) -- what Output Display needs to turn a TEXT_RUN paint op's origin
+ * (the content box's top-left corner) into a baseline `pen_y` before placing
+ * each glyph via its bearing_y (see tbox_font_glyph_bitmap below, which is
+ * baseline-relative, not line-top-relative). */
+double tbox_font_face_ascent(const tbox_font_face *face);
+
 /* v0: the sum of each codepoint's advance width, decoded from `text` as
  * UTF-8, with no kerning and no shaping (no ligatures, no bidi/complex
  * reordering) -- enough for simple single-line Latin text. Real shaping
