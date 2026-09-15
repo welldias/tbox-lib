@@ -10,7 +10,8 @@ file(GLOB TBOX_LAYOUT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/layo
 file(GLOB TBOX_RENDER_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/render/*.c)
 file(GLOB TBOX_OUTPUT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/output/*.c)
 file(GLOB TBOX_CONTEXT_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/context/*.c)
-set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XPATH_SOURCES} ${TBOX_CSS_PARSER_SOURCES} ${TBOX_CSS_SELECTOR_SOURCES} ${TBOX_CSS_CASCADE_SOURCES} ${TBOX_STYLE_SOURCES} ${TBOX_FONT_SOURCES} ${TBOX_LAYOUT_SOURCES} ${TBOX_RENDER_SOURCES} ${TBOX_OUTPUT_SOURCES} ${TBOX_CONTEXT_SOURCES})
+file(GLOB TBOX_APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/app/*.c)
+set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XPATH_SOURCES} ${TBOX_CSS_PARSER_SOURCES} ${TBOX_CSS_SELECTOR_SOURCES} ${TBOX_CSS_CASCADE_SOURCES} ${TBOX_STYLE_SOURCES} ${TBOX_FONT_SOURCES} ${TBOX_LAYOUT_SOURCES} ${TBOX_RENDER_SOURCES} ${TBOX_OUTPUT_SOURCES} ${TBOX_CONTEXT_SOURCES} ${TBOX_APP_SOURCES})
 
 # tbox_css_hsla_to_rgba (css_cascade/tbox_css_color_convert.c) uses fmod(),
 # which pre-C99-merge glibc and some other libcs ship in a separate math
@@ -36,6 +37,19 @@ if(PkgConfig_FOUND)
     endif()
 endif()
 
+# example/CMakeLists.txt (a sibling add_subdirectory(), added after this one
+# by the root CMakeLists.txt) needs this too, to gate the tbox_app_demo
+# example the same way tbox_app.c is gated below -- directory-scoped `set()`
+# doesn't cross the src/ <-> example/ boundary on its own, so these have to
+# be pushed up to the scope both share (same reasoning as TBOX_WAYLAND_FOUND,
+# which is why that one is set in the root CMakeLists.txt directly instead).
+# The FONTCONFIG_* variables are only ever meaningful once TBOX_FONTCONFIG_FOUND
+# is true, but PARENT_SCOPE on an unset variable is harmless either way.
+set(TBOX_FONTCONFIG_FOUND ${TBOX_FONTCONFIG_FOUND} PARENT_SCOPE)
+set(FONTCONFIG_INCLUDE_DIRS ${FONTCONFIG_INCLUDE_DIRS} PARENT_SCOPE)
+set(FONTCONFIG_LIBRARY_DIRS ${FONTCONFIG_LIBRARY_DIRS} PARENT_SCOPE)
+set(FONTCONFIG_LIBRARIES ${FONTCONFIG_LIBRARIES} PARENT_SCOPE)
+
 if(NOT TBOX_FONTCONFIG_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_source_fontconfig.c)
     message(WARNING
@@ -59,6 +73,18 @@ if(NOT TBOX_WAYLAND_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/output/tbox_backend_wayland.c)
 else()
     list(APPEND TBOX_SOURCES ${TBOX_XDG_SHELL_PROTOCOL_C})
+endif()
+
+# tbox_app.c (Application layer, tbox_app_open) hard-depends on BOTH a real
+# window backend and real font discovery -- it makes no sense to open a
+# window with no way to find a font, or to resolve a font with no window to
+# show it in -- so, unlike every other module here, it is gated on the
+# combination of TBOX_WAYLAND_FOUND and TBOX_FONTCONFIG_FOUND rather than
+# either alone. Same graceful-skip philosophy: missing either just excludes
+# this one file, libtbox (and its test suite, which never exercises
+# tbox_app_open -- see tests/CMakeLists.txt) still builds fine without it.
+if(NOT TBOX_WAYLAND_FOUND OR NOT TBOX_FONTCONFIG_FOUND)
+    list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/app/tbox_app.c)
 endif()
 
 option(TBOX_BUILD_STATIC "Build the static tbox library (libtbox.a)" ON)
