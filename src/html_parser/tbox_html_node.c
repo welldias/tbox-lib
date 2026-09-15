@@ -1,5 +1,6 @@
 #include "tbox_html_node.h"
 
+#include "base/tbox_string.h"
 #include "tbox_html_document.h"
 
 static const char *const tbox_html_void_elements[] = {
@@ -105,4 +106,64 @@ tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_
     }
 
     return tbox_string_builder_finish(&builder);
+}
+
+static tbox_string_view tbox_html_node_copy_string(tbox_arena *arena, tbox_string_view view) {
+    tbox_string_builder builder;
+    tbox_string_builder_init(&builder, arena, view.size);
+    tbox_string_builder_append_view(&builder, view);
+    return tbox_string_builder_finish(&builder);
+}
+
+/* Attribute names are always ASCII-lowercase, same invariant the parser
+ * maintains for every attribute it produces (see tbox_html_attribute's
+ * doc comment in html_parser.h) -- so an attribute added via
+ * tbox_html_node_set_attribute is indistinguishable from one that came out
+ * of the parser. */
+static tbox_string_view tbox_html_node_copy_string_lower(tbox_arena *arena, tbox_string_view view) {
+    tbox_string_builder builder;
+    tbox_string_builder_init(&builder, arena, view.size);
+    tbox_string_builder_append_view_lower_ascii(&builder, view);
+    return tbox_string_builder_finish(&builder);
+}
+
+void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, tbox_string_view value) {
+    if (node->type != TBOX_HTML_NODE_ELEMENT) {
+        return;
+    }
+
+    for (size_t i = 0; i < node->element.attribute_count; i++) {
+        tbox_html_attribute *existing = &node->element.attributes[i];
+        if (tbox_string_view_equal_ascii_ci(existing->name, name)) {
+            existing->value = tbox_html_node_copy_string(&document->arena, value);
+            return;
+        }
+    }
+
+    size_t new_count                = node->element.attribute_count + 1;
+    tbox_html_attribute *attributes = tbox_arena_alloc(&document->arena, new_count * sizeof(tbox_html_attribute));
+    for (size_t i = 0; i < node->element.attribute_count; i++) {
+        attributes[i] = node->element.attributes[i];
+    }
+
+    tbox_html_attribute *added = &attributes[node->element.attribute_count];
+    added->name                = tbox_html_node_copy_string_lower(&document->arena, name);
+    added->value               = tbox_html_node_copy_string(&document->arena, value);
+
+    node->element.attributes      = attributes;
+    node->element.attribute_count = new_count;
+}
+
+const tbox_html_attribute *tbox_html_node_get_attribute(const tbox_html_node *node, tbox_string_view name) {
+    if (node->type != TBOX_HTML_NODE_ELEMENT) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < node->element.attribute_count; i++) {
+        const tbox_html_attribute *attribute = &node->element.attributes[i];
+        if (tbox_string_view_equal_ascii_ci(attribute->name, name)) {
+            return attribute;
+        }
+    }
+    return NULL;
 }

@@ -111,6 +111,20 @@ bool tbox_backend_wayland_should_close(const tbox_backend_wayland *backend);
  * writes 0/0. */
 void tbox_backend_wayland_size(const tbox_backend_wayland *backend, int32_t *out_width, int32_t *out_height);
 
+/* Binds wl_pointer (a wl_seat capability, alongside the keyboard already
+ * handled for ESC in tbox_backend_wayland_open) and tracks enter/leave (which
+ * surface has pointer focus), motion (current surface-local position), and
+ * button. Consumes a pending click of the primary (left) mouse button --
+ * a PRESS event, not RELEASE, with no drag/double-click tracking (see
+ * "Fora de escopo" in ARCHITECTURE.md) -- that occurred since the last call
+ * to this function, if any: writes its position to out_x/out_y (surface-
+ * local coordinates, already in the system tbox_context_dispatch_click
+ * expects) and returns true, clearing the pending state so a second call in
+ * a row returns false until another press arrives. NULL `backend`, NULL
+ * `out_x`, or NULL `out_y` returns false without writing anything, even if a
+ * click was pending. */
+bool tbox_backend_wayland_take_click(tbox_backend_wayland *backend, double *out_x, double *out_y);
+
 /* Rasterizes `list` (via tbox_raster_display_list, NULL treated as empty)
  * into this frame's wl_shm buffer -- reallocating it first if the window's
  * size changed since the last call -- clearing to opaque white first (v0

@@ -1,27 +1,26 @@
-# tbox — Tarefas do v0
+# tbox — Tarefas da v1
 
-Quebra do `ARCHITECTURE.md` em tarefas executáveis por agentes sem
-contexto desta conversa. Cada tarefa abaixo é auto-contida: aponta pra
-seção exata do `ARCHITECTURE.md` (a fonte da verdade de *o quê* construir)
-e acrescenta só o que esse documento não cobre — caminho de arquivo, como
-registrar teste, como verificar que ficou pronto.
+Quebra da seção "v1 — Interatividade" do `ARCHITECTURE.md` em tarefas
+executáveis por agentes sem contexto desta conversa. Cada tarefa abaixo é
+auto-contida: aponta para a subseção exata do `ARCHITECTURE.md` (a fonte
+da verdade de *o quê* construir) e acrescenta só o que esse documento não
+cobre — caminho de arquivo, como registrar teste, como verificar que ficou
+pronto.
+
+(Este arquivo substitui a quebra de tarefas do v0, que está completo — ver
+`ARCHITECTURE.md` para o design de cada camada v0 e `git log -- TASKS.md`
+para recuperar a quebra de tarefas original, se precisar consultá-la.)
 
 ## Convenção entre tarefas (leia antes de despachar qualquer uma)
 
 **Cada tarefa só edita arquivos dentro do seu próprio diretório de
 módulo** (`src/<módulo>/`, `include/tbox/<módulo>.h`, `tests/<módulo>/`)
-mais os arquivos novos que ela mesma cria. Nenhuma tarefa deve editar os
-arquivos compartilhados abaixo — isso evita conflito de merge entre
-tarefas paralelas do mesmo tier:
-- `include/tbox/tbox.h` (agrega todos os headers públicos)
-- `src/CMakeLists.txt` (glob de diretórios de módulo)
-- `tests/CMakeLists.txt` (lista de grupos de teste)
-- `tests/main.c` (registro de grupos de teste)
-
-Depois que as tarefas de um tier terminam, um passo de **integração**
-(feito à parte, não por uma tarefa) adiciona as poucas linhas necessárias
-nesses 4 arquivos. Exceção: a Tarefa 1 (build system) *é* sobre esses
-arquivos compartilhados — como é a única do seu tier, não tem conflito.
+mais os arquivos novos que ela mesma cria. Diferente do v0: **nenhuma
+tarefa da v1 cria módulo novo nem grupo de teste novo** — todas estendem
+módulos/grupos já existentes (`html_parser`, `context`, `output`, `app`) —
+então **não há passo de integração** de `include/tbox/tbox.h`/
+`src/CMakeLists.txt`/`tests/CMakeLists.txt`/`tests/main.c` desta vez; esses
+4 arquivos não devem ser tocados por nenhuma tarefa abaixo.
 
 Toda tarefa que roda `cmake`/`ctest` assume o padrão já usado no
 `CMakeLists.txt` raiz: `cmake -S . -B build && cmake --build build`, depois
@@ -31,413 +30,196 @@ builda hoje — nenhuma tarefa deve silenciar warning, deve corrigi-lo).
 
 ---
 
-## Tier 0 — paralelo, sem dependência de camada nova
+## Tier 0 — paralelo, sem dependência de tarefa nova
 
-### Tarefa 1 — Build system: FreeType core, Fontconfig opcional, vendorizar fonte
-**Depende de:** nada. **Bloqueia:** Tarefa 5 (Fonte/Texto), Tarefa 9 (Output Display).
+### Tarefa 1 — HTML Parser: mutação de atributo
+**Depende de:** nada. **Bloqueia:** Tarefa 5 (fatia vertical v1).
 
-**Leia primeiro:** `ARCHITECTURE.md`, seção "Build system (v0)" (as 4
-decisões completas) e o `CMakeLists.txt`/`example/CMakeLists.txt` atuais
-(padrão de `FetchContent` do FreeType e de detecção opcional do Wayland
-via `pkg_check_modules(... QUIET ...)`, já implementados lá — é o modelo a
-replicar).
-
-**Trabalho:**
-1. Mover o bloco `FetchContent_Declare(freetype ...)` +
-   `FetchContent_MakeAvailable(freetype)` de `example/CMakeLists.txt` para
-   o `CMakeLists.txt` raiz (antes de `add_subdirectory(src)`), e linkar
-   `freetype` em `tbox_static`/`tbox_shared` dentro de `src/CMakeLists.txt`
-   (`target_link_libraries`). Remover a declaração duplicada de
-   `example/CMakeLists.txt`, que passa a só linkar o alvo `freetype` já
-   disponível.
-2. Em `src/CMakeLists.txt`, detectar Fontconfig via
-   `pkg_check_modules(FONTCONFIG QUIET fontconfig)` (mesmo padrão de
-   `WAYLAND_CLIENT` em `example/CMakeLists.txt`). Guardar o resultado numa
-   variável (ex.: `TBOX_FONTCONFIG_FOUND`) que a Tarefa 5 vai usar para
-   incluir ou não `tbox_font_source_fontconfig.c` no glob de fontes — como
-   esse arquivo ainda não existe, essa tarefa só prepara a variável e
-   imprime `message(WARNING ...)` se não encontrado; não precisa gatear
-   nada ainda (nenhum arquivo pra gatear).
-3. Criar `external/liberation-sans/` com `LiberationSans-Regular.ttf`
-   (SIL Open Font License) + `LICENSE` (texto da OFL) + `README.md`
-   (origem/versão — mesmo padrão de `external/utf8.h/README.md`). Se o
-   ambiente não tiver acesso à internet para baixar o `.ttf`, extrair de
-   um pacote `liberation-fonts`/`liberation-fonts-fonts` já instalado no
-   sistema (comum em distros Linux) — path típico
-   `/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf` ou
-   similar; ajustar conforme a distro.
-
-**Critério de pronto:** `cmake -S . -B build && cmake --build build`
-continua verde (biblioteca + exemplos existentes, incluindo `tbox_wayland`,
-buildam sem mudança de comportamento) e `external/liberation-sans/`
-existe com os 3 arquivos.
-
----
-
-### Tarefa 2 — Base: `tbox_string_collapse_whitespace`
-**Depende de:** nada. **Bloqueia:** Tarefa 6 (Layout Tree).
-
-**Leia primeiro:** `ARCHITECTURE.md`, trecho sobre `tbox_string_collapse_whitespace`
-na seção Layout Tree (assinatura e comportamento exatos: colapsa
-sequências de espaço/tab/quebra-de-linha em um único `' '`, apara bordas —
-`white-space: normal`). `src/base/tbox_string.h`/`.c` (arquivos a editar,
-já existem) para o padrão de `tbox_string_builder` (`append_byte`,
-`append_view`, `finish`) que essa função deve usar internamente.
-
-**Arquivos a editar (existentes, não criar diretório novo):**
-- `src/base/tbox_string.h` — adicionar a declaração
-- `src/base/tbox_string.c` — implementar
-- `tests/base/test_string.c` — adicionar casos de teste (arquivo já
-  existe, grupo de teste `string` já registrado — **não precisa tocar em
-  `tests/main.c` nem `tests/CMakeLists.txt`**)
-
-**Casos de teste mínimos:** string sem espaço extra (idempotente); espaços
-múltiplos no meio colapsam pra um; tabs/quebras de linha tratados como
-espaço; espaço só nas bordas é removido; string vazia; string só com
-espaço vira vazia.
-
-**Critério de pronto:** `ctest --test-dir build -R '^string$'` verde.
-
----
-
-### Tarefa 3 — HTML Parser: `tbox_html_node_text_content`
-**Depende de:** nada. **Bloqueia:** Tarefa 6 (Layout Tree).
-
-**Leia primeiro:** `ARCHITECTURE.md`, trecho sobre `tbox_html_node_text_content`
-no resumo do topo e na seção Layout Tree (equivalente a `textContent` do
-DOM: concatena todo nó TEXT descendente em ordem de documento, ignora
-estrutura de elementos aninhados — `<p>oi <b>mundo</b></p>` vira
-`"oi mundo"`). `include/tbox/html_parser.h` e `src/html_parser/tbox_html_node.c`
-(onde as outras funções de `tbox_html_node` já vivem — é o lugar certo pra
-essa também).
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v1 — Interatividade" →
+"HTML Parser — mutação de atributo" (assinaturas e comportamento exatos de
+`tbox_html_node_set_attribute`/`tbox_html_node_get_attribute`, incluindo a
+nota de que o array de atributos antigo fica órfão na arena ao crescer).
+`include/tbox/html_parser.h` e `src/html_parser/tbox_html_node.c` (onde
+`tbox_html_node_create`/`_append_child`/`_remove`/`_text_content` já
+vivem — é o lugar certo para as duas funções novas também).
+`src/html_parser/tbox_html_document.h` (definição interna de
+`tbox_html_document`, para acessar `document->arena` do mesmo jeito que
+`tbox_html_node_create` já faz).
 
 **Arquivos a editar:**
-- `include/tbox/html_parser.h` — adicionar a declaração pública:
-  `tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_node *node);`
-- `src/html_parser/tbox_html_node.c` — implementar (percorrer
-  `first_child`/`next_sibling` recursivamente; para nó TEXT, acumular
-  `text.text`; para nó ELEMENT, recursar nos filhos; COMMENT/DOCTYPE
-  ignorados; construir o resultado com `tbox_string_builder`, arena vinda
-  do parâmetro — não necessariamente a mesma arena do documento)
+- `include/tbox/html_parser.h` — adicionar as duas declarações
+- `src/html_parser/tbox_html_node.c` — implementar
 - `tests/html_parser/test_tree.c` — adicionar casos de teste (arquivo já
-  existe, grupo `html_parser_tree` já registrado — **não precisa tocar em
+  existe, grupo `html_parser_tree` já registrado — **não editar
   `tests/main.c` nem `tests/CMakeLists.txt`**)
 
-**Casos de teste mínimos:** texto direto simples; texto com elemento
-aninhado no meio (`"oi <b>mundo</b>"` → `"oi mundo"`); múltiplos níveis de
-aninhamento; nó sem filhos de texto (retorna vazio); comentário no meio é
-ignorado.
+**Casos de teste mínimos:** `set_attribute` num nó sem atributos cria o
+primeiro; `set_attribute` com `name` já existente substitui o `value` (não
+duplica entrada); `set_attribute` várias vezes com nomes diferentes
+acumula todos; `get_attribute` acha o atributo certo (comparação
+case-insensitive de `name`) e retorna `NULL` para nome ausente ou nó não-
+ELEMENT; um atributo definido via `set_attribute` aparece em
+`node->element.attributes`/`attribute_count` do jeito que qualquer
+atributo parseado apareceria (sem tratamento especial em nenhum outro
+lugar do código).
 
 **Critério de pronto:** `ctest --test-dir build -R '^html_parser_tree$'`
 verde.
 
 ---
 
-## Tier 1 — paralelo, só depende de camadas já implementadas
+### Tarefa 2 — Output Display: evento de ponteiro (Wayland)
+**Depende de:** nada (backend Wayland já existe, esta tarefa só o
+estende). **Bloqueia:** Tarefa 4 (Application).
 
-### Tarefa 4 — Style layer
-**Depende de:** nada (usa só HTML Parser/CSS Parser/CSS Cascade, já
-implementados). **Bloqueia:** Tarefa 6 (Layout Tree).
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v1 — Interatividade" →
+"Output Display (Wayland backend) — evento de ponteiro" (assinatura e
+comportamento exato de `tbox_backend_wayland_take_click` — PRESS, não
+RELEASE, sem drag/duplo-clique). `src/output/tbox_backend_wayland.c`
+(estado/listeners já existentes para `wl_seat`/teclado — é o padrão a
+replicar para `wl_pointer`; o registry/bind de globals fica no mesmo lugar
+onde `wl_compositor`/`wl_shm`/`xdg_wm_base`/`wl_seat` já são bindados).
 
-**Leia primeiro:** `ARCHITECTURE.md`, seção "Style (novo)" inteira —
-tipos (`tbox_style_length`, `tbox_style_display`, `tbox_style`,
-`tbox_style_entry`, `tbox_style_table`), as duas funções
-(`tbox_style_resolve` por nó, `tbox_style_resolve_tree` por árvore +
-`tbox_style_table_find`), escopo mínimo de propriedades, decisão de
-shorthand, e o padrão de ownership de arena (nota em "Convenções" no topo
-do `ARCHITECTURE.md` e comentário ao lado de `tbox_style_resolve_tree`).
-`include/tbox/css_cascade.h` (`tbox_css_cascade_resolve_stylesheet`,
-`tbox_css_computed_style_find` — é o que `tbox_style_resolve` consome).
+**Arquivos a editar:**
+- `include/tbox/output.h` — adicionar a declaração de
+  `tbox_backend_wayland_take_click`
+- `src/output/tbox_backend_wayland.c` — implementar: listener de
+  `wl_pointer` (enter/leave para saber qual superfície, motion para
+  atualizar a posição corrente, button para marcar "há um clique
+  pendente" quando o botão principal é pressionado — `BTN_LEFT`/
+  `linux/input-event-codes.h`, mesma fonte que o teclado já deve usar para
+  keycodes), estado interno (posição do último clique pendente + flag),
+  consumido e limpo por `tbox_backend_wayland_take_click`.
 
-**Arquivos a criar:**
-- `include/tbox/style.h` — API pública, tipos + as 3 funções
-- `src/style/tbox_style.c` — implementação
-- `tests/style/test_style.c` — testes (grupo de teste novo `style`; ver
-  nota de integração no topo deste documento — **não editar
-  `tests/main.c` nem `tests/CMakeLists.txt`**, isso é passo de integração)
+**Sem teste automatizado** (mesmo motivo do resto do backend Wayland: não
+testável sem compositor — ver `tests/output/test_raster.c`, que testa só
+a metade pura/`tbox_raster_*`). Validação é smoke-test manual/via
+Tarefa 5.
 
-**Implementação de `tbox_style_resolve_tree`:** percorre a árvore
-top-down (pai antes do filho — herança depende disso), chamando
-`tbox_css_cascade_resolve_stylesheet(stylesheet, node)` seguido de
-`tbox_style_resolve(node, parent_style, &computed)` para cada nó ELEMENT
-(nós TEXT/COMMENT/DOCTYPE não têm style próprio, pular); acumula os pares
-`(node, style)` num `tbox_vector` arena-backed, expõe como
-`tbox_style_table.items`/`count` ao final. Destruir cada
-`tbox_css_computed_style` intermediário com `tbox_css_computed_style_destroy`
-assim que não precisar mais dele (não é a mesma vida útil do
-`tbox_style_table`).
-
-**Casos de teste mínimos:** propriedade explícita vence sobre valor
-inicial; `color` herda do pai quando não declarado, `background-color`
-não herda (fica no valor inicial mesmo com pai tendo um valor); shorthand
-`margin: 1px 2px` expande pros 4 lados corretos; `width`/`height` com
-`auto`, `px` e `%` resultam no `tbox_style_length_kind` certo;
-`tbox_style_table_find` acha o nó certo e retorna `NULL` pra nó ausente.
-
-**Critério de pronto:** build limpo + testes escritos passam localmente
-(rodar o binário de teste direto, já que o grupo ainda não está
-registrado em `tests/main.c` — isso é resolvido na integração).
+**Critério de pronto:** `cmake -S . -B build && cmake --build build`
+continua verde (com e sem Wayland disponível).
 
 ---
 
-### Tarefa 5 — Fonte/Texto layer
-**Depende de:** Tarefa 1 (build system: FreeType core + detecção de
-Fontconfig + `external/liberation-sans/` vendorizado). **Bloqueia:**
-Tarefa 6 (Layout Tree), Tarefa 9 (Output Display).
+### Tarefa 3 — Orchestration: delegação de clique por seletor
+**Depende de:** nada (usa só `tbox_css_selector_compile`/
+`_query_matches`, `tbox_context_hit_test`, e navegação `node->parent`, já
+existentes). **Bloqueia:** Tarefa 4 (Application).
 
-**Leia primeiro:** `ARCHITECTURE.md`, seção "Fonte / Texto (novo)"
-inteira — as três responsabilidades (font source, font face/métricas,
-rasterização de glifo), todos os tipos e assinaturas, decisão de
-`tbox_font_source_resolve` sempre devolver bytes (não path), escopo
-mínimo (16px, um único `tbox_font_face` pro documento inteiro, sem
-shaping/kerning).
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v1 — Interatividade" →
+"Orchestration (`tbox_context`) — delegação de evento por seletor" inteira
+— assinaturas de `tbox_context_on_click`/`_dispatch_click`/`_document`,
+a decisão de por que mora na Orchestration e não na Application, a regra
+de dispatch (sobe `node->parent` a partir do nó sob o hit-test, primeiro
+ancestral que casa com cada registro dispara, sem bubbling completo).
+`include/tbox/context.h` e `src/context/tbox_context.c` (onde
+`tbox_context_open`/`_close`/`_run_frame`/`_hit_test` já vivem).
+`include/tbox/css_selector.h` (`tbox_css_selector_compile`,
+`tbox_css_selector_query_matches`, `tbox_css_selector_query_destroy` — as
+funções a consumir).
 
-**Arquivos a criar:**
-- `include/tbox/font.h` — API pública completa
-- `src/font/tbox_font_source.c` — a interface `tbox_font_source`
-  genérica (o `resolve`/`destroy` despachado por function-pointer interno,
-  já que cada backend tem sua própria implementação)
-- `src/font/tbox_font_source_fontconfig.c` — backend Fontconfig (via
-  `FcFontMatch`/`FcPatternGetString`, lê o arquivo resolvido pra memória
-  antes de devolver). Só compilar se `TBOX_FONTCONFIG_FOUND` (variável da
-  Tarefa 1) — combinar com quem fizer a integração de `src/CMakeLists.txt`
-  se esse arquivo precisa ficar de fora do glob quando Fontconfig não
-  existe.
-- `src/font/tbox_font_source_embedded.c` — backend embutido (ignora
-  `query`, sempre devolve os bytes recebidos no construtor)
-- `src/font/tbox_font_face.c` — wrapper de `FT_Face`
-  (`tbox_font_face_load`/`_destroy`/`_line_height`/`tbox_font_measure_text`
-  via `FT_Set_Pixel_Sizes` + soma de advances, sem kerning/shaping) e
-  rasterização (`tbox_font_rasterize_glyph` via `FT_Render_Glyph`)
-- `tests/font/test_font.c` — testes (grupo novo `font`; não editar
-  `tests/main.c`/`tests/CMakeLists.txt`, passo de integração)
+**Arquivos a editar:**
+- `include/tbox/context.h` — adicionar `tbox_context_click_handler` (tipo
+  de função), `tbox_context_on_click`, `tbox_context_dispatch_click`,
+  `tbox_context_document`
+- `src/context/tbox_context.c` — implementar: `tbox_context` ganha um
+  vetor arena-backed (arena própria do `tbox_context`, **não** a
+  `frame_arena` — os registros de clique não podem ser invalidados por um
+  `tbox_context_run_frame`) de `{tbox_css_selector_query*, handler,
+  userdata}`; `tbox_context_dispatch_click` implementa a subida de
+  ancestrais + `tbox_css_selector_query_matches` por registro; lembrar de
+  destruir cada `tbox_css_selector_query` em `tbox_context_close`
 
-**Casos de teste mínimos (usar só o backend `embedded`, com os bytes de
-`external/liberation-sans/LiberationSans-Regular.ttf` lidos via um
-helper `read_file()` local ao teste, igual ao já existente em
-`example/css_cascade_origins.c`):** `tbox_font_face_load` com 16px não
-retorna `NULL`; `tbox_font_measure_text` de uma string vazia é 0;
-`tbox_font_measure_text` de duas strings onde uma é prefixo visual da
-outra dá larguras crescentes (não precisa comparar contra um valor
-hardcoded de pixel exato, só a relação); `tbox_font_face_line_height` >
-0; `tbox_font_rasterize_glyph` de um caractere ASCII comum devolve
-`width`/`height` > 0.
+**Testes:** em `tests/context/test_context.c` (grupo `context` já
+registrado — **não editar `tests/main.c` nem `tests/CMakeLists.txt`**):
+clique dentro da caixa de um elemento que casa com o seletor registrado
+dispara o handler exatamente uma vez, com o `node` certo; clique fora de
+qualquer caixa não dispara nada; dois elementos aninhados onde só o
+elemento externo casa com o seletor — clique no elemento interno ainda
+dispara o handler (bubbling até o ancestral que casa); dois handlers
+registrados com seletores diferentes, ambos aplicáveis ao mesmo nó, ambos
+disparam num único clique; seletor com erro de sintaxe em
+`tbox_context_on_click` retorna `false` e não registra nada;
+`tbox_context_dispatch_click` antes de qualquer `tbox_context_run_frame`
+retorna `false` sem crashar (mesma guarda de `tbox_context_hit_test`).
 
-**Critério de pronto:** build limpo (com e sem Fontconfig disponível, se
-possível testar os dois) + testes escritos passam localmente contra o
-backend embedded.
+**Critério de pronto:** `ctest --test-dir build -R '^context$'` verde.
 
 ---
 
-## Tier 2 — Layout Tree
+## Tier 1 — depende de Tier 0
 
-### Tarefa 6 — Layout Tree
-**Depende de:** Tarefa 2 (`tbox_string_collapse_whitespace`), Tarefa 3
-(`tbox_html_node_text_content`), Tarefa 4 (Style layer), Tarefa 5
-(Fonte/Texto layer) — as 4 precisam estar mergeadas (ou, se optarem pelo
-atalho de paralelismo por interface descrito na conversa, pelo menos os
-headers públicos delas precisam existir e estar congelados). **Bloqueia:**
-Tarefa 7 (Render Pipeline).
+### Tarefa 4 — Application: loop não-bloqueante
+**Depende de:** Tarefa 2 (`tbox_backend_wayland_take_click`), Tarefa 3
+(`tbox_context_on_click`/`_dispatch_click`) — mergeadas. **Bloqueia:**
+Tarefa 5 (fatia vertical v1).
 
-**Leia primeiro:** `ARCHITECTURE.md`, seção "Layout Tree (novo)" inteira
-— responsabilidade, tipos (`tbox_rect`, `tbox_layout_box`), assinatura de
-`tbox_layout_build` (com os 4 parâmetros: arena, root, styles, font, mais
-viewport width/height), a regra explícita da lista fixa de tags
-(`h1`..`h6`, `p`), a ordem de operações pro texto
-(`tbox_html_node_text_content` → `tbox_string_collapse_whitespace` →
-`tbox_font_measure_text`/`tbox_font_face_line_height`), e a clarificação
-de que largura da caixa segue a regra geral (do pai) enquanto o texto só
-pode transbordar visualmente. `include/tbox/style.h` e `include/tbox/font.h`
-(das tarefas 4 e 5) como as interfaces reais a consumir.
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v1 — Interatividade" →
+"Application (`tbox_app`) — loop não-bloqueante" inteira — tipos/
+assinaturas (`tbox_app_create`/`_context`/`_step`/`_should_close`/
+`_close`), a política de `tbox_app_step` (poll não-bloqueante, dispatch de
+clique, detecção de resize, recompute só se sujo), a decisão explícita de
+que `tbox_app_open` é removido (breaking change aceito). `include/tbox/app.h`
+e `src/app/tbox_app.c` atuais (implementação de `tbox_app_open` a partir
+da qual esta tarefa evolui — reaproveitar a lógica de abrir
+context+backend+fonte e a ordem de limpeza, só trocando o formato
+bloqueante por um handle stepável).
 
-**Arquivos a criar:**
-- `include/tbox/layout.h` — `tbox_rect`, `tbox_layout_box`,
-  `tbox_layout_build`
-- `src/layout/tbox_layout.c` — implementação: fluxo normal (block boxes
-  empilhadas verticalmente, largura do pai salvo `width` explícito,
-  altura `auto` = altura de linha da fonte pra caixa de texto ou 0 pra
-  caixa vazia — v0 não soma altura de múltiplos filhos de texto porque
-  cada elemento só tem uma caixa de texto, não uma lista); checagem da
-  lista fixa de tags pra decidir se um nó ganha caixa de texto
-- `tests/layout/test_layout.c` — testes (grupo novo `layout`; não editar
-  arquivos compartilhados)
+**Arquivos a editar:**
+- `include/tbox/app.h` — remover a declaração de `tbox_app_open`,
+  adicionar `tbox_app` (opaco) + as 5 funções novas
+- `src/app/tbox_app.c` — implementar
 
-**Casos de teste mínimos:** `<div style="width:200px;height:100px">` gera
-`tbox_layout_box` com `content_box` do tamanho certo; `<div>` sem `width`
-explícito herda a largura do viewport; duas `<div>` irmãs empilham
-verticalmente (segunda começa onde a primeira termina); `<h1>oi</h1>`
-gera caixa com `content_box.height` = `tbox_font_face_line_height`; `<p>oi
-mundo</p>` tem largura de caixa igual à do pai (não ao texto), mesmo que
-o texto seja mais curto; um `<span>texto</span>` (tag fora da lista fixa)
-gera caixa vazia sem texto associado.
+**Sem grupo de teste próprio** (Application não é unit-testada em v0
+tampouco — validação é smoke-test via exemplo, ver Tarefa 5).
 
-**Critério de pronto:** build limpo + testes passam localmente.
+**Critério de pronto:** `cmake -S . -B build && cmake --build build`
+continua verde (com e sem Wayland/Fontconfig disponíveis).
 
 ---
 
-## Tier 3 — Render Pipeline
+## Tier 2 — fatia vertical v1
 
-### Tarefa 7 — Render Pipeline
-**Depende de:** Tarefa 6 (Layout Tree) — ou, no atalho de paralelismo,
-só do header `include/tbox/layout.h` congelado. **Bloqueia:** Tarefa 8
-(Output Display).
+### Tarefa 5 — Fatia vertical v1 completa (exemplo + validação)
+**Depende de:** Tarefa 1 (mutação de atributo), Tarefa 4 (Application) —
+mergeadas.
 
-**Leia primeiro:** `ARCHITECTURE.md`, seção "Render Pipeline (novo)"
-inteira — tipos (`tbox_paint_op_kind`, `tbox_paint_op`,
-`tbox_display_list`), assinatura de `tbox_render_build_display_list`
-(arena do chamador, sem `_destroy`), escopo mínimo (`FILL_RECT` por
-`background-color` não-transparente em pré-ordem, `TEXT_RUN` por caixa de
-texto de heading/parágrafo).
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v1 — Interatividade" →
+"Fatia vertical v1 — critério de 'pronto'" inteira — o cenário exato
+(`<div class="box off">` com CSS diferenciando `.off`/`.on`, handler
+registrado por seletor que chama `tbox_html_node_set_attribute` para
+trocar a classe, clique muda a cor sem fechar a janela).
 
-**Arquivos a criar:**
-- `include/tbox/render.h` — `tbox_paint_op_kind`, `tbox_paint_op`,
-  `tbox_display_list`, `tbox_render_build_display_list`
-- `src/render/tbox_render.c` — implementação: percorre `tbox_layout_box`
-  em pré-ordem, emite `FILL_RECT` quando `style->background_color.a != 0`,
-  emite `TEXT_RUN` quando a caixa tem texto associado (Tarefa 6 precisa
-  deixar isso consultável em `tbox_layout_box` — combinar exposição do
-  texto/da face na struct se a Tarefa 6 ainda não tiver decidido onde
-  guardar isso)
-- `tests/render/test_render.c` — testes (grupo novo `render`)
-
-**Casos de teste mínimos:** caixa com `background_color` transparente não
-gera `FILL_RECT`; caixa com cor opaca gera exatamente um `FILL_RECT` do
-tamanho/posição certos; ordem dos paint ops segue pré-ordem da árvore;
-caixa de texto gera um `TEXT_RUN` com o texto certo.
-
-**Critério de pronto:** build limpo + testes passam localmente.
-
----
-
-## Tier 4 — Output Display
-
-### Tarefa 8 — Output Display
-**Depende de:** Tarefa 7 (Render Pipeline), Tarefa 5 (Fonte/Texto), Tarefa
-1 (build system — FreeType já resolvido; a parte de detecção Wayland
-também precisa migrar de `example/CMakeLists.txt` pra `src/CMakeLists.txt`
-nesta tarefa, já que é aqui que o backend real passa a existir em `src/`).
-
-**Leia primeiro:** `ARCHITECTURE.md`, seção "Output Display (novo)"
-inteira — a sub-divisão em `tbox_raster_*` (puro, testável sem janela) e
-`tbox_backend_wayland_*` (stateful, não testado por unidade), escopo
-mínimo (`tbox_raster_fill_rect`/`tbox_raster_text_run`). O código-fonte
-de `example/tbox_wayland.c` como base a evoluir (reaproveitar `wl_shm` +
-event loop, generalizar `draw_and_attach` para consumir uma
-`tbox_display_list` em vez do checkerboard hardcoded).
-
-**Arquivos a criar:**
-- `include/tbox/output.h` — `tbox_raster_fill_rect`,
-  `tbox_raster_text_run` (parte pública/testável), mais o que for preciso
-  expor do backend Wayland pra Orchestration usar (provavelmente um
-  handle opaco `tbox_backend_wayland` com open/frame/poll/close — a
-  assinatura exata fica a critério de quem implementa, já que
-  `ARCHITECTURE.md` não a especifica em detalhe; documentar a decisão
-  tomada de volta no `ARCHITECTURE.md` se divergir do esperado)
-- `src/output/tbox_raster.c` — rasterizador software puro sobre
-  `uint32_t*` XRGB8888 (sem dependência de Wayland)
-- `src/output/tbox_backend_wayland.c` — motor do backend Wayland,
-  adaptado de `example/tbox_wayland.c`
-- `tests/output/test_raster.c` — testes só de `tbox_raster_*` (comparar
-  buffer de saída byte a byte contra um resultado esperado; não testa o
-  backend Wayland, que não é testável sem compositor)
-
-**Trabalho de CMake nesta tarefa:** mover a detecção condicional de
-`wayland-client`/`wayland-protocols`/`xkbcommon`/`wayland-scanner` (hoje
-em `example/CMakeLists.txt`) pra `src/CMakeLists.txt`, gating a
-compilação de `tbox_backend_wayland.c`; sem esses pacotes, `libtbox`
-ainda builda (só sem esse backend).
-
-**Casos de teste mínimos (só `tbox_raster_*`):** `FILL_RECT` pinta os
-pixels certos dentro do retângulo e não toca fora dele; dois `FILL_RECT`
-sobrepostos, o de ordem posterior vence (paint order); `TEXT_RUN` com um
-glifo simples pinta pixels não-transparentes onde o glifo tem cobertura
-(não precisa comparar bitmap exato, só que algo foi pintado na região
-esperada).
-
-**Critério de pronto:** build limpo (com e sem Wayland disponível) +
-testes de `tbox_raster_*` passam localmente.
-
----
-
-## Tier 5 — Orchestration
-
-### Tarefa 9 — Orchestration (`tbox_context`)
-**Depende de:** Tarefa 4 (Style), Tarefa 5 (Fonte/Texto), Tarefa 6
-(Layout), Tarefa 7 (Render), Tarefa 8 (Output Display) — todas
-mergeadas, esta é a primeira tarefa que de fato integra o pipeline
-inteiro ponta-a-ponta.
-
-**Leia primeiro:** `ARCHITECTURE.md`, seção "Orchestration / Main Loop
-(novo)" inteira — `tbox_context` (com `document`, `stylesheet`, `font`,
-`frame_arena`), `tbox_context_run_frame` (reset da `frame_arena` no
-início, chama Style → Layout → Render em sequência, escreve o resultado
-em `out_list`), a confirmação de que v0 não usa UA stylesheet nenhuma
-(só `TBOX_CSS_ORIGIN_AUTHOR`), e a responsabilidade de hit-testing (busca
-linear na árvore de layout).
-
-**Arquivos a criar:**
-- `include/tbox/context.h` — `tbox_context`, `tbox_context_run_frame`,
-  mais abertura/fechamento do contexto (`tbox_context_open`/`_close` — a
-  Application da Tarefa 10 usa isso; assinatura exata a decidir aqui já
-  que o doc não a especifica, deve receber html+css como
-  string/tamanho e devolver o `tbox_context` pronto, já com
-  `tbox_html_parse` + `tbox_font_face_load` feitos)
-- `src/context/tbox_context.c` — implementação
-
-**Testes:** dado que isso já integra o pipeline inteiro, um teste de
-integração é mais valioso que testes unitários isolados — em
-`tests/context/test_context.c`, montar um HTML+CSS pequeno (ex.: um
-`<div>` com cor de fundo) e verificar que `tbox_context_run_frame`
-produz uma `tbox_display_list` com o `FILL_RECT` esperado, ponta a ponta.
-
-**Critério de pronto:** build limpo + teste de integração passa
-localmente.
-
----
-
-## Tier 6 — Application
-
-### Tarefa 10 — Application (`tbox_app_open`) + fatia vertical completa
-**Depende de:** Tarefa 9 (Orchestration).
-
-**Leia primeiro:** `ARCHITECTURE.md`, seção "Application (novo)" e
-"Fatia vertical v0 — critério de 'pronto'" inteiras — escopo mínimo
-(`tbox_app_open(html, css, width, height)`, roda até fechar, sem API de
-mutação), e o critério final de aceite (janela real mostrando `<div>`
-com `width`/`height`/`background-color` do CSS de entrada + headings/
-parágrafos mostrando texto).
-
-**Arquivos a criar:**
-- `include/tbox/app.h` — `tbox_app_open`
-- `src/app/tbox_app.c` — implementação: abre `tbox_context` (Tarefa 9),
-  abre o backend Wayland (Tarefa 8), roda o loop chamando
-  `tbox_context_run_frame` a cada resize/evento relevante, rasteriza via
-  `tbox_raster_*` e apresenta o buffer, fecha tudo ao sair (ESC ou
-  fechamento pelo compositor — reaproveitar a lógica já existente em
-  `example/tbox_wayland.c`, incluindo o padrão `TBOX_WAYLAND_CLOSE_DELAY_MS`
-  pra smoke-test automatizado sem intervenção manual)
-
-**Validação final (não é teste unitário, é a demonstração do critério de
-"pronto" do v0):** um HTML/CSS de exemplo (pode reaproveitar/estender
-`example/index.html` + `example/style.css`, ou criar um novo par
-específico) com um `<div>` (`width`/`height`/`background-color`) e pelo
-menos um `<h1>` e um `<p>`, aberto via `tbox_app_open`, rodado com
-`TBOX_WAYLAND_CLOSE_DELAY_MS` num ambiente com compositor Wayland
-disponível (ex.: `Xvfb`/`weston --backend=headless` em CI, ou sessão
-gráfica local), confirmando que a janela abre e fecha sem erro. Anexar
-uma captura de tela ao relatório final da tarefa como evidência visual.
+**Trabalho:**
+1. Estender (ou criar par novo, a critério de quem implementa) o HTML/CSS
+   de exemplo (`example/index.html` + `example/style.css`, mesmo padrão
+   do v0) com um elemento clicável cujo `background-color` difere entre
+   duas classes.
+2. Atualizar `example/tbox_app.c` para o novo formato não-bloqueante:
+   `tbox_app_create` → `tbox_context_on_click` com um handler que troca a
+   classe via `tbox_html_node_set_attribute` (usando `tbox_context_document`
+   para ter a arena certa) → loop `while (!tbox_app_should_close(app))
+   tbox_app_step(app);` → `tbox_app_close`. Manter o padrão
+   `TBOX_WAYLAND_CLOSE_DELAY_MS` já usado no v0 para smoke-test
+   automatizado sem intervenção manual, mas agora **sem** exigir clique
+   manual para validar (ver item 3).
+3. Validação (não é teste unitário, é a demonstração do critério de
+   "pronto" da v1): rodar o exemplo num ambiente com compositor Wayland
+   disponível (`Xvfb`/`weston --backend=headless` em CI, ou sessão gráfica
+   local) confirmando que a janela abre, mostra a cor inicial (`.off`), e
+   — se o ambiente permitir simular um clique programático nas
+   coordenadas do elemento (ex. via uma ferramenta de automação do
+   compositor headless, ou um modo de teste que injete um clique sintético
+   direto em `tbox_context_dispatch_click` sem depender do compositor de
+   verdade) — a cor muda para `.on` antes de fechar. Se não houver como
+   simular o clique de forma automatizada no ambiente de CI disponível,
+   documentar isso explicitamente no relatório da tarefa e, no mínimo,
+   confirmar via teste de integração (reaproveitando a infraestrutura da
+   Tarefa 3) que `tbox_context_dispatch_click` + `tbox_html_node_set_attribute`
+   juntos produzem a `tbox_display_list` esperada após a mudança de
+   classe — cobrindo a mesma cadeia sem depender do compositor. Anexar uma
+   captura de tela ao relatório final como evidência visual sempre que a
+   validação com janela real for possível.
 
 **Critério de pronto:** build limpo + a validação acima roda sem erro —
-este é o "pronto" do v0 inteiro, não só desta tarefa.
-
----
-
-## Passo de integração (entre tiers, não uma tarefa própria)
-
-Depois que as tarefas de cada tier terminam: editar
-`include/tbox/tbox.h` (adicionar os novos `#include`), `src/CMakeLists.txt`
-(adicionar a linha de glob do novo diretório de módulo),
-`tests/CMakeLists.txt` (adicionar o novo nome de grupo ao `foreach`), e
-`tests/main.c` (declarar `int tbox_test_<módulo>_run(void);` e adicionar
-a entrada no array `tbox_test_groups`). Rodar `ctest --test-dir build`
-completo pra confirmar que nada quebrou entre módulos.
+este é o "pronto" da v1 inteira, não só desta tarefa.

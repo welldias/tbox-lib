@@ -1,9 +1,11 @@
 # tbox — Arquitetura
 
-Este documento descreve as camadas da tbox, da entrada (HTML/CSS) até a tela,
-e o design mínimo (v0) de cada camada ainda não implementada. É um documento
-vivo: cada camada nova deve ser revisada/ajustada aqui *antes* de ganhar
-código, e atualizada quando a implementação revelar que o design mudou.
+Este documento descreve as camadas da tbox, da entrada (HTML/CSS) até a tela.
+O v0 (HTML+CSS estático numa janela) está completo — as seções abaixo
+descrevem essas camadas como implementadas. A v1 (Interatividade — ver
+seção própria) está em design. É um documento vivo: cada camada
+nova/revisão deve ser revisada/ajustada aqui *antes* de ganhar código, e
+atualizada quando a implementação revelar que o design mudou.
 
 Convenções que todo o projeto já segue e que as camadas novas devem manter:
 - C puro (`extern "C"`), prefixo `tbox_`, sem exceções, sem alocação além de
@@ -35,25 +37,27 @@ flowchart TB
     DOM --> SEL[CSS Selector]
     SS --> SEL
     SEL --> CASC[CSS Cascade]
-    CASC --> STY[Style *novo*]
+    CASC --> STY[Style]
     DOM --> STY
-    STY --> LAY[Layout Tree *novo*]
+    STY --> LAY[Layout Tree]
     DOM --> LAY
-    LAY --> REN[Render Pipeline *novo*]
-    REN --> OUT[Output Display *novo*]
-    ORCH[Orchestration / Main Loop *novo*] --> HTML
+    LAY --> REN[Render Pipeline]
+    REN --> OUT[Output Display]
+    ORCH[Orchestration / Main Loop] --> HTML
     ORCH --> CSS
     ORCH --> STY
     ORCH --> LAY
     ORCH --> REN
     ORCH --> OUT
-    APP[Application *novo*] --> ORCH
+    APP[Application] --> ORCH
     APP --> DOM
-    FONT[Fonte / Texto *novo*] --> LAY
+    FONT[Fonte / Texto] --> LAY
     FONT --> OUT
 ```
 
-Camadas já implementadas (resumo, ver headers para o contrato completo):
+Camadas já implementadas — v0, completo (resumo, ver headers para o contrato
+completo; cada seção abaixo mantém o design detalhado, incluindo as decisões
+tomadas durante a implementação):
 
 | Camada | Header | Responsabilidade | Tipo central |
 |---|---|---|---|
@@ -62,6 +66,13 @@ Camadas já implementadas (resumo, ver headers para o contrato completo):
 | CSS Parser | `css_parser.h` | tokeniza + parseia stylesheet em regras/declarações | `tbox_css_stylesheet` |
 | CSS Selector | `css_selector.h` | compila e casa seletores CSS2.1 contra a árvore | `tbox_css_selector_query` |
 | CSS Cascade | `css_cascade.h` | resolve, por propriedade, qual declaração vence | `tbox_css_computed_style` |
+| Style | `style.h` | tipa/herda/expande shorthand da cascade | `tbox_style`, `tbox_style_table` |
+| Fonte / Texto | `font.h` | descoberta, métricas e rasterização de fonte | `tbox_font_source`, `tbox_font_face` |
+| Layout Tree | `layout.h` | box tree + geometria CSS2.1 (fluxo normal) | `tbox_layout_box` |
+| Render Pipeline | `render.h` | box tree → display list (comandos de desenho) | `tbox_display_list` |
+| Output Display | `output.h` | rasteriza a display list + janela Wayland | `tbox_raster_*`, `tbox_backend_wayland` |
+| Orchestration | `context.h` | pipeline de cômputo ponta-a-ponta + hit-test | `tbox_context` |
+| Application | `app.h` | API pública: abrir uma janela a partir de HTML+CSS | `tbox_app_open` |
 
 Ponto de atenção: `tbox_css_computed_style` hoje é **texto puro** (pares
 `property`/`value` como `tbox_string_view`, sem parsing de unidades, cores já
@@ -85,7 +96,7 @@ lá). Outra pequena adição a `Base`: `tbox_string_collapse_whitespace`
 
 ---
 
-## Fonte / Texto (novo) — camada transversal
+## Fonte / Texto — camada transversal
 
 Diferente das outras camadas novas, esta não é mais um estágio do pipeline
 (parse → style → layout → render → display): é um **serviço transversal**,
@@ -221,7 +232,7 @@ fontconfig/embedded (win32/coretext/android) também ficam para depois.
 
 ---
 
-## Style (novo) — resolução de valores tipados
+## Style — resolução de valores tipados
 
 **Responsabilidade:** transformar o `tbox_css_computed_style` (texto) de cada
 nó em um `tbox_style` tipado e completo — toda propriedade suportada tem um
@@ -337,7 +348,7 @@ Sem pergunta em aberto de curto prazo nesta camada — `em`/`%` de
 
 ---
 
-## Layout Tree (novo)
+## Layout Tree
 
 **Responsabilidade:** a partir do DOM + `tbox_style` por nó, construir uma
 árvore de caixas (box tree) e resolver a geometria de cada uma (posição e
@@ -452,7 +463,7 @@ pelo "Modelo de invalidação" no fim do documento.
 
 ---
 
-## Render Pipeline (novo)
+## Render Pipeline
 
 **Responsabilidade:** percorrer a Layout Tree e produzir uma **display
 list** — uma sequência ordenada de comandos de desenho abstratos,
@@ -520,7 +531,7 @@ nem `border-color` em v0 — ver Style).
 
 ---
 
-## Output Display (novo)
+## Output Display
 
 **Responsabilidade:** duas coisas que hoje estão fundidas no exemplo
 `tbox_wayland.c` e que este design separa: (1) rasterizar uma
@@ -558,7 +569,7 @@ de Output Display", acima).
 
 ---
 
-## Orchestration / Main Loop (novo)
+## Orchestration / Main Loop
 
 **Responsabilidade:** dona do pipeline de *cômputo* (parse → style →
 layout → render, produzindo uma `tbox_display_list`) e da decisão de
@@ -638,7 +649,7 @@ fim do documento.
 
 ---
 
-## Application (novo)
+## Application
 
 **Responsabilidade:** a API pública voltada a quem constrói uma GUI com
 tbox — a camada que alguém importando `<tbox/tbox.h>` para fazer um app
@@ -754,6 +765,253 @@ exemplo `tbox_wayland`):
   advances via FreeType, uma única linha, sem quebra) — HarfBuzz fica como
   upgrade futuro por trás da mesma assinatura de `tbox_font_measure_text`.
 
+## v1 — Interatividade
+
+Depois do v0 (HTML+CSS estático, uma janela, sem mutação), a v1 é a segunda
+fatia vertical: valida que um app tbox pode **reagir a input** sem regredir
+nada do pipeline de renderização já pronto. Critério de "pronto" no fim
+desta seção.
+
+Contexto que molda todas as decisões novas abaixo: a tbox vai eventualmente
+suportar scripts (tipo JavaScript) manipulando o documento em runtime. Isso
+**não é escopo da v1** — mas as APIs abaixo são desenhadas para o formato
+que um motor de script também usaria (registrar comportamento por seletor,
+mutar a árvore por função C com argumentos simples), para não precisarem
+ser jogadas fora quando esse dia chegar. Cada decisão abaixo justifica isso
+pontualmente onde se aplica.
+
+### HTML Parser — mutação de atributo
+
+**Responsabilidade nova:** permitir que código (handler de evento hoje,
+motor de script amanhã) altere um atributo de um nó já existente na árvore
+— necessário para um clique mudar algo visível (ex.: alternar uma classe
+que o CSS já estiliza diferente).
+
+```c
+/* Define (ou substitui, se `name` já existir -- comparação
+ * case-insensitive, mesma convenção de tag/attribute names usada em outro
+ * lugar da lib) um atributo de `node`. `name` é copiado em minúsculas
+ * (mesma invariante que `tbox_html_attribute.name` já documenta para
+ * atributos vindos do parser: "name is lowercase ASCII"); `value` é
+ * copiado verbatim. Ambos para a arena de `document` (mesma arena de
+ * tbox_html_node_create) -- o chamador não precisa manter os buffers
+ * originais vivos depois da chamada. Sem `_destroy` própria: mesma arena
+ * de `document`, sem free individual (ver "Convenções" no topo do
+ * documento). Se `node` ainda não tinha `name`, aloca um array de
+ * atributos novo (tamanho count+1) e copia os existentes -- o array
+ * antigo (se houver) fica órfão na arena; mutação de vida longa faz a
+ * arena crescer, mesmo trade-off já registrado na Opção C do débito
+ * "Árvore pública de mutação" abaixo, não resolvido preventivamente aqui
+ * (só quando medido como problema real). No-op se `node->type` não for
+ * TBOX_HTML_NODE_ELEMENT (não há `element` pra mutar). */
+void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, tbox_string_view value);
+
+/* Busca linear em node->element.attributes por `name` (case-insensitive).
+ * Retorna NULL se `node` não é ELEMENT ou o atributo não existe -- mesmo
+ * padrão de retorno de tbox_style_table_find/tbox_context_hit_test. */
+const tbox_html_attribute *tbox_html_node_get_attribute(const tbox_html_node *node, tbox_string_view name);
+```
+
+**Fora de escopo:** mutação de texto (`set_text_content`), remoção de
+atributo. Criação/remoção de nó continuam cobertas por
+`tbox_html_node_create`/`_append_child`/`_remove`, já existentes, sem
+mudança.
+
+### Orchestration (`tbox_context`) — delegação de evento por seletor
+
+**Decisão: por que mora aqui, não na Application.** Um motor de script
+futuro vai precisar do mesmo mecanismo — registrar por seletor, disparar
+no clique, mutar a árvore — que um handler C nativo. Colocar isso na
+Orchestration deixa `tbox_app` (hoje) e um binding de script (amanhã)
+consumindo o mesmo primitivo, sem duplicar mecanismo nem reintroduzir a
+mesma decisão duas vezes.
+
+```c
+typedef void (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *node, void *userdata);
+
+/* Compila `selector` (tbox_css_selector_compile -- mesma gramática de
+ * seletor "avulso" que tbox_css_selector_query_evaluate já usa) e registra
+ * `handler` para disparar em qualquer clique cujo ancestral mais próximo
+ * do nó clicado case com ele (ver tbox_context_dispatch_click). Guardado
+ * numa tabela arena-backed dentro de `ctx` -- mesmo padrão de
+ * `tbox_style_table` (array + busca linear no dispatch, não índice).
+ * Retorna false em erro de sintaxe do seletor (nada é registrado); true
+ * caso contrário. Sem `_unbind` em v1 -- um handler registrado vive pelo
+ * tempo de vida de `ctx` (ver "Fora de escopo"). */
+bool tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata);
+
+/* Acha o tbox_layout_box sob (x, y) via tbox_context_hit_test, pega seu
+ * ->node, e sobe node->parent (árvore DOM, não a árvore de layout -- as
+ * duas só coincidem em v0/v1 porque nenhuma caixa anônima está em uso
+ * real ainda) testando CADA registro de tbox_context_on_click contra cada
+ * ancestral, do mais próximo para o mais distante, via
+ * tbox_css_selector_query_matches -- o primeiro ancestral que casa com um
+ * dado registro dispara aquele handler (delegação estilo
+ * addEventListener, sem bubbling completo: um registro dispara no máximo
+ * uma vez por clique, no ancestral mais próximo que casar; não há
+ * stopPropagation, nem ordem de disparo entre registros diferentes além
+ * da ordem em que foram registrados). Retorna true se ao menos um handler
+ * disparou, false caso contrário (inclusive se não há layout ainda --
+ * mesma guarda de tbox_context_hit_test). `tbox_context` não guarda
+ * nenhum estado "sujo" interno: o valor de retorno É o sinal -- quem
+ * chama (a Application, ver `tbox_app_step` abaixo) decide se e quando
+ * recomputar combinando este retorno com seus próprios outros gatilhos
+ * (ex. resize), do mesmo jeito que o v0 já decidia isso fora do
+ * `tbox_context`. */
+bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
+
+/* Acesso ao document interno -- necessário para o corpo de um handler
+ * poder chamar tbox_html_node_set_attribute (que exige a arena do
+ * document, não só o node). Não existia acessor público antes da v1
+ * porque nada de fora do módulo precisava do document diretamente. */
+tbox_html_document *tbox_context_document(tbox_context *ctx);
+```
+
+**Escopo mínimo (v1):** só clique (botão principal do mouse, evento de
+press). `:hover`, teclado/foco, duplo-clique, drag ficam de fora — ver
+"Fora de escopo".
+
+**Fora de escopo:** `_unbind`/remover um handler já registrado, bubbling
+com múltiplos handlers disparando por clique e `stopPropagation`, qualquer
+pseudo-classe dinâmica (`:hover` — o CSS Selector já documenta que não
+avalia isso hoje), fase de captura (capture phase).
+
+### Output Display (Wayland backend) — evento de ponteiro
+
+```c
+/* Liga wl_pointer (nova capability do seat, ao lado do teclado já
+ * tratado para ESC) -- enter/leave/motion/button. Consome um clique
+ * pendente (botão principal, evento de PRESS -- não RELEASE, sem
+ * tracking de drag/duplo-clique, ver "Fora de escopo") ocorrido desde a
+ * última chamada, se houver: grava a posição em out_x/out_y (coordenadas
+ * de superfície, já no sistema que tbox_context_dispatch_click espera) e
+ * retorna true; retorna false se não havia clique pendente. `backend`
+ * NULL ou ponteiros de saída NULL: retorna false, sem escrever nada. */
+bool tbox_backend_wayland_take_click(tbox_backend_wayland *backend, double *out_x, double *out_y);
+```
+
+**Fora de escopo:** posição do ponteiro em motion (sem `:hover`, não
+precisa ainda), duplo-clique, drag, botão secundário/do meio, roda do
+mouse, toque (touch).
+
+### Application (`tbox_app`) — loop não-bloqueante
+
+**Substitui `tbox_app_open`** (função única, bloqueante, sem handle de
+volta) por um handle stepável. Motivo: um motor de script futuro precisa
+intercalar sua própria fila de tarefas (equivalente a microtasks/
+`setTimeout`) com o frame loop da tbox — um handle que o chamador avança
+manualmente (`tbox_app_step`) compõe naturalmente com isso; um callback de
+setup executado uma vez dentro de uma chamada bloqueante, não. Aceito
+como **breaking change**: `tbox_app_open` não tinha consumidor externo
+real além do próprio `example/`, então não há API pública a preservar
+ainda.
+
+```c
+typedef struct tbox_app tbox_app; /* opaco: dono de um tbox_context + tbox_backend_wayland + tbox_font_face */
+
+/* Mesmo trabalho que tbox_app_open fazia (parse, resolve fonte via
+ * fontconfig 16px, abre janela) mas devolve um handle em vez de bloquear.
+ * NULL nas mesmas condições de falha já documentadas para tbox_app_open
+ * (parse -- improvável --, fonte, janela), limpando o que já tinha sido
+ * alocado. */
+tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height);
+
+/* Acesso ao tbox_context interno -- para registrar handlers via
+ * tbox_context_on_click antes (ou a qualquer momento depois) do primeiro
+ * tbox_app_step. */
+tbox_context *tbox_app_context(tbox_app *app);
+
+/* Um tick do loop: tbox_backend_wayland_poll (timeout curto,
+ * não-bloqueante -- ver "Fora de escopo" sobre vsync/timer),
+ * tbox_backend_wayland_take_click -> tbox_context_dispatch_click se
+ * houver clique pendente, resize detectado via tbox_backend_wayland_size
+ * mudando de valor. `tbox_app` (não `tbox_context` -- que não guarda
+ * nenhum estado "sujo" próprio, ver tbox_context_dispatch_click acima)
+ * combina o retorno de dispatch_click com a detecção de resize numa
+ * decisão local de "recomputa este tick ou não". Se sim, roda
+ * tbox_context_run_frame + tbox_backend_wayland_present -- mesma política de
+ * "recompute tudo" do v0, só com um segundo gatilho possível agora (ver
+ * "Modelo de invalidação" no débito de design). */
+void tbox_app_step(tbox_app *app);
+
+/* True se o usuário/compositor pediu fechamento (mesma condição de
+ * tbox_backend_wayland_should_close) OU se a conexão com o compositor
+ * foi perdida durante um tbox_app_step (tbox_backend_wayland_poll
+ * retornando false) -- este segundo caso NÃO é refletido por
+ * tbox_backend_wayland_should_close sozinho (ver sua doc em output.h:
+ * conexão perdida é "simplesmente gone", não algo que aquela função
+ * passa a reportar), então tbox_app precisa da própria flag interna para
+ * não deixar `while (!tbox_app_should_close(app)) tbox_app_step(app);`
+ * girando para sempre nesse caso -- mesmo comportamento que a versão
+ * bloqueante de tbox_app_open já tinha (saía do loop quando poll
+ * retornava false), só que agora exposto via este getter em vez de um
+ * `break` interno. */
+bool tbox_app_should_close(const tbox_app *app);
+
+/* Fecha backend e context, destrói a fonte carregada (mesma ordem de
+ * limpeza que tbox_app_open já fazia internamente antes de retornar) e
+ * libera `app`. No-op se app == NULL. */
+void tbox_app_close(tbox_app *app);
+```
+
+**Uso típico:**
+```c
+tbox_app *app = tbox_app_create(html, css, 800, 600);
+tbox_context_on_click(tbox_app_context(app), "button.primary", 14, on_primary_click, NULL);
+while (!tbox_app_should_close(app)) {
+    tbox_app_step(app);
+}
+tbox_app_close(app);
+```
+
+**Fora de escopo:** agendamento por vsync (v1 continua fazendo polling com
+timeout curto a cada `step`, sem sincronizar com o refresh do compositor),
+múltiplas janelas, qualquer trigger de redraw além de clique/resize.
+
+### Fatia vertical v1 — critério de "pronto"
+
+Um app tbox que:
+- abre com `tbox_app_create` + loop `tbox_app_step`/`tbox_app_should_close`
+  (v0 continua funcionando: um documento sem nenhum `tbox_context_on_click`
+  registrado só redesenha em resize, exatamente como antes);
+- registra ao menos um handler via `tbox_context_on_click` com um seletor
+  (ex.: `"button"` ou `".toggle"`) contra um documento com um
+  `<div class="box off">` cujo `background-color` vem de duas classes CSS
+  diferentes (`.off`/`.on`);
+- ao clicar dentro da caixa do elemento (coordenadas resolvidas via
+  `tbox_backend_wayland_take_click` → `tbox_context_dispatch_click`), o
+  handler chama `tbox_html_node_set_attribute` para trocar a classe do nó
+  (`"box off"` → `"box on"`);
+- o próximo `tbox_app_step` percebe `ctx` sujo, recomputa o pipeline
+  inteiro (Style → Layout → Render, igual a v0/resize) e a cor na tela
+  muda — sem fechar a janela.
+
+Isso decide na prática as perguntas mais baratas primeiro (formato exato
+da tabela de handlers, onde mora o dispatch, o acessor
+`tbox_context_document`) antes de pagar o custo de bubbling completo,
+`:hover`, ou o próprio motor de script — que ficam para depois.
+
+## Decisões já tomadas (v1)
+
+- **Mutação de atributo entra na v0-tree** (`tbox_html_node_set_attribute`)
+  — resolve a Opção C do débito "Árvore pública de mutação" (ver abaixo):
+  sem `tbox_widget` novo, sem sincronização entre duas árvores.
+- **Delegação de evento por seletor CSS**, não handler por instância de
+  nó — reaproveita `tbox_css_selector_query_matches` já existente, evita
+  handler pendurado quando um nó é removido, e casa com o modelo que um
+  futuro motor de script também usaria (`addEventListener`-like).
+- **Bubbling simplificado**: um registro dispara no ancestral mais próximo
+  que casar, no máximo uma vez por clique — sem múltiplos handlers
+  empilhando nem `stopPropagation`. Suficiente para delegação (botão,
+  item de lista); bubbling completo fica de fora até um caso de uso real
+  exigir.
+- **Tabela de handlers mora na Orchestration** (`tbox_context`), não na
+  Application — mesmo raciocínio de "reutilizável por um futuro motor de
+  script" acima.
+- **`tbox_app_open` é substituído por `tbox_app_create`/`_step`/
+  `_should_close`/`_close`** (loop não-bloqueante) — aceito como breaking
+  change now, antes de haver consumidores externos reais da API v0.
+
 ## Débito de design conhecido (pós-v0)
 
 Trabalho futuro real, conscientemente adiado — não bloqueia o v0, mas tem
@@ -797,6 +1055,13 @@ não é um bom caso de teste para validar um modelo incremental.
 **Toca:** Orchestration (`tbox_context_run_frame`), Style, Layout Tree,
 Render Pipeline, Fonte/Texto (cache de glifo).
 
+**Atualizado na v1:** a v1 (Interatividade, ver seção acima) adiciona um
+segundo *gatilho* de recompute (clique que disparou um handler via
+`tbox_context_dispatch_click`), mas mantém a mesma política ingênua —
+recompute do pipeline inteiro, sem dirty-tracking real por subárvore. Este
+item de débito continua de pé tal como estava; só ganhou um segundo
+caminho que leva a ele.
+
 ### Critérios de atualização (update triggers) do modelo Retained Mode
 **O que é:** para além do resize de janela (único gatilho do v0), decidir
 quais eventos disparam um novo frame num toolkit Retained Mode — onde a
@@ -818,6 +1083,13 @@ apontar *qual* nó mudou).
 **Toca:** Orchestration (main loop / event dispatch), Application (fonte
 dos eventos de mutação), Style/Layout Tree (se pseudo-classes dinâmicas
 tipo `:hover` entrarem em cena).
+
+**Atualizado na v1:** clique (via `tbox_context_dispatch_click`, chamado
+por `tbox_app_step` a cada tick) é o primeiro gatilho de update real, além
+do resize do v0. `:hover`/foco, timers/animações e carregamento
+assíncrono de recursos continuam de fora — o gatilho pra revisitar esses
+continua sendo o mesmo (mutação/interatividade mais avançada, ou o motor
+de script).
 
 ### Árvore pública de mutação da Application (`tbox_html_node` vs. `tbox_widget`)
 **O que é:** quando a Application ganhar API de mutação, decidir qual é a
@@ -879,9 +1151,23 @@ mudanças no modelo de arena/lifetime de `tbox_html_node`), Orchestration
 (`tbox_context` como unidade de "um documento", dirty-tracking precisa de
 uma estrutura para se ancorar).
 
+**Decidido na v1: Opção C.** `tbox_html_node` continua sendo a árvore
+pública (mutação via `tbox_html_node_set_attribute`, nova na v1, ao lado
+de `_create`/`_append_child`/`_remove` já existentes); handlers de evento
+ficam numa tabela externa dona da Orchestration (`tbox_context`), indexada
+por seletor CSS compilado, não por ponteiro de nó — não por acaso, é
+exatamente a "tabela externa dona da Application" que a Opção C previa,
+só que mora na Orchestration em vez da Application (ver seção v1 acima
+para o porquê). O contra de memória (arena só cresce, sem free
+individual) permanece não resolvido, aceito como está até ser medido como
+problema real — não é revisitado preventivamente aqui. A segunda pergunta
+deste item (um documento por janela vs. várias árvores compositadas —
+tooltip/popup/modal) continua em aberto, sem gatilho na v1: nenhum desses
+casos entrou em escopo ainda.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0 (registrada nas seções de cada camada) ou consolidada como
-débito de design conhecido acima, com gatilho explícito de quando
-revisitar.
+fechada para v0 e para v1 (registrada nas seções de cada camada) ou
+consolidada como débito de design conhecido acima, com gatilho explícito
+de quando revisitar.

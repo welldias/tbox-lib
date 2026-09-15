@@ -64,6 +64,39 @@ static tbox_context *open_cstr(const char *html, const char *css, tbox_font_face
     return tbox_context_open(html, strlen(html), css, strlen(css), font);
 }
 
+/* Shared by every tbox_context_on_click test below: a click_capture is
+ * handed in as `userdata` and a handler fills it in so the test can inspect
+ * what fired (or that nothing did) after tbox_context_dispatch_click
+ * returns. Handlers must be plain function pointers (tbox_context_click_handler),
+ * so state cannot be a closure -- this is the same shape record_click's own
+ * doc comment on tbox_context_click_handler describes. */
+typedef struct click_capture {
+    int call_count;
+    const tbox_html_node *node;
+} click_capture;
+
+static void click_capture_reset(click_capture *capture) {
+    capture->call_count = 0;
+    capture->node        = NULL;
+}
+
+static void record_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)ctx;
+    click_capture *capture = (click_capture *)userdata;
+    capture->call_count++;
+    capture->node = node;
+}
+
+/* Exercises tbox_context_document: a handler that mutates the clicked
+ * node's `class` attribute via tbox_html_node_set_attribute, the same
+ * pattern the v1 vertical slice (ARCHITECTURE.md's "Fatia vertical v1")
+ * uses to swap a CSS class on click. */
+static void toggle_class_handler(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)userdata;
+    tbox_html_document *document = tbox_context_document(ctx);
+    tbox_html_node_set_attribute(document, node, tbox_string_view_make("class", 5), tbox_string_view_make("box on", 6));
+}
+
 int tbox_test_context_run(void) {
     int failures = 0;
 
@@ -212,6 +245,197 @@ int tbox_test_context_run(void) {
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
             TBOX_TEST_ASSERT_MSG(list.count == 0, "a document with nothing to lay out must produce an empty display list");
             TBOX_TEST_ASSERT(tbox_context_hit_test(ctx, 1.0, 1.0) == NULL);
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 7: a click inside a matching element's box fires its handler exactly
+     * once, with the clicked node itself. */
+    {
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", font);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT_MSG(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture), "tbox_context_on_click must succeed for a well-formed selector");
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(dispatched, "a click inside the button's box must dispatch");
+            TBOX_TEST_ASSERT_MSG(capture.call_count == 1, "the handler must fire exactly once");
+            if (capture.call_count == 1) {
+                TBOX_TEST_ASSERT_MSG(capture.node != NULL && capture.node->type == TBOX_HTML_NODE_ELEMENT, "the handler must receive an ELEMENT node");
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(capture.node->element.tag_name, "button"), "the handler must receive the <button> node that was actually clicked");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 8: a click outside every box fires nothing. */
+    {
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", font);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture));
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            bool dispatched = tbox_context_dispatch_click(ctx, 500.0, 500.0);
+            TBOX_TEST_ASSERT_MSG(!dispatched, "a click outside every box must not dispatch");
+            TBOX_TEST_ASSERT_MSG(capture.call_count == 0, "no handler may fire for a click outside every box");
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 9: two nested elements where only the OUTER one matches the
+     * registered selector -- a click on the inner element must still fire
+     * the handler, on the outer element (nearest matching ancestor), via
+     * the node->parent walk. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div class=\"outer\"><div class=\"inner\">x</div></div>",
+            ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }",
+            font);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), record_click, &capture));
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            /* (10, 10) sits inside the inner div's box -- the hit-tested
+             * node is the inner div, which does NOT itself match ".outer". */
+            bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(dispatched, "a click on the inner div must still dispatch via the ancestor walk");
+            TBOX_TEST_ASSERT_MSG(capture.call_count == 1, "the .outer handler must fire exactly once");
+            if (capture.call_count == 1) {
+                const tbox_html_node *doc_root = tbox_html_document_root(tbox_context_document(ctx));
+                const tbox_html_node *outer     = (doc_root != NULL) ? doc_root->first_child : NULL;
+                TBOX_TEST_ASSERT_MSG(outer != NULL && string_view_equal_cstr(outer->element.tag_name, "div"), "test setup assumption: the document root's first child is the outer div");
+                TBOX_TEST_ASSERT_MSG(capture.node == outer, "the handler must receive the OUTER node (nearest matching ancestor), not the inner node that was actually clicked");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 10: two handlers registered with different selectors, both applicable
+     * to the same node, both fire on a single click -- and in registration
+     * order. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div id=\"target\" class=\"box\">x</div>",
+            "#target { width: 60px; height: 60px; }",
+            font);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            click_capture id_capture;
+            click_capture class_capture;
+            click_capture_reset(&id_capture);
+            click_capture_reset(&class_capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#target", strlen("#target"), record_click, &id_capture));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".box", strlen(".box"), record_click, &class_capture));
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(dispatched, "a click on the target div must dispatch");
+            TBOX_TEST_ASSERT_MSG(id_capture.call_count == 1, "the #target handler must fire");
+            TBOX_TEST_ASSERT_MSG(class_capture.call_count == 1, "the .box handler must ALSO fire -- both registrations match the same clicked node");
+            TBOX_TEST_ASSERT_MSG(id_capture.node == class_capture.node, "both handlers must receive the same (target) node");
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 11: a syntax error in the selector makes tbox_context_on_click return
+     * false and register nothing (a later dispatch must not invoke it). */
+    {
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", font);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            click_capture capture;
+            click_capture_reset(&capture);
+
+            /* ">" alone is a leading combinator with no simple selector
+             * before it -- a syntax error (same example
+             * tests/css_selector/test_*.c already uses for
+             * tbox_css_selector_compile). */
+            bool registered = tbox_context_on_click(ctx, ">", strlen(">"), record_click, &capture);
+            TBOX_TEST_ASSERT_MSG(!registered, "a selector syntax error must make tbox_context_on_click return false");
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(!dispatched, "nothing was registered, so nothing may dispatch");
+            TBOX_TEST_ASSERT_MSG(capture.call_count == 0, "a handler whose registration failed must never fire");
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 12: tbox_context_dispatch_click before any tbox_context_run_frame
+     * returns false without crashing -- same guard as
+     * tbox_context_hit_test. */
+    {
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", font);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture));
+
+            bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(!dispatched, "dispatch before any run_frame must return false, not crash");
+            TBOX_TEST_ASSERT_MSG(capture.call_count == 0, "no handler may fire before there is any layout to hit-test against");
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 13: tbox_context_document gives a handler's body a document it can
+     * pass to tbox_html_node_set_attribute -- mirrors the v1 vertical
+     * slice's ".off"/".on" class-swap-on-click scenario end to end (click
+     * mutates the attribute, the NEXT run_frame's display list reflects the
+     * new class's declaration). */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div class=\"box off\">x</div>",
+            ".off { width: 40px; height: 40px; background-color: rgb(0, 0, 0); }"
+            ".on  { width: 40px; height: 40px; background-color: rgb(255, 0, 0); }",
+            font);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".off", strlen(".off"), toggle_class_handler, NULL));
+
+            tbox_display_list before_list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &before_list);
+            TBOX_TEST_ASSERT_MSG(before_list.count == 1, "the .off box must paint one FILL_RECT before the click");
+            if (before_list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(before_list.items[0].color.r == 0 && before_list.items[0].color.g == 0 && before_list.items[0].color.b == 0, "the box must start with .off's black background");
+            }
+
+            bool dispatched = tbox_context_dispatch_click(ctx, 5.0, 5.0);
+            TBOX_TEST_ASSERT_MSG(dispatched, "the click must dispatch to the .off handler");
+
+            tbox_display_list after_list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &after_list);
+            TBOX_TEST_ASSERT_MSG(after_list.count == 1, "the (now) .on box must still paint one FILL_RECT after the click");
+            if (after_list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(after_list.items[0].color.r == 255 && after_list.items[0].color.g == 0 && after_list.items[0].color.b == 0, "after the click, tbox_html_node_set_attribute must have swapped the class so the box now paints .on's red background");
+            }
 
             tbox_context_close(ctx);
         }

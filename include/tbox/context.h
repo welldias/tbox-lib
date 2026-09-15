@@ -1,9 +1,11 @@
 #ifndef TBOX_CONTEXT_H
 #define TBOX_CONTEXT_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include <tbox/font.h>
+#include <tbox/html_parser.h>
 #include <tbox/layout.h>
 #include <tbox/render.h>
 
@@ -81,6 +83,57 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
  * tbox_css_selector_match elsewhere in the codebase. Returns NULL if no
  * frame has run yet (nothing computed) or nothing is under the point. */
 const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, double y);
+
+/* v1 -- Interatividade: event delegation by CSS selector. See
+ * ARCHITECTURE.md's "v1 -- Interatividade" -> "Orchestration (tbox_context)
+ * -- delegação de evento por seletor" for the full rationale (why this
+ * lives here rather than on Application: a future script engine needs the
+ * same "register by selector, fire on click, mutate the tree" primitive
+ * that a native C handler does).
+ *
+ * Called by tbox_context_dispatch_click on the ancestor (of the hit-tested
+ * node) that matched the registered selector. `node` is the matching
+ * ancestor, not necessarily the node directly under the pointer -- see
+ * tbox_context_dispatch_click. Non-const, unlike tbox_layout_box::node:
+ * the whole point of a click handler is to be able to mutate the tree (e.g.
+ * via tbox_html_node_set_attribute, which needs a non-const node). */
+typedef void (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *node, void *userdata);
+
+/* Compiles `selector` (tbox_css_selector_compile -- same standalone-selector
+ * grammar tbox_css_selector_query_evaluate uses, hard-fails on syntax
+ * error) and registers `handler`/`userdata` in an arena-backed table owned
+ * by `ctx` -- its own arena, NOT frame_arena, so a registration survives
+ * every tbox_context_run_frame's arena reset (same array + linear-scan
+ * shape as tbox_style_table, not an index). Returns false on a selector
+ * syntax error (nothing is registered) or if ctx == NULL or handler ==
+ * NULL; true otherwise. No `_unbind` in v1 -- a registered handler lives
+ * for `ctx`'s whole lifetime, destroyed (its compiled query, specifically)
+ * in tbox_context_close. */
+bool tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata);
+
+/* Finds the tbox_layout_box under (x, y) via tbox_context_hit_test, then
+ * for each registered tbox_context_on_click binding, in registration
+ * order, walks that box's ->node and then node->parent (DOM tree, not the
+ * layout tree -- the two only coincide in v0/v1 because no anonymous box
+ * is in real use yet) from nearest to farthest testing
+ * tbox_css_selector_query_matches; the first ancestor that matches fires
+ * that binding's handler and stops walking for that binding (delegation
+ * style, like addEventListener: a binding fires at most once per click, on
+ * the nearest matching ancestor; no stopPropagation, no bubbling beyond
+ * that -- a different binding with a different/broader selector may still
+ * fire on a farther ancestor of the same click). Returns true if at least
+ * one handler fired (the caller -- Application today, a script engine's
+ * event loop tomorrow -- should treat that the same as a resize: a reason
+ * to redo the compute pipeline). No-op (returns false) if ctx == NULL, if
+ * there is no layout yet, or if nothing is under the point -- same guard as
+ * tbox_context_hit_test. */
+bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
+
+/* Access to the internal document -- needed for a handler's body to call
+ * tbox_html_node_set_attribute, which requires the document's arena, not
+ * just the node. No accessor existed before v1 because nothing outside this
+ * module needed the document directly. Returns NULL if ctx == NULL. */
+tbox_html_document *tbox_context_document(tbox_context *ctx);
 
 #ifdef __cplusplus
 }

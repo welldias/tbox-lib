@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <linux/input-event-codes.h>
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -41,6 +42,7 @@ struct tbox_backend_wayland {
     struct xdg_wm_base *wm_base;
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
+    struct wl_pointer *pointer;
 
     struct wl_surface *surface;
     struct xdg_surface *xdg_surface;
@@ -64,6 +66,19 @@ struct tbox_backend_wayland {
 
     bool configured;
     bool should_close;
+
+    /* wl_pointer state: pointer_x/pointer_y track the current surface-local
+     * position (kept up to date by enter/motion), pointer_has_focus is true
+     * only while backend->surface holds pointer focus (between enter and
+     * leave). click_pending/click_x/click_y record a PRESS of the primary
+     * button since the last tbox_backend_wayland_take_click call -- see
+     * that function's doc comment in <tbox/output.h>. */
+    bool pointer_has_focus;
+    double pointer_x;
+    double pointer_y;
+    bool click_pending;
+    double click_x;
+    double click_y;
 };
 
 /* --- xdg_wm_base: must pong every ping or the compositor may consider the
@@ -172,13 +187,123 @@ static const struct wl_keyboard_listener tbox_backend_wayland_keyboard_listener 
     .repeat_info = tbox_backend_wayland_keyboard_repeat_info,
 };
 
-/* --- wl_seat: bind the keyboard once we know it's available. --- */
+/* --- wl_pointer: enter/leave track which surface (if any) has pointer
+ * focus, motion keeps the current surface-local position up to date, and
+ * button records a pending click -- PRESS only, primary button (BTN_LEFT)
+ * only, no drag/double-click tracking -- consumed by
+ * tbox_backend_wayland_take_click. Bound at the same wl_seat version as the
+ * keyboard (see tbox_backend_wayland_seat_capabilities and the registry
+ * bind below), so every event up to version 7 needs a real (even if no-op)
+ * handler here, same reasoning as the keyboard listener's comment above;
+ * axis_value120 (v8) and axis_relative_direction (v9) are not reachable at
+ * that version and are left out. */
+static void tbox_backend_wayland_pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+    (void)pointer;
+    (void)serial;
+    tbox_backend_wayland *backend = data;
+
+    if (surface == backend->surface) {
+        backend->pointer_has_focus = true;
+    }
+    backend->pointer_x = wl_fixed_to_double(surface_x);
+    backend->pointer_y = wl_fixed_to_double(surface_y);
+}
+
+static void tbox_backend_wayland_pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface) {
+    (void)pointer;
+    (void)serial;
+    tbox_backend_wayland *backend = data;
+
+    if (surface == backend->surface) {
+        backend->pointer_has_focus = false;
+    }
+}
+
+static void tbox_backend_wayland_pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+    (void)pointer;
+    (void)time;
+    tbox_backend_wayland *backend = data;
+
+    backend->pointer_x = wl_fixed_to_double(surface_x);
+    backend->pointer_y = wl_fixed_to_double(surface_y);
+}
+
+static void tbox_backend_wayland_pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
+    (void)pointer;
+    (void)serial;
+    (void)time;
+    tbox_backend_wayland *backend = data;
+
+    if (button != BTN_LEFT || state != WL_POINTER_BUTTON_STATE_PRESSED || !backend->pointer_has_focus) {
+        return;
+    }
+
+    backend->click_pending = true;
+    backend->click_x       = backend->pointer_x;
+    backend->click_y       = backend->pointer_y;
+}
+
+/* axis/frame/axis_source/axis_stop/axis_discrete carry nothing this backend
+ * needs (no scroll/wheel support -- see "Fora de escopo" in
+ * ARCHITECTURE.md), but every opcode up to the bound version still needs a
+ * real handler slot, same as wl_keyboard's enter/leave/repeat_info above. */
+static void tbox_backend_wayland_pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {
+    (void)data;
+    (void)pointer;
+    (void)time;
+    (void)axis;
+    (void)value;
+}
+
+static void tbox_backend_wayland_pointer_frame(void *data, struct wl_pointer *pointer) {
+    (void)data;
+    (void)pointer;
+}
+
+static void tbox_backend_wayland_pointer_axis_source(void *data, struct wl_pointer *pointer, uint32_t axis_source) {
+    (void)data;
+    (void)pointer;
+    (void)axis_source;
+}
+
+static void tbox_backend_wayland_pointer_axis_stop(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis) {
+    (void)data;
+    (void)pointer;
+    (void)time;
+    (void)axis;
+}
+
+static void tbox_backend_wayland_pointer_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis, int32_t discrete) {
+    (void)data;
+    (void)pointer;
+    (void)axis;
+    (void)discrete;
+}
+
+static const struct wl_pointer_listener tbox_backend_wayland_pointer_listener = {
+    .enter         = tbox_backend_wayland_pointer_enter,
+    .leave         = tbox_backend_wayland_pointer_leave,
+    .motion        = tbox_backend_wayland_pointer_motion,
+    .button        = tbox_backend_wayland_pointer_button,
+    .axis          = tbox_backend_wayland_pointer_axis,
+    .frame         = tbox_backend_wayland_pointer_frame,
+    .axis_source   = tbox_backend_wayland_pointer_axis_source,
+    .axis_stop     = tbox_backend_wayland_pointer_axis_stop,
+    .axis_discrete = tbox_backend_wayland_pointer_axis_discrete,
+};
+
+/* --- wl_seat: bind the keyboard/pointer once we know they're available. --- */
 static void tbox_backend_wayland_seat_capabilities(void *data, struct wl_seat *seat, uint32_t capabilities) {
     tbox_backend_wayland *backend = data;
 
     if ((capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && backend->keyboard == NULL) {
         backend->keyboard = wl_seat_get_keyboard(seat);
         wl_keyboard_add_listener(backend->keyboard, &tbox_backend_wayland_keyboard_listener, backend);
+    }
+
+    if ((capabilities & WL_SEAT_CAPABILITY_POINTER) && backend->pointer == NULL) {
+        backend->pointer = wl_seat_get_pointer(seat);
+        wl_pointer_add_listener(backend->pointer, &tbox_backend_wayland_pointer_listener, backend);
     }
 }
 
@@ -291,6 +416,9 @@ void tbox_backend_wayland_destroy(tbox_backend_wayland *backend) {
 
     if (backend->keyboard != NULL) {
         wl_keyboard_destroy(backend->keyboard);
+    }
+    if (backend->pointer != NULL) {
+        wl_pointer_destroy(backend->pointer);
     }
     if (backend->seat != NULL) {
         wl_seat_destroy(backend->seat);
@@ -410,6 +538,20 @@ void tbox_backend_wayland_size(const tbox_backend_wayland *backend, int32_t *out
     if (out_height != NULL) {
         *out_height = height;
     }
+}
+
+bool tbox_backend_wayland_take_click(tbox_backend_wayland *backend, double *out_x, double *out_y) {
+    if (backend == NULL || out_x == NULL || out_y == NULL) {
+        return false;
+    }
+    if (!backend->click_pending) {
+        return false;
+    }
+
+    *out_x = backend->click_x;
+    *out_y = backend->click_y;
+    backend->click_pending = false;
+    return true;
 }
 
 tbox_backend_wayland *tbox_backend_wayland_open(int32_t width, int32_t height, const char *title) {

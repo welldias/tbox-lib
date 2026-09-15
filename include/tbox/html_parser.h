@@ -105,6 +105,26 @@ void tbox_html_node_remove(tbox_html_node *node);
  * independent of the source document's lifetime. */
 tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_node *node);
 
+/* Sets (or replaces, if `name` already exists -- case-insensitive
+ * comparison, same convention as tag/attribute names used elsewhere in the
+ * lib) an attribute of `node`. `name`/`value` are copied into `document`'s
+ * arena (the same arena tbox_html_node_create allocates from) -- the caller
+ * doesn't need to keep the original buffers alive after the call returns.
+ * No `_destroy` of its own: same arena as `document`, no individual free
+ * (see "Convenções" at the top of ARCHITECTURE.md). If `node` didn't
+ * already have `name`, a new attributes array (size count+1) is allocated
+ * and the existing entries copied into it -- the old array (if any) is left
+ * orphaned in the arena; long-lived mutation grows the arena, an accepted
+ * trade-off (see ARCHITECTURE.md's "Árvore pública de mutação" design debt)
+ * not addressed preemptively here. A no-op if `node` isn't an ELEMENT. */
+void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, tbox_string_view value);
+
+/* Linear search over node->element.attributes for `name`
+ * (case-insensitive). Returns NULL if `node` isn't an ELEMENT or the
+ * attribute doesn't exist -- same return pattern as
+ * tbox_style_table_find/tbox_context_hit_test. */
+const tbox_html_attribute *tbox_html_node_get_attribute(const tbox_html_node *node, tbox_string_view name);
+
 #ifdef __cplusplus
 }
 #endif

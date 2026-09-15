@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_string.h"
 #include "test_support.h"
 
 static bool text_eq(tbox_string_view view, const char *expected) {
@@ -347,6 +348,139 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
         TBOX_TEST_ASSERT(text_eq(content, "oi mundo"));
         tbox_arena_destroy(&arena);
+    }
+
+    /* 25: set_attribute on a node with no attributes creates the first
+     * one. */
+    {
+        tbox_html_document *doc = parse_cstr("<div></div>");
+        tbox_html_node *div     = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(div->element.attribute_count == 0);
+
+        tbox_html_node_set_attribute(doc, div, tbox_string_view_from_cstr("class"), tbox_string_view_from_cstr("box"));
+
+        TBOX_TEST_ASSERT(div->element.attribute_count == 1);
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[0].name, "class"));
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[0].value, "box"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 26: set_attribute with an already-existing name replaces the value
+     * in place, without duplicating the entry. */
+    {
+        tbox_html_document *doc = parse_cstr("<div class=\"off\"></div>");
+        tbox_html_node *div     = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(div->element.attribute_count == 1);
+
+        tbox_html_node_set_attribute(doc, div, tbox_string_view_from_cstr("class"), tbox_string_view_from_cstr("on"));
+
+        TBOX_TEST_ASSERT(div->element.attribute_count == 1);
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[0].name, "class"));
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[0].value, "on"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 27: set_attribute called repeatedly with different names accumulates
+     * all of them. */
+    {
+        tbox_html_document *doc = parse_cstr("<div></div>");
+        tbox_html_node *div     = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+
+        tbox_html_node_set_attribute(doc, div, tbox_string_view_from_cstr("id"), tbox_string_view_from_cstr("a"));
+        tbox_html_node_set_attribute(doc, div, tbox_string_view_from_cstr("class"), tbox_string_view_from_cstr("b"));
+        tbox_html_node_set_attribute(doc, div, tbox_string_view_from_cstr("data-x"), tbox_string_view_from_cstr("c"));
+
+        TBOX_TEST_ASSERT(div->element.attribute_count == 3);
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[0].name, "id"));
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[0].value, "a"));
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[1].name, "class"));
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[1].value, "b"));
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[2].name, "data-x"));
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[2].value, "c"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 28: set_attribute name matching is case-insensitive -- setting
+     * "CLASS" replaces the existing lowercase "class" attribute rather than
+     * adding a second one. */
+    {
+        tbox_html_document *doc = parse_cstr("<div class=\"off\"></div>");
+        tbox_html_node *div     = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+
+        tbox_html_node_set_attribute(doc, div, tbox_string_view_from_cstr("CLASS"), tbox_string_view_from_cstr("on"));
+
+        TBOX_TEST_ASSERT(div->element.attribute_count == 1);
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[0].name, "class"));
+        TBOX_TEST_ASSERT(text_eq(div->element.attributes[0].value, "on"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 29: get_attribute finds the right attribute with case-insensitive
+     * name comparison. */
+    {
+        tbox_html_document *doc = parse_cstr("<a href=\"http://x\" class=\"y z\">link</a>");
+        const tbox_html_node *a = tbox_html_document_root(doc)->first_child;
+
+        const tbox_html_attribute *href = tbox_html_node_get_attribute(a, tbox_string_view_from_cstr("href"));
+        TBOX_TEST_ASSERT(href != NULL && text_eq(href->value, "http://x"));
+
+        const tbox_html_attribute *href_ci = tbox_html_node_get_attribute(a, tbox_string_view_from_cstr("HREF"));
+        TBOX_TEST_ASSERT(href_ci != NULL && text_eq(href_ci->value, "http://x"));
+
+        const tbox_html_attribute *class_attr = tbox_html_node_get_attribute(a, tbox_string_view_from_cstr("class"));
+        TBOX_TEST_ASSERT(class_attr != NULL && text_eq(class_attr->value, "y z"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 30: get_attribute returns NULL for a missing name. */
+    {
+        tbox_html_document *doc   = parse_cstr("<div class=\"box\"></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(tbox_html_node_get_attribute(div, tbox_string_view_from_cstr("id")) == NULL);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 31: get_attribute returns NULL for a non-ELEMENT node, even when the
+     * name would otherwise match something. */
+    {
+        tbox_html_document *doc    = parse_cstr("<p>Hello</p>");
+        const tbox_html_node *p    = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *text = p->first_child;
+        TBOX_TEST_ASSERT(text->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(tbox_html_node_get_attribute(text, tbox_string_view_from_cstr("class")) == NULL);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 32: set_attribute on a non-ELEMENT node is a no-op (doesn't crash,
+     * doesn't touch the union's other members). */
+    {
+        tbox_html_document *doc = parse_cstr("<p>Hello</p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        tbox_html_node *text    = (tbox_html_node *)p->first_child;
+        TBOX_TEST_ASSERT(text->type == TBOX_HTML_NODE_TEXT);
+
+        tbox_html_node_set_attribute(doc, text, tbox_string_view_from_cstr("class"), tbox_string_view_from_cstr("box"));
+
+        TBOX_TEST_ASSERT(text_eq(text->text.text, "Hello"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 33: an attribute set via set_attribute looks exactly like a parsed
+     * one from every other angle -- reachable through
+     * node->element.attributes/attribute_count and through get_attribute,
+     * with no special-casing anywhere else. */
+    {
+        tbox_html_document *doc = parse_cstr("<div class=\"off\"></div>");
+        tbox_html_node *div     = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+
+        tbox_html_node_set_attribute(doc, div, tbox_string_view_from_cstr("data-count"), tbox_string_view_from_cstr("1"));
+
+        TBOX_TEST_ASSERT(div->element.attribute_count == 2);
+        const tbox_html_attribute *found = tbox_html_node_get_attribute(div, tbox_string_view_from_cstr("data-count"));
+        TBOX_TEST_ASSERT(found == &div->element.attributes[1]);
+        TBOX_TEST_ASSERT(text_eq(found->name, "data-count"));
+        TBOX_TEST_ASSERT(text_eq(found->value, "1"));
+        tbox_html_document_destroy(doc);
     }
 
     return failures;
