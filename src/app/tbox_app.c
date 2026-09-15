@@ -8,11 +8,6 @@
 #include <tbox/output.h>
 #include <tbox/string_view.h>
 
-/* v0/v1's one and only font: a generic sans-serif, neither bold nor italic,
- * at the CSS2.1 initial font-size of 16px -- see ARCHITECTURE.md's "Fonte /
- * Texto" section. */
-#define TBOX_APP_FONT_SIZE_PX 16.0
-
 /* Non-blocking, per ARCHITECTURE.md's "loop não-bloqueante": each
  * tbox_app_step pumps at most this many milliseconds of Wayland events
  * before moving on to click/resize handling and returning -- see
@@ -23,8 +18,7 @@
 #define TBOX_APP_POLL_TIMEOUT_MS 0
 
 struct tbox_app {
-    tbox_font_source *font_source;
-    tbox_font_face *font;
+    tbox_font_face_cache *fonts;
     tbox_context *ctx;
     tbox_backend_wayland *backend;
 
@@ -50,47 +44,95 @@ struct tbox_app {
     bool closed;
 };
 
-tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height) {
-    tbox_font_source *font_source = tbox_font_source_fontconfig_create();
-    if (font_source == NULL) {
+/* Resolves a "sans-serif" query at the given bold flag through a FRESH
+ * tbox_font_source_fontconfig (created, resolved exactly once, and left for
+ * the caller to destroy) -- see tbox_app_create_impl's doc comment below
+ * for why every call site needs its own source rather than reusing one
+ * across two resolves. Returns NULL on either the source's creation or the
+ * resolve itself failing (nothing left allocated in that case); on success,
+ * writes the resolved bytes to out_data/out_size (both pointers), matching
+ * tbox_font_source_resolve's own out-param contract. */
+static tbox_font_source *tbox_app_resolve_font_source(bool bold, const void **out_data, size_t *out_size) {
+    tbox_font_source *source = tbox_font_source_fontconfig_create();
+    if (source == NULL) {
         return NULL;
     }
 
     tbox_font_query query = {
         .family = tbox_string_view_make("sans-serif", strlen("sans-serif")),
-        .bold   = false,
+        .bold   = bold,
         .italic = false,
     };
 
-    const void *font_data = NULL;
-    size_t font_size      = 0;
-    if (!tbox_font_source_resolve(font_source, query, &font_data, &font_size)) {
-        tbox_font_source_destroy(font_source);
+    if (!tbox_font_source_resolve(source, query, out_data, out_size)) {
+        tbox_font_source_destroy(source);
         return NULL;
     }
 
-    tbox_font_face *font = tbox_font_face_load(font_data, font_size, TBOX_APP_FONT_SIZE_PX);
-    if (font == NULL) {
-        tbox_font_source_destroy(font_source);
+    return source;
+}
+
+/* Shared by tbox_app_create/tbox_app_create_with_config (the same "thin
+ * public wrapper over one real implementation" shape as
+ * tbox_context_open/tbox_context_open_with_config): resolves a real bold
+ * face alongside the regular one, builds the font cache, opens the
+ * tbox_context (with or without an explicit tbox_ua_style_config, per
+ * `use_config`) and the Wayland window, and allocates the tbox_app struct.
+ *
+ * Why TWO tbox_font_source_fontconfig instances (one per bold/non-bold
+ * query) rather than one source resolved twice: tbox_font_source_resolve's
+ * documented contract (<tbox/font.h>) invalidates the previous resolve's
+ * returned pointer the moment the SAME source resolves again -- resolving
+ * {bold:false} then {bold:true} on one source would invalidate the first
+ * result before both could be handed to tbox_font_face_cache_create. Two
+ * independent sources sidestep that entirely, at the cost of one extra
+ * FcFontMatch call, which is irrelevant. Both sources are destroyed right
+ * after tbox_font_face_cache_create returns -- it already copies both byte
+ * blobs defensively (same defense tbox_font_face_load itself already makes
+ * for a single face, see <tbox/font.h>), so neither source needs to outlive
+ * that call, let alone tbox_app's whole lifetime; tbox_app therefore has no
+ * tbox_font_source field of its own.
+ *
+ * Returns NULL on any failure, cleaning up whatever had already been
+ * allocated first; never crashes either way. */
+static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
+    const void *regular_data = NULL;
+    size_t regular_size      = 0;
+    tbox_font_source *regular_source = tbox_app_resolve_font_source(false, &regular_data, &regular_size);
+    if (regular_source == NULL) {
         return NULL;
     }
 
-    /* NOTE: same lifetime requirement tbox_app_open documented --
-     * FT_New_Memory_Face keeps a pointer into font_source's bytes rather
-     * than copying them, so font_source must outlive font, not just this
-     * call. Both are destroyed together in tbox_app_close/on failure here. */
-    tbox_context *ctx = tbox_context_open(html, strlen(html), css, strlen(css), font);
+    const void *bold_data = NULL;
+    size_t bold_size      = 0;
+    tbox_font_source *bold_source = tbox_app_resolve_font_source(true, &bold_data, &bold_size);
+    if (bold_source == NULL) {
+        tbox_font_source_destroy(regular_source);
+        return NULL;
+    }
+
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size);
+    /* Both sources' bytes are already copied into `fonts` above (or the
+     * call failed and there is nothing left to copy from) -- neither source
+     * is needed past this point, success or failure alike. */
+    tbox_font_source_destroy(bold_source);
+    tbox_font_source_destroy(regular_source);
+    if (fonts == NULL) {
+        return NULL;
+    }
+
+    tbox_context *ctx = use_config
+        ? tbox_context_open_with_config(html, strlen(html), css, strlen(css), fonts, config)
+        : tbox_context_open(html, strlen(html), css, strlen(css), fonts);
     if (ctx == NULL) {
-        tbox_font_face_destroy(font);
-        tbox_font_source_destroy(font_source);
+        tbox_font_face_cache_destroy(fonts);
         return NULL;
     }
 
     tbox_backend_wayland *backend = tbox_backend_wayland_open(width, height, NULL);
     if (backend == NULL) {
         tbox_context_close(ctx);
-        tbox_font_face_destroy(font);
-        tbox_font_source_destroy(font_source);
+        tbox_font_face_cache_destroy(fonts);
         return NULL;
     }
 
@@ -98,20 +140,28 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
     if (app == NULL) {
         tbox_backend_wayland_destroy(backend);
         tbox_context_close(ctx);
-        tbox_font_face_destroy(font);
-        tbox_font_source_destroy(font_source);
+        tbox_font_face_cache_destroy(fonts);
         return NULL;
     }
 
-    app->font_source  = font_source;
-    app->font         = font;
-    app->ctx          = ctx;
-    app->backend      = backend;
-    app->last_width   = 0;
-    app->last_height  = 0;
-    app->closed       = false;
+    app->fonts       = fonts;
+    app->ctx         = ctx;
+    app->backend     = backend;
+    app->last_width  = 0;
+    app->last_height = 0;
+    app->closed      = false;
 
     return app;
+}
+
+tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height) {
+    tbox_ua_style_config unused_config; /* never read: use_config == false below */
+    memset(&unused_config, 0, sizeof(unused_config));
+    return tbox_app_create_impl(html, css, width, height, false, unused_config);
+}
+
+tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
+    return tbox_app_create_impl(html, css, width, height, true, config);
 }
 
 tbox_context *tbox_app_context(tbox_app *app) {
@@ -173,7 +223,6 @@ void tbox_app_close(tbox_app *app) {
 
     tbox_backend_wayland_destroy(app->backend);
     tbox_context_close(app->ctx);
-    tbox_font_face_destroy(app->font);
-    tbox_font_source_destroy(app->font_source);
+    tbox_font_face_cache_destroy(app->fonts);
     free(app);
 }

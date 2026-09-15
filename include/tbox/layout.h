@@ -16,29 +16,41 @@ extern "C" {
  * geometry (position and size, in px relative to the viewport) per a
  * deliberately simplified CSS2.1 block formatting context: only normal
  * flow, block-level boxes stacked vertically, no floats/positioning/
- * flexbox/tables/inline formatting context. See ARCHITECTURE.md's "Layout
- * Tree" section for the full v0 scope and rationale. */
+ * flexbox/tables -- but, as of v2, a REAL inline formatting context inside
+ * the fixed text tags (h1-h6, p): see ARCHITECTURE.md's "Layout Tree"
+ * section for the full v2 scope and rationale. */
 
 typedef struct tbox_rect {
     double x, y, width, height;
 } tbox_rect;
 
+/* One contiguous, same-face, same-line run of text within a text-bearing
+ * box -- see ARCHITECTURE.md's "Layout Tree" section ("Layout Tree --
+ * inline formatting context real") for the full algorithm that produces
+ * these (greedy word-wrap, run merging by face, per-line height). */
+typedef struct tbox_layout_text_run {
+    tbox_rect rect;             /* this run's absolute position/size, already placed on the right line */
+    tbox_string_view text;      /* the longest contiguous sequence of words sharing the same resolved face AND fitting on the same line */
+    const tbox_font_face *font; /* tbox_font_face_cache_get(fonts, ..., ...) for the element that originated this run */
+} tbox_layout_text_run;
+
 typedef struct tbox_layout_box {
-    const tbox_html_node *node; /* NULL for anonymous boxes (unused in v0: no loose text/inline wrappers yet) */
+    const tbox_html_node *node; /* NULL for anonymous boxes (unused in v2: inline elements still don't get their own box, see ARCHITECTURE.md's "Fora de escopo") */
     const tbox_style *style;
 
     tbox_rect margin_box, border_box, padding_box, content_box;
 
-    /* Text content and font, for the Render Pipeline's TEXT_RUN paint ops
-     * (see ARCHITECTURE.md's "Render Pipeline" section). Populated only for
-     * a leaf box built from one of the fixed text tags (h1-h6, p): `text` is
-     * the node's tbox_html_node_text_content, already whitespace-collapsed
-     * (tbox_string_collapse_whitespace), and `font` is the same
-     * tbox_font_face passed into tbox_layout_build. Every other box
-     * (including a <div> with text nodes inside -- not shown in v0) leaves
-     * `text` empty (tbox_string_view_empty) and `font` NULL. */
-    tbox_string_view text;
-    const tbox_font_face *font;
+    /* Text runs, for the Render Pipeline's TEXT_RUN paint ops (see
+     * ARCHITECTURE.md's "Render Pipeline" section). Populated only for a
+     * leaf box built from one of the fixed text tags (h1-h6, p) -- an empty
+     * array (text_run_count == 0, text_runs NULL) for every other box,
+     * including a <div> with text nodes inside (not shown, exactly like
+     * v0/v1) and a text tag whose own text collapses to nothing. Multiple
+     * runs happen once the text wraps onto more than one line, or once the
+     * face changes mid-line (e.g. a <b> inside a <p>) -- see
+     * tbox_layout_text_run above. */
+    tbox_layout_text_run *text_runs;
+    size_t text_run_count;
 
     struct tbox_layout_box *parent, *first_child, *last_child, *next_sibling;
 } tbox_layout_box;
@@ -47,9 +59,12 @@ typedef struct tbox_layout_box {
  * treated as transparent -- the single box built is for its first ELEMENT
  * child, typically <html> -- or an ELEMENT node passed directly, useful for
  * laying out one fragment in isolation) against `styles` (see
- * tbox_style_table, already resolved by the Style layer) and `font` (a
- * single face used for every text box in v0 -- see ARCHITECTURE.md's
- * "Fonte / Texto" section; Layout Tree never loads a font itself).
+ * tbox_style_table, already resolved by the Style layer) and `fonts` (NOVO
+ * v2: a cache of faces keyed by (bold, size_px) -- see <tbox/font.h>'s
+ * tbox_font_face_cache -- used to resolve the right face for every
+ * text-bearing box's own resolved style->font_weight_bold/font_size, rather
+ * than a single face shared by the whole document like in v0/v1; Layout
+ * Tree never loads a font itself, only looks one up in this cache).
  * `viewport_width`/`viewport_height` become the root box's containing
  * block's content width/height, positioned at (0, 0).
  *
@@ -67,7 +82,7 @@ typedef struct tbox_layout_box {
  * the top of ARCHITECTURE.md). Returns NULL only if `root` has no ELEMENT
  * to lay out (e.g. an empty document, or a DOCUMENT node with no ELEMENT
  * child). */
-tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, const tbox_font_face *font, double viewport_width, double viewport_height);
+tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, double viewport_width, double viewport_height);
 
 #ifdef __cplusplus
 }

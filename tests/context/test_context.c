@@ -60,8 +60,8 @@ static bool string_view_equal_cstr(tbox_string_view view, const char *cstr) {
     return view.size == len && (len == 0 || memcmp(view.data, cstr, len) == 0);
 }
 
-static tbox_context *open_cstr(const char *html, const char *css, tbox_font_face *font) {
-    return tbox_context_open(html, strlen(html), css, strlen(css), font);
+static tbox_context *open_cstr(const char *html, const char *css, tbox_font_face_cache *fonts) {
+    return tbox_context_open(html, strlen(html), css, strlen(css), fonts);
 }
 
 /* Shared by every tbox_context_on_click test below: a click_capture is
@@ -77,7 +77,7 @@ typedef struct click_capture {
 
 static void click_capture_reset(click_capture *capture) {
     capture->call_count = 0;
-    capture->node        = NULL;
+    capture->node       = NULL;
 }
 
 static void record_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
@@ -107,9 +107,13 @@ int tbox_test_context_run(void) {
         return failures + 1;
     }
 
-    tbox_font_face *font = tbox_font_face_load(font_data, font_size, 16.0);
-    TBOX_TEST_ASSERT_MSG(font != NULL, "failed to load embedded font face");
-    if (font == NULL) {
+    /* NOVO v2: tbox_context_open now takes a tbox_font_face_cache, not a
+     * single tbox_font_face -- same regular-bytes-for-both-slots
+     * placeholder tbox_app_create uses (see src/app/tbox_app.c), fine here
+     * since none of these tests exercise bold text specifically. */
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size);
+    TBOX_TEST_ASSERT_MSG(fonts != NULL, "failed to create font face cache");
+    if (fonts == NULL) {
         free(font_data);
         return failures + 1;
     }
@@ -118,10 +122,7 @@ int tbox_test_context_run(void) {
      * display list with the expected FILL_RECT (rect == border_box,
      * color == the declared background-color). */
     {
-        tbox_context *ctx = open_cstr(
-            "<div>x</div>",
-            "div { width: 200px; height: 100px; background-color: rgb(10, 20, 30); }",
-            font);
+        tbox_context *ctx = open_cstr("<div>x</div>", "div { width: 200px; height: 100px; background-color: rgb(10, 20, 30); }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed for well-formed HTML+CSS");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -143,7 +144,7 @@ int tbox_test_context_run(void) {
      * collapse_whitespace -> measure -> layout -> render) works glued
      * together end to end, not just per-layer. */
     {
-        tbox_context *ctx = open_cstr("<div><h1>Hello</h1><p>world</p></div>", "", font);
+        tbox_context *ctx = open_cstr("<div><h1>Hello</h1><p>world</p></div>", "", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -167,7 +168,7 @@ int tbox_test_context_run(void) {
      * the first frame's data (box widths must track the new viewport,
      * not leftover/corrupted values from the first). */
     {
-        tbox_context *ctx = open_cstr("<div>x</div>", "div { height: 50px; }", font);
+        tbox_context *ctx = open_cstr("<div>x</div>", "div { height: 50px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             tbox_display_list first_list;
@@ -195,10 +196,7 @@ int tbox_test_context_run(void) {
      * `node`'s tag name), a point clearly outside any box's area returns
      * NULL. */
     {
-        tbox_context *ctx = open_cstr(
-            "<div><div>a</div></div>",
-            "div div { width: 50px; height: 50px; }",
-            font);
+        tbox_context *ctx = open_cstr("<div><div>a</div></div>", "div div { width: 50px; height: 50px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -225,7 +223,7 @@ int tbox_test_context_run(void) {
     /* 5: tbox_context_hit_test before any run_frame call returns NULL --
      * must not crash on a NULL internal layout root. */
     {
-        tbox_context *ctx = open_cstr("<div>x</div>", "", font);
+        tbox_context *ctx = open_cstr("<div>x</div>", "", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, 10.0);
@@ -238,7 +236,7 @@ int tbox_test_context_run(void) {
     /* 6: an empty/minimal HTML document doesn't crash run_frame and
      * produces a sensible (empty) display list. */
     {
-        tbox_context *ctx = open_cstr("   ", "", font);
+        tbox_context *ctx = open_cstr("   ", "", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed even for a whitespace-only document");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -253,7 +251,7 @@ int tbox_test_context_run(void) {
     /* 7: a click inside a matching element's box fires its handler exactly
      * once, with the clicked node itself. */
     {
-        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", font);
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture capture;
@@ -277,7 +275,7 @@ int tbox_test_context_run(void) {
 
     /* 8: a click outside every box fires nothing. */
     {
-        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", font);
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture capture;
@@ -300,10 +298,7 @@ int tbox_test_context_run(void) {
      * the handler, on the outer element (nearest matching ancestor), via
      * the node->parent walk. */
     {
-        tbox_context *ctx = open_cstr(
-            "<div class=\"outer\"><div class=\"inner\">x</div></div>",
-            ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }",
-            font);
+        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture capture;
@@ -320,7 +315,7 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT_MSG(capture.call_count == 1, "the .outer handler must fire exactly once");
             if (capture.call_count == 1) {
                 const tbox_html_node *doc_root = tbox_html_document_root(tbox_context_document(ctx));
-                const tbox_html_node *outer     = (doc_root != NULL) ? doc_root->first_child : NULL;
+                const tbox_html_node *outer    = (doc_root != NULL) ? doc_root->first_child : NULL;
                 TBOX_TEST_ASSERT_MSG(outer != NULL && string_view_equal_cstr(outer->element.tag_name, "div"), "test setup assumption: the document root's first child is the outer div");
                 TBOX_TEST_ASSERT_MSG(capture.node == outer, "the handler must receive the OUTER node (nearest matching ancestor), not the inner node that was actually clicked");
             }
@@ -333,10 +328,7 @@ int tbox_test_context_run(void) {
      * to the same node, both fire on a single click -- and in registration
      * order. */
     {
-        tbox_context *ctx = open_cstr(
-            "<div id=\"target\" class=\"box\">x</div>",
-            "#target { width: 60px; height: 60px; }",
-            font);
+        tbox_context *ctx = open_cstr("<div id=\"target\" class=\"box\">x</div>", "#target { width: 60px; height: 60px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture id_capture;
@@ -362,7 +354,7 @@ int tbox_test_context_run(void) {
     /* 11: a syntax error in the selector makes tbox_context_on_click return
      * false and register nothing (a later dispatch must not invoke it). */
     {
-        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", font);
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture capture;
@@ -390,7 +382,7 @@ int tbox_test_context_run(void) {
      * returns false without crashing -- same guard as
      * tbox_context_hit_test. */
     {
-        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", font);
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture capture;
@@ -411,11 +403,10 @@ int tbox_test_context_run(void) {
      * mutates the attribute, the NEXT run_frame's display list reflects the
      * new class's declaration). */
     {
-        tbox_context *ctx = open_cstr(
-            "<div class=\"box off\">x</div>",
+        tbox_context *ctx = open_cstr("<div class=\"box off\">x</div>",
             ".off { width: 40px; height: 40px; background-color: rgb(0, 0, 0); }"
             ".on  { width: 40px; height: 40px; background-color: rgb(255, 0, 0); }",
-            font);
+            fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".off", strlen(".off"), toggle_class_handler, NULL));
@@ -441,7 +432,198 @@ int tbox_test_context_run(void) {
         }
     }
 
-    tbox_font_face_destroy(font);
+    /* NOVO v2 (Tarefa 4): end-to-end proof that the user-agent stylesheet
+     * (tbox_ua_style_config_default(), generated internally by
+     * tbox_context_open) actually reaches the cascade -- an <h1> with NO
+     * author CSS whatsoever must resolve to a visibly larger font than an
+     * equivalent <p>, purely from UA declarations. Both boxes sit at the
+     * document root (a single top-level tag), so each one's own margin-top
+     * (UA default, known via tbox_ua_style_config_default()) offsets its
+     * border_box away from (0,0) -- hit-testing well inside that offset,
+     * rather than at (0,0), is what makes this reliable regardless of the
+     * exact margin values. */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+
+        tbox_context *h1_ctx = open_cstr("<h1>oi</h1>", "", fonts);
+        tbox_context *p_ctx  = open_cstr("<p>oi</p>", "", fonts);
+        TBOX_TEST_ASSERT_MSG(h1_ctx != NULL && p_ctx != NULL, "tbox_context_open must succeed for both documents");
+        if (h1_ctx != NULL && p_ctx != NULL) {
+            tbox_display_list h1_list, p_list;
+            tbox_context_run_frame(h1_ctx, 800.0, 600.0, &h1_list);
+            tbox_context_run_frame(p_ctx, 800.0, 600.0, &p_list);
+
+            const tbox_layout_box *h1_box = tbox_context_hit_test(h1_ctx, 5.0, default_config.margin.heading_px[0] + 2.0);
+            const tbox_layout_box *p_box  = tbox_context_hit_test(p_ctx, 5.0, default_config.margin.paragraph_px + 2.0);
+            TBOX_TEST_ASSERT_MSG(h1_box != NULL && p_box != NULL, "hit-testing just past each box's own UA margin-top must land inside its border_box");
+            if (h1_box != NULL && p_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(h1_box->text_run_count > 0 && p_box->text_run_count > 0, "both <h1>oi</h1> and <p>oi</p> must produce a text run");
+                if (h1_box->text_run_count > 0 && p_box->text_run_count > 0) {
+                    double h1_line_height = tbox_font_face_line_height(h1_box->text_runs[0].font);
+                    double p_line_height  = tbox_font_face_line_height(p_box->text_runs[0].font);
+                    TBOX_TEST_ASSERT_MSG(h1_line_height > p_line_height, "the UA stylesheet's h1 { font-size: 2em } must resolve to a taller line than p's inherited 1em, with no author CSS involved");
+                }
+            }
+
+            tbox_context_close(h1_ctx);
+            tbox_context_close(p_ctx);
+        }
+    }
+
+    /* 15: author CSS wins over the user-agent stylesheet -- h1 { font-size:
+     * 10px } (author) must produce a SMALLER heading than the UA default's
+     * 2em (32px at the 16px root default), exercising real origin priority
+     * end to end with two genuine stylesheets (not the synthetic 2-source
+     * unit test in tests/style/test_style.c). */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+
+        tbox_context *default_ctx  = open_cstr("<h1>oi</h1>", "", fonts);
+        tbox_context *overridden_ctx = open_cstr("<h1>oi</h1>", "h1 { font-size: 10px; }", fonts);
+        TBOX_TEST_ASSERT_MSG(default_ctx != NULL && overridden_ctx != NULL, "tbox_context_open must succeed for both documents");
+        if (default_ctx != NULL && overridden_ctx != NULL) {
+            tbox_display_list default_list, overridden_list;
+            tbox_context_run_frame(default_ctx, 800.0, 600.0, &default_list);
+            tbox_context_run_frame(overridden_ctx, 800.0, 600.0, &overridden_list);
+
+            /* Author CSS declares no margin, so the UA h1 margin-top (21px
+             * default) still applies to both documents -- same hit-test
+             * offset as test 14 above. */
+            double hit_y = default_config.margin.heading_px[0] + 2.0;
+            const tbox_layout_box *default_box    = tbox_context_hit_test(default_ctx, 5.0, hit_y);
+            const tbox_layout_box *overridden_box = tbox_context_hit_test(overridden_ctx, 5.0, hit_y);
+            TBOX_TEST_ASSERT_MSG(default_box != NULL && overridden_box != NULL, "hit-testing just past the UA margin-top must land inside both boxes");
+            if (default_box != NULL && overridden_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(default_box->text_run_count > 0 && overridden_box->text_run_count > 0, "both documents must produce a text run for their <h1>");
+                if (default_box->text_run_count > 0 && overridden_box->text_run_count > 0) {
+                    double default_line_height    = tbox_font_face_line_height(default_box->text_runs[0].font);
+                    double overridden_line_height = tbox_font_face_line_height(overridden_box->text_runs[0].font);
+                    TBOX_TEST_ASSERT_MSG(overridden_line_height < default_line_height, "author CSS's h1 { font-size: 10px } must beat the UA stylesheet's 2em default -- author outranks user-agent");
+                }
+            }
+
+            tbox_context_close(default_ctx);
+            tbox_context_close(overridden_ctx);
+        }
+    }
+
+    /* 16: tbox_context_open_with_config with a custom
+     * config.font.heading_em[0] resolves a measurably LARGER <h1> than the
+     * default config -- proves the config struct's fields genuinely drive
+     * the generated UA stylesheet text, not just tbox_ua_style_config_default()'s
+     * own baked-in values. */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+        tbox_ua_style_config custom_config  = default_config;
+        custom_config.font.heading_em[0]    = 5.0;
+
+        tbox_context *default_ctx = tbox_context_open_with_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, default_config);
+        tbox_context *custom_ctx  = tbox_context_open_with_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, custom_config);
+        TBOX_TEST_ASSERT_MSG(default_ctx != NULL && custom_ctx != NULL, "tbox_context_open_with_config must succeed for both configs");
+        if (default_ctx != NULL && custom_ctx != NULL) {
+            tbox_display_list default_list, custom_list;
+            tbox_context_run_frame(default_ctx, 800.0, 600.0, &default_list);
+            tbox_context_run_frame(custom_ctx, 800.0, 600.0, &custom_list);
+
+            /* Neither config changes margin, so both still offset by the
+             * same UA heading margin-top. */
+            double hit_y = default_config.margin.heading_px[0] + 2.0;
+            const tbox_layout_box *default_box = tbox_context_hit_test(default_ctx, 5.0, hit_y);
+            const tbox_layout_box *custom_box   = tbox_context_hit_test(custom_ctx, 5.0, hit_y);
+            TBOX_TEST_ASSERT_MSG(default_box != NULL && custom_box != NULL, "hit-testing just past the UA margin-top must land inside both boxes");
+            if (default_box != NULL && custom_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(default_box->text_run_count > 0 && custom_box->text_run_count > 0, "both documents must produce a text run for their <h1>");
+                if (default_box->text_run_count > 0 && custom_box->text_run_count > 0) {
+                    double default_line_height = tbox_font_face_line_height(default_box->text_runs[0].font);
+                    double custom_line_height  = tbox_font_face_line_height(custom_box->text_runs[0].font);
+                    TBOX_TEST_ASSERT_MSG(custom_line_height > default_line_height, "config.font.heading_em[0] == 5.0 must resolve to a taller h1 line than the default config's 2.0");
+                }
+            }
+
+            tbox_context_close(default_ctx);
+            tbox_context_close(custom_ctx);
+        }
+    }
+
+    /* 17: a <p> with no author CSS has a non-zero UA-default margin
+     * reflected between its margin_box and content_box (UA: p { margin:
+     * 16px 0 }). */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+
+        tbox_context *ctx = open_cstr("<p>oi</p>", "", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            const tbox_layout_box *box = tbox_context_hit_test(ctx, 5.0, default_config.margin.paragraph_px + 2.0);
+            TBOX_TEST_ASSERT_MSG(box != NULL, "hit-testing just past the UA margin-top must land inside the p's border_box");
+            if (box != NULL) {
+                TBOX_TEST_ASSERT_MSG(box->margin_box.height > box->content_box.height, "the UA p margin must make margin_box strictly taller than content_box");
+                TBOX_TEST_ASSERT_MSG(box->content_box.y - box->margin_box.y == default_config.margin.paragraph_px, "content_box must sit exactly one UA paragraph margin-top below margin_box's top edge");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 18: tbox_context_open_with_config with a custom config.font.base_px
+     * resolves a measurably LARGER <p> line height than the default config
+     * -- proves base_px is actually wired into the generated UA
+     * stylesheet's `body { font-size: ... }` declaration, not inert (a
+     * bug found and fixed after the task that introduced the config
+     * struct: base_px used to be stored but never emitted). <p> itself
+     * declares no font-size of its own, so its resolved font-size is
+     * purely inherited from body's -- the most direct possible proof that
+     * base_px reaches the cascade. Deliberately wrapped in an explicit
+     * <body> (unlike test 17's bare "<p>oi</p>"): the UA `body { font-size:
+     * ... }` rule can only match a document that actually HAS a <body>
+     * element -- a root <p> with no parent at all falls back to the Style
+     * layer's own hardcoded 16px regardless of base_px, which is the exact
+     * pre-existing caveat documented on tbox_ua_style_font_config::base_px
+     * in <tbox/context.h>. */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+        tbox_ua_style_config custom_config  = default_config;
+        custom_config.font.base_px          = 32.0;
+
+        const char *html = "<body><p>oi</p></body>";
+        tbox_context *default_ctx = tbox_context_open_with_config(html, strlen(html), "", 0, fonts, default_config);
+        tbox_context *custom_ctx  = tbox_context_open_with_config(html, strlen(html), "", 0, fonts, custom_config);
+        TBOX_TEST_ASSERT_MSG(default_ctx != NULL && custom_ctx != NULL, "tbox_context_open_with_config must succeed for both configs");
+        if (default_ctx != NULL && custom_ctx != NULL) {
+            tbox_display_list default_list, custom_list;
+            tbox_context_run_frame(default_ctx, 800.0, 600.0, &default_list);
+            tbox_context_run_frame(custom_ctx, 800.0, 600.0, &custom_list);
+
+            /* body's own UA margin (8px, ALL FOUR sides -- single-value
+             * shorthand, unlike h1-h6/p's two-value "Npx 0px") plus the
+             * <p>'s UA margin-top (16px) stack before the <p>'s content
+             * starts, on BOTH axes for body's margin. hit_x must clear
+             * body's left margin (8px), not just >= 0 -- neither margin
+             * depends on font_size, so both offsets are identical for both
+             * configs. */
+            double hit_x                       = default_config.margin.body_px + 2.0;
+            double hit_y                       = default_config.margin.body_px + default_config.margin.paragraph_px + 2.0;
+            const tbox_layout_box *default_box = tbox_context_hit_test(default_ctx, hit_x, hit_y);
+            const tbox_layout_box *custom_box  = tbox_context_hit_test(custom_ctx, hit_x, hit_y);
+            TBOX_TEST_ASSERT_MSG(default_box != NULL && custom_box != NULL, "hit-testing just past body's UA margin (both axes) and the p's UA margin-top must land inside both boxes");
+            if (default_box != NULL && custom_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(default_box->text_run_count > 0 && custom_box->text_run_count > 0, "both documents must produce a text run for their <p>");
+                if (default_box->text_run_count > 0 && custom_box->text_run_count > 0) {
+                    double default_line_height = tbox_font_face_line_height(default_box->text_runs[0].font);
+                    double custom_line_height  = tbox_font_face_line_height(custom_box->text_runs[0].font);
+                    TBOX_TEST_ASSERT_MSG(custom_line_height > default_line_height, "config.font.base_px == 32 must resolve to a taller p line than the default config's 16 -- base_px must not be inert");
+                }
+            }
+
+            tbox_context_close(default_ctx);
+            tbox_context_close(custom_ctx);
+        }
+    }
+
+    tbox_font_face_cache_destroy(fonts);
     free(font_data);
 
     return failures;

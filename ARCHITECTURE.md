@@ -1,11 +1,12 @@
 # tbox — Arquitetura
 
 Este documento descreve as camadas da tbox, da entrada (HTML/CSS) até a tela.
-O v0 (HTML+CSS estático numa janela) está completo — as seções abaixo
-descrevem essas camadas como implementadas. A v1 (Interatividade — ver
-seção própria) está em design. É um documento vivo: cada camada
-nova/revisão deve ser revisada/ajustada aqui *antes* de ganhar código, e
-atualizada quando a implementação revelar que o design mudou.
+O v0 (HTML+CSS estático numa janela) e a v1 (Interatividade) estão
+completos — as seções abaixo descrevem essas camadas como implementadas.
+A v2 (Fidelidade Visual — ver seção própria) está em design. É um
+documento vivo: cada camada nova/revisão deve ser revisada/ajustada aqui
+*antes* de ganhar código, e atualizada quando a implementação revelar que
+o design mudou.
 
 Convenções que todo o projeto já segue e que as camadas novas devem manter:
 - C puro (`extern "C"`), prefixo `tbox_`, sem exceções, sem alocação além de
@@ -1012,6 +1013,407 @@ da tabela de handlers, onde mora o dispatch, o acessor
   `_should_close`/`_close`** (loop não-bloqueante) — aceito como breaking
   change now, antes de haver consumidores externos reais da API v0.
 
+## v2 — Fidelidade Visual
+
+Depois da v1 (interatividade), a v2 é a terceira fatia vertical: faz o HTML
+renderizado **parecer HTML de verdade** — headings maiores e em negrito por
+padrão, parágrafos com espaçamento default, texto que mistura elementos
+inline (`<b>`, `<em>`) e quebra de linha real dentro da largura do
+container. Critério de "pronto" no fim desta seção.
+
+Escopo deliberadamente contido: fica de fora `border`, `position`/`float`,
+margin collapsing entre irmãos, marcadores de lista, `<a>` com cor/
+sublinhado (depende de `text-decoration`, que não existe), imagens — ver
+"Fora de escopo" de cada subseção abaixo. Essas ficam para v3 ou debt
+explícito.
+
+### CSS Cascade / Orchestration — folha de estilo user-agent
+
+**Decisão que a v0 já previa** ("Confirmado: v0 não usa nenhuma folha de
+estilo user-agent... fica para quando o 'default rendering' por tag
+entrar em escopo — próxima fatia depois do v0"). A v2 é essa fatia.
+
+`tbox_context` ganha um segundo `tbox_css_stylesheet *ua_stylesheet`
+(parseado uma vez em `tbox_context_open` a partir de um texto CSS gerado
+internamente a partir de `tbox_ua_style_config` — ver "Configuração da UA
+stylesheet" abaixo; nenhum arquivo externo. Destruído em
+`tbox_context_close` junto do `stylesheet` de autor).
+`tbox_context_run_frame` monta um array de 2 `tbox_css_cascade_source` —
+`{ua_stylesheet, TBOX_CSS_ORIGIN_USER_AGENT}`, `{stylesheet,
+TBOX_CSS_ORIGIN_AUTHOR}` — e passa pro Style layer (ver assinatura nova de
+`tbox_style_resolve_tree` abaixo). `tbox_css_cascade_resolve` (a primitiva
+multi-fonte) já existe desde antes do v0 — só nunca tinha sido usada com
+mais de uma fonte na prática.
+
+**Conteúdo da UA stylesheet em v2** (valores clássicos de browser, escala
+de heading via `em`, aproximado):
+```css
+body { display: block; margin: 8px; }
+div { display: block; }
+h1 { display: block; font-size: 2em; font-weight: bold; margin: 21px 0; }
+h2 { display: block; font-size: 1.5em; font-weight: bold; margin: 19px 0; }
+h3 { display: block; font-size: 1.17em; font-weight: bold; margin: 18px 0; }
+h4 { display: block; font-size: 1em; font-weight: bold; margin: 21px 0; }
+h5 { display: block; font-size: 0.83em; font-weight: bold; margin: 22px 0; }
+h6 { display: block; font-size: 0.67em; font-weight: bold; margin: 25px 0; }
+p { display: block; margin: 16px 0; }
+b, strong { display: inline; font-weight: bold; }
+i, em, span, a { display: inline; }
+```
+**Margens em `px`, não `em`, por decisão explícita:** o valor real de
+browser é relativo ao próprio `font-size` do elemento (`h1 { margin:
+0.67em 0 }`, contra os 2em/32px do próprio h1), mas isso exigiria suporte
+geral a `em` em `tbox_style_length` (largura/altura/margin/padding) — bem
+mais caro que o suporte a `em` só em `font-size` que a v2 já paga (ver
+seção Style abaixo). Os valores em `px` acima são aproximações numéricas
+do resultado real na base de 16px; ficam levemente errados se o autor
+mudar o `font-size` base do documento. Suporte geral a `em` em qualquer
+`tbox_style_length` fica de débito — ver "Débito de design conhecido".
+
+**Fora de escopo:** margin collapsing entre irmãos (dois `<p>` consecutivos
+somam as duas margens em vez de colapsar na maior — gap visivelmente maior
+que num browser real, simplificação deliberada), qualquer outra tag além
+das listadas acima (`ul`/`li`, `table`, etc.), folha de estilo `user`
+(intermediária entre UA e autor — `tbox_css_cascade_resolve` já suporta o
+`origin` mas nada produz uma hoje).
+
+#### Configuração da UA stylesheet
+
+Todo número usado no CSS acima vem de um struct, não de literais
+embutidos direto no texto — assim um host que quiser outra escala de
+heading, outra margem, ou outro `font-size` base não precisa escrever ou
+parsear CSS nenhum, só copiar o default e trocar o campo que quiser.
+Agrupado em sub-structs por assunto (fonte vs. margem), não um struct
+plano — mais fácil de ler no call site (`config.font.base_px` em vez de
+um `base_font_size_px` solto no meio de 9 outros campos) e cada
+sub-struct pode crescer sozinha depois (ex.: `tbox_ua_style_font_config`
+ganhando `heading_weight_bold[6]` no dia em que isso também virar
+configurável) sem mexer na outra:
+
+```c
+/* index 0 = h1 .. index 5 = h6 em TODO array indexado por heading nesta
+ * seção -- font e margin usam a MESMA indexação, de propósito, pra poder
+ * ler os dois lado a lado sem reindexar de cabeça. */
+
+typedef struct tbox_ua_style_font_config {
+    double base_px;         /* font-size de body/html -- toda escala em `em` dos headings multiplica a partir daqui (ou de um ancestral mais próximo, se o autor sobrescrever font-size no meio do caminho -- mesma regra de qualquer em CSS) */
+    double heading_em[6];   /* multiplicador de font-size por nível de heading, relativo ao font-size herdado */
+} tbox_ua_style_font_config;
+
+typedef struct tbox_ua_style_margin_config {
+    double heading_px[6];
+    double paragraph_px;
+    double body_px;
+} tbox_ua_style_margin_config;
+
+typedef struct tbox_ua_style_config {
+    tbox_ua_style_font_config font;
+    tbox_ua_style_margin_config margin;
+} tbox_ua_style_config;
+
+/* Os valores clássicos de browser já documentados acima (2em/1.5em/.../
+ * 0.67em, margens aproximadas em px) como um valor simples -- o chamador
+ * copia e ajusta só o campo que quiser. Nunca falha, não aloca (é só
+ * atribuição de campos). */
+tbox_ua_style_config tbox_ua_style_config_default(void);
+```
+
+`tbox_context_open` continua com a assinatura simples de sempre (usa
+`tbox_ua_style_config_default()` internamente, sem o chamador precisar
+saber que o struct existe); ganha uma variante irmã pra quem quer
+configurar:
+```c
+tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_ua_style_config config);
+```
+que monta o texto da UA stylesheet a partir dos campos do `config` (um
+template CSS interno preenchido via `snprintf`, não um parser de volta —
+o struct é a fonte da verdade, o texto CSS é só a forma que
+`tbox_css_parse` precisa pra entrar no cascade normal) antes de parseá-lo,
+em vez do texto fixo. `tbox_app_create`/`tbox_app_create_with_config`
+(Application) espelham o mesmo par, só repassando `config` adiante —
+ver seção "Application / Orchestration" abaixo.
+
+### Style — `font-size` e `font-weight`
+
+`tbox_style` ganha dois campos novos:
+```c
+typedef struct tbox_style {
+    tbox_style_display display;
+    tbox_style_length width, height;
+    tbox_style_length margin[4];
+    tbox_style_length padding[4];
+    tbox_css_rgba color;
+    tbox_css_rgba background_color;
+    double font_size;       /* NOVO v2: sempre px absoluto -- ver resolução abaixo */
+    bool font_weight_bold;  /* NOVO v2: só normal/bold -- ver escopo */
+} tbox_style;
+```
+
+**`font_size` é sempre um `double` em px absoluto, nunca um
+`tbox_style_length`** — diferente de `width`/`height` (que ficam `PERCENT`
+até o Layout resolver contra o containing block), `font-size` em `em`/`%`
+usa como base o `font-size` **do pai já resolvido**, que a travessia
+top-down de `tbox_style_resolve_tree` já garante disponível no momento em
+que o nó atual é resolvido (pai sempre antes do filho, mesma ordem que já
+sustenta a herança de `color` hoje) — não há motivo pra adiar essa
+resolução pro Layout Tree como acontece com percentuais de largura/altura,
+cuja base (o containing block) só existe depois do Layout rodar.
+
+```c
+/* Resolução de font-size (nova, chamada de dentro de tbox_style_resolve):
+ * aceita "<número>px" (absoluto), "<número>em" (parent_font_size *
+ * número), "<número>%" (parent_font_size * número / 100). Valor ausente,
+ * não-numérico, ou qualquer palavra-chave CSS2.1 (medium/large/smaller/
+ * etc. -- fora de escopo) herda o font_size do pai; sem pai (raiz),
+ * herda o valor inicial de 16px (mesmo default já usado pela Fonte/Texto
+ * desde o v0). font-weight: só a palavra-chave "bold" (case-insensitive)
+ * resulta em font_weight_bold = true; qualquer outra coisa (ausente,
+ * "normal", valor numérico 100-900, "bolder"/"lighter" -- todos fora de
+ * escopo) resulta em false OU herda do pai seguindo a mesma regra de
+ * herança de color hoje (font-weight é herdável no CSS2.1: sem
+ * declaração, copia o valor já resolvido do pai; sem pai, false). */
+```
+
+**Fora de escopo:** `font-weight` numérico (100-900) e `bolder`/`lighter`
+relativos ao pai, `font-style` (itálico — a Fonte/Texto não tem face
+itálica em v2, ver abaixo), palavras-chave absolutas/relativas de
+`font-size` (`medium`, `larger`, ...), `em`/`%` em qualquer OUTRA
+propriedade (`width`, `margin`, etc. — só `font-size` ganha esse
+tratamento especial nesta versão).
+
+`tbox_style_resolve_tree` muda de assinatura pra aceitar múltiplas fontes
+de cascade (necessário pra UA stylesheet acima), espelhando a forma que
+`tbox_css_cascade_resolve` já usa:
+```c
+tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count);
+```
+(era `(arena, root, stylesheet)`, uma fonte só, sempre `AUTHOR` — breaking
+change aceito, mesmo espírito das quebras já feitas na v1).
+
+### Fonte / Texto — cache de faces por (peso, tamanho)
+
+**Por que precisa de cache, não só uma segunda face:** `tbox_font_face_load`
+já embute o tamanho em pixels no load (`FT_Set_Pixel_Sizes`) — não dá pra
+reescalar uma face carregada. Com `font_size` agora variando por elemento
+(heading vs. corpo de texto, e qualquer `font-size` que o autor declarar),
+carregar uma face por combinação de (peso, tamanho) sob demanda, com cache,
+é a única forma de suportar isso sem recarregar/reparsear o arquivo de
+fonte a cada caixa de texto a cada frame.
+
+```c
+/* Opaque: dono de duas cópias dos bytes de fonte (regular e bold -- ver
+ * "por que duas fontes source" abaixo) mais um vetor de tbox_font_face já
+ * carregadas, chave (bold, size_px), populado sob demanda. Vida própria
+ * (real _destroy, sem arena do chamador) -- mesmo padrão de
+ * tbox_font_face hoje: carregado uma vez, persiste através de muitos
+ * frames (NÃO é resetado pela frame_arena do tbox_context). */
+typedef struct tbox_font_face_cache tbox_font_face_cache;
+
+/* Copia regular_data/bold_data para dentro do cache (o chamador não
+ * precisa manter os buffers originais vivos depois desta chamada --
+ * mesma defesa que tbox_font_face_load já faz por baixo, só que aqui
+ * precisa ser feita uma vez por variante, já que cada tamanho pedido
+ * depois vai precisar dos bytes originais de novo para um novo
+ * tbox_font_face_load). Retorna NULL só em falha de alocação. */
+tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size);
+
+void tbox_font_face_cache_destroy(tbox_font_face_cache *cache);
+
+/* Busca (bold, size_px) no cache; em miss, chama tbox_font_face_load
+ * internamente (a partir da cópia de bytes já guardada) e guarda o
+ * resultado antes de devolver -- mesmo padrão arena+busca-linear já
+ * repetido em tbox_style_table/tabela de handlers de clique da v1, só que
+ * com carga lazy em vez de tudo pré-populado. NULL se cache == NULL ou o
+ * load subjacente falhar (nesse caso nada é cacheado, a próxima chamada
+ * tenta de novo). O ponteiro devolvido permanece válido pelo tempo de
+ * vida do `cache` (não é invalidado por chamadas futuras, diferente do
+ * aliasing warning de tbox_font_rasterize_glyph). */
+const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, bool bold, double size_px);
+```
+
+**Por que duas font SOURCES na Application, não uma resolvida duas vezes:**
+`tbox_font_source_resolve`'s contrato documenta que o ponteiro devolvido
+fica válido só até a *próxima* chamada de resolve NA MESMA source — pedir
+`{bold:false}` e depois `{bold:true}` na mesma `tbox_font_source`
+invalidaria o primeiro resultado antes da Application conseguir repassar
+os dois pra `tbox_font_face_cache_create`. Mais simples e sem essa
+armadilha: a Application cria duas `tbox_font_source_fontconfig` (uma por
+query), resolve cada uma exatamente uma vez, passa os dois pares
+(dados, tamanho) pro `_cache_create` (que copia antes de retornar), e
+destrói as duas sources logo em seguida — custo extra é só uma segunda
+chamada a `FcFontMatch`, irrelevante.
+
+**Escopo mínimo (v2):** só peso (`bold`/`regular`) — sem itálico. `<em>`/
+`<i>` continuam com `display: inline` (participam da quebra de linha
+corretamente) mas renderizam com a MESMA face regular que texto normal,
+já que não existe face itálica — simplificação visível mas honesta,
+mesmo espírito de outras simplificações já documentadas no projeto.
+
+**Fora de escopo:** itálico (adicionaria uma terceira dimensão ao cache —
+natural quando `font-style` entrar em escopo, mesma forma de
+`tbox_font_face_cache_get`, só mais um `bool italic` no lookup), qualquer
+eviction/limite de tamanho do cache (documento de UI é pequeno, número de
+combinações (peso, tamanho) distintas é baixo na prática).
+
+### Layout Tree — inline formatting context real
+
+Substitui a regra atual ("lista fixa de tags h1-h6/p, texto inteiro
+concatenado numa linha só, sem quebra") por quebra de linha real dentro
+desses MESMOS elementos — a lista fixa de tags **continua sendo o
+critério de quem ganha texto** (generalizar pra qualquer container
+arbitrário, ex. um `<div>` com texto solto, fica de fora — ver "Fora de
+escopo"), mas agora cada um deles pode conter uma mistura de texto solto e
+elementos inline (`<b>`, `<i>`, `<em>`, `<strong>`, `<span>`, `<a>`, via a
+UA stylesheet acima), fluindo em múltiplas linhas.
+
+```c
+typedef struct tbox_layout_text_run {
+    tbox_rect rect;              /* posição/tamanho absolutos deste run, já dentro da linha certa */
+    tbox_string_view text;       /* a maior sequência contígua de palavras que compartilham a mesma face resolvida E cabem na mesma linha */
+    const tbox_font_face *font;  /* tbox_font_face_cache_get(fonts, ..., ...) do elemento que originou este trecho */
+} tbox_layout_text_run;
+
+typedef struct tbox_layout_box {
+    const tbox_html_node *node; /* ainda nunca NULL em v2 -- elementos inline não ganham box próprio, ver "Fora de escopo" */
+    const tbox_style *style;
+
+    tbox_rect margin_box, border_box, padding_box, content_box;
+
+    /* SUBSTITUI os antigos `text`/`font` de v0/v1 (removidos): um array
+     * plano de runs em vez de uma única linha. Vazio (text_run_count == 0)
+     * pra qualquer caixa que não seja h1-h6/p, igual antes. */
+    tbox_layout_text_run *text_runs;
+    size_t text_run_count;
+
+    struct tbox_layout_box *parent, *first_child, *last_child, *next_sibling;
+} tbox_layout_box;
+
+tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, double viewport_width, double viewport_height);
+```
+(era `const tbox_font_face *font`; agora recebe o cache inteiro e escolhe
+a face certa por caixa de texto via `tbox_font_face_cache_get`.)
+
+**Algoritmo (por caixa h1-h6/p):** percorre os filhos diretos do elemento
+em ordem de documento — nó TEXT contribui suas próprias palavras (já
+passadas por `tbox_string_collapse_whitespace`, dividido em palavras nos
+espaços restantes) na face do PRÓPRIO elemento (h1-h6/p); nó ELEMENT com
+`style->display == INLINE` (a lista da UA stylesheet) recursa um nível e
+contribui suas palavras na face DELE (herda `font_size`, mas pode ter seu
+próprio `font_weight_bold` — é assim que `<b>` fica em negrito dentro de
+um `<p>` normal). Isso produz uma sequência linear de (palavra, face)
+plana, em ordem de documento, independente de profundidade de
+aninhamento.
+
+Quebra de linha: greedy, por palavra (nunca no meio de uma palavra —
+CSS `overflow-wrap: normal`, mesmo comportamento já aceito pra largura
+transbordar em vez de quebrar). Acumula palavras numa linha (medindo cada
+uma + um espaço via `tbox_font_measure_text`) até a próxima não caber na
+largura disponível (a largura da content box, igual à regra geral de
+"largura segue o pai" já existente); então fecha a linha e começa a
+próxima. Uma palavra sozinha mais larga que a linha inteira transborda
+visualmente (mesma política de overflow que largura de caixa já tem desde
+o v0) em vez de forçar quebra no meio dela.
+
+Runs: dentro de uma linha, palavras consecutivas que compartilham a MESMA
+face resolvida (mesmo par peso+tamanho) são fundidas num único
+`tbox_layout_text_run` (uma string com espaços internos); um novo run só
+começa quando a face muda (ex.: entrando/saindo de um `<b>`) ou numa nova
+linha. Altura de linha: quando todas as palavras de uma linha usam a
+mesma face (caso comum em v2, já que os tags inline da UA stylesheet não
+mudam `font_size`), é simplesmente `tbox_font_face_line_height` daquela
+face; no caso geral (mistura de tamanhos numa linha), é o maior
+`line_height` entre as faces usadas naquela linha.
+
+**Altura da caixa (`height: auto`)** passa a ser `número_de_linhas ×
+altura_de_cada_linha` (soma, não mais um valor fixo de uma linha só como
+em v0/v1). Largura da caixa continua "do pai", inalterada.
+
+**Fora de escopo:** generalizar reconhecimento de texto além da lista fixa
+h1-h6/p (um `<div>` com texto solto continua sem caixa de texto — decidir
+"todo filho é block ou todo filho é inline" pra qualquer elemento
+arbitrário é o próximo passo natural, mas não o desta versão), elementos
+inline com geometria/box própria (`<b>`/`<span>`/`<a>` não geram
+`tbox_layout_box` — só contribuem texto pro array de runs do ancestral
+h1-h6/p; **consequência real:** `tbox_context_hit_test`/
+`tbox_context_dispatch_click` da v1 não conseguem mirar um elemento
+inline especificamente, ex. um `<a>` dentro de um `<p>` — só o box do
+ancestral block inteiro. Corrigir isso exige dar geometria própria a
+fragmentos inline, fica de débito), cor por trecho inline (`<b>` herda a
+MESMA `style->color` da caixa — nenhuma propriedade CSS de cor é lida por
+run individual em v2, só o peso/tamanho variam), hifenização,
+bidi/reordenação de texto complexo, `text-align` (sempre efetivamente
+"left" — a propriedade nem existe na Style layer ainda), `white-space`
+além de `normal` (sempre colapsa espaço, igual antes).
+
+### Render Pipeline — múltiplos runs por caixa
+
+Muda de "um `TEXT_RUN` por caixa de texto" pra "um `TEXT_RUN` por
+`tbox_layout_text_run`": em vez de ler `box->text`/`box->font` (removidos),
+`tbox_render_build_display_list` itera `box->text_runs[0..text_run_count)`
+e emite um `tbox_paint_op` `TEXT_RUN` por item, com `rect = run->rect`,
+`face = run->font`, e `color = box->style->color` (a MESMA cor pra todo
+run da mesma caixa — ver "Fora de escopo" da seção Layout Tree acima).
+Ordem de emissão continua pré-ordem/document-order (runs de uma caixa
+saem juntos, na ordem em que `tbox_layout_build` os construiu — que já é
+ordem de linha, esquerda-pra-direita, topo-pra-baixo).
+
+### Application / Orchestration — fiação do cache de fontes e do config
+
+`tbox_context_open` troca `tbox_font_face *font` por
+`tbox_font_face_cache *fonts` (ainda emprestado — `tbox_context_close`
+não o destrói, mesma convenção de ownership que já valia pra `font`).
+`tbox_app_create` monta o cache (ver "por que duas font sources" acima) e
+passa pra `tbox_context_open`; `tbox_app_close` destrói o cache no lugar
+de destruir uma única face.
+
+`tbox_app_create_with_config(html, css, width, height, tbox_ua_style_config config)`
+é o espelho, na Application, de `tbox_context_open_with_config` — só
+repassa `config` adiante, sem interpretar nenhum campo ele mesmo (quem lê
+o struct é só o ponto que monta o texto da UA stylesheet, dentro da
+Orchestration). `tbox_app_create` (sem `_with_config`) continua chamando
+`tbox_context_open` (sem `_with_config`) por baixo, então o caminho
+simples nunca constrói nem passa um `tbox_ua_style_config` explicitamente
+— o default vive só dentro da Orchestration.
+
+### Fatia vertical v2 — critério de "pronto"
+
+Um documento com:
+- `<h1>`…`<h6>` visivelmente maiores e em negrito, sem CSS de autor
+  nenhum pra isso (só a UA stylesheet), cada nível com tamanho diferente
+  dos outros;
+- `<p>` com margin default acima/abaixo (mesmo sem margin collapsing —
+  gap um pouco maior que um browser real, aceito);
+- um `<p>` com texto longo misturando texto solto e `<b>`/`<em>`
+  (ex.: `<p>texto normal <b>em negrito</b> e mais texto normal até
+  quebrar a linha...</p>`) que **quebra em múltiplas linhas** dentro da
+  largura do container, com o trecho em `<b>` visivelmente mais grosso
+  que o resto;
+- continua clicável/mutável exatamente como a v1 deixou (nenhuma
+  regressão de interatividade — só que agora, como notado acima, o
+  hit-test só mira a caixa do `<p>` inteiro, não o `<b>` especificamente).
+
+### Decisões já tomadas (v2)
+
+- **UA stylesheet fixa, compilada na lib** — sem arquivo externo, sem
+  opção de configuração; resolve o "valor inicial de `display`" que a v0
+  tinha fixado em `BLOCK` só por falta dela.
+- **`font-size` ganha resolução própria (`em`/`%`/`px` contra o pai),
+  outras propriedades não** — só `font-size` paga o custo da cadeia
+  "valor computado do pai"; `tbox_style_length` (width/height/margin/
+  padding) continua sem `em`.
+- **Margens da UA stylesheet em `px` fixo, aproximando os valores reais
+  em `em`** — evita generalizar `em` pra `tbox_style_length` só por causa
+  da UA stylesheet.
+- **Cache de faces por (peso, tamanho), carregado sob demanda** — em vez
+  de pré-carregar um conjunto fixo de tamanhos, ou continuar com uma
+  única face pro documento inteiro.
+- **Elementos inline não ganham `tbox_layout_box` próprio** — ficam como
+  runs de texto no ancestral h1-h6/p mais próximo; trade-off aceito
+  (perde endereçabilidade de hit-test por elemento inline) em troca de
+  não introduzir uma segunda forma de nó na árvore de layout.
+- **Cor não varia por run** — toda a caixa de texto usa `style->color`
+  único, mesmo com `<b>`/`<em>` misturados dentro.
+
 ## Débito de design conhecido (pós-v0)
 
 Trabalho futuro real, conscientemente adiado — não bloqueia o v0, mas tem
@@ -1035,6 +1437,18 @@ de usar uma única fonte/tamanho fixo para o documento inteiro (ver Fonte /
 Texto, "Fora de escopo").
 **Toca:** Style layer (`tbox_style_resolve`), Fonte / Texto (tamanho por nó
 em vez de global).
+
+**Resolvido na v2, só para `font-size`.** `tbox_style_resolve` agora
+resolve `em`/`%`/`px` de `font-size` contra o `font_size` do pai já
+resolvido (ver seção "v2 — Fidelidade Visual" → "Style"), e a Fonte/Texto
+carrega faces sob demanda por (peso, tamanho) via `tbox_font_face_cache`,
+não mais uma única face fixa pro documento. **O que continua em aberto:**
+`em`/`%` em qualquer OUTRA propriedade (`width`, `margin`, `padding`,
+...) — a v2 evita isso de propósito nas margens da UA stylesheet
+(aproximadas em `px` fixo) para não ter que generalizar `em` em
+`tbox_style_length`. Gatilho pra revisitar isso continua em aberto: só
+quando alguma necessidade real empurrar (CSS de autor com `margin: 1em`,
+por exemplo).
 
 ### Modelo de invalidação (dirty-tracking) do pipeline
 **O que é:** como a Orchestration evita recomputar Style → Layout → Render →

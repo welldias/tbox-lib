@@ -130,6 +130,49 @@ int tbox_test_font_run(void) {
         tbox_font_source_destroy(source);
     }
 
+    /* 7: tbox_font_face_cache_create with valid regular+bold bytes does not
+     * return NULL. Only one vendored font file exists, so the same bytes are
+     * passed for both the "regular" and "bold" arguments -- the cache stores
+     * two independent copies regardless, and these tests only need to prove
+     * the cache mechanics (miss/hit, distinct keys), not that regular and
+     * bold actually render differently. */
+    tbox_font_face_cache *cache = tbox_font_face_cache_create(font_data, font_size, font_data, font_size);
+    TBOX_TEST_ASSERT(cache != NULL);
+
+    if (cache != NULL) {
+        /* 8: _get(regular, 16) does not return NULL. */
+        const tbox_font_face *regular_16 = tbox_font_face_cache_get(cache, false, 16.0);
+        TBOX_TEST_ASSERT(regular_16 != NULL);
+
+        /* 9: a second _get(regular, 16) returns the exact same pointer --
+         * cache hit, does not reload. */
+        const tbox_font_face *regular_16_again = tbox_font_face_cache_get(cache, false, 16.0);
+        TBOX_TEST_ASSERT(regular_16_again == regular_16);
+
+        /* 10: _get(bold, 16) returns a pointer DIFFERENT from
+         * _get(regular, 16), even though both happen to load from the same
+         * underlying bytes in this test, since they're cached under
+         * different keys. */
+        const tbox_font_face *bold_16 = tbox_font_face_cache_get(cache, true, 16.0);
+        TBOX_TEST_ASSERT(bold_16 != NULL);
+        TBOX_TEST_ASSERT(bold_16 != regular_16);
+
+        /* 11: _get(regular, 32) returns a pointer different from
+         * _get(regular, 16) -- different size_px, different cache key. */
+        const tbox_font_face *regular_32 = tbox_font_face_cache_get(cache, false, 32.0);
+        TBOX_TEST_ASSERT(regular_32 != NULL);
+        TBOX_TEST_ASSERT(regular_32 != regular_16);
+
+        /* 12: _get on a NULL cache returns NULL instead of crashing. */
+        TBOX_TEST_ASSERT(tbox_font_face_cache_get(NULL, false, 16.0) == NULL);
+
+        /* 13: _destroy does not crash. */
+        tbox_font_face_cache_destroy(cache);
+    }
+
+    /* 14: _destroy(NULL) does not crash. */
+    tbox_font_face_cache_destroy(NULL);
+
     free(font_data);
 
     return failures;

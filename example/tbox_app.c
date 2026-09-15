@@ -11,30 +11,41 @@
 #include <string.h>
 #include <time.h>
 
-/* v1 vertical slice demonstration through tbox's public tbox_app API (see
- * <tbox/app.h> and ARCHITECTURE.md's "v1 -- Interatividade" -> "Fatia
- * vertical v1 -- critério de 'pronto'" section this materializes) -- the
- * same HTML+CSS-in/Wayland-window-out pipeline as v0's tbox_app_open, plus a
- * clickable element that mutates the document and redraws without closing
- * the window.
+/* v0 + v1 + v2 vertical slice demonstration through tbox's public tbox_app
+ * API (see <tbox/app.h>). This single fixture keeps validating all three
+ * layers at once rather than forking into per-version example files:
  *
- * v0's blocking tbox_app_open() is gone (see ARCHITECTURE.md's Application
- * section: a breaking change, accepted since example/ was its only real
- * consumer). This demo now drives the non-blocking tbox_app_create /
- * tbox_app_step / tbox_app_should_close / tbox_app_close handle instead,
- * registering a click handler via tbox_context_on_click before the loop
- * starts.
+ * - v0 (ARCHITECTURE.md's "v0" section): the basic HTML+CSS-in/
+ *   Wayland-window-out static rendering pipeline.
+ * - v1 ("v1 -- Interatividade" -> "Fatia vertical v1 -- critério de
+ *   'pronto'"): a clickable element that mutates the document and redraws
+ *   without closing the window, via the non-blocking tbox_app_create /
+ *   tbox_app_step / tbox_app_should_close / tbox_app_close handle (v0's
+ *   blocking tbox_app_open() is gone -- see ARCHITECTURE.md's Application
+ *   section: a breaking change, accepted since example/ was its only real
+ *   consumer) plus a tbox_context_on_click handler registered before the
+ *   loop starts.
+ * - v2 ("v2 -- Fidelidade Visual" -> "Fatia vertical v2 -- critério de
+ *   'pronto'"): <h1>..<h6> headings that get real, visibly-different
+ *   font-size and bold font-weight purely from the UA stylesheet baked
+ *   into tbox_app_create -- TBOX_APP_DEMO_CSS below adds ZERO font-size/
+ *   font-weight rules of its own for headings, on purpose, to prove the UA
+ *   default works unassisted -- plus a <p> long enough to wrap across
+ *   multiple lines at TBOX_APP_DEMO_WIDTH, mixing plain text with a <b>
+ *   run (visibly bolder) and an <em> run (same weight as plain text in
+ *   this engine -- v2's Fonte/Texto only has regular/bold faces, no italic
+ *   face yet, see ARCHITECTURE.md's "v2 -- Fidelidade Visual" -> "Cor não
+ *   varia por run" / face-cache notes).
  *
  * Deliberately does NOT reuse example/index.html/style.css, same reasoning
  * v0's tbox_app.c already documented: those exercise flexbox, CSS custom
  * properties and media queries this engine doesn't understand, so they'd
- * render as a broken mess here. This fixture sticks to what the v1
- * acceptance scenario actually calls for -- one single top-level element
+ * render as a broken mess here. This fixture sticks to what the v0/v1/v2
+ * acceptance scenarios actually call for -- one single top-level element
  * (the Layout Tree only ever lays out the document's first top-level
  * ELEMENT child) wrapping a clickable <div> whose two classes (.off/.on)
- * differ only in background-color, plus the same heading/paragraph v0's
- * fixture already had (so this example keeps validating v0's static
- * rendering too, not just the new click path).
+ * differ only in background-color, the h1..h6 ladder, and the mixed-inline
+ * wrapping paragraph.
  *
  * Unattended smoke-testing: v0's tbox_app_open blocked until the window
  * closed, so its only way to smoke-test without a human present was an
@@ -49,16 +60,40 @@
  * chain this file's on_box_click() wires up is instead covered end to end
  * by tests/context/test_context.c's dedicated tbox_context_on_click/
  * _dispatch_click test case (see ARCHITECTURE.md's "Fatia vertical v1"
- * section and that test file for details). */
+ * section and that test file for details). Likewise this file makes no
+ * attempt to assert on rendered pixel output for the v2 headings/wrapping
+ * content -- that's a rendering-correctness question, exercised here only
+ * as a visual smoke test (a screenshot tool such as `grim`, run against
+ * this demo while TBOX_WAYLAND_CLOSE_DELAY_MS keeps the window open, is
+ * optional visual evidence but not required); the numeric font-size/weight
+ * resolution itself is covered by tests/style/test_style.c and
+ * tests/font/test_font.c. */
 
 #define TBOX_APP_DEMO_WIDTH 640
-#define TBOX_APP_DEMO_HEIGHT 480
+/* v0/v1 used 480px tall, enough for the box + one heading + one paragraph.
+ * v2 stacks a full h1..h6 ladder plus two paragraphs (one of them wrapping
+ * across several lines) below the box, which no longer fits in 480px --
+ * bumped to 900px purely so a screenshot taken during the smoke test below
+ * can show the whole document at once; nothing about the layout pipeline
+ * requires this specific height. */
+#define TBOX_APP_DEMO_HEIGHT 900
 
-static const char *TBOX_APP_DEMO_HTML = "<body>"
-                                        "<div class=\"box off\"></div>"
-                                        "<h1>tbox v1</h1>"
-                                        "<p>Click the box above to toggle its color.</p>"
-                                        "</body>";
+static const char *TBOX_APP_DEMO_HTML =
+    "<body>"
+    "<div class=\"box off\"></div>"
+    "<h1>tbox v2: Heading 1</h1>"
+    "<h2>Heading 2</h2>"
+    "<h3>Heading 3</h3>"
+    "<h4>Heading 4</h4>"
+    "<h5>Heading 5</h5>"
+    "<h6>Heading 6</h6>"
+    "<p>Click the box above to toggle its color.</p>"
+    "<p>Este par\xc3\xa1grafo tem texto normal, <b>uma parte em negrito</b>, e "
+    "<em>uma parte em it\xc3\xa1lico</em> (que ainda renderiza igual ao texto "
+    "normal -- Fonte/Texto s\xc3\xb3 tem face regular/bold em v2, sem it\xc3"
+    "\xa1lico de verdade), continuando at\xc3\xa9 quebrar a linha sozinho "
+    "dentro da largura da janela.</p>"
+    "</body>";
 
 static const char *TBOX_APP_DEMO_CSS = "body { background-color: white; }"
                                        ".box { width: 200px; height: 100px; }"

@@ -92,6 +92,54 @@ static bool tbox_style_parse_length(tbox_string_view raw, tbox_style_length *out
     return false;
 }
 
+/* NOVO v2: resolves `font-size` per ARCHITECTURE.md's Style section --
+ * "<number>px" (absolute), "<number>em" (parent_font_size * number), or
+ * "<number>%" (parent_font_size * number / 100). Anything else (absent,
+ * unparsable, or any CSS2.1 keyword like "medium"/"larger" -- out of
+ * scope) inherits `parent_font_size` unchanged. `parent_font_size` is
+ * already the caller's fallback (16px with no parent -- see
+ * tbox_style_resolve), so this function never needs a separate "no
+ * parent" case of its own. */
+static double tbox_style_resolve_font_size(const tbox_css_computed_style *computed, double parent_font_size) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-size"));
+    if (decl == NULL) {
+        return parent_font_size;
+    }
+
+    tbox_string_view text = tbox_style_trim(decl->value);
+    if (text.size == 0) {
+        return parent_font_size;
+    }
+
+    if (text.data[text.size - 1] == '%') {
+        double value;
+        if (!tbox_style_parse_number(tbox_string_view_make(text.data, text.size - 1), &value)) {
+            return parent_font_size;
+        }
+        return parent_font_size * value / 100.0;
+    }
+
+    if (text.size > 2) {
+        tbox_string_view suffix = tbox_string_view_make(text.data + text.size - 2, 2);
+        if (tbox_string_view_equal_ascii_ci(suffix, tbox_string_view_from_cstr("px"))) {
+            double value;
+            if (!tbox_style_parse_number(tbox_string_view_make(text.data, text.size - 2), &value)) {
+                return parent_font_size;
+            }
+            return value;
+        }
+        if (tbox_string_view_equal_ascii_ci(suffix, tbox_string_view_from_cstr("em"))) {
+            double value;
+            if (!tbox_style_parse_number(tbox_string_view_make(text.data, text.size - 2), &value)) {
+                return parent_font_size;
+            }
+            return parent_font_size * value;
+        }
+    }
+
+    return parent_font_size;
+}
+
 static bool tbox_style_parse_display(tbox_string_view raw, tbox_style_display *out) {
     if (tbox_string_view_equal_ascii_ci(raw, tbox_string_view_from_cstr("block"))) {
         *out = TBOX_STYLE_DISPLAY_BLOCK;
@@ -256,6 +304,27 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.background_color.a = 0;
     }
 
+    /* font-size: NOVO v2. Inheritable through the parent's already-resolved
+     * value (not re-parsed); falls back to the CSS2.1-ish 16px initial
+     * value with no parent -- same default already used by Fonte/Texto
+     * since v0. */
+    double parent_font_size = (parent_style != NULL) ? parent_style->font_size : 16.0;
+    style.font_size         = tbox_style_resolve_font_size(computed, parent_font_size);
+
+    /* font-weight: NOVO v2. Only the exact case-insensitive keyword "bold"
+     * sets true; anything else (absent, "normal", 100-900, bolder/lighter
+     * -- all out of scope) inherits the parent's already-resolved value,
+     * the same inheritance mechanism as `color` above, or false with no
+     * parent. */
+    const tbox_css_resolved_declaration *weight_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-weight"));
+    if (weight_decl != NULL && tbox_string_view_equal_ascii_ci(weight_decl->value, tbox_string_view_from_cstr("bold"))) {
+        style.font_weight_bold = true;
+    } else if (parent_style != NULL) {
+        style.font_weight_bold = parent_style->font_weight_bold;
+    } else {
+        style.font_weight_bold = false;
+    }
+
     return style;
 }
 
@@ -266,7 +335,7 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
  * DOCUMENT nodes have no style of their own -- they're walked through
  * (so ELEMENT descendants are still reached) but contribute no entry and
  * pass `parent_style` through unchanged. */
-static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_stylesheet *stylesheet, tbox_vector *items) {
+static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_cascade_source *sources, size_t source_count, tbox_vector *items) {
     if (node == NULL) {
         return;
     }
@@ -275,7 +344,7 @@ static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_
     tbox_style node_style;
 
     if (node->type == TBOX_HTML_NODE_ELEMENT) {
-        tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(stylesheet, node);
+        tbox_css_computed_style computed = tbox_css_cascade_resolve(sources, source_count, node);
         node_style                       = tbox_style_resolve(node, parent_style, &computed);
         tbox_css_computed_style_destroy(&computed);
 
@@ -287,15 +356,15 @@ static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_
     }
 
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
-        tbox_style_resolve_tree_walk(child, effective_parent, stylesheet, items);
+        tbox_style_resolve_tree_walk(child, effective_parent, sources, source_count, items);
     }
 }
 
-tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_css_stylesheet *stylesheet) {
+tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count) {
     tbox_vector items;
     tbox_vector_init(&items, arena, sizeof(tbox_style_entry), 0);
 
-    tbox_style_resolve_tree_walk(root, NULL, stylesheet, &items);
+    tbox_style_resolve_tree_walk(root, NULL, sources, source_count, &items);
 
     tbox_style_table table;
     table.items = (tbox_style_entry *)items.data;

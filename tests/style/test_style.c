@@ -157,8 +157,9 @@ int tbox_test_style_run(void) {
         const tbox_html_node *p    = div->first_child;
         tbox_css_stylesheet *sheet = parse_css_cstr("div { color: red; }");
 
-        tbox_arena arena       = tbox_arena_create(0);
-        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), sheet);
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
 
         const tbox_style *div_style = tbox_style_table_find(&table, div);
         const tbox_style *p_style   = tbox_style_table_find(&table, p);
@@ -175,6 +176,162 @@ int tbox_test_style_run(void) {
 
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 10: font-size absent inherits the parent's already-resolved value;
+     * with no parent at all, the root falls back to the 16px initial
+     * value. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-size: 20px; }");
+
+        tbox_style root_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(root_style.font_size == 20.0);
+
+        tbox_style child_style = resolve_node(sheet, p, &root_style);
+        TBOX_TEST_ASSERT_MSG(child_style.font_size == 20.0, "font-size should inherit when undeclared");
+
+        tbox_html_document *doc2    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div2  = tbox_html_document_root(doc2)->first_child;
+        tbox_css_stylesheet *sheet2 = parse_css_cstr("");
+        tbox_style no_parent_style  = resolve_node(sheet2, div2, NULL);
+        TBOX_TEST_ASSERT_MSG(no_parent_style.font_size == 16.0, "font-size with no parent falls back to the 16px initial value");
+
+        tbox_css_stylesheet_destroy(sheet2);
+        tbox_html_document_destroy(doc2);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 11: "2em" resolves to 2x the parent's resolved font_size; "150%"
+     * behaves exactly like "1.5em"; "24px" is absolute, independent of the
+     * parent's font-size. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-size: 10px; } p { font-size: 2em; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.font_size == 10.0);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.font_size == 20.0, "2em should resolve to 2x the parent's font-size");
+
+        tbox_css_stylesheet *sheet_pct = parse_css_cstr("div { font-size: 10px; } p { font-size: 150%; }");
+        tbox_style parent_style_pct    = resolve_node(sheet_pct, div, NULL);
+        tbox_style child_style_pct     = resolve_node(sheet_pct, p, &parent_style_pct);
+        TBOX_TEST_ASSERT_MSG(child_style_pct.font_size == 15.0, "150%% should behave like 1.5em");
+
+        tbox_css_stylesheet *sheet_px = parse_css_cstr("div { font-size: 10px; } p { font-size: 24px; }");
+        tbox_style parent_style_px    = resolve_node(sheet_px, div, NULL);
+        tbox_style child_style_px     = resolve_node(sheet_px, p, &parent_style_px);
+        TBOX_TEST_ASSERT_MSG(child_style_px.font_size == 24.0, "24px is absolute, independent of the parent");
+
+        tbox_css_stylesheet_destroy(sheet_px);
+        tbox_css_stylesheet_destroy(sheet_pct);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 12: unparsable/keyword font-size values (out of scope for v2) inherit
+     * the parent's font-size, same as if the property were undeclared. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-size: 12px; } p { font-size: larger; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        tbox_style child_style  = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.font_size == 12.0, "an out-of-scope keyword should fall back to inheriting the parent's font-size");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 13: font-weight: bold sets font_weight_bold = true. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-weight: bold; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.font_weight_bold == true);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 14: font-weight absent, or explicitly "normal", inherits the
+     * parent's resolved bold-ness (or false with no parent) -- same
+     * inheritance mechanism as `color`. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p><span>y</span></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        const tbox_html_node *span = p->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-weight: bold; } p { font-weight: normal; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.font_weight_bold == true);
+
+        tbox_style absent_child = resolve_node(sheet, span, &parent_style);
+        TBOX_TEST_ASSERT_MSG(absent_child.font_weight_bold == true, "absent font-weight should inherit the parent's bold-ness");
+
+        tbox_style normal_child = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(normal_child.font_weight_bold == true, "explicit \"normal\" also inherits per this version's scoped rule (not a real reset)");
+
+        tbox_css_stylesheet *sheet2 = parse_css_cstr("");
+        tbox_style root_style       = resolve_node(sheet2, div, NULL);
+        TBOX_TEST_ASSERT_MSG(root_style.font_weight_bold == false, "font-weight with no parent falls back to false");
+
+        tbox_css_stylesheet_destroy(sheet2);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 15: font-weight matching is the exact keyword "bold", case
+     * insensitive -- "BOLD" still sets true. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-weight: BOLD; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.font_weight_bold == true, "font-weight matching should be case-insensitive");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 16: tbox_style_resolve_tree with 2 cascade sources -- one
+     * USER_AGENT, one AUTHOR, both declaring the same property with
+     * different values -- resolves to the author's value, proving origin
+     * priority actually works through the new multi-source signature. */
+    {
+        tbox_html_document *doc           = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div         = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *ua_sheet     = parse_css_cstr("div { font-size: 10px; }");
+        tbox_css_stylesheet *author_sheet = parse_css_cstr("div { font-size: 30px; }");
+
+        tbox_css_cascade_source sources[2] = {
+            { ua_sheet,     TBOX_CSS_ORIGIN_USER_AGENT },
+            { author_sheet, TBOX_CSS_ORIGIN_AUTHOR     },
+        };
+
+        tbox_arena arena        = tbox_arena_create(0);
+        tbox_style_table table  = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), sources, 2);
+        const tbox_style *style = tbox_style_table_find(&table, div);
+        TBOX_TEST_ASSERT(style != NULL);
+        TBOX_TEST_ASSERT_MSG(style->font_size == 30.0, "author origin should win over user-agent origin through the multi-source signature");
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(author_sheet);
+        tbox_css_stylesheet_destroy(ua_sheet);
         tbox_html_document_destroy(doc);
     }
 

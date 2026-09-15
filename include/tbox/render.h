@@ -36,7 +36,9 @@ typedef struct tbox_paint_op {
     tbox_css_rgba color;
 
     /* TEXT_RUN only (both left at their empty/NULL default for FILL_RECT):
-     * v0 is a single line, no wrapping. */
+     * NOVO v2 -- one paint op per tbox_layout_text_run, not per text-bearing
+     * box, since a box's text may now wrap onto multiple lines and/or mix
+     * faces (see ARCHITECTURE.md's "Render Pipeline" section). */
     tbox_string_view text;
     const tbox_font_face *face; /* injected by whoever builds the display list, never loaded here */
 } tbox_paint_op;
@@ -49,15 +51,16 @@ typedef struct tbox_display_list {
 /* Builds the display list for `root`'s subtree (may be NULL, producing an
  * empty list), pre-order: for each box, first (if its style's
  * background_color is non-transparent) a FILL_RECT over its border_box, then
- * (if it has text) a TEXT_RUN at its content_box's origin -- in that order,
- * since backgrounds sit under text -- and only then its first_child and the
- * rest of the next_sibling chain, recursively, in the same order. See
- * ARCHITECTURE.md's "Render Pipeline" section for the full v0 scope
- * (no stacking contexts, clipping, or line breaking).
+ * (NOVO v2) one TEXT_RUN per entry of box->text_runs, in the order Layout
+ * Tree built them (already line-order, left-to-right/top-to-bottom) -- in
+ * that order relative to the FILL_RECT, since backgrounds sit under text --
+ * and only then its first_child and the rest of the next_sibling chain,
+ * recursively, in the same order. See ARCHITECTURE.md's "Render Pipeline"
+ * section (no stacking contexts, clipping).
  *
- * This never calls into <tbox/font.h>: a box's `font` pointer is only copied
- * into the resulting paint op's `face`, never dereferenced -- Output Display
- * is the one that rasterizes glyphs.
+ * This never calls into <tbox/font.h>: a run's `font` pointer is only
+ * copied into the resulting paint op's `face`, never dereferenced -- Output
+ * Display is the one that rasterizes glyphs.
  *
  * `arena` is supplied by the caller (same per-frame arena as
  * tbox_style_resolve_tree and tbox_layout_build upstream) -- the returned

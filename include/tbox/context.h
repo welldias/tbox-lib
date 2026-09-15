@@ -40,22 +40,85 @@ extern "C" {
  * codebase. */
 typedef struct tbox_context tbox_context;
 
+/* NOVO v2 -- Orchestration's user-agent stylesheet configuration (see
+ * ARCHITECTURE.md's "CSS Cascade / Orchestration -- folha de estilo
+ * user-agent" -> "Configuração da UA stylesheet"). Every number the UA
+ * stylesheet text embeds (see tbox_context_open_with_config) comes from one
+ * of these fields, never a literal baked into the generated CSS -- a host
+ * that wants a different heading scale, margin, or base font-size just
+ * copies tbox_ua_style_config_default() and overwrites the one field it
+ * cares about, with no CSS to write or parse itself.
+ *
+ * Grouped into sub-structs by subject (font vs. margin), not a flat struct
+ * -- easier to read at the call site (config.font.base_px rather than a
+ * lone base_font_size_px among nine unrelated fields) and each sub-struct
+ * can grow on its own later (e.g. tbox_ua_style_font_config gaining
+ * heading_weight_bold[6] the day that also becomes configurable) without
+ * touching the other. index 0 = h1 .. index 5 = h6 in every array indexed
+ * by heading in this section -- font and margin deliberately share this
+ * same indexing, so the two can be read side by side without reindexing. */
+typedef struct tbox_ua_style_font_config {
+    /* body's font-size -- every heading's em scale multiplies from here
+     * (or from a nearer ancestor, if author CSS overrides font-size partway
+     * down -- same rule as any em in CSS). Emitted as an explicit
+     * `body { font-size: ... }` declaration in the generated UA stylesheet
+     * (tbox_context_open_with_config), so a non-default value takes effect
+     * even though it happens to match the Style layer's own hardcoded
+     * "no parent" root default (16px) -- that fallback only matters for a
+     * document whose top-level element isn't literally `<body>` (tbox's
+     * HTML parser doesn't synthesize an implicit one), same pre-existing
+     * caveat every other UA rule targeting `body` already has. */
+    double base_px;
+    double heading_em[6]; /* font-size multiplier per heading level, relative to the inherited font-size */
+} tbox_ua_style_font_config;
+
+typedef struct tbox_ua_style_margin_config {
+    double heading_px[6]; /* same indexing as tbox_ua_style_font_config::heading_em */
+    double paragraph_px;
+    double body_px;
+} tbox_ua_style_margin_config;
+
+typedef struct tbox_ua_style_config {
+    tbox_ua_style_font_config font;
+    tbox_ua_style_margin_config margin;
+} tbox_ua_style_config;
+
+/* The classic browser values ARCHITECTURE.md documents (heading em scale
+ * 2/1.5/1.17/1/0.83/0.67 for h1..h6; heading margins, approximated in px,
+ * 21/19/18/21/22/25; paragraph margin 16px; body margin 8px; base_px 16).
+ * Never fails, never allocates -- plain field assignment. */
+tbox_ua_style_config tbox_ua_style_config_default(void);
+
 /* Parses `html`/`css` (tbox_html_parse/tbox_css_parse) and stores the
  * result. Both of those tolerate malformed markup/CSS themselves (see
  * their own docs) and only return NULL on allocation failure, which is
- * therefore also the only way this function fails. `font` is borrowed:
- * the caller (Application) loads it once and destroys it once --
- * tbox_context never takes ownership, and tbox_context_close never
+ * therefore also the only way this function fails. `fonts` (NOVO v2: a
+ * tbox_font_face_cache, not a single tbox_font_face -- see <tbox/font.h>)
+ * is borrowed: the caller (Application) builds it once and destroys it
+ * once -- tbox_context never takes ownership, and tbox_context_close never
  * touches it. No layout exists yet after this call returns
  * (tbox_context_hit_test returns NULL until the first
- * tbox_context_run_frame). */
-tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face *font);
+ * tbox_context_run_frame).
+ *
+ * NOVO v2: internally a thin wrapper over tbox_context_open_with_config,
+ * passing tbox_ua_style_config_default() -- the caller of this function
+ * never needs to know tbox_ua_style_config exists. */
+tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts);
 
-/* Destroys the parsed document/stylesheet and the frame arena -- every
- * tbox_style_table/tbox_layout_box/tbox_display_list this context ever
- * produced becomes invalid at that point -- then frees `ctx` itself.
- * Does NOT destroy `font` (see tbox_context_open: it is borrowed, not
- * owned). A no-op if ctx == NULL. */
+/* NOVO v2: same as tbox_context_open, plus an explicit tbox_ua_style_config
+ * this context's user-agent stylesheet is generated from (a template CSS
+ * text filled in via snprintf, then parsed the same way author `css` is --
+ * see ARCHITECTURE.md's "Configuração da UA stylesheet"). This is the REAL
+ * implementation; tbox_context_open is a thin wrapper around this one with
+ * tbox_ua_style_config_default(). Fails under the exact same conditions as
+ * tbox_context_open. */
+tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_ua_style_config config);
+
+/* Destroys the parsed document/stylesheet/user-agent-stylesheet (NOVO v2)
+ * and the frame arena -- every tbox_style_table/tbox_layout_box/
+ * tbox_display_list this context ever produced becomes invalid at that
+ * point -- then frees `ctx` itself. Does NOT destroy `fonts` (see
+ * tbox_context_open: it is borrowed, not owned). A no-op if ctx == NULL. */
 void tbox_context_close(tbox_context *ctx);
 
 /* Redoes the whole compute pipeline against `viewport_width`/
@@ -65,9 +128,11 @@ void tbox_context_close(tbox_context *ctx);
  * call in one shot, since none of those have a `_destroy` of their own
  * (see "Convenções" in ARCHITECTURE.md) -- then runs
  * tbox_style_resolve_tree -> tbox_layout_build ->
- * tbox_render_build_display_list in sequence, against a single
- * author-origin stylesheet (v0 has no user-agent stylesheet). The result
- * is written into `*out_list` (`out_list` must be non-NULL). If the
+ * tbox_render_build_display_list in sequence, against TWO cascade sources
+ * (NOVO v2: this context's ua_stylesheet as TBOX_CSS_ORIGIN_USER_AGENT,
+ * then its author stylesheet as TBOX_CSS_ORIGIN_AUTHOR -- v0/v1 only ever
+ * had the author one). The result is written into `*out_list` (`out_list`
+ * must be non-NULL). If the
  * document has nothing to lay out (tbox_layout_build returns NULL, e.g.
  * an empty document), `*out_list` ends up an empty display list
  * ({NULL, 0}) rather than crashing -- tbox_render_build_display_list

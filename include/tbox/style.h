@@ -59,6 +59,19 @@ typedef struct tbox_style {
     tbox_style_length padding[4];    /* top right bottom left; initial: 0px each */
     tbox_css_rgba color;             /* inheritable; initial (no parent): opaque black */
     tbox_css_rgba background_color;  /* not inheritable; initial: transparent, i.e. {0, 0, 0, 0} */
+    /* NOVO v2: always absolute px, never a tbox_style_length -- unlike
+     * width/height (PERCENT deferred to the Layout Tree, whose containing
+     * block doesn't exist yet at Style-resolve time), font-size in em/%
+     * resolves against the parent's already-resolved font_size right here,
+     * since tbox_style_resolve_tree's top-down walk guarantees that value
+     * is available (same ordering that already supports `color`
+     * inheritance). Initial value (no parent): 16px, the same default
+     * already used by Fonte/Texto since v0. */
+    double font_size;
+    /* NOVO v2: only the "bold"/not-bold axis -- see ARCHITECTURE.md's Style
+     * section for what's out of scope (numeric 100-900, bolder/lighter).
+     * Inheritable like `color`; initial value (no parent): false. */
+    bool font_weight_bold;
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
@@ -79,9 +92,19 @@ typedef struct tbox_style {
  * initial value, same as if the property were undeclared), `margin`,
  * `padding` (CSS2.1 1/2/3/4-value shorthand only -- longhands like
  * `margin-top` are out of scope in v0), `color`, `background-color`
- * (any syntax tbox_css_color_parse accepts). Out of scope: `position`,
- * `float`, flex/grid, `z-index`, any `border-*` property, `white-space`
- * (v0 always behaves as `white-space: normal`). */
+ * (any syntax tbox_css_color_parse accepts), `font-size` (NOVO v2: a bare
+ * number followed by `px` -- absolute --, `em` -- `parent_style->font_size
+ * * number` --, or `%` -- `parent_style->font_size * number / 100`; an
+ * absent/unparsable value, or any CSS2.1 keyword like `medium`/`larger`
+ * -- out of scope --, inherits `parent_style->font_size`, or falls back to
+ * 16px with no parent), `font-weight` (NOVO v2: only the exact
+ * case-insensitive keyword `bold` sets `font_weight_bold = true`; anything
+ * else -- absent, `normal`, a numeric 100-900, `bolder`/`lighter` -- out of
+ * scope --, inherits `parent_style->font_weight_bold`, same inheritance
+ * mechanism as `color`, or falls back to `false` with no parent). Out of
+ * scope: `position`, `float`, flex/grid, `z-index`, any `border-*`
+ * property, `white-space` (v0 always behaves as `white-space: normal`),
+ * `font-style` (italic). */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 
 typedef struct tbox_style_entry {
@@ -99,13 +122,19 @@ typedef struct tbox_style_table {
  * `_destroy` of its own; its lifetime is the arena's (see "Convenções" at
  * the top of ARCHITECTURE.md). Walks `root`'s tree top-down (a parent is
  * always resolved before its children, since inheritance depends on it),
- * running tbox_css_cascade_resolve_stylesheet followed by
+ * running tbox_css_cascade_resolve(sources, source_count, node) followed by
  * tbox_style_resolve on every TBOX_HTML_NODE_ELEMENT node (TEXT/COMMENT/
  * DOCTYPE/DOCUMENT nodes have no style of their own and are skipped, though
  * still walked through so their ELEMENT descendants are reached). Each
  * intermediate tbox_css_computed_style is destroyed as soon as
- * tbox_style_resolve has consumed it -- its lifetime is not the table's. */
-tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_css_stylesheet *stylesheet);
+ * tbox_style_resolve has consumed it -- its lifetime is not the table's.
+ *
+ * NOVO v2: takes a `tbox_css_cascade_source` array instead of a single
+ * `tbox_css_stylesheet*` (mirrors tbox_css_cascade_resolve's own signature)
+ * so a user-agent stylesheet can be layered under the author one -- see
+ * ARCHITECTURE.md's Style section. A single-source, AUTHOR-origin caller
+ * passes `source_count == 1`. */
+tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count);
 
 /* Linear scan for `node`'s entry, same pattern as tbox_css_computed_style_find
  * and tbox_css_selector_match -- acceptable for UI-sized trees (tens to a

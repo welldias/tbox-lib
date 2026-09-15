@@ -24,22 +24,49 @@ extern "C" {
  * tbox_app_open had no real external consumer besides example/ yet.
  *
  * Opaque: owns a tbox_context plus a tbox_backend_wayland and the
- * tbox_font_face/tbox_font_source pair tbox_app_open used to own locally. */
+ * tbox_font_face_cache tbox_app_open used to own locally (NOVO v2: a font
+ * cache, not a single tbox_font_face -- see <tbox/font.h>). No
+ * tbox_font_source field: NOVO v2, tbox_app_create resolves two separate
+ * tbox_font_source_fontconfig instances (one per bold/non-bold query, see
+ * tbox_app_create's own doc comment in tbox_app.c) but destroys both right
+ * after their bytes are copied into the font cache -- tbox_font_face_cache_create
+ * already defensively copies both byte blobs (see <tbox/font.h>), so
+ * neither source needs to outlive that call, and tbox_app has nothing font-
+ * source-shaped left to store for its own lifetime. */
 typedef struct tbox_app tbox_app;
 
 /* Same work tbox_app_open used to do (parse html/css -- both plain
- * NUL-terminated C strings, strlen() computed here --, resolve a single
- * document-wide sans-serif font via tbox_font_source_fontconfig at 16px,
- * open a width x height Wayland window) but returns a handle instead of
- * blocking. Returns NULL on the same failure conditions tbox_app_open
- * documented (font source/resolve/load failure, HTML/CSS parse failure --
- * extremely unlikely --, or the window itself failing to open), cleaning up
- * whatever had already been allocated first; never crashes either way.
+ * NUL-terminated C strings, strlen() computed here --, resolve a real
+ * sans-serif font at 16px and wrap it in a tbox_font_face_cache, open a
+ * width x height Wayland window) but returns a handle instead of blocking.
+ * NOVO v2: font resolution now really is two independent
+ * tbox_font_source_fontconfig instances -- one queried {bold: false}, one
+ * {bold: true} -- each resolved exactly once and destroyed right after (see
+ * tbox_app_create's own doc comment in tbox_app.c for why two sources, not
+ * one source resolved twice: tbox_font_source_resolve's contract
+ * invalidates a source's previous resolve() result the moment the SAME
+ * source resolves again). Returns NULL on the same failure conditions
+ * tbox_app_open documented (font source/resolve/load failure, HTML/CSS
+ * parse failure -- extremely unlikely --, or the window itself failing to
+ * open), cleaning up whatever had already been allocated first; never
+ * crashes either way.
  * Compiled only when both a real Wayland backend and real font discovery are
  * available at build time (TBOX_WAYLAND_FOUND and TBOX_FONTCONFIG_FOUND, see
  * src/CMakeLists.txt) -- with either missing, this declaration still exists,
  * but nothing implements it. */
 tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height);
+
+/* NOVO v2: same as tbox_app_create, plus an explicit tbox_ua_style_config
+ * this app's tbox_context is opened with (via tbox_context_open_with_config
+ * instead of tbox_context_open -- see ARCHITECTURE.md's "Application /
+ * Orchestration -- fiação do cache de fontes e do config"). Application
+ * does not interpret any field of `config` itself; it only forwards it to
+ * Orchestration, which is the sole reader. Font resolution (two fontconfig
+ * queries, one regular/one bold -- see tbox_app_create's own doc comment
+ * above) is identical between the two functions; `config` only affects the
+ * generated user-agent stylesheet, not font discovery. Fails under the
+ * exact same conditions as tbox_app_create. */
+tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config);
 
 /* Access to the internal tbox_context -- for registering click handlers via
  * tbox_context_on_click, at any point before or after the first
@@ -70,9 +97,9 @@ void tbox_app_step(tbox_app *app);
  * tbox_backend_wayland_poll). NULL is treated as already closed (true). */
 bool tbox_app_should_close(const tbox_app *app);
 
-/* Destroys the backend, closes the context, destroys the loaded font (same
- * order tbox_app_open used internally before returning), and frees `app`
- * itself. A no-op if app == NULL. */
+/* Destroys the backend, closes the context, destroys the font cache (NOVO
+ * v2: was a single tbox_font_face; same order tbox_app_open used internally
+ * before returning), and frees `app` itself. A no-op if app == NULL. */
 void tbox_app_close(tbox_app *app);
 
 #ifdef __cplusplus
