@@ -4,11 +4,17 @@
 #include FT_FREETYPE_H
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "utf8.h"
 
 struct tbox_font_face {
     FT_Face ft_face;
+    void *font_data_copy; /* FT_New_Memory_Face never copies its input -- it keeps
+                            * the pointer and reads from it lazily (e.g. cmap
+                            * parsing on first use), well past this call
+                            * returning -- so tbox_font_face must own a copy
+                            * the caller's buffer isn't required to outlive. */
 };
 
 /* One process-wide FT_Library, initialized lazily on first use. tbox has no
@@ -38,23 +44,33 @@ tbox_font_face *tbox_font_face_load(const void *font_data, size_t size, double s
         return NULL;
     }
 
+    void *font_data_copy = malloc(size);
+    if (font_data_copy == NULL) {
+        return NULL;
+    }
+    memcpy(font_data_copy, font_data, size);
+
     FT_Face ft_face;
-    if (FT_New_Memory_Face(library, (const FT_Byte *)font_data, (FT_Long)size, 0, &ft_face) != 0) {
+    if (FT_New_Memory_Face(library, (const FT_Byte *)font_data_copy, (FT_Long)size, 0, &ft_face) != 0) {
+        free(font_data_copy);
         return NULL;
     }
 
     if (FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)(size_px + 0.5)) != 0) {
         FT_Done_Face(ft_face);
+        free(font_data_copy);
         return NULL;
     }
 
     tbox_font_face *face = malloc(sizeof(*face));
     if (face == NULL) {
         FT_Done_Face(ft_face);
+        free(font_data_copy);
         return NULL;
     }
 
-    face->ft_face = ft_face;
+    face->ft_face        = ft_face;
+    face->font_data_copy = font_data_copy;
     return face;
 }
 
@@ -63,7 +79,10 @@ void tbox_font_face_destroy(tbox_font_face *face) {
         return;
     }
 
+    /* FT_Done_Face must run first: FreeType stops reading font_data_copy
+     * only once this returns. */
     FT_Done_Face(face->ft_face);
+    free(face->font_data_copy);
     free(face);
 }
 

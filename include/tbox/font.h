@@ -88,10 +88,15 @@ typedef struct tbox_font_face tbox_font_face;
 
 /* Loads a font face from `font_data`/`size` (a font file's bytes, e.g. from
  * tbox_font_source_resolve) at `size_px` pixels (FT_Set_Pixel_Sizes).
- * `font_data` is copied/read eagerly by FreeType during this call; the
- * caller's buffer need not outlive it. Returns NULL if FreeType fails to
- * initialize its library, parse `font_data` as a font, or set the requested
- * pixel size. */
+ * `font_data` is copied into memory `face` owns before FreeType ever sees
+ * it -- the caller's buffer (and, if it came from a tbox_font_source, that
+ * source itself) need not outlive this call. This matters because FreeType
+ * itself does NOT copy the memory it's given (FT_New_Memory_Face keeps a
+ * pointer and reads from it lazily, e.g. cmap parsing on first use, well
+ * after this call would otherwise have returned) -- tbox_font_face_load
+ * copies defensively so every caller doesn't have to reason about that.
+ * Returns NULL if FreeType fails to initialize its library, parse
+ * `font_data` as a font, or set the requested pixel size. */
 tbox_font_face *tbox_font_face_load(const void *font_data, size_t size, double size_px);
 
 /* Frees `face` and its underlying FT_Face. A no-op if face == NULL. */
