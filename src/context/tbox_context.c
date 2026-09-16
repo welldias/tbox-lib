@@ -14,11 +14,25 @@
 
 /* One tbox_context_on_click registration: a compiled selector-group plus
  * the handler/userdata to fire when some ancestor of a clicked node
- * matches it. Lives in ctx->handlers (see below). */
+ * matches it. Lives in ctx->handlers (see below).
+ *
+ * NOVO v3 -- Interatividade Avançada: `id` is the opaque handle
+ * tbox_context_on_click hands back (see ctx->next_handler_id below); `active`
+ * is a tombstone flag -- tbox_context_unbind_click sets it to false and
+ * destroys `query` (setting it to NULL) rather than physically removing the
+ * slot from ctx->handlers, since tbox_vector has no removal primitive and
+ * this is a small UI-sized array where a dead slot costs nothing measurable
+ * (same "linear scan is fine" precedent already used elsewhere in this
+ * module). tbox_context_dispatch_click skips any binding with active ==
+ * false; tbox_context_close destroys whatever `query` is still non-NULL
+ * (an unbound binding's query is already destroyed and NULLed, so it is
+ * never double-destroyed there). */
 typedef struct tbox_context_click_binding {
     tbox_css_selector_query *query;
     tbox_context_click_handler handler;
     void *userdata;
+    int id;
+    bool active;
 } tbox_context_click_binding;
 
 /* See <tbox/context.h> for why this is opaque rather than a plain/visible
@@ -34,6 +48,8 @@ struct tbox_context {
     tbox_arena frame_arena;             /* backing for tbox_style_table + tbox_layout_box + tbox_display_list; reset at the start of every run_frame */
     tbox_arena handler_arena;           /* backing for `handlers` below -- deliberately NOT frame_arena: a tbox_context_on_click registration must survive every tbox_context_run_frame's arena reset */
     tbox_vector handlers;               /* tbox_context_click_binding elements, arena-backed by handler_arena; array + linear scan on dispatch, same shape as tbox_style_table */
+    int next_handler_id;                /* NOVO v3: monotonic counter for tbox_context_on_click's returned handle -- never reused, even after tbox_context_unbind_click removes a binding */
+    const tbox_html_node *hovered_node; /* NOVO v3: the node currently under the pointer, or NULL -- a plain struct field with its own lifetime, deliberately NOT part of frame_arena (must survive every tbox_context_run_frame's arena reset so tbox_context_update_hover can compare across frames; see <tbox/context.h>) */
 };
 
 tbox_ua_style_config tbox_ua_style_config_default(void) {
@@ -164,6 +180,8 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     ctx->frame_arena   = tbox_arena_create(0);
     ctx->handler_arena = tbox_arena_create(0);
     tbox_vector_init(&ctx->handlers, &ctx->handler_arena, sizeof(tbox_context_click_binding), 0);
+    ctx->next_handler_id = 0;
+    ctx->hovered_node    = NULL;
 
     return ctx;
 }
@@ -179,11 +197,16 @@ void tbox_context_close(tbox_context *ctx) {
 
     /* Each binding owns its compiled query's own arena (see
      * tbox_css_selector_query_destroy) -- distinct from handler_arena,
-     * which only backs the `handlers` vector itself. */
+     * which only backs the `handlers` vector itself. NOVO v3: a binding
+     * already removed via tbox_context_unbind_click has query == NULL (its
+     * query was destroyed there) -- skip it here to avoid a double
+     * destroy. */
     size_t handler_count = tbox_vector_length(&ctx->handlers);
     for (size_t i = 0; i < handler_count; i++) {
         tbox_context_click_binding *binding = (tbox_context_click_binding *)tbox_vector_at(&ctx->handlers, i);
-        tbox_css_selector_query_destroy(binding->query);
+        if (binding->query != NULL) {
+            tbox_css_selector_query_destroy(binding->query);
+        }
     }
     tbox_arena_destroy(&ctx->handler_arena);
 
@@ -202,6 +225,15 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     tbox_arena_reset(&ctx->frame_arena);
 
     const tbox_html_node *root = tbox_html_document_root(ctx->document);
+
+    /* NOVO v3: must happen before every tbox_style_resolve_tree call,
+     * unconditionally (not only on ticks where the hover state actually
+     * changed) -- the cascade needs to see the CURRENT hover state every
+     * time it resolves styles, not just as of whenever it last changed.
+     * See tbox_context_update_hover and <tbox/css_selector.h>'s
+     * tbox_css_selector_set_hover_context for the full sequencing
+     * contract this call fulfills. */
+    tbox_css_selector_set_hover_context(ctx->hovered_node);
 
     /* NOVO v2: two cascade sources -- the user-agent stylesheet and the
      * author stylesheet -- replacing the 1-element placeholder array
@@ -258,23 +290,71 @@ const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, 
     return tbox_context_hit_test_box(ctx->root, x, y);
 }
 
-bool tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata) {
-    if (ctx == NULL || handler == NULL) {
+bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, double y) {
+    if (ctx == NULL) {
         return false;
+    }
+
+    /* `has_position == false` (pointer left the window) or nothing under
+     * the point both mean "nothing hovered" -- new_hovered stays NULL in
+     * either case. */
+    const tbox_html_node *new_hovered = NULL;
+    if (has_position) {
+        const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);
+        if (box != NULL) {
+            new_hovered = box->node;
+        }
+    }
+
+    if (new_hovered == ctx->hovered_node) {
+        return false;
+    }
+
+    ctx->hovered_node = new_hovered;
+    return true;
+}
+
+int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata) {
+    if (ctx == NULL || handler == NULL) {
+        return -1;
     }
 
     /* Hard-fails on a syntax error (see <tbox/css_selector.h>) -- nothing
      * is registered in that case, matching the documented contract. */
     tbox_css_selector_query *query = tbox_css_selector_compile(selector, selector_length, NULL);
     if (query == NULL) {
-        return false;
+        return -1;
     }
 
     tbox_context_click_binding *binding = (tbox_context_click_binding *)tbox_vector_push(&ctx->handlers);
     binding->query                      = query;
     binding->handler                    = handler;
     binding->userdata                   = userdata;
-    return true;
+    binding->active                     = true;
+    binding->id                         = ctx->next_handler_id;
+    ctx->next_handler_id++;
+    return binding->id;
+}
+
+bool tbox_context_unbind_click(tbox_context *ctx, int binding) {
+    if (ctx == NULL) {
+        return false;
+    }
+
+    size_t handler_count = tbox_vector_length(&ctx->handlers);
+    for (size_t i = 0; i < handler_count; i++) {
+        tbox_context_click_binding *entry = (tbox_context_click_binding *)tbox_vector_at(&ctx->handlers, i);
+        if (entry->active && entry->id == binding) {
+            /* Tombstone rather than physically removing the slot -- see
+             * tbox_context_click_binding's doc comment above for why. */
+            tbox_css_selector_query_destroy(entry->query);
+            entry->query  = NULL;
+            entry->active = false;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
@@ -284,8 +364,8 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
 
     /* NULL both when there is no layout yet and when nothing is under the
      * point -- tbox_context_hit_test already covers both guards. `node` is
-     * NULL only for an anonymous box (not produced by v0/v1's layout, but
-     * guarded defensively -- see tbox_layout_box::node). */
+     * NULL only for an anonymous box (not produced by v0/v1/v2's layout,
+     * but guarded defensively -- see tbox_layout_box::node). */
     const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);
     if (box == NULL || box->node == NULL) {
         return false;
@@ -294,25 +374,38 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
     bool dispatched      = false;
     size_t handler_count = tbox_vector_length(&ctx->handlers);
 
-    /* Outer loop over registrations, in registration order -- "no firing
-     * order between different registrations beyond the order they were
-     * registered in" (ARCHITECTURE.md). Inner loop walks ancestors nearest
-     * to farthest so each registration fires at most once, on the nearest
-     * ancestor that matches it. */
-    for (size_t i = 0; i < handler_count; i++) {
-        const tbox_context_click_binding *binding = (const tbox_context_click_binding *)tbox_vector_at_const(&ctx->handlers, i);
+    /* NOVO v3: walk the ancestor chain ONCE, nearest to farthest -- real
+     * bubbling order. At each level, test EVERY currently-active binding
+     * (in registration order); every one that matches fires. A handler
+     * returning false (stopPropagation) stops the ancestor walk
+     * immediately, so no farther ancestor is even tested. */
+    for (const tbox_html_node *ancestor = box->node; ancestor != NULL; ancestor = ancestor->parent) {
+        bool stop_propagation = false;
 
-        for (const tbox_html_node *ancestor = box->node; ancestor != NULL; ancestor = ancestor->parent) {
+        for (size_t i = 0; i < handler_count; i++) {
+            const tbox_context_click_binding *binding = (const tbox_context_click_binding *)tbox_vector_at_const(&ctx->handlers, i);
+            if (!binding->active) {
+                continue;
+            }
+
             if (tbox_css_selector_query_matches(binding->query, ancestor)) {
                 /* Non-const cast: tbox_layout_box::node is const (layout's
                  * own read-only view), but a click handler's whole point is
                  * to be able to mutate the tree (e.g.
                  * tbox_html_node_set_attribute) -- see
                  * tbox_context_click_handler's signature. */
-                binding->handler(ctx, (tbox_html_node *)ancestor, binding->userdata);
-                dispatched = true;
-                break;
+                bool keep_propagating = binding->handler(ctx, (tbox_html_node *)ancestor, binding->userdata);
+                dispatched            = true;
+
+                if (!keep_propagating) {
+                    stop_propagation = true;
+                    break;
+                }
             }
+        }
+
+        if (stop_propagation) {
+            break;
         }
     }
 

@@ -1,12 +1,12 @@
 # tbox — Arquitetura
 
 Este documento descreve as camadas da tbox, da entrada (HTML/CSS) até a tela.
-O v0 (HTML+CSS estático numa janela) e a v1 (Interatividade) estão
-completos — as seções abaixo descrevem essas camadas como implementadas.
-A v2 (Fidelidade Visual — ver seção própria) está em design. É um
-documento vivo: cada camada nova/revisão deve ser revisada/ajustada aqui
-*antes* de ganhar código, e atualizada quando a implementação revelar que
-o design mudou.
+O v0 (HTML+CSS estático numa janela), a v1 (Interatividade) e a v2
+(Fidelidade Visual) estão completos — as seções abaixo descrevem essas
+camadas como implementadas. A v3 (Interatividade Avançada — ver seção
+própria) está em design. É um documento vivo: cada camada nova/revisão
+deve ser revisada/ajustada aqui *antes* de ganhar código, e atualizada
+quando a implementação revelar que o design mudou.
 
 Convenções que todo o projeto já segue e que as camadas novas devem manter:
 - C puro (`extern "C"`), prefixo `tbox_`, sem exceções, sem alocação além de
@@ -1414,6 +1414,284 @@ Um documento com:
 - **Cor não varia por run** — toda a caixa de texto usa `style->color`
   único, mesmo com `<b>`/`<em>` misturados dentro.
 
+## v3 — Interatividade Avançada
+
+Depois da v2 (fidelidade visual), a v3 aprofunda a interatividade que a v1
+começou, aproveitando o modelo de texto real que a v2 trouxe, mais duas
+peças descobertas por uma auditoria de robustez contra HTML/CSS reais
+(feita a pedido explícito, não especulativa — ver "Robustez de parsing"
+abaixo). Critério de "pronto" no fim desta seção.
+
+Escopo deliberadamente contido: **fechamento implícito de tags** (ex.: um
+`<p>` sem `</p>` não é fechado automaticamente por um novo `<p>`, diferente
+de um browser real) e **decodificação de entidades HTML** (`&amp;`,
+`&nbsp;`, `&#39;` continuam aparecendo como texto literal) ficam de fora —
+v3 assume que HTML/CSS de entrada vem bem-formado; o critério de robustez
+aqui é só "nunca crashar/travar com entrada real", não "produzir sempre a
+árvore/texto certos diante de markup quebrado ou entidades". Ambos
+registrados como débito de design conhecido no fim deste documento,
+com gatilho explícito de quando revisitar. Também fora de escopo:
+**dirty-tracking real por subárvore** — v3 adiciona mais um gatilho de
+recompute (`:hover`), mas continua recomputando o pipeline inteiro a cada
+mudança, mesma política ingênua desde o v0 (ver o próprio item de débito,
+atualizado abaixo).
+
+### Robustez de parsing — o que a auditoria confirmou
+
+Antes de desenhar a leitura de arquivo externo (próxima seção), uma
+investigação empírica (não só leitura de código — HTML/CSS "do mundo
+real" de verdade passado pelo pipeline inteiro) confirmou o seguinte,
+para registro:
+
+**Já seguro, sem mudança necessária:** `<script>`/`<style>` já entram em
+modo de texto puro no tokenizer (conteúdo com `<`/`>` não confunde a
+árvore); tags desconhecidas/customizadas, comentários, DOCTYPE, atributos
+duplicados, aninhamento profundo (testado até 5000 níveis, sem risco de
+stack overflow — a árvore de construção usa uma pilha explícita, não
+recursão) — tudo seguro. No CSS: `@media`/`@import`/`@font-face`
+desconhecidos são ignorados; propriedades/valores desconhecidos
+(`calc()`, `var()`, `-webkit-*`, `flex`) ficam inertes sem quebrar nada;
+seletores não suportados (`::before`, `:nth-child()`, `~`,
+`[attr^=]`) derrubam só a própria regra (recuperação de erro CSS2.1
+correta), sem contaminar o resto da stylesheet; a Style layer só lê as ~9
+propriedades que conhece, então qualquer coisa fora disso já é ignorada
+de graça.
+
+**Bug real encontrado e corrigido nesta versão** (ver "CSS Parser" logo
+abaixo): o contador de profundidade de parênteses usado pra pular blocos
+desconhecidos (`@media`, `@keyframes`, etc.) não considera que um token
+`FUNCTION` (`rotate(`, `calc(`) já consome o `(` de abertura sozinho — só
+o `)` de fechamento é contado como "fecha". Reproduzido:
+`@keyframes spin { from { transform: rotate(0deg); } } p { color: black; }`
+faz o parser **perder a regra `p` inteira**, silenciosamente (sem erro,
+sem crash) — qualquer `@keyframes`/`@media` com uma função CSS dentro,
+antes de uma regra válida, corrompe o parse do resto do arquivo. Muito
+comum em CSS real (animações quase sempre usam `transform`/`rotate`/
+`translate`).
+
+### CSS Parser — correção do bug de profundidade de parênteses
+
+**Responsabilidade:** `tbox_css_token_opens`/`tbox_css_token_closes`
+(usadas por `skip_block`/`skip_at_rule`/`recover_ruleset` pra saber
+quando um bloco `{ }`/`( )` que está sendo pulado efetivamente terminou)
+passam a tratar `TBOX_CSS_TOKEN_FUNCTION` como "abre" também — o mesmo
+peso que já dão a `LPAREN`, já que o tokenizer consome o `(` de abertura
+dentro do próprio token `FUNCTION` (`ident(`) em vez de emitir um
+`LPAREN` separado para esse caso. Correção interna, sem mudança de API
+pública — `include/tbox/css_parser.h` não muda.
+
+**Casos de teste mínimos:** `@keyframes spin { from { transform:
+rotate(0deg); } } p { color: black; }` produz exatamente 1 ruleset (`p`,
+com `color: black`) — o caso que hoje produz 0. A variante com `to {
+transform: rotate(360deg); }` no lugar de `from` não produz nenhum
+ruleset espúrio (`to { ... }` não deve ser interpretado como seletor
+real). Um `calc()`/`var()` dentro de um valor de declaração NÃO pulada
+(nível normal, fora de `@media`/`@keyframes`) continua parseando como
+antes (essa combinação já funcionava, sem regressão).
+
+### HTML Parser — mutação de texto
+
+**Responsabilidade nova:** só fazia sentido depois da v2 ter um modelo de
+texto de verdade (`text_runs`) — permitir que um handler troque o texto
+de um elemento, não só seus atributos.
+
+```c
+/* Equivalente ao setter de `textContent` do DOM: remove TODOS os filhos
+ * atuais de `node` (viram lixo órfão na arena do document -- mesmo
+ * trade-off já aceito por tbox_html_node_set_attribute, sem free
+ * individual) e cria um único filho novo, tipo TEXT, com `text` copiado
+ * para a arena de `document`. No-op se `node->type` não for
+ * TBOX_HTML_NODE_ELEMENT. Como o Layout Tree (v2) já lê o texto de
+ * h1-h6/p percorrendo os filhos diretos a cada relayout (não guarda
+ * cache algum), a próxima `tbox_context_run_frame` já reflete o texto
+ * novo sem nenhuma mudança na Layout Tree -- essa função só precisa
+ * mexer na árvore DOM. */
+void tbox_html_node_set_text_content(tbox_html_document *document, tbox_html_node *node, tbox_string_view text);
+```
+
+**Fora de escopo:** mutação de um nó TEXT específico in-place (ex.: editar
+só uma palavra no meio de texto misto com `<b>`) — a granularidade aqui é
+"substitui tudo", igual ao `textContent` real do DOM.
+
+### `:hover` — pseudo-classe dinâmica de verdade
+
+Pra avaliar corretamente um seletor composto como `button:hover` (tipo E
+estado ao mesmo tempo), `tbox_css_selector_matches` — o primitivo mais
+baixo de `css_selector.h` — precisa saber "qual nó está sob o ponteiro
+agora". **Decidido: contexto global (estático, por processo), não
+parâmetro explícito propagado por assinatura.** Só existe um ponteiro de
+mouse — "o que está em hover agora" sendo único e não-particionado é a
+forma certa pra essa informação, e a lib já se declara "não thread-safe,
+sem lock interno" em todo lugar (ver "Convenções"), então isso não
+introduz nenhuma garantia nova que precise ser quebrada — é o mesmo tipo
+de confiança "quem chama sequencia direito" que já sustenta o resto da
+biblioteca. **Nenhuma das assinaturas públicas de `css_selector.h`/
+`css_cascade.h`/`style.h` muda** — só entra uma função nova:
+
+```c
+/* Define o nó atualmente em hover (ou NULL, se nenhum) para as próximas
+ * chamadas de tbox_css_selector_matches avaliarem um simple selector
+ * PSEUDO chamado "hover" -- casa se e somente se `node == hovered`
+ * (igualdade de ponteiro); toda outra pseudo-classe/pseudo-elemento
+ * continua "nunca casa", como já documentado (só first-child/last-child
+ * são estruturais e já funcionavam). tbox_context_run_frame (via
+ * tbox_context_update_hover) chama isso imediatamente antes de cada
+ * tbox_style_resolve_tree -- nunca reaproveita um valor de um
+ * tbox_context diferente do que está sendo resolvido agora (mesmo
+ * contrato de sequenciamento correto que o resto da lib já exige de quem
+ * chama; ver o item de débito "Thread-safety futura" no fim deste
+ * documento para quando isso precisar de tratamento formal). */
+void tbox_css_selector_set_hover_context(const tbox_html_node *hovered);
+```
+
+**Output Display (Wayland backend) — posição do ponteiro, não só
+clique:**
+```c
+/* Diferente de tbox_backend_wayland_take_click (que CONSOME um clique
+ * pendente), esta só LÊ a posição corrente do ponteiro -- reaproveita o
+ * mesmo estado interno (pointer_x/pointer_y) que o listener de motion já
+ * mantém desde a v1 para computar a posição de clique. Retorna false
+ * (sem escrever em out_x/out_y) se o ponteiro nunca entrou na superfície
+ * desta janela, ou já saiu dela (evento `leave`) -- útil pra
+ * tbox_context_update_hover tratar "ponteiro fora da janela" como
+ * "nada em hover". */
+bool tbox_backend_wayland_pointer_position(const tbox_backend_wayland *backend, double *out_x, double *out_y);
+```
+
+**Orchestration (`tbox_context`):**
+```c
+/* Faz hit_test em (x, y) contra o último layout computado (mesma busca
+ * de tbox_context_hit_test) e compara o nó achado (ou NULL, se `has_position`
+ * for false ou nada estiver sob o ponto) contra ctx->hovered_node (novo
+ * campo interno, com vida própria -- NÃO faz parte da frame_arena, tem
+ * que sobreviver ao reset de frame pra comparação entre frames funcionar).
+ * Se mudou, atualiza ctx->hovered_node e retorna true (mesmo contrato de
+ * retorno de tbox_context_dispatch_click: o valor É o sinal, tbox_context
+ * não guarda estado "sujo" próprio -- quem decide recomputar é a
+ * Application). Se não mudou, retorna false. */
+bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, double y);
+```
+`tbox_context_run_frame` chama `tbox_css_selector_set_hover_context(ctx->hovered_node)`
+incondicionalmente, imediatamente antes de `tbox_style_resolve_tree` — cuja
+assinatura, como já dito acima, **não muda** (o contexto de hover chega até
+ela por baixo, via o global/estático do CSS Selector, não por parâmetro).
+
+**Application (`tbox_app_step`):** a cada tick, chama
+`tbox_backend_wayland_pointer_position` e repassa o resultado pra
+`tbox_context_update_hover`; combina o retorno disso com os sinais já
+existentes (clique, resize) na mesma decisão local de "recomputa este
+tick". Chamado incondicionalmente a cada tick (sem checar se o ponteiro
+de fato se moveu) — mesmo custo de hit-test O(n) já aceito em outro lugar
+do projeto; otimizar isso (checar delta de posição antes de hit-testar)
+fica pra quando for medido como problema real, mesmo espírito de todo
+outro adiamento de performance já registrado aqui.
+
+**Escopo mínimo (v3):** só `:hover`. **Fora de escopo:** `:focus`
+(precisa de conceito de foco de teclado, que não existe), `:active`,
+qualquer outra pseudo-classe dinâmica.
+
+### Bubbling completo + `stopPropagation` + desregistro de handler
+
+Generaliza o que a v1 deixou explicitamente simplificado: hoje, cada
+registro de `tbox_context_on_click` dispara no máximo uma vez por clique,
+no ancestral mais próximo que casar com aquele registro especificamente —
+e registros DIFERENTES são testados em ordem de registro, não em ordem
+real de bubbling (do nó clicado pra fora). Isso muda:
+
+```c
+/* Assinatura do handler MUDA: retorna bool em vez de void. true =
+ * continua a propagação (outros registros que casem em ancestrais MAIS
+ * distantes ainda podem disparar); false = para a propagação
+ * imediatamente -- nenhum outro registro dispara pra este clique,
+ * mesmo que casasse em um ancestral mais distante. Breaking change
+ * aceito, mesmo espírito das quebras já feitas nas versões anteriores;
+ * exige atualizar qualquer handler já escrito (ver Application abaixo). */
+typedef bool (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *node, void *userdata);
+
+/* Devolve um handle opaco (na prática um int, id monotônico -- não
+ * reaproveitado mesmo depois de um unbind, pra não colidir com um
+ * ponteiro/id antigo guardado por engano) em vez de bool; -1 em caso de
+ * erro de sintaxe do seletor (nada registrado, mesma condição de erro de
+ * antes). */
+int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata);
+
+/* Remove o registro `binding`. No-op (retorna false) se `binding` não
+ * corresponde a nenhum registro ativo (id inválido ou já removido). */
+bool tbox_context_unbind_click(tbox_context *ctx, int binding);
+```
+
+**Nova ordem de dispatch em `tbox_context_dispatch_click`:** em vez de
+"por registro, ande os ancestrais," passa a ser "por ancestral (do nó
+clicado pra fora), teste TODOS os registros contra aquele nível" — ordem
+real de bubbling. Em cada nível, todo registro cujo seletor casa dispara
+(em ordem de registro entre os que casam no mesmo nível); se algum
+handler retornar `false`, a subida pára ali — nenhum registro em
+ancestrais mais distantes dispara, mesmo que casasse.
+
+**Fora de escopo:** fase de captura (capture phase — do ancestral mais
+distante pro clicado, antes da fase de bubbling), `preventDefault`-like
+(não há comportamento "default" do navegador a prevenir aqui, já que
+tbox não tem elementos com comportamento nativo tipo `<a>`/`<form>`).
+
+### Application — leitura de arquivo externo
+
+```c
+/* Lê html_path/css_path inteiros pra memória (helper local, mesmo padrão
+ * já usado em vários exemplos/testes -- ver "Débito de design conhecido"
+ * se isso um dia justificar virar utilitário compartilhado em Base),
+ * chama tbox_app_create/_create_with_config com os bytes lidos, libera
+ * os buffers de leitura em seguida (tbox_html_parse/tbox_css_parse já
+ * copiam o que precisam pra dentro do document/stylesheet, então os
+ * buffers de arquivo não precisam sobreviver além desta chamada).
+ * css_path == NULL é tratado como CSS vazio (documento sem nenhuma
+ * folha de autor, só a UA stylesheet) -- conveniência explícita, não um
+ * caso de erro. Retorna NULL nas mesmas condições de falha de
+ * tbox_app_create/_create_with_config, mais falha de leitura de
+ * qualquer um dos dois arquivos (html_path é obrigatório, NULL é erro). */
+tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height);
+tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config);
+```
+
+### Fatia vertical v3 — critério de "pronto"
+
+Um app tbox que:
+- carrega HTML e CSS de **arquivos externos de verdade** via
+  `tbox_app_create_from_files` (não mais strings fixas no exemplo);
+- tem um elemento cujo `background-color` muda ao passar o mouse por
+  cima, via `:hover` no CSS de autor, sem nenhum clique;
+- clicar num elemento aninhado dispara handlers em múltiplos
+  ancestrais em ordem de bubbling real, e pelo menos um cenário
+  demonstra `stopPropagation` (um handler mais interno impede um handler
+  mais externo de disparar);
+- pelo menos um handler é desregistrado via `tbox_context_unbind_click`
+  em algum momento (ex.: depois do primeiro clique, prova que cliques
+  seguintes não disparam mais aquele handler);
+- um handler troca o **texto** de um elemento via
+  `tbox_html_node_set_text_content`, refletido na tela sem fechar a
+  janela;
+- continua sem regredir nada de v0/v1/v2 (fidelidade visual e mutação de
+  atributo/classe da v1/v2 intactas).
+
+## Decisões já tomadas (v3)
+
+- **`:hover` usa contexto global/estático** (`tbox_css_selector_set_hover_context`),
+  não parâmetro explícito propagado por assinatura nem campo novo em
+  `tbox_html_node` — zero mudança de assinatura pública em `css_selector.h`/
+  `css_cascade.h`/`style.h`. Aceito porque a lib já é "não thread-safe, sem
+  lock interno" em todo lugar; não introduz garantia nova a quebrar. Mantém
+  a árvore DOM livre de estado de interação, mesma postura já adotada na v1
+  (Opção C do débito "Árvore pública de mutação").
+- **Bubbling real (por nível de ancestral, não por registro) com
+  `stopPropagation` via retorno `bool` do handler** — breaking change no
+  tipo `tbox_context_click_handler`, aceito.
+- **Desregistro por handle opaco (int monotônico), não por
+  correspondência de `(seletor, handler, userdata)`** — evita ambiguidade
+  se o mesmo trio for registrado duas vezes.
+- **Fechamento implícito de tags e decodificação de entidades HTML ficam
+  de fora da v3** — HTML/CSS de entrada assumido bem-formado por ora; o
+  bug real do CSS Parser (profundidade de parênteses) é corrigido porque
+  é um bug de verdade, não uma lacuna de escopo.
+
 ## Débito de design conhecido (pós-v0)
 
 Trabalho futuro real, conscientemente adiado — não bloqueia o v0, mas tem
@@ -1421,6 +1699,53 @@ complexidade própria e precisa chegar até quem for implementar aquela
 fatia futura com o contexto intacto. Diferente de "Perguntas em aberto"
 abaixo (decisões pequenas e de curto prazo): aqui o "quando" é um gatilho
 explícito, não "em breve".
+
+### Fechamento implícito de tags no HTML Parser
+**O que é:** um browser real fecha tags automaticamente em vários casos —
+o exemplo mais comum: um novo `<p>` fecha implicitamente um `<p>` já
+aberto sem `</p>` explícito. O tree builder de tbox não tem esse
+conhecimento por-tag; hoje um `<p>` sem fechamento explícito engole tudo
+que vem depois (incluindo tags de bloco não relacionadas) até achar o
+próximo `</p>` no documento, produzindo uma árvore estruturalmente errada
+— confirmado por auditoria empírica na v3 (não é suposição). Não é falha
+nem crash: o parser continua tolerante a entrada malformada (nunca falha
+por markup inválido, como já documentado em "Convenções"), só produz uma
+árvore diferente da que um browser real produziria.
+**Por que importa:** HTML "solto" (sem fechamento explícito de `<p>`,
+entre outras tags) é comum o bastante no mundo real pra distorcer
+visivelmente o resultado quando alguém aponta a tbox pra uma página que
+não foi escrita pensando nela. O algoritmo completo do HTML5 tem dezenas
+de regras de fechamento implícito por tag (`<p>`, `<li>`, `<tr>`/`<td>`/
+`<th>`, `<option>`, etc.) — implementar tudo é desproporcional ao
+tamanho do resto do parser; mesmo um subconjunto pequeno (só `<p>`, por
+exemplo) já exige decidir e testar caso a caso.
+**Gatilho para revisitar:** quando a expectativa de v3 (v3 assume
+HTML/CSS de entrada bem-formado) deixar de valer — por exemplo, o dia em
+que a tbox precisar processar conteúdo de origem não controlada/não
+confiável, onde markup quebrado é esperado, não excepcional.
+**Toca:** HTML Parser (`src/html_parser/tbox_html_tree_builder.c`, o
+open-elements stack que já existe — as regras de fechamento implícito se
+encaixariam ali).
+
+### Decodificação de entidades HTML no HTML Parser
+**O que é:** `&amp;`, `&nbsp;`, `&#39;`, `&#x27;` e qualquer outra
+referência de caractere (nomeada ou numérica) não são decodificadas —
+aparecem como texto literal (`&amp;amp;` mesmo) em qualquer lugar onde
+apareceriam no texto/atributo de origem. Confirmado por auditoria
+empírica na v3, junto do item acima.
+**Por que importa:** cosmético, não estrutural (não quebra a árvore nem
+o layout) — mas visível em qualquer conteúdo real que use `&amp;`/
+`&nbsp;`/acentuação via referência numérica. A tabela completa de
+entidades nomeadas do HTML5 tem ~2000 entradas; mesmo um subconjunto
+prático (as ~15-20 mais comuns) mais as referências numéricas
+(`&#NNN;`/`&#xHHH;`, que cobrem qualquer caractere Unicode com um
+algoritmo simples e completo, sem tabela) é trabalho real, só adiado por
+não ser prioridade de nenhuma versão até agora.
+**Gatilho para revisitar:** mesmo gatilho do item acima (conteúdo de
+origem não controlada) — ou antes, se alguma fatia futura specificamente
+sobre fidelidade de texto/tipografia precisar disso.
+**Toca:** HTML Parser (tokenizer — onde o texto/valor de atributo é
+extraído).
 
 ### Unidades relativas a fonte (`em`, `%` de `font-size`) na Style layer
 **O que é:** resolver `font-size` e valores em `em`/`%` de fonte exige uma
@@ -1476,6 +1801,18 @@ recompute do pipeline inteiro, sem dirty-tracking real por subárvore. Este
 item de débito continua de pé tal como estava; só ganhou um segundo
 caminho que leva a ele.
 
+**Atualizado na v3:** `:hover` (ver "v3 — Interatividade Avançada" acima)
+é um TERCEIRO gatilho, e o mais frequente dos três — potencialmente a
+cada tick de `tbox_app_step`, não só em resposta a um evento discreto
+como clique/resize. A v3 aceita isso deliberadamente (mesmo recompute
+total de sempre, só chamado com mais frequência), mas é o gatilho que
+mais aumenta a pressão por dirty-tracking real — se algum dia o
+recompute total virar gargalo medido, `:hover` é provavelmente a causa.
+Não implementado ainda, continua fora de escopo, só registrado como o
+sinal mais forte até agora de que este item pode precisar ser revisitado
+antes do gatilho genérico original ("mutação/interatividade avançada")
+ter sido totalmente esgotado.
+
 ### Critérios de atualização (update triggers) do modelo Retained Mode
 **O que é:** para além do resize de janela (único gatilho do v0), decidir
 quais eventos disparam um novo frame num toolkit Retained Mode — onde a
@@ -1504,6 +1841,12 @@ do resize do v0. `:hover`/foco, timers/animações e carregamento
 assíncrono de recursos continuam de fora — o gatilho pra revisitar esses
 continua sendo o mesmo (mutação/interatividade mais avançada, ou o motor
 de script).
+
+**Atualizado na v3:** `:hover` implementado (ver "v3 — Interatividade
+Avançada" acima) — `tbox_context_update_hover`, chamado por
+`tbox_app_step` a cada tick via `tbox_backend_wayland_pointer_position`.
+Foco de teclado, timers/animações e carregamento assíncrono de recursos
+continuam de fora, mesmo gatilho de revisita de antes.
 
 ### Árvore pública de mutação da Application (`tbox_html_node` vs. `tbox_widget`)
 **O que é:** quando a Application ganhar API de mutação, decidir qual é a
@@ -1579,9 +1922,47 @@ deste item (um documento por janela vs. várias árvores compositadas —
 tooltip/popup/modal) continua em aberto, sem gatilho na v1: nenhum desses
 casos entrou em escopo ainda.
 
+### Thread-safety futura
+**O que é:** a tbox inteira é hoje "não thread-safe, sem lock interno" por
+declaração explícita (ver "Convenções" no topo deste documento) — cada
+`tbox_context`/`tbox_html_document`/etc. é seguro de usar de uma única
+thread de cada vez, sem coordenação entre threads em lugar nenhum do
+código. Confirmado, na v3, que isso vai precisar mudar em algum momento
+futuro — mas **decidido explicitamente adiar essa análise** até lá, em
+vez de tentar adivinhar quais pontos precisam de lock agora, sem um caso
+de uso real de multithread guiando a decisão.
+**Por que importa:** decisão transversal ao projeto inteiro, não uma
+camada específica — arenas (`tbox_arena`, sem nenhuma sincronização
+interna), o contexto global de hover que a v3 introduz
+(`tbox_css_selector_set_hover_context`, ver seção "`:hover`" acima), e
+qualquer estado mutável compartilhado futuro (cache de fontes, tabela de
+handlers) são candidatos a precisar de lock — mas qual estratégia
+(lock por estrutura, um lock global, um modelo sem lock nenhum tipo
+"cada `tbox_context` só pode ser tocado pela thread que o criou") só faz
+sentido escolher quando houver um cenário de uso real motivando (ex.:
+processar múltiplos documentos em paralelo, um motor de script rodando
+em thread separada do render).
+**Gatilho para revisitar:** quando threading virar um requisito real de
+algum caso de uso (não antes) — nesse momento, mapear cada ponto de
+estado mutável compartilhado do projeto (o contexto de hover é só o
+primeiro exemplo conhecido) e decidir a estratégia de sincronização caso
+a caso.
+**Regra até lá, para qualquer tarefa (humana ou agente) implementando
+código novo:** o exemplo do contexto de hover NÃO é um precedente livre
+pra introduzir outra variável global/estática por conta própria — cada
+nova instância de estado global/estático precisa ser discutida
+explicitamente (com o mantenedor do projeto) antes de ser adicionada,
+mesmo com a análise de thread-safety formal continuando adiada. Se uma
+tarefa do `TASKS.md` parecer exigir um novo global/estático além do que
+o `ARCHITECTURE.md` já especifica explicitamente para aquela tarefa, isso
+é motivo de parar e perguntar, não uma decisão de implementação a tomar
+sozinho.
+**Toca:** potencialmente todo o projeto — Base (`tbox_arena`), CSS
+Selector (contexto de hover), qualquer cache/estado global futuro.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0 e para v1 (registrada nas seções de cada camada) ou
+fechada para v0, v1, v2 e v3 (registrada nas seções de cada camada) ou
 consolidada como débito de design conhecido acima, com gatilho explícito
 de quando revisitar.

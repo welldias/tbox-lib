@@ -80,21 +80,75 @@ static void click_capture_reset(click_capture *capture) {
     capture->node       = NULL;
 }
 
-static void record_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+/* NOVO v3: tbox_context_click_handler now returns bool (true = keep
+ * propagating). record_click always lets propagation continue, unless the
+ * caller wants otherwise -- see record_click_stop below for
+ * stopPropagation tests. */
+static bool record_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
     (void)ctx;
     click_capture *capture = (click_capture *)userdata;
     capture->call_count++;
     capture->node = node;
+    return true;
+}
+
+/* NOVO v3: same as record_click, but returns false (stopPropagation) -- for
+ * tests proving a handler can prevent a farther ancestor's otherwise-
+ * matching handler from firing. */
+static bool record_click_stop(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)ctx;
+    click_capture *capture = (click_capture *)userdata;
+    capture->call_count++;
+    capture->node = node;
+    return false;
+}
+
+/* NOVO v3: shared by the bubbling-order tests -- each handler appends its
+ * own tag (e.g. "inner"/"outer") to a fixed-size log so the test can verify
+ * not just THAT both fired, but the ORDER they fired in (nearest ancestor
+ * first). userdata is a bubble_log*; which tag a given registration appends
+ * is baked into the handler function itself (bubble_log_append_inner/
+ * _outer below), since a plain function pointer can't close over which tag
+ * to use. */
+typedef struct bubble_log {
+    const char *entries[4];
+    int count;
+} bubble_log;
+
+static void bubble_log_reset(bubble_log *log) {
+    log->count = 0;
+}
+
+static void bubble_log_append(bubble_log *log, const char *tag) {
+    if (log->count < 4) {
+        log->entries[log->count] = tag;
+    }
+    log->count++;
+}
+
+static bool bubble_log_inner_handler(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)ctx;
+    (void)node;
+    bubble_log_append((bubble_log *)userdata, "inner");
+    return true;
+}
+
+static bool bubble_log_outer_handler(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)ctx;
+    (void)node;
+    bubble_log_append((bubble_log *)userdata, "outer");
+    return true;
 }
 
 /* Exercises tbox_context_document: a handler that mutates the clicked
  * node's `class` attribute via tbox_html_node_set_attribute, the same
  * pattern the v1 vertical slice (ARCHITECTURE.md's "Fatia vertical v1")
  * uses to swap a CSS class on click. */
-static void toggle_class_handler(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool toggle_class_handler(tbox_context *ctx, tbox_html_node *node, void *userdata) {
     (void)userdata;
     tbox_html_document *document = tbox_context_document(ctx);
     tbox_html_node_set_attribute(document, node, tbox_string_view_make("class", 5), tbox_string_view_make("box on", 6));
+    return true;
 }
 
 int tbox_test_context_run(void) {
@@ -256,7 +310,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT_MSG(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture), "tbox_context_on_click must succeed for a well-formed selector");
+            TBOX_TEST_ASSERT_MSG(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture) >= 0, "tbox_context_on_click must succeed for a well-formed selector");
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -280,7 +334,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture) >= 0);
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -303,7 +357,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), record_click, &capture));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), record_click, &capture) >= 0);
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -335,8 +389,8 @@ int tbox_test_context_run(void) {
             click_capture class_capture;
             click_capture_reset(&id_capture);
             click_capture_reset(&class_capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#target", strlen("#target"), record_click, &id_capture));
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".box", strlen(".box"), record_click, &class_capture));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#target", strlen("#target"), record_click, &id_capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".box", strlen(".box"), record_click, &class_capture) >= 0);
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -364,8 +418,8 @@ int tbox_test_context_run(void) {
              * before it -- a syntax error (same example
              * tests/css_selector/test_*.c already uses for
              * tbox_css_selector_compile). */
-            bool registered = tbox_context_on_click(ctx, ">", strlen(">"), record_click, &capture);
-            TBOX_TEST_ASSERT_MSG(!registered, "a selector syntax error must make tbox_context_on_click return false");
+            int registered = tbox_context_on_click(ctx, ">", strlen(">"), record_click, &capture);
+            TBOX_TEST_ASSERT_MSG(registered == -1, "a selector syntax error must make tbox_context_on_click return -1");
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -387,7 +441,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture) >= 0);
 
             bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
             TBOX_TEST_ASSERT_MSG(!dispatched, "dispatch before any run_frame must return false, not crash");
@@ -409,7 +463,7 @@ int tbox_test_context_run(void) {
             fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".off", strlen(".off"), toggle_class_handler, NULL));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".off", strlen(".off"), toggle_class_handler, NULL) >= 0);
 
             tbox_display_list before_list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &before_list);
@@ -620,6 +674,188 @@ int tbox_test_context_run(void) {
 
             tbox_context_close(default_ctx);
             tbox_context_close(custom_ctx);
+        }
+    }
+
+    /* 19: tbox_context_update_hover changes hover state when the point
+     * moves onto an element's box, and returns true only when something
+     * actually changed. */
+    {
+        tbox_context *ctx = open_cstr("<div>x</div>", "div { width: 100px; height: 100px; }", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            bool changed = tbox_context_update_hover(ctx, true, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(changed, "hovering a point inside the div's box for the first time must change the hover state");
+
+            bool changed_again = tbox_context_update_hover(ctx, true, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(!changed_again, "calling update_hover again with the SAME position must report no change");
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 20: has_position == false un-hovers a previously hovered element
+     * (and reports that as a change); with nothing hovered to begin with,
+     * it is a no-op (no change). */
+    {
+        tbox_context *ctx = open_cstr("<div>x</div>", "div { width: 100px; height: 100px; }", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            TBOX_TEST_ASSERT_MSG(!tbox_context_update_hover(ctx, false, 0.0, 0.0), "has_position == false with nothing hovered to begin with must report no change");
+
+            TBOX_TEST_ASSERT_MSG(tbox_context_update_hover(ctx, true, 10.0, 10.0), "hovering the div must change the hover state");
+            TBOX_TEST_ASSERT_MSG(tbox_context_update_hover(ctx, false, 0.0, 0.0), "has_position == false (pointer left the window) must un-hover a previously hovered element, reporting a change");
+            TBOX_TEST_ASSERT_MSG(!tbox_context_update_hover(ctx, false, 0.0, 0.0), "calling again with has_position == false must report no further change");
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 21: end-to-end proof that :hover reaches the cascade -- a
+     * .box:hover author rule resolved via tbox_context_run_frame AFTER
+     * update_hover points at the element produces the hover color in the
+     * resulting FILL_RECT; not hovering (or un-hovering) produces the
+     * normal color. */
+    {
+        tbox_context *ctx = open_cstr("<div class=\"box\">x</div>",
+            ".box { width: 100px; height: 100px; background-color: rgb(0, 0, 0); }"
+            ".box:hover { background-color: rgb(255, 0, 0); }",
+            fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list before_list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &before_list);
+            TBOX_TEST_ASSERT_MSG(before_list.count == 1, "the box must paint one FILL_RECT before any hover");
+            if (before_list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(before_list.items[0].color.r == 0 && before_list.items[0].color.g == 0 && before_list.items[0].color.b == 0, "with nothing hovered, the box must paint its normal (non-hover) background");
+            }
+
+            TBOX_TEST_ASSERT_MSG(tbox_context_update_hover(ctx, true, 10.0, 10.0), "hovering the box must change the hover state");
+
+            tbox_display_list hover_list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &hover_list);
+            TBOX_TEST_ASSERT_MSG(hover_list.count == 1, "the box must still paint one FILL_RECT while hovered");
+            if (hover_list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(hover_list.items[0].color.r == 255 && hover_list.items[0].color.g == 0 && hover_list.items[0].color.b == 0, ".box:hover's background-color must win while the box is hovered");
+            }
+
+            TBOX_TEST_ASSERT_MSG(tbox_context_update_hover(ctx, false, 0.0, 0.0), "un-hovering must change the hover state");
+
+            tbox_display_list after_list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &after_list);
+            TBOX_TEST_ASSERT_MSG(after_list.count == 1, "the box must still paint one FILL_RECT after un-hovering");
+            if (after_list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(after_list.items[0].color.r == 0 && after_list.items[0].color.g == 0 && after_list.items[0].color.b == 0, "after un-hovering, the box must paint its normal background again");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 22: a click on a nested node with handlers registered on TWO
+     * different ancestors fires both, nearest ancestor first -- real
+     * bubbling order (checked via a shared log both handlers append to). */
+    {
+        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            bubble_log log;
+            bubble_log_reset(&log);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".inner", strlen(".inner"), bubble_log_inner_handler, &log) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), bubble_log_outer_handler, &log) >= 0);
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            /* (10, 10) sits inside the inner div's box. */
+            bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(dispatched, "a click on the inner div must dispatch");
+            TBOX_TEST_ASSERT_MSG(log.count == 2, "both the .inner and .outer handlers must fire");
+            if (log.count == 2) {
+                TBOX_TEST_ASSERT_MSG(strcmp(log.entries[0], "inner") == 0, "the .inner handler (nearest ancestor) must fire FIRST");
+                TBOX_TEST_ASSERT_MSG(strcmp(log.entries[1], "outer") == 0, "the .outer handler (farther ancestor) must fire SECOND -- real bubbling order");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 23: a handler returning false (stopPropagation) prevents a farther
+     * ancestor's otherwise-matching handler from firing at all. */
+    {
+        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            click_capture inner_capture;
+            click_capture outer_capture;
+            click_capture_reset(&inner_capture);
+            click_capture_reset(&outer_capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".inner", strlen(".inner"), record_click_stop, &inner_capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), record_click, &outer_capture) >= 0);
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(dispatched, "the .inner handler firing must count as a dispatch");
+            TBOX_TEST_ASSERT_MSG(inner_capture.call_count == 1, "the .inner handler must fire exactly once");
+            TBOX_TEST_ASSERT_MSG(outer_capture.call_count == 0, "the .outer handler must NOT fire -- the .inner handler's false return must stop propagation before the outer ancestor is even tested");
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 24: tbox_context_unbind_click followed by a new dispatch at the same
+     * point no longer fires the unbound handler. */
+    {
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            click_capture capture;
+            click_capture_reset(&capture);
+            int binding = tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture);
+            TBOX_TEST_ASSERT_MSG(binding >= 0, "tbox_context_on_click must succeed for a well-formed selector");
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            bool dispatched_before = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(dispatched_before, "the handler must fire once before it is unbound");
+            TBOX_TEST_ASSERT_MSG(capture.call_count == 1, "the handler must have fired exactly once before unbind");
+
+            TBOX_TEST_ASSERT_MSG(tbox_context_unbind_click(ctx, binding), "unbinding a currently-active registration must succeed");
+
+            bool dispatched_after = tbox_context_dispatch_click(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT_MSG(!dispatched_after, "no handler may fire once the only registration has been unbound");
+            TBOX_TEST_ASSERT_MSG(capture.call_count == 1, "the unbound handler must not fire again on a later dispatch");
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 25: tbox_context_unbind_click with an invalid or already-removed
+     * handle returns false without crashing. */
+    {
+        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            TBOX_TEST_ASSERT_MSG(!tbox_context_unbind_click(ctx, 12345), "unbinding a handle that was never registered must return false, not crash");
+
+            click_capture capture;
+            click_capture_reset(&capture);
+            int binding = tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture);
+            TBOX_TEST_ASSERT_MSG(binding >= 0, "tbox_context_on_click must succeed for a well-formed selector");
+
+            TBOX_TEST_ASSERT_MSG(tbox_context_unbind_click(ctx, binding), "the first unbind of a real registration must succeed");
+            TBOX_TEST_ASSERT_MSG(!tbox_context_unbind_click(ctx, binding), "unbinding the SAME handle a second time must return false, not crash");
+
+            tbox_context_close(ctx);
         }
     }
 

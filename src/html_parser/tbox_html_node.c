@@ -154,6 +154,30 @@ void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *
     node->element.attribute_count = new_count;
 }
 
+void tbox_html_node_set_text_content(tbox_html_document *document, tbox_html_node *node, tbox_string_view text) {
+    if (node->type != TBOX_HTML_NODE_ELEMENT) {
+        return;
+    }
+
+    /* Detach all current children in one shot rather than looping
+     * tbox_html_node_remove per child: remove() exists to relink siblings
+     * around a single detached node, but here every child is leaving at
+     * once, so there's no sibling chain left to maintain afterwards --
+     * zeroing first_child/last_child directly is equivalent and avoids the
+     * O(n) sibling-relinking work remove() would otherwise do for nothing.
+     * The detached children's own parent/sibling pointers are left as-is;
+     * they're unreachable from `node` either way and become orphaned
+     * garbage in the document's arena (no individual free), same trade-off
+     * tbox_html_node_set_attribute already accepts for its old attributes
+     * array. */
+    node->first_child = NULL;
+    node->last_child  = NULL;
+
+    tbox_html_node *text_node = tbox_html_node_create(document, TBOX_HTML_NODE_TEXT);
+    text_node->text.text      = tbox_html_node_copy_string(&document->arena, text);
+    tbox_html_node_append_child(node, text_node);
+}
+
 const tbox_html_attribute *tbox_html_node_get_attribute(const tbox_html_node *node, tbox_string_view name) {
     if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return NULL;

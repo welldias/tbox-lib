@@ -1,5 +1,6 @@
 #include <tbox/app.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -96,15 +97,15 @@ static tbox_font_source *tbox_app_resolve_font_source(bool bold, const void **ou
  * Returns NULL on any failure, cleaning up whatever had already been
  * allocated first; never crashes either way. */
 static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
-    const void *regular_data = NULL;
-    size_t regular_size      = 0;
+    const void *regular_data         = NULL;
+    size_t regular_size              = 0;
     tbox_font_source *regular_source = tbox_app_resolve_font_source(false, &regular_data, &regular_size);
     if (regular_source == NULL) {
         return NULL;
     }
 
-    const void *bold_data = NULL;
-    size_t bold_size      = 0;
+    const void *bold_data         = NULL;
+    size_t bold_size              = 0;
     tbox_font_source *bold_source = tbox_app_resolve_font_source(true, &bold_data, &bold_size);
     if (bold_source == NULL) {
         tbox_font_source_destroy(regular_source);
@@ -121,9 +122,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t
         return NULL;
     }
 
-    tbox_context *ctx = use_config
-        ? tbox_context_open_with_config(html, strlen(html), css, strlen(css), fonts, config)
-        : tbox_context_open(html, strlen(html), css, strlen(css), fonts);
+    tbox_context *ctx = use_config ? tbox_context_open_with_config(html, strlen(html), css, strlen(css), fonts, config) : tbox_context_open(html, strlen(html), css, strlen(css), fonts);
     if (ctx == NULL) {
         tbox_font_face_cache_destroy(fonts);
         return NULL;
@@ -164,6 +163,103 @@ tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t
     return tbox_app_create_impl(html, css, width, height, true, config);
 }
 
+/* NOVO v3: reads `path` fully into a malloc'd, NUL-terminated buffer -- same
+ * read-whole-file shape as tests/context/test_context.c's read_file() and
+ * example/css_cascade_origins.c's own copy (see ARCHITECTURE.md's
+ * "Application -- leitura de arquivo externo" on this being a small helper
+ * this codebase already tolerates being duplicated a few times, not yet a
+ * shared Base utility), with one difference: those callers hand their
+ * buffer's length to a function that takes an explicit size, but
+ * tbox_app_create_impl below takes plain NUL-terminated C strings (it calls
+ * strlen() on them itself), so this helper allocates one extra byte and
+ * writes a terminating '\0' rather than returning a separate size. Returns
+ * NULL on any failure (file doesn't exist/can't be opened, seek/tell
+ * failure, allocation failure, or a short read); the file is always closed
+ * either way. */
+static char *tbox_app_read_file(const char *path) {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    long size = ftell(file);
+    if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    char *buffer = (char *)malloc((size_t)size + 1);
+    if (buffer == NULL) {
+        fclose(file);
+        return NULL;
+    }
+
+    size_t bytes_read = fread(buffer, 1, (size_t)size, file);
+    fclose(file);
+    if (bytes_read != (size_t)size) {
+        free(buffer);
+        return NULL;
+    }
+
+    buffer[size] = '\0';
+    return buffer;
+}
+
+/* Shared by tbox_app_create_from_files/tbox_app_create_from_files_with_config
+ * -- same "thin public wrapper over one shared impl" shape as
+ * tbox_app_create_impl above. Reads html_path (required: NULL, or a read
+ * failure, returns NULL immediately without touching css_path) and css_path
+ * (NULL means "no author stylesheet", treated as an empty CSS string rather
+ * than an error; a non-NULL css_path that fails to read IS an error) via
+ * tbox_app_read_file(), then forwards the resulting NUL-terminated buffers
+ * to tbox_app_create_impl exactly like tbox_app_create/_with_config already
+ * do above. Both buffers are freed right after that call returns, success or
+ * failure alike -- tbox_html_parse/tbox_css_parse (called inside
+ * tbox_context_open/_with_config, called inside tbox_app_create_impl)
+ * already copy whatever they need into their own document/stylesheet
+ * arenas, so these buffers don't need to outlive that call. */
+static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const char *css_path, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
+    if (html_path == NULL) {
+        return NULL;
+    }
+
+    char *html = tbox_app_read_file(html_path);
+    if (html == NULL) {
+        return NULL;
+    }
+
+    char *css = NULL;
+    if (css_path != NULL) {
+        css = tbox_app_read_file(css_path);
+        if (css == NULL) {
+            free(html);
+            return NULL;
+        }
+    }
+
+    tbox_app *app = tbox_app_create_impl(html, css != NULL ? css : "", width, height, use_config, config);
+
+    free(css);
+    free(html);
+
+    return app;
+}
+
+tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height) {
+    tbox_ua_style_config unused_config; /* never read: use_config == false below */
+    memset(&unused_config, 0, sizeof(unused_config));
+    return tbox_app_create_from_files_impl(html_path, css_path, width, height, false, unused_config);
+}
+
+tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
+    return tbox_app_create_from_files_impl(html_path, css_path, width, height, true, config);
+}
+
 tbox_context *tbox_app_context(tbox_app *app) {
     if (app == NULL) {
         return NULL;
@@ -191,6 +287,18 @@ void tbox_app_step(tbox_app *app) {
         if (tbox_context_dispatch_click(app->ctx, click_x, click_y)) {
             dirty = true;
         }
+    }
+
+    /* NOVO v3: pointer position, not just click -- :hover. Called every
+     * tick unconditionally (no check for whether the pointer actually
+     * moved since the last tick), same O(n) hit-test cost already accepted
+     * elsewhere in this project; see tbox_context_update_hover's doc
+     * comment in <tbox/context.h>. */
+    double pointer_x          = 0.0;
+    double pointer_y          = 0.0;
+    bool has_pointer_position = tbox_backend_wayland_pointer_position(app->backend, &pointer_x, &pointer_y);
+    if (tbox_context_update_hover(app->ctx, has_pointer_position, pointer_x, pointer_y)) {
+        dirty = true;
     }
 
     int32_t current_width  = 0;

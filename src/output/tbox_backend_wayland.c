@@ -52,7 +52,7 @@ struct tbox_backend_wayland {
     void *shm_data;
     size_t shm_size;
     struct wl_buffer *buffer;
-    int32_t buffer_width;  /* size the current shm buffer/pool was allocated at */
+    int32_t buffer_width; /* size the current shm buffer/pool was allocated at */
     int32_t buffer_height;
 
     struct xkb_context *xkb_context;
@@ -337,8 +337,8 @@ static void tbox_backend_wayland_surface_configure(void *data, struct xdg_surfac
      * configure) -- keep whatever backend->width/height already holds (the
      * caller's requested size on the first call) in that case. A tiling
      * compositor like Sway instead sends the actual tile size it allocated. */
-    int32_t new_width   = backend->pending_width > 0 ? backend->pending_width : backend->width;
-    int32_t new_height  = backend->pending_height > 0 ? backend->pending_height : backend->height;
+    int32_t new_width       = backend->pending_width > 0 ? backend->pending_width : backend->width;
+    int32_t new_height      = backend->pending_height > 0 ? backend->pending_height : backend->height;
     backend->pending_width  = 0;
     backend->pending_height = 0;
 
@@ -548,9 +548,22 @@ bool tbox_backend_wayland_take_click(tbox_backend_wayland *backend, double *out_
         return false;
     }
 
-    *out_x = backend->click_x;
-    *out_y = backend->click_y;
+    *out_x                 = backend->click_x;
+    *out_y                 = backend->click_y;
     backend->click_pending = false;
+    return true;
+}
+
+bool tbox_backend_wayland_pointer_position(const tbox_backend_wayland *backend, double *out_x, double *out_y) {
+    if (backend == NULL || out_x == NULL || out_y == NULL) {
+        return false;
+    }
+    if (!backend->pointer_has_focus) {
+        return false;
+    }
+
+    *out_x = backend->pointer_x;
+    *out_y = backend->pointer_y;
     return true;
 }
 
@@ -682,8 +695,8 @@ void tbox_backend_wayland_present(tbox_backend_wayland *backend, const tbox_disp
         return;
     }
 
-    uint32_t *pixels     = backend->shm_data;
-    size_t pixel_count   = (size_t)backend->width * (size_t)backend->height;
+    uint32_t *pixels   = backend->shm_data;
+    size_t pixel_count = (size_t)backend->width * (size_t)backend->height;
 
     /* Clear to opaque white first: tbox_raster_* alpha-blends rather than
      * overwriting, so a stale previous frame (or uninitialized shm memory on

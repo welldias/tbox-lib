@@ -149,6 +149,35 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
  * frame has run yet (nothing computed) or nothing is under the point. */
 const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, double y);
 
+/* v3 -- Interatividade Avançada: real ":hover" support. See
+ * ARCHITECTURE.md's "v3 -- Interatividade Avançada" -> "`:hover`" section,
+ * both the "Orchestration" block (this function) and the design rationale
+ * above it (why the hover target is a file-static global inside
+ * css_selector.c, set via tbox_css_selector_set_hover_context, rather than a
+ * parameter threaded through style.h/css_cascade.h).
+ *
+ * Hit-tests (x, y) against the most recent layout -- same search
+ * tbox_context_hit_test already does -- to find the deepest box's ->node
+ * (or NULL if `has_position` is false, meaning the pointer left the
+ * window, or nothing is under the point). Compares that result against
+ * ctx->hovered_node (a plain struct field with its own lifetime, NOT part
+ * of frame_arena -- it must survive every tbox_context_run_frame's arena
+ * reset for the across-frame comparison here to mean anything). If it
+ * changed, updates ctx->hovered_node and returns true; if unchanged,
+ * returns false. Same "the return value IS the signal, tbox_context holds
+ * no internal dirty flag of its own" contract tbox_context_dispatch_click
+ * already established -- the caller (Application, via tbox_app_step) folds
+ * this into its own "recompute this tick or not" decision alongside
+ * dispatch_click's return and resize detection. A no-op (returns false) if
+ * ctx == NULL.
+ *
+ * tbox_context_run_frame calls tbox_css_selector_set_hover_context(ctx->
+ * hovered_node) immediately before every tbox_style_resolve_tree,
+ * unconditionally -- not only on ticks where this function's return value
+ * was true -- so the cascade always sees the CURRENT hover state, not just
+ * the state as of whenever it last changed. */
+bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, double y);
+
 /* v1 -- Interatividade: event delegation by CSS selector. See
  * ARCHITECTURE.md's "v1 -- Interatividade" -> "Orchestration (tbox_context)
  * -- delegação de evento por seletor" for the full rationale (why this
@@ -156,42 +185,78 @@ const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, 
  * same "register by selector, fire on click, mutate the tree" primitive
  * that a native C handler does).
  *
- * Called by tbox_context_dispatch_click on the ancestor (of the hit-tested
- * node) that matched the registered selector. `node` is the matching
- * ancestor, not necessarily the node directly under the pointer -- see
- * tbox_context_dispatch_click. Non-const, unlike tbox_layout_box::node:
- * the whole point of a click handler is to be able to mutate the tree (e.g.
- * via tbox_html_node_set_attribute, which needs a non-const node). */
-typedef void (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *node, void *userdata);
+ * Called by tbox_context_dispatch_click on each ancestor (of the
+ * hit-tested node) that matches that binding's registered selector. `node`
+ * is the matching ancestor, not necessarily the node directly under the
+ * pointer -- see tbox_context_dispatch_click. Non-const, unlike
+ * tbox_layout_box::node: the whole point of a click handler is to be able
+ * to mutate the tree (e.g. via tbox_html_node_set_attribute, which needs a
+ * non-const node).
+ *
+ * NOVO v3 -- Interatividade Avançada: returns bool instead of void. true
+ * means "keep propagating" (other bindings that match at a farther
+ * ancestor can still fire); false means "stop propagation immediately"
+ * (stopPropagation) -- no other binding fires for this click at all,
+ * regardless of how far up the ancestor chain it would otherwise have
+ * matched. Breaking change from v1's void-returning handler, same
+ * accepted-breaking-change spirit as prior versions -- see
+ * ARCHITECTURE.md's "v3 -- Interatividade Avançada" -> "Bubbling completo +
+ * stopPropagation + desregistro de handler". */
+typedef bool (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *node, void *userdata);
 
 /* Compiles `selector` (tbox_css_selector_compile -- same standalone-selector
  * grammar tbox_css_selector_query_evaluate uses, hard-fails on syntax
  * error) and registers `handler`/`userdata` in an arena-backed table owned
  * by `ctx` -- its own arena, NOT frame_arena, so a registration survives
  * every tbox_context_run_frame's arena reset (same array + linear-scan
- * shape as tbox_style_table, not an index). Returns false on a selector
- * syntax error (nothing is registered) or if ctx == NULL or handler ==
- * NULL; true otherwise. No `_unbind` in v1 -- a registered handler lives
- * for `ctx`'s whole lifetime, destroyed (its compiled query, specifically)
- * in tbox_context_close. */
-bool tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata);
+ * shape as tbox_style_table, not an index).
+ *
+ * NOVO v3 -- Interatividade Avançada: returns an int binding handle (a
+ * monotonically increasing id, scoped to `ctx`, never reused even after a
+ * tbox_context_unbind_click -- so a stale handle from a removed binding can
+ * never accidentally collide with a newly created one) instead of v1's
+ * bool. Returns -1 on a selector syntax error (nothing is registered, same
+ * failure condition as before) or if ctx == NULL or handler == NULL. Pass
+ * the returned handle to tbox_context_unbind_click to remove this
+ * registration later; a binding never unbound lives for `ctx`'s whole
+ * lifetime, destroyed (its compiled query, specifically) in
+ * tbox_context_close. */
+int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata);
+
+/* NOVO v3 -- Interatividade Avançada: removes the registration identified
+ * by `binding` (a handle previously returned by tbox_context_on_click) from
+ * `ctx`'s internal table -- its compiled query is destroyed at this point,
+ * same cleanup tbox_context_close already performs for whatever bindings
+ * remain at that time. A removed binding never fires again from any later
+ * tbox_context_dispatch_click. Returns false (a no-op) if `binding` does
+ * not correspond to any currently-active registration -- never registered,
+ * already unbound -- or if ctx == NULL; true otherwise. */
+bool tbox_context_unbind_click(tbox_context *ctx, int binding);
 
 /* Finds the tbox_layout_box under (x, y) via tbox_context_hit_test, then
- * for each registered tbox_context_on_click binding, in registration
- * order, walks that box's ->node and then node->parent (DOM tree, not the
- * layout tree -- the two only coincide in v0/v1 because no anonymous box
- * is in real use yet) from nearest to farthest testing
- * tbox_css_selector_query_matches; the first ancestor that matches fires
- * that binding's handler and stops walking for that binding (delegation
- * style, like addEventListener: a binding fires at most once per click, on
- * the nearest matching ancestor; no stopPropagation, no bubbling beyond
- * that -- a different binding with a different/broader selector may still
- * fire on a farther ancestor of the same click). Returns true if at least
- * one handler fired (the caller -- Application today, a script engine's
- * event loop tomorrow -- should treat that the same as a resize: a reason
- * to redo the compute pipeline). No-op (returns false) if ctx == NULL, if
- * there is no layout yet, or if nothing is under the point -- same guard as
- * tbox_context_hit_test. */
+ * walks the ancestor chain ONCE, from that box's ->node outward via
+ * node->parent (DOM tree, not the layout tree -- the two only coincide in
+ * v0/v1/v2 because no anonymous box is in real use yet) -- real bubbling
+ * order, nearest ancestor to farthest.
+ *
+ * NOVO v3 -- Interatividade Avançada: at each ancestor level, EVERY
+ * currently-active tbox_context_on_click binding's compiled selector is
+ * tested against that node (tbox_css_selector_query_matches); every
+ * binding that matches at this level fires (in registration order among
+ * the ones that match at this same level), passing that ancestor's node.
+ * If any handler call returns false (see tbox_context_click_handler),
+ * walking stops immediately -- no farther ancestor is even tested,
+ * regardless of what would have matched there (stopPropagation). This
+ * replaces v1's "per-registration, nearest-match-wins independently of
+ * other registrations' order" dispatch -- see ARCHITECTURE.md's "v3 --
+ * Interatividade Avançada" -> "Bubbling completo + stopPropagation +
+ * desregistro de handler" for the full rationale.
+ *
+ * Still returns true if at least one handler fired (the caller --
+ * Application today, a script engine's event loop tomorrow -- should treat
+ * that the same as a resize: a reason to redo the compute pipeline).
+ * No-op (returns false) if ctx == NULL, if there is no layout yet, or if
+ * nothing is under the point -- same guard as tbox_context_hit_test. */
 bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
 
 /* Access to the internal document -- needed for a handler's body to call

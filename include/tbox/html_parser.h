@@ -125,6 +125,22 @@ void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *
  * tbox_style_table_find/tbox_context_hit_test. */
 const tbox_html_attribute *tbox_html_node_get_attribute(const tbox_html_node *node, tbox_string_view name);
 
+/* Equivalent to DOM's `textContent` setter: removes ALL of `node`'s current
+ * children (they become orphaned garbage in `document`'s arena -- no
+ * individual free, same trade-off tbox_html_node_set_attribute already
+ * accepts for its old attributes array), then creates exactly one new
+ * TEXT-type child (tbox_html_node_create with TBOX_HTML_NODE_TEXT) whose
+ * text is `text` copied into `document`'s arena -- the caller doesn't need
+ * to keep the original buffer alive after the call returns -- and appends
+ * it via tbox_html_node_append_child. A no-op if `node` isn't an ELEMENT
+ * (mutation-of-a-single-TEXT-node-in-place, e.g. editing one word inside
+ * mixed text with a nested `<b>`, is out of scope -- this is "replace
+ * everything", same granularity as the real DOM textContent). The Layout
+ * Tree (v2) already reads text by walking direct children on every
+ * relayout with no cache, so the next tbox_context_run_frame after this
+ * call reflects the new text without any change to the Layout Tree. */
+void tbox_html_node_set_text_content(tbox_html_document *document, tbox_html_node *node, tbox_string_view text);
+
 #ifdef __cplusplus
 }
 #endif

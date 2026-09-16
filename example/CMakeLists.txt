@@ -167,5 +167,15 @@ if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
         ${FONTCONFIG_LIBRARY_DIRS}
     )
 
+    # NOVO v3: tbox_app.c now loads its own dedicated fixture files via
+    # tbox_app_create_from_files instead of inline C-string HTML/CSS -- same
+    # TBOX_EXAMPLE_HTML_PATH/TBOX_EXAMPLE_CSS_PATH pattern already used above
+    # for html_parser/css_parser/etc, own names since these fixtures are
+    # specific to this target, not shared with the rest of example/.
+    target_compile_definitions(tbox_app_demo PRIVATE
+        TBOX_APP_DEMO_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tbox_app_demo.html"
+        TBOX_APP_DEMO_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tbox_app_demo.css"
+    )
+
     set_target_properties(tbox_app_demo PROPERTIES OUTPUT_NAME tbox_app_demo)
 endif()

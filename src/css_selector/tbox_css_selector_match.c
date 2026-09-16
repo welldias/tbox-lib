@@ -4,6 +4,18 @@
 
 #include "base/tbox_string.h"
 
+/* Current hover target for the "hover" PSEUDO, set by
+ * tbox_css_selector_set_hover_context. The one global/static mutable state
+ * this file introduces (see <tbox/css_selector.h> and ARCHITECTURE.md's
+ * "`:hover` -- pseudo-classe dinâmica de verdade"): a single, non-partitioned
+ * mouse pointer justifies "what's hovered now" being process-global rather
+ * than threaded through every selector-matching signature. */
+static const tbox_html_node *tbox_css_selector_hovered_node = NULL;
+
+void tbox_css_selector_set_hover_context(const tbox_html_node *hovered) {
+    tbox_css_selector_hovered_node = hovered;
+}
+
 static const tbox_html_attribute *tbox_css_selector_find_attribute(const tbox_html_node *node, tbox_string_view name) {
     if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return NULL;
@@ -109,14 +121,18 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
 
     case TBOX_CSS_SIMPLE_SELECTOR_PSEUDO:
         /* Only the structural pseudo-classes computable from tree shape
-         * alone are supported; see <tbox/css_selector.h>'s top comment for
-         * the rationale. Everything else (dynamic state, generated content)
+         * alone, plus "hover" against the global hover context, are
+         * supported; see <tbox/css_selector.h>'s top comment for the
+         * rationale. Everything else (keyboard focus, generated content)
          * never matches. */
         if (tbox_string_view_equal_cstr(item->name, "first-child")) {
             return node->type == TBOX_HTML_NODE_ELEMENT && tbox_css_selector_prev_element_sibling(node) == NULL;
         }
         if (tbox_string_view_equal_cstr(item->name, "last-child")) {
             return node->type == TBOX_HTML_NODE_ELEMENT && tbox_css_selector_next_element_sibling(node) == NULL;
+        }
+        if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("hover", 5))) {
+            return node == tbox_css_selector_hovered_node;
         }
         return false;
     }

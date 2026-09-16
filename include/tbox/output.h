@@ -125,6 +125,17 @@ void tbox_backend_wayland_size(const tbox_backend_wayland *backend, int32_t *out
  * click was pending. */
 bool tbox_backend_wayland_take_click(tbox_backend_wayland *backend, double *out_x, double *out_y);
 
+/* Unlike tbox_backend_wayland_take_click (which CONSUMES a pending click),
+ * this only READS the pointer's current position -- reuses the same internal
+ * state (pointer_x/pointer_y) the motion listener already keeps up to date
+ * to compute click position. Writes it to out_x/out_y and returns true only
+ * while the pointer currently has focus on this surface (it has entered and
+ * not yet left, tracked by the enter/leave listeners); returns false without
+ * writing anything if the pointer never entered this window's surface, or
+ * already left it (a `leave` event), same as NULL `backend`, NULL `out_x`, or
+ * NULL `out_y`. */
+bool tbox_backend_wayland_pointer_position(const tbox_backend_wayland *backend, double *out_x, double *out_y);
+
 /* Rasterizes `list` (via tbox_raster_display_list, NULL treated as empty)
  * into this frame's wl_shm buffer -- reallocating it first if the window's
  * size changed since the last call -- clearing to opaque white first (v0

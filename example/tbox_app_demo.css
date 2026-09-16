@@ -1,0 +1,55 @@
+body { background-color: white; }
+
+/* v1: clickable box, toggled between these two classes by on_box_click().
+ * A plain <div> never renders text regardless of any TEXT children it has
+ * (see ARCHITECTURE.md's v0 "Escopo mínimo" -- only h1-h6/p get a text
+ * box) -- every <div> in this stylesheet is therefore an intentionally
+ * empty, purely-visual colored box; every element whose text is meant to
+ * be visible below is a <p> instead. */
+.box { width: 300px; height: 60px; }
+.off { background-color: cornflowerblue; }
+.on { background-color: tomato; }
+
+/* v3: :hover -- pure CSS, no click handler at all. tbox_app_step polls
+ * tbox_backend_wayland_pointer_position every tick and feeds it to
+ * tbox_context_update_hover, which this author rule's cascade resolution
+ * picks up on the next tbox_context_run_frame. */
+.hoverable { width: 300px; height: 50px; background-color: lightgray; }
+.hoverable:hover { background-color: gold; }
+
+/* v3: bubbling demo. .bubble-inner nests inside .bubble-outer (same
+ * width/height-on-both-levels shape tests/context/test_context.c's own
+ * bubbling-order test case uses, so a click lands inside both border
+ * boxes at once). on_bubble_inner_click/on_bubble_outer_click are
+ * registered on these two selectors respectively and both fire on a
+ * single click inside the inner box, nearest ancestor first -- each
+ * appends its own "-fired" token to its own class (fixed
+ * whole-attribute-replace, same shape as v1's on_box_click) so both
+ * colors below show at once after one click. */
+.bubble-outer { width: 300px; height: 110px; background-color: whitesmoke; }
+.bubble-outer-fired { background-color: mediumpurple; }
+.bubble-inner { width: 180px; height: 60px; background-color: lavender; }
+.bubble-inner-fired { background-color: plum; }
+
+/* v3: stopPropagation demo -- a SEPARATE nested pair from .bubble-*
+ * above, so the two scenarios can't be confused with each other.
+ * on_stop_inner_click fires and returns false; on_stop_outer_click must
+ * never run, so .stop-outer-fired's color below should never appear no
+ * matter how many times the inner box is clicked. */
+.stop-outer { width: 300px; height: 110px; background-color: whitesmoke; }
+.stop-outer-fired { background-color: crimson; } /* should never appear */
+.stop-inner { width: 180px; height: 60px; background-color: lavender; }
+.stop-inner-fired { background-color: seagreen; }
+
+/* v3: tbox_context_unbind_click demo. Must be a <p> (not a <div>) so its
+ * text -- rewritten by on_unbind_target_click via
+ * tbox_html_node_set_text_content -- actually renders (see the note at
+ * the top of this file). on_unbind_target_click unbinds its own
+ * registration on the first click; a second click's lack of any further
+ * effect (the text never changes again) is the visible proof. */
+.unbind-target { background-color: lightyellow; }
+
+/* v3: tbox_html_node_set_text_content demo, independent of the unbind one
+ * above (this one stays bound and keeps firing on every click). Also a
+ * <p> for the same text-rendering reason. */
+.rename-target { background-color: lightcyan; }

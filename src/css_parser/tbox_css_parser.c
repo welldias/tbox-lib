@@ -73,19 +73,29 @@ static bool tbox_css_token_can_start_simple_selector(tbox_css_token_type type) {
 
 /* '{'/'('/'[' vs '}'/')'/']' -- used where a whole block (any bracket kind)
  * must be skipped as one balanced unit (skip_block, and the declaration
- * value scanner in parse_declaration). */
+ * value scanner in parse_declaration). FUNCTION counts as "opens" too: the
+ * tokenizer folds a function call's opening '(' into the FUNCTION token
+ * itself (ident( -- see TBOX_CSS_TOKEN_FUNCTION in tbox_css_token.h), so
+ * without this, the FUNCTION's matching RPAREN would be counted by
+ * tbox_css_token_closes below with no corresponding "opens" ever counted for
+ * it, desyncing the depth counter by one per function call encountered while
+ * skipping (e.g. rotate(0deg) inside a skipped @keyframes block). */
 static bool tbox_css_token_opens(tbox_css_token_type type) {
-    return type == TBOX_CSS_TOKEN_LBRACE || type == TBOX_CSS_TOKEN_LPAREN || type == TBOX_CSS_TOKEN_LBRACKET;
+    return type == TBOX_CSS_TOKEN_LBRACE || type == TBOX_CSS_TOKEN_LPAREN || type == TBOX_CSS_TOKEN_LBRACKET || type == TBOX_CSS_TOKEN_FUNCTION;
 }
 
 static bool tbox_css_token_closes(tbox_css_token_type type) {
     return type == TBOX_CSS_TOKEN_RBRACE || type == TBOX_CSS_TOKEN_RPAREN || type == TBOX_CSS_TOKEN_RBRACKET;
 }
 
-/* '('/'[' only -- used where scanning must stop AT a top-level '{' rather
- * than swallow it (skip_at_rule's prelude, recover_ruleset). */
+/* '('/'['/FUNCTION only -- used where scanning must stop AT a top-level '{'
+ * rather than swallow it (skip_at_rule's prelude, recover_ruleset). Same
+ * FUNCTION-consumes-its-own-'(' reasoning as tbox_css_token_opens above:
+ * a function call appearing in an at-rule prelude (e.g. `@supports
+ * (transform: rotate(45deg))`) must not leave this depth counter out of
+ * sync with tbox_css_token_closes_nested's RPAREN handling either. */
 static bool tbox_css_token_opens_nested(tbox_css_token_type type) {
-    return type == TBOX_CSS_TOKEN_LPAREN || type == TBOX_CSS_TOKEN_LBRACKET;
+    return type == TBOX_CSS_TOKEN_LPAREN || type == TBOX_CSS_TOKEN_LBRACKET || type == TBOX_CSS_TOKEN_FUNCTION;
 }
 
 static bool tbox_css_token_closes_nested(tbox_css_token_type type) {

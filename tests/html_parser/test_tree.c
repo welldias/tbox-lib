@@ -20,7 +20,7 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 1: simple element with text. */
     {
-        tbox_html_document *doc  = parse_cstr("<p>Hello</p>");
+        tbox_html_document *doc    = parse_cstr("<p>Hello</p>");
         const tbox_html_node *root = tbox_html_document_root(doc);
         TBOX_TEST_ASSERT(root->type == TBOX_HTML_NODE_DOCUMENT);
 
@@ -38,8 +38,8 @@ int tbox_test_html_parser_tree_run(void) {
     /* 2: void element in the middle doesn't get pushed / doesn't get
      * children. */
     {
-        tbox_html_document *doc  = parse_cstr("<p>a<br>b</p>");
-        const tbox_html_node *p   = tbox_html_document_root(doc)->first_child;
+        tbox_html_document *doc = parse_cstr("<p>a<br>b</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
         TBOX_TEST_ASSERT(text_eq(p->element.tag_name, "p"));
 
         const tbox_html_node *a = p->first_child;
@@ -59,7 +59,7 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 3: siblings link both ways. */
     {
-        tbox_html_document *doc = parse_cstr("<div><p>x</p><p>y</p></div>");
+        tbox_html_document *doc   = parse_cstr("<div><p>x</p><p>y</p></div>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
         const tbox_html_node *p1  = div->first_child;
         const tbox_html_node *p2  = div->last_child;
@@ -74,7 +74,7 @@ int tbox_test_html_parser_tree_run(void) {
     /* 4: multiple attributes. */
     {
         tbox_html_document *doc = parse_cstr("<a href=\"http://x\" class=\"y z\">link</a>");
-        const tbox_html_node *a  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *a = tbox_html_document_root(doc)->first_child;
         TBOX_TEST_ASSERT(a->element.attribute_count == 2);
         TBOX_TEST_ASSERT(text_eq(a->element.attributes[0].name, "href"));
         TBOX_TEST_ASSERT(text_eq(a->element.attributes[0].value, "http://x"));
@@ -85,7 +85,7 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 5: doctype + comment + element as root-level siblings, in order. */
     {
-        tbox_html_document *doc = parse_cstr("<!DOCTYPE html><!--c--><p></p>");
+        tbox_html_document *doc    = parse_cstr("<!DOCTYPE html><!--c--><p></p>");
         const tbox_html_node *root = tbox_html_document_root(doc);
 
         const tbox_html_node *doctype = root->first_child;
@@ -103,7 +103,7 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 6: unclosed tags at EOF still produce the correct nesting. */
     {
-        tbox_html_document *doc = parse_cstr("<div><p>text");
+        tbox_html_document *doc   = parse_cstr("<div><p>text");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
         TBOX_TEST_ASSERT(text_eq(div->element.tag_name, "div"));
         const tbox_html_node *p = div->first_child;
@@ -114,7 +114,7 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 7: a closing tag implicitly closes unclosed ancestors. */
     {
-        tbox_html_document *doc = parse_cstr("<div><p>text</div>");
+        tbox_html_document *doc   = parse_cstr("<div><p>text</div>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
         TBOX_TEST_ASSERT(text_eq(div->element.tag_name, "div"));
         TBOX_TEST_ASSERT(div->next_sibling == NULL);
@@ -127,7 +127,7 @@ int tbox_test_html_parser_tree_run(void) {
     /* 8: an orphan end tag is ignored. */
     {
         tbox_html_document *doc = parse_cstr("<p>text</b></p>");
-        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
         TBOX_TEST_ASSERT(p->first_child != NULL);
         TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "text"));
         TBOX_TEST_ASSERT(p->first_child == p->last_child);
@@ -136,8 +136,8 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 9: <style> content is raw text, not tokenized as markup. */
     {
-        tbox_html_document *doc = parse_cstr("<style>body { color: red; } </style><p>ok</p>");
-        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_html_document *doc     = parse_cstr("<style>body { color: red; } </style><p>ok</p>");
+        const tbox_html_node *root  = tbox_html_document_root(doc);
         const tbox_html_node *style = root->first_child;
         TBOX_TEST_ASSERT(text_eq(style->element.tag_name, "style"));
         TBOX_TEST_ASSERT(style->first_child != NULL && style->first_child->type == TBOX_HTML_NODE_TEXT);
@@ -150,7 +150,7 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 10: tag names are normalized to lowercase; closing works across case. */
     {
-        tbox_html_document *doc = parse_cstr("<DIV><P>x</p></DIV>");
+        tbox_html_document *doc   = parse_cstr("<DIV><P>x</p></DIV>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
         TBOX_TEST_ASSERT(text_eq(div->element.tag_name, "div"));
         const tbox_html_node *p = div->first_child;
@@ -161,8 +161,8 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 11: self-closing syntax on an arbitrary (non-void) tag is honored. */
     {
-        tbox_html_document *doc = parse_cstr("<custom-tag/>after");
-        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_html_document *doc      = parse_cstr("<custom-tag/>after");
+        const tbox_html_node *root   = tbox_html_document_root(doc);
         const tbox_html_node *custom = root->first_child;
         TBOX_TEST_ASSERT(text_eq(custom->element.tag_name, "custom-tag"));
         TBOX_TEST_ASSERT(custom->element.self_closing);
@@ -187,7 +187,7 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(tbox_html_document_root(empty_doc)->first_child == NULL);
         tbox_html_document_destroy(empty_doc);
 
-        tbox_html_document *space_doc = parse_cstr("   ");
+        tbox_html_document *space_doc    = parse_cstr("   ");
         const tbox_html_node *only_child = tbox_html_document_root(space_doc)->first_child;
         TBOX_TEST_ASSERT(only_child != NULL && only_child->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(only_child->text.text, "   "));
@@ -196,11 +196,11 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 14: removing a middle child preserves the siblings around it. */
     {
-        tbox_html_document *doc = parse_cstr("<div><p>x</p><span>y</span><b>z</b></div>");
+        tbox_html_document *doc   = parse_cstr("<div><p>x</p><span>y</span><b>z</b></div>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
-        tbox_html_node *p          = (tbox_html_node *)div->first_child;
-        tbox_html_node *span       = (tbox_html_node *)p->next_sibling;
-        tbox_html_node *b          = (tbox_html_node *)span->next_sibling;
+        tbox_html_node *p         = (tbox_html_node *)div->first_child;
+        tbox_html_node *span      = (tbox_html_node *)p->next_sibling;
+        tbox_html_node *b         = (tbox_html_node *)span->next_sibling;
 
         tbox_html_node_remove(span);
 
@@ -214,10 +214,10 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 15: removing the first child. */
     {
-        tbox_html_document *doc = parse_cstr("<div><p>x</p><span>y</span></div>");
+        tbox_html_document *doc   = parse_cstr("<div><p>x</p><span>y</span></div>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
-        tbox_html_node *p          = (tbox_html_node *)div->first_child;
-        tbox_html_node *span       = (tbox_html_node *)p->next_sibling;
+        tbox_html_node *p         = (tbox_html_node *)div->first_child;
+        tbox_html_node *span      = (tbox_html_node *)p->next_sibling;
 
         tbox_html_node_remove(p);
 
@@ -229,10 +229,10 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 16: removing the last child. */
     {
-        tbox_html_document *doc = parse_cstr("<div><p>x</p><span>y</span></div>");
+        tbox_html_document *doc   = parse_cstr("<div><p>x</p><span>y</span></div>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
-        tbox_html_node *p          = (tbox_html_node *)div->first_child;
-        tbox_html_node *span       = (tbox_html_node *)p->next_sibling;
+        tbox_html_node *p         = (tbox_html_node *)div->first_child;
+        tbox_html_node *span      = (tbox_html_node *)p->next_sibling;
 
         tbox_html_node_remove(span);
 
@@ -244,9 +244,9 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 17: removing an only child. */
     {
-        tbox_html_document *doc = parse_cstr("<div><p>x</p></div>");
+        tbox_html_document *doc   = parse_cstr("<div><p>x</p></div>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
-        tbox_html_node *p          = (tbox_html_node *)div->first_child;
+        tbox_html_node *p         = (tbox_html_node *)div->first_child;
 
         tbox_html_node_remove(p);
 
@@ -258,11 +258,11 @@ int tbox_test_html_parser_tree_run(void) {
     /* 18: a removed node can be re-attached under another parent. */
     {
         tbox_html_document *doc = parse_cstr("<div></div><section></section>");
-        tbox_html_node *root      = (tbox_html_node *)tbox_html_document_root(doc);
-        tbox_html_node *div1      = (tbox_html_node *)root->first_child;
-        tbox_html_node *div2      = (tbox_html_node *)root->last_child;
-        tbox_html_node *p         = tbox_html_node_create(doc, TBOX_HTML_NODE_ELEMENT);
-        p->element.tag_name       = tbox_string_view_make("p", 1);
+        tbox_html_node *root    = (tbox_html_node *)tbox_html_document_root(doc);
+        tbox_html_node *div1    = (tbox_html_node *)root->first_child;
+        tbox_html_node *div2    = (tbox_html_node *)root->last_child;
+        tbox_html_node *p       = tbox_html_node_create(doc, TBOX_HTML_NODE_ELEMENT);
+        p->element.tag_name     = tbox_string_view_make("p", 1);
         tbox_html_node_append_child(div1, p);
 
         tbox_html_node_remove(p);
@@ -277,9 +277,9 @@ int tbox_test_html_parser_tree_run(void) {
     /* 19: text_content on a simple element with direct text. */
     {
         tbox_html_document *doc = parse_cstr("<p>Hello</p>");
-        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
 
-        tbox_arena arena = tbox_arena_create(0);
+        tbox_arena arena         = tbox_arena_create(0);
         tbox_string_view content = tbox_html_node_text_content(&arena, p);
         TBOX_TEST_ASSERT(text_eq(content, "Hello"));
         tbox_arena_destroy(&arena);
@@ -290,9 +290,9 @@ int tbox_test_html_parser_tree_run(void) {
      * dropping the element structure -- the ARCHITECTURE.md example. */
     {
         tbox_html_document *doc = parse_cstr("<p>oi <b>mundo</b></p>");
-        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
 
-        tbox_arena arena = tbox_arena_create(0);
+        tbox_arena arena         = tbox_arena_create(0);
         tbox_string_view content = tbox_html_node_text_content(&arena, p);
         TBOX_TEST_ASSERT(text_eq(content, "oi mundo"));
         tbox_arena_destroy(&arena);
@@ -301,10 +301,10 @@ int tbox_test_html_parser_tree_run(void) {
 
     /* 21: text_content walks multiple levels of nesting. */
     {
-        tbox_html_document *doc = parse_cstr("<div>a<span>b<em>c</em>d</span>e</div>");
+        tbox_html_document *doc   = parse_cstr("<div>a<span>b<em>c</em>d</span>e</div>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
 
-        tbox_arena arena = tbox_arena_create(0);
+        tbox_arena arena         = tbox_arena_create(0);
         tbox_string_view content = tbox_html_node_text_content(&arena, div);
         TBOX_TEST_ASSERT(text_eq(content, "abcde"));
         tbox_arena_destroy(&arena);
@@ -314,10 +314,10 @@ int tbox_test_html_parser_tree_run(void) {
     /* 22: text_content on a node with no text descendants returns an empty
      * view. */
     {
-        tbox_html_document *doc = parse_cstr("<div><span></span></div>");
+        tbox_html_document *doc   = parse_cstr("<div><span></span></div>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
 
-        tbox_arena arena = tbox_arena_create(0);
+        tbox_arena arena         = tbox_arena_create(0);
         tbox_string_view content = tbox_html_node_text_content(&arena, div);
         TBOX_TEST_ASSERT(content.size == 0);
         tbox_arena_destroy(&arena);
@@ -328,9 +328,9 @@ int tbox_test_html_parser_tree_run(void) {
      * contributes. */
     {
         tbox_html_document *doc = parse_cstr("<p>oi <!--nope--> mundo</p>");
-        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
 
-        tbox_arena arena = tbox_arena_create(0);
+        tbox_arena arena         = tbox_arena_create(0);
         tbox_string_view content = tbox_html_node_text_content(&arena, p);
         TBOX_TEST_ASSERT(text_eq(content, "oi  mundo"));
         tbox_arena_destroy(&arena);
@@ -341,9 +341,9 @@ int tbox_test_html_parser_tree_run(void) {
      * arena -- built entirely from the caller-supplied arena. */
     {
         tbox_html_document *doc = parse_cstr("<p>oi <b>mundo</b></p>");
-        const tbox_html_node *p  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
 
-        tbox_arena arena = tbox_arena_create(0);
+        tbox_arena arena         = tbox_arena_create(0);
         tbox_string_view content = tbox_html_node_text_content(&arena, p);
         tbox_html_document_destroy(doc);
         TBOX_TEST_ASSERT(text_eq(content, "oi mundo"));
@@ -480,6 +480,148 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(found == &div->element.attributes[1]);
         TBOX_TEST_ASSERT(text_eq(found->name, "data-count"));
         TBOX_TEST_ASSERT(text_eq(found->value, "1"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 34: set_text_content on an ELEMENT with no children creates a single
+     * TEXT child with the given text. */
+    {
+        tbox_html_document *doc = parse_cstr("<p></p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(p->first_child == NULL);
+
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("hi"));
+
+        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_ASSERT(p->first_child->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "hi"));
+        TBOX_TEST_ASSERT(p->first_child->parent == p);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 35: set_text_content on an ELEMENT with existing mixed TEXT/ELEMENT
+     * children (matching <p>oi <b>mundo</b></p>'s shape) replaces ALL of
+     * them with the single new TEXT node -- text_content afterwards
+     * returns only the new text, nothing from before. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>oi <b>mundo</b></p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("bye"));
+
+        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_ASSERT(p->first_child->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "bye"));
+
+        tbox_arena arena         = tbox_arena_create(0);
+        tbox_string_view content = tbox_html_node_text_content(&arena, p);
+        TBOX_TEST_ASSERT(text_eq(content, "bye"));
+        tbox_arena_destroy(&arena);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 36: calling set_text_content twice in a row replaces the text again
+     * rather than accumulating -- the second call's result has only the
+     * second text. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>original</p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("first"));
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("second"));
+
+        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "second"));
+
+        tbox_arena arena         = tbox_arena_create(0);
+        tbox_string_view content = tbox_html_node_text_content(&arena, p);
+        TBOX_TEST_ASSERT(text_eq(content, "second"));
+        tbox_arena_destroy(&arena);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 37: set_text_content is a no-op on a TEXT node -- doesn't crash,
+     * doesn't corrupt the union's text.text member. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>Hello</p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        tbox_html_node *text    = (tbox_html_node *)p->first_child;
+        TBOX_TEST_ASSERT(text->type == TBOX_HTML_NODE_TEXT);
+
+        tbox_html_node_set_text_content(doc, text, tbox_string_view_from_cstr("nope"));
+
+        TBOX_TEST_ASSERT(text->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(text->text.text, "Hello"));
+        TBOX_TEST_ASSERT(text->first_child == NULL);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 38: set_text_content is a no-op on a COMMENT node. */
+    {
+        tbox_html_document *doc = parse_cstr("<!--c--><p></p>");
+        tbox_html_node *comment = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(comment->type == TBOX_HTML_NODE_COMMENT);
+
+        tbox_html_node_set_text_content(doc, comment, tbox_string_view_from_cstr("nope"));
+
+        TBOX_TEST_ASSERT(comment->type == TBOX_HTML_NODE_COMMENT);
+        TBOX_TEST_ASSERT(text_eq(comment->text.text, "c"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 39: set_text_content is a no-op on a DOCTYPE node. */
+    {
+        tbox_html_document *doc = parse_cstr("<!DOCTYPE html><p></p>");
+        tbox_html_node *doctype = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(doctype->type == TBOX_HTML_NODE_DOCTYPE);
+
+        tbox_html_node_set_text_content(doc, doctype, tbox_string_view_from_cstr("nope"));
+
+        TBOX_TEST_ASSERT(doctype->type == TBOX_HTML_NODE_DOCTYPE);
+        TBOX_TEST_ASSERT(text_eq(doctype->text.text, "html"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 40: set_text_content is a no-op on the DOCUMENT root. */
+    {
+        tbox_html_document *doc = parse_cstr("<p></p>");
+        tbox_html_node *root    = (tbox_html_node *)tbox_html_document_root(doc);
+        TBOX_TEST_ASSERT(root->type == TBOX_HTML_NODE_DOCUMENT);
+        tbox_html_node *original_first_child = root->first_child;
+
+        tbox_html_node_set_text_content(doc, root, tbox_string_view_from_cstr("nope"));
+
+        TBOX_TEST_ASSERT(root->type == TBOX_HTML_NODE_DOCUMENT);
+        TBOX_TEST_ASSERT(root->first_child == original_first_child);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 41: set_text_content with an empty string still creates a TEXT child,
+     * just with an empty text view. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>Hello</p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr(""));
+
+        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_ASSERT(p->first_child->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(p->first_child->text.text.size == 0);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 42: set_text_content on a node that already has exactly one TEXT
+     * child still replaces it with a fresh node (not mutated in place). */
+    {
+        tbox_html_document *doc  = parse_cstr("<p>Hello</p>");
+        tbox_html_node *p        = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        tbox_html_node *old_text = (tbox_html_node *)p->first_child;
+
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("World"));
+
+        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_ASSERT(p->first_child != old_text);
+        TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "World"));
         tbox_html_document_destroy(doc);
     }
 

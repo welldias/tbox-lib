@@ -68,6 +68,31 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
  * exact same conditions as tbox_app_create. */
 tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config);
 
+/* NOVO v3: same as tbox_app_create, but html_path/css_path are paths to
+ * files read fully into memory (a local helper in tbox_app.c, same
+ * read-whole-file-into-a-malloc'd-buffer shape already used by
+ * tests/context/test_context.c's read_file()/example/css_cascade_origins.c's
+ * -- see ARCHITECTURE.md's "Application -- leitura de arquivo externo")
+ * rather than caller-supplied strings. html_path is required: NULL, or a
+ * failure to read it (missing file, can't be opened, ...), returns NULL
+ * immediately without touching css_path. css_path == NULL is NOT an error --
+ * it means "no author stylesheet", treated exactly like passing "" to
+ * tbox_app_create (the document still gets the UA stylesheet); a non-NULL
+ * css_path that fails to read IS an error (NULL). Both file buffers are
+ * freed right after tbox_app_create's underlying work (parsing html/css into
+ * the new tbox_context) completes, success or failure alike -- the parsers
+ * already copy whatever they need into their own document/stylesheet arenas,
+ * so the file buffers don't need to outlive that call. Fails under the same
+ * remaining conditions as tbox_app_create otherwise (font source/resolve/
+ * load failure, or the window failing to open). */
+tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height);
+
+/* NOVO v3: same as tbox_app_create_from_files, plus an explicit
+ * tbox_ua_style_config this app's tbox_context is opened with -- same
+ * relationship tbox_app_create_with_config has to tbox_app_create. Fails
+ * under the same conditions as tbox_app_create_from_files. */
+tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config);
+
 /* Access to the internal tbox_context -- for registering click handlers via
  * tbox_context_on_click, at any point before or after the first
  * tbox_app_step. Returns NULL if app == NULL. */
@@ -80,16 +105,20 @@ tbox_context *tbox_app_context(tbox_app *app);
  * its own task queue alongside this loop; see ARCHITECTURE.md's "Fora de
  * escopo" about vsync), then drains at most one pending click via
  * tbox_backend_wayland_take_click and dispatches it through
- * tbox_context_dispatch_click if one was pending, and separately compares
- * the backend's current tbox_backend_wayland_size against the size observed
- * on the previous tick to detect a resize. tbox_context keeps no "dirty"
- * flag of its own (tbox_context_dispatch_click communicates only through its
- * bool return) -- so tbox_app is where the two signals (dispatch_click's
- * return value, and the resize comparison) are combined into this tick's
- * "recompute or not" decision. If either signal fired, redoes the whole
+ * tbox_context_dispatch_click if one was pending, reads the backend's
+ * current pointer position via tbox_backend_wayland_pointer_position and
+ * feeds it to tbox_context_update_hover (NOVO v3 -- Interatividade
+ * Avançada: real ":hover" support; see <tbox/context.h>), and separately
+ * compares the backend's current tbox_backend_wayland_size against the size
+ * observed on the previous tick to detect a resize. tbox_context keeps no
+ * "dirty" flag of its own (tbox_context_dispatch_click/tbox_context_update_hover
+ * communicate only through their own bool return) -- so tbox_app is where
+ * all three signals (dispatch_click's return value, update_hover's return
+ * value, and the resize comparison) are combined into this tick's
+ * "recompute or not" decision. If any signal fired, redoes the whole
  * compute pipeline and presents it (tbox_context_run_frame +
  * tbox_backend_wayland_present) -- same "recompute everything" policy as v0,
- * just with a second possible trigger now. A no-op if app == NULL. */
+ * just with more possible triggers now. A no-op if app == NULL. */
 void tbox_app_step(tbox_app *app);
 
 /* True once the underlying window should close (compositor close request,
