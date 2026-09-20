@@ -140,11 +140,18 @@ void tbox_context_close(tbox_context *ctx);
 void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double viewport_height, tbox_display_list *out_list);
 
 /* Linear search, from the layout tree computed by the most recent
- * tbox_context_run_frame, for the deepest box whose border_box contains
- * (x, y): v0's block-flow siblings never overlap, so if a box's
- * border_box doesn't contain the point, none of its descendants can
- * either. Same search shape (and same "fine for UI-sized trees, revisit
- * only if it's ever a measured bottleneck") as tbox_style_table_find/
+ * tbox_context_run_frame, for the deepest box that contains (x, y) --
+ * ALWAYS visits every descendant, since a box that is out of normal flow
+ * (from v5 on: `position: absolute`/`fixed`) can be positioned entirely
+ * outside its own DOM parent's border_box, so a box's border_box failing
+ * to contain the point does not rule out a descendant containing it (see
+ * ARCHITECTURE.md's "Orchestration -- correção de hit-test pra caixas fora
+ * de fluxo"). When more than one candidate box contains (x, y) -- possible
+ * now that out-of-flow boxes can overlap on purpose -- the one LATER in
+ * document order wins, matching paint order (no stacking context/z-index
+ * in this project: later in the tree is always painted on top). Same
+ * search shape (and same "fine for UI-sized trees, revisit only if it's
+ * ever a measured bottleneck") as tbox_style_table_find/
  * tbox_css_selector_match elsewhere in the codebase. Returns NULL if no
  * frame has run yet (nothing computed) or nothing is under the point. */
 const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, double y);

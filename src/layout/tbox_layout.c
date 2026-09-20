@@ -372,19 +372,71 @@ static double tbox_layout_resolve_offset(tbox_style_length primary, tbox_style_l
  * `height_definite` says whether that height came from an explicit value
  * (PX, or PERCENT against an already-definite container) rather than from
  * AUTO/shrink-to-fit, which is what CSS2.1 10.5 needs to decide whether a
- * child's own `height: %` resolves or itself falls back to AUTO. There is
- * no `y` here: the vertical position within the containing block is instead
- * threaded through explicitly as a running cursor (see
- * tbox_layout_build_children), since siblings advance it independently of
- * anything about the containing block itself. */
+ * child's own `height: %` resolves or itself falls back to AUTO. For a FLOW
+ * container the vertical position is instead threaded through explicitly as
+ * a running cursor (see tbox_layout_build_children), since siblings advance
+ * it independently of anything about the containing block itself -- that is
+ * why `y` was absent through v4. NOVO v5: `y` is added back because
+ * `absolute`/`fixed` children are NOT placed via a cursor at all -- their
+ * containing block is a concrete rect (the nearest positioned ancestor's
+ * padding_box, or the viewport -- see tbox_layout_positioned_context below)
+ * whose origin is needed on both axes at once. A flow container's `y` is
+ * simply left at its default 0.0 and never read. */
 typedef struct tbox_layout_containing_block {
     double x;
+    double y;
     double width;
     double height;
     bool height_definite;
 } tbox_layout_containing_block;
 
-static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block container, double cursor_y);
+/* NOVO v5: rastreia, durante a recursão top-down da Layout Tree, contra o
+ * que um descendente `absolute`/`fixed` deve se posicionar. `nearest_ancestor`
+ * é o padding_box do ancestral posicionado mais próximo (relative/absolute/
+ * fixed/sticky) já visitado -- ou o viewport inteiro, se nenhum ancestral
+ * posicionado existir ainda (mesma regra do CSS: sem ancestral posicionado, o
+ * containing block é o initial containing block). `viewport` é sempre o
+ * viewport original, nunca atualizado pela recursão -- é o que
+ * `position: fixed` usa incondicionalmente, ignorando qualquer
+ * `nearest_ancestor` que exista. Ver ARCHITECTURE.md "v5 -- Layout Tree --
+ * containing block posicionado". Passado por valor através da recursão
+ * (mesmo padrão de tbox_layout_containing_block já existente) -- não é
+ * estado global nem estático. */
+typedef struct tbox_layout_positioned_context {
+    tbox_rect nearest_ancestor;
+    tbox_rect viewport;
+} tbox_layout_positioned_context;
+
+static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context);
+
+/* NOVO v5: resolves an `absolute`/`fixed` box's MARGIN BOX origin on one axis
+ * -- a POSITION against the containing block's origin/size, not a delta like
+ * tbox_layout_resolve_offset (v4, for `position: relative`) computes. `primary`
+ * is `left`/`top`; `opposite` is `right`/`bottom`. Per CSS2.1 10.3.7/10.6.4: a
+ * non-AUTO primary side wins outright (`container_origin + resolved(primary)`);
+ * else a non-AUTO opposite side positions the box's FAR edge
+ * (`container_origin + container_size - margin_box_size - resolved(opposite)`);
+ * else (both AUTO) the box falls back to the containing block's own origin --
+ * a deliberate simplification (CSS defines this as the element's "static
+ * position", which this project does not compute -- see ARCHITECTURE.md "v5
+ * -- Escopo deliberadamente contido" and "Layout Tree -- geometria de
+ * absolute/fixed" for the vertical axis's additional circular top/bottom/
+ * height case, which also lands on this same fallback). `margin_box_size`
+ * must already be known by the caller before this is called -- for the
+ * horizontal axis that means content_width/border_box.width/margin_box.width
+ * are resolved first (never circular here); for the vertical axis, see the
+ * caller in tbox_layout_build_element for how the circular case is avoided. */
+static double tbox_layout_resolve_absolute_edge(tbox_style_length primary, tbox_style_length opposite, double container_origin, double container_size, double margin_box_size) {
+    if (primary.kind != TBOX_STYLE_LENGTH_AUTO) {
+        return container_origin + tbox_layout_resolve_edge(primary, container_size);
+    }
+
+    if (opposite.kind != TBOX_STYLE_LENGTH_AUTO) {
+        return container_origin + container_size - margin_box_size - tbox_layout_resolve_edge(opposite, container_size);
+    }
+
+    return container_origin;
+}
 
 /* Walks `node`'s ELEMENT children (TEXT/COMMENT/DOCTYPE children never get
  * their own box, see ARCHITECTURE.md), skipping any whose resolved
@@ -418,8 +470,30 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
  * `position: relative` sibling still never disturbs where the next sibling
  * lands. The last child's pending bottom margin never collapses with
  * anything after it (parent/last-child collapsing is out of scope), so it's
- * added in full to the returned total. */
-static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block children_container, double start_y, tbox_layout_box *parent_box) {
+ * added in full to the returned total.
+ *
+ * NOVO v5: `positioned_context` (see tbox_layout_positioned_context above)
+ * is threaded through so descendants deeper in the recursion know what
+ * `absolute`/`fixed` boxes must position against. Before building each
+ * child, `child_style->position` is now ALSO peeked (same pattern as
+ * `margin[0]` above): `ABSOLUTE`/`FIXED` children are built against a
+ * containing block carved out of `positioned_context.nearest_ancestor`
+ * (ABSOLUTE) or `positioned_context.viewport` (FIXED) instead of
+ * `children_container` -- and, critically, take NO part in flow at all:
+ * `border_bottom`/`pending_margin_bottom` are left untouched by them (they
+ * never collapse margins with any sibling, in or out of flow) and their
+ * height is not added to the returned total (they never count toward the
+ * parent's auto-height) -- exactly CSS2.1's rule that out-of-flow boxes do
+ * not participate in the block formatting context they're removed from.
+ * They are still linked into `parent_box->first_child`/`last_child`/
+ * `next_sibling` normally: they remain children of the same DOM parent in
+ * the layout tree, just with different geometry (see ARCHITECTURE.md). The
+ * `cursor_y` passed to tbox_layout_build_element for them is whatever
+ * `border_bottom` currently holds -- a valid double, required by the
+ * function's signature, but never actually used for their geometry since
+ * `style->position != STATIC/RELATIVE/STICKY` there takes the
+ * `container.x`/`container.y`-based path instead. */
+static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block children_container, double start_y, tbox_layout_box *parent_box, tbox_layout_positioned_context positioned_context) {
     double border_bottom         = start_y;
     double pending_margin_bottom = 0.0;
     tbox_layout_box *previous    = NULL;
@@ -434,6 +508,32 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
             continue;
         }
 
+        if (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED) {
+            tbox_rect basis = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE) ? positioned_context.nearest_ancestor : positioned_context.viewport;
+            tbox_layout_containing_block out_of_flow_container = {
+                .x               = basis.x,
+                .y               = basis.y,
+                .width           = basis.width,
+                .height          = basis.height,
+                .height_definite = true, /* a concrete rect -- always definite, see tbox_layout_positioned_context */
+            };
+
+            tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, out_of_flow_container, border_bottom, positioned_context);
+            child_box->parent          = parent_box;
+            if (previous == NULL) {
+                parent_box->first_child = child_box;
+            } else {
+                previous->next_sibling = child_box;
+            }
+            parent_box->last_child = child_box;
+            previous               = child_box;
+
+            /* Deliberately NOT touching border_bottom/pending_margin_bottom:
+             * an out-of-flow child never collapses margins with, or advances
+             * the cursor for, any sibling -- see doc comment above. */
+            continue;
+        }
+
         double child_margin_top = tbox_layout_resolve_edge(child_style->margin[0], children_container.width);
 
         double cursor_y;
@@ -444,7 +544,7 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
             cursor_y = border_bottom + pending_margin_bottom;
         }
 
-        tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, children_container, cursor_y);
+        tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, children_container, cursor_y, positioned_context);
         child_box->parent          = parent_box;
         if (previous == NULL) {
             parent_box->first_child = child_box;
@@ -465,10 +565,25 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
 /* Builds and positions the box for one ELEMENT `node` (already known to not
  * be display:none -- the caller checks that before recursing, see
  * tbox_layout_build_children and tbox_layout_build) against `container`
- * (its parent's, or the viewport's, content box) with its margin_box's top
- * edge at `cursor_y`. */
-static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block container, double cursor_y) {
+ * (its parent's, or the viewport's, content box -- NOVO v5: or, for an
+ * `absolute`/`fixed` box, the positioned containing block tbox_layout_build_children
+ * already carved out for it) with its margin_box's top edge at `cursor_y`
+ * (flow boxes only -- an `absolute`/`fixed` box ignores `cursor_y` entirely
+ * and positions itself against `container.x`/`container.y` instead, see
+ * below). `positioned_context` (NOVO v5) is what this box's OWN descendants,
+ * if any, will use to position themselves if they turn out to be
+ * `absolute`/`fixed` -- see tbox_layout_positioned_context above. */
+static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context) {
     const tbox_style *style = tbox_layout_style_or_default(styles, node);
+    bool is_text_tag        = tbox_layout_is_text_tag(node);
+
+    /* NOVO v5: RELATIVE/ABSOLUTE/FIXED/STICKY all count as "positioned" for
+     * being a containing block (see tbox_layout_positioned_context), but
+     * only ABSOLUTE/FIXED are actually placed by resolving left/right/top/
+     * bottom against `container` instead of flowing at `cursor_y` -- RELATIVE
+     * and STICKY (== RELATIVE, see ARCHITECTURE.md's scope) still flow
+     * normally and only shift visually, unchanged since v4. */
+    bool is_out_of_flow = (style->position == TBOX_STYLE_POSITION_ABSOLUTE || style->position == TBOX_STYLE_POSITION_FIXED);
 
     /* Zero-initialized: text_runs/text_run_count/parent/first_child/
      * last_child/next_sibling all start at their empty/NULL default and are
@@ -513,8 +628,67 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         break;
     }
 
-    double content_x = container.x + margin_left + padding_left + effective_border;
-    double content_y = cursor_y + margin_top + padding_top + effective_border;
+    double content_x;
+    double content_y;
+
+    if (is_out_of_flow) {
+        /* NOVO v5: absolute/fixed geometry -- resolve the MARGIN BOX
+         * position against `container` (already the right positioned
+         * containing block by construction, see tbox_layout_build_children)
+         * instead of flowing at cursor_y. See ARCHITECTURE.md "Layout Tree
+         * -- geometria de absolute/fixed" and tbox_layout_resolve_absolute_edge
+         * above for the full rationale. */
+
+        /* Horizontal: never circular -- content_width above is already
+         * resolved against container.width regardless of position, so
+         * margin_box.width is known outright before positioning. */
+        double border_box_width = content_width + padding_left + padding_right + 2.0 * effective_border;
+        double margin_box_width = border_box_width + margin_left + margin_right;
+        double margin_box_x     = tbox_layout_resolve_absolute_edge(style->offset[3], style->offset[1], container.x, container.width, margin_box_width);
+        double border_box_x     = margin_box_x + margin_left;
+        content_x                = border_box_x + effective_border + padding_left;
+
+        /* Vertical: `top` non-AUTO resolves outright, no circularity (children
+         * are laid out normally afterwards, and an AUTO content_height still
+         * just sums them as usual). `top` AUTO but `bottom` non-AUTO needs
+         * margin_box.height up front, which is only knowable ahead of the
+         * children/text pass when style->height is itself definite (PX, or a
+         * PERCENT against an already-definite container) AND this isn't a
+         * text tag (a text tag ignores style->height entirely -- its height
+         * always comes from laid-out text, see tbox_layout_build_text_runs
+         * below -- so it can never be "known early" for this purpose).
+         * Otherwise -- both AUTO, or the genuinely circular
+         * top:auto+bottom:defined+height:auto case -- falls back to the
+         * containing block's own origin, the simplification documented in
+         * ARCHITECTURE.md's "Escopo deliberadamente contido" and "Layout
+         * Tree -- geometria de absolute/fixed". */
+        bool top_auto           = style->offset[0].kind == TBOX_STYLE_LENGTH_AUTO;
+        bool bottom_auto        = style->offset[2].kind == TBOX_STYLE_LENGTH_AUTO;
+        bool height_known_early = !is_text_tag &&
+                                  (style->height.kind == TBOX_STYLE_LENGTH_PX ||
+                                   (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite));
+
+        double margin_box_y;
+        if (!top_auto || bottom_auto || height_known_early) {
+            double margin_box_height = 0.0; /* only read by tbox_layout_resolve_absolute_edge's opposite-side branch, taken below */
+            if (top_auto && !bottom_auto && height_known_early) {
+                double early_content_height = (style->height.kind == TBOX_STYLE_LENGTH_PX)
+                    ? style->height.value
+                    : style->height.value / 100.0 * container.height;
+                double early_border_box_height = early_content_height + padding_top + padding_bottom + 2.0 * effective_border;
+                margin_box_height              = early_border_box_height + margin_top + margin_bottom;
+            }
+            margin_box_y = tbox_layout_resolve_absolute_edge(style->offset[0], style->offset[2], container.y, container.height, margin_box_height);
+        } else {
+            margin_box_y = container.y; /* circular top:auto+bottom:defined+height:auto case -- see comment above */
+        }
+
+        double border_box_y = margin_box_y + margin_top;
+        content_y            = border_box_y + effective_border + padding_top;
+    } else {
+        content_x = container.x + margin_left + padding_left + effective_border;
+        content_y = cursor_y + margin_top + padding_top + effective_border;
+    }
 
     /* NOVO v4: `position: relative` -- a pure visual-coordinate shift, no
      * new containing-block concept (confirmed in ARCHITECTURE.md). Applied
@@ -528,8 +702,12 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
      * margin_box.height only ever depends on content_height/padding/
      * border/margin, never x/y), so a `position: relative` box never
      * disturbs the normal flow of any other element, exactly as CSS
-     * specifies. */
-    if (style->position == TBOX_STYLE_POSITION_RELATIVE) {
+     * specifies. NOVO v5: `position: sticky` takes this exact same branch --
+     * ARCHITECTURE.md documents `sticky` as an exact synonym of `relative`
+     * (no scrollport anywhere in the project for a "stuck" threshold to ever
+     * cross), so it must resolve to IDENTICAL geometry given the same
+     * offsets, not just similar. */
+    if (style->position == TBOX_STYLE_POSITION_RELATIVE || style->position == TBOX_STYLE_POSITION_STICKY) {
         double dx = tbox_layout_resolve_offset(style->offset[3], style->offset[1], container.width, true);
         double dy = tbox_layout_resolve_offset(style->offset[0], style->offset[2], container.height, container.height_definite);
         content_x += dx;
@@ -537,7 +715,7 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     }
 
     double content_height;
-    if (tbox_layout_is_text_tag(node)) {
+    if (is_text_tag) {
         /* Text-tag leaf: no child boxes even though the DOM node may have
          * element descendants (e.g. <b> inside a <p>) -- those only
          * contribute words to this box's own text_runs (NOVO v2, real
@@ -575,13 +753,42 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
             break;
         }
 
+        /* NOVO v5: decide what positioned_context THIS box's own descendants
+         * see, per ARCHITECTURE.md "Layout Tree -- containing block
+         * posicionado" -- any non-STATIC position (RELATIVE/ABSOLUTE/FIXED/
+         * STICKY all count as "positioned" for this purpose, same as CSS)
+         * makes this box's own padding_box the nearest_ancestor passed down
+         * to tbox_layout_build_children; `viewport` never changes. Computed
+         * here, before recursing into children, from content_x/content_y/
+         * content_width/content_height as known AT THIS POINT -- for a
+         * positioned box whose OWN height is AUTO, that means `content_height`
+         * is still the 0.0 placeholder above (its real, children-summed
+         * value isn't known until after tbox_layout_build_children returns,
+         * which is too late: children need nearest_ancestor to build
+         * themselves). A documented simplification, not a bug: an
+         * absolute/fixed descendant resolving `bottom` against such an
+         * auto-height ancestor sees a too-small containing block. Not
+         * exercised by this version's minimum test cases (which use a
+         * definite-height or default-flow positioned ancestor). */
+        tbox_layout_positioned_context context_for_children = positioned_context;
+        if (style->position != TBOX_STYLE_POSITION_STATIC) {
+            tbox_rect padding_box_now = {
+                .x      = content_x - padding_left,
+                .y      = content_y - padding_top,
+                .width  = content_width + padding_left + padding_right,
+                .height = content_height + padding_top + padding_bottom,
+            };
+            context_for_children.nearest_ancestor = padding_box_now;
+        }
+
         tbox_layout_containing_block children_container = {
             .x               = content_x,
+            .y               = content_y,
             .width           = content_width,
             .height          = content_height,
             .height_definite = height_definite,
         };
-        double children_total_height = tbox_layout_build_children(arena, node, styles, fonts, children_container, content_y, box);
+        double children_total_height = tbox_layout_build_children(arena, node, styles, fonts, children_container, content_y, box, context_for_children);
         if (!height_definite) {
             content_height = children_total_height;
         }
@@ -609,8 +816,12 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     box->border_box.width  = box->padding_box.width + 2.0 * effective_border;
     box->border_box.height = box->padding_box.height + 2.0 * effective_border;
 
-    /* margin_box is border_box grown back out by margin -- its x/y land
-     * back on (container.x, cursor_y) exactly, per the geometry above. */
+    /* margin_box is border_box grown back out by margin -- its x/y land back
+     * on (container.x, cursor_y) exactly for a flow box, per the geometry
+     * above -- or, NOVO v5, on (margin_box_x, margin_box_y) as resolved by
+     * tbox_layout_resolve_absolute_edge for an absolute/fixed box, by the
+     * same border_box.x = margin_box.x + margin_left relation used
+     * everywhere else in this file. */
     box->margin_box.x      = box->border_box.x - margin_left;
     box->margin_box.y      = box->border_box.y - margin_top;
     box->margin_box.width  = box->border_box.width + margin_left + margin_right;
@@ -652,9 +863,21 @@ tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root
 
     tbox_layout_containing_block viewport = {
         .x               = 0.0,
+        .y               = 0.0,
         .width           = viewport_width,
         .height          = viewport_height,
         .height_definite = true, /* the viewport's height is always a concrete number */
     };
-    return tbox_layout_build_element(arena, element, styles, fonts, viewport, 0.0);
+
+    /* NOVO v5: no positioned ancestor exists yet at the root -- both
+     * `nearest_ancestor` and `viewport` start out as the same initial
+     * containing block (CSS2.1's rule: with no positioned ancestor, an
+     * absolute box's containing block is the initial containing block). See
+     * tbox_layout_positioned_context above. */
+    tbox_rect viewport_rect = { .x = 0.0, .y = 0.0, .width = viewport_width, .height = viewport_height };
+    tbox_layout_positioned_context root_positioned_context = {
+        .nearest_ancestor = viewport_rect,
+        .viewport         = viewport_rect,
+    };
+    return tbox_layout_build_element(arena, element, styles, fonts, viewport, 0.0, root_positioned_context);
 }

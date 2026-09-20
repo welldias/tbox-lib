@@ -186,3 +186,155 @@ body {
     background-color: thistle;
     margin: 20px 0;
 }
+
+/* v5: `position: relative` parent containing a `position: absolute` child.
+ * The child's containing block is the PARENT's padding box (ARCHITECTURE.md's
+ * v5 "Layout Tree -- containing block posicionado"), not the viewport --
+ * top:20px/left:30px land it visibly INSIDE .v5-relative-parent's own area
+ * (260x160), nowhere near the top-left of the actual window. High-contrast
+ * orangered-on-lightblue makes the containment obvious at a glance. */
+.v5-relative-parent {
+    width: 260px;
+    height: 160px;
+    background-color: lightblue;
+    position: relative;
+}
+
+.v5-absolute-in-parent {
+    width: 100px;
+    height: 60px;
+    background-color: orangered;
+    position: absolute;
+    top: 20px;
+    left: 30px;
+}
+
+.v5-after-relative-parent {
+    width: 260px;
+    height: 40px;
+    background-color: gainsboro;
+}
+
+/* v5: `position: absolute` with NO positioned ancestor anywhere above it --
+ * its containing block falls back to the viewport itself (the initial
+ * containing block, ARCHITECTURE.md's v5 "containing block posicionado").
+ * top/right pin it to the window's top-right corner regardless of where it
+ * sits in the DOM (right after .collapse-second, nowhere near that corner
+ * in flow terms). Removed from flow entirely, so
+ * .v5-after-absolute-no-ancestor right below renders exactly where it would
+ * if this element didn't exist at all. */
+.v5-absolute-no-ancestor {
+    width: 150px;
+    height: 60px;
+    background-color: hotpink;
+    position: absolute;
+    top: 20px;
+    right: 20px;
+}
+
+.v5-after-absolute-no-ancestor {
+    width: 260px;
+    height: 40px;
+    background-color: honeydew;
+}
+
+/* v5: `position: fixed` nested inside .v5-fixed-host, a SEPARATE
+ * `position: relative` ancestor from .v5-relative-parent above (kept apart
+ * on purpose so the two positioned-ancestor scenarios never get confused).
+ * bottom/right pin the fixed child to the window's bottom-right corner --
+ * the VIEWPORT's corner, not .v5-fixed-host's own (small, mid-page) box --
+ * proving `fixed` ignores positioned ancestors entirely, unlike `absolute`
+ * right above it. .v5-fixed-host stays small (40px tall) and
+ * .v5-after-fixed-host renders immediately below it, proving the far-away
+ * fixed child neither inflates its DOM parent's height nor takes up any
+ * flow space of its own. */
+.v5-fixed-host {
+    width: 260px;
+    height: 40px;
+    background-color: peachpuff;
+    position: relative;
+}
+
+.v5-fixed-child {
+    width: 150px;
+    height: 60px;
+    background-color: darkviolet;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+}
+
+.v5-after-fixed-host {
+    width: 260px;
+    height: 40px;
+    background-color: honeydew;
+}
+
+/* v5: `position: sticky` demo. ARCHITECTURE.md's v5 scope deliberately
+ * implements `sticky` as an exact synonym of `relative` (this engine has no
+ * scroll/overflow anywhere, so the "stuck" threshold sticky would normally
+ * cross during scrolling never applies -- `relative`'s own rendering is
+ * already spec-correct here, not a shortcut). This box, with
+ * `position: sticky; top: 15px; left: 10px;`, must render PIXEL-IDENTICAL
+ * to how the exact same box would render with `position: relative` and the
+ * same top/left (shifted 15px down and 10px right from its normal-flow
+ * spot) -- tests/layout/test_layout.c already asserts this byte-for-byte
+ * (content_box/border_box/margin_box compared field by field between a
+ * `sticky` box and a `relative` box built from otherwise-identical styles),
+ * so no separate side-by-side visual pair is needed in this fixture. */
+.v5-sticky-demo {
+    width: 260px;
+    height: 60px;
+    background-color: mediumaquamarine;
+    position: sticky;
+    top: 15px;
+    left: 10px;
+}
+
+/* v5: `position: absolute` deliberately escaping its own DOM parent's
+ * border_box -- .v5-escape-parent is a small (80x50) box, and
+ * .v5-escaped-child's top/left (60px/400px) place it well outside that
+ * area (past both its right edge and its bottom edge), and, on purpose,
+ * far enough right (past x=308) that it also clears every later in-flow
+ * sibling below it (.box/.hoverable/.bubble-outer/.stop-outer, all
+ * <=308px wide) -- avoiding a coincidental, uninteresting paint-order
+ * overlap with unrelated fixture elements that would otherwise obscure
+ * this specific proof (later-painted siblings always win with no
+ * z-index, see ARCHITECTURE.md's v5 scope) without saying anything about
+ * the hit-test fix itself. Before Tarefa 2's Orchestration fix,
+ * `tbox_context_hit_test_box` gave up as soon as a box's own border_box
+ * failed to contain the click point, so a click landing only inside the
+ * escaped child (never inside .v5-escape-parent's own small border_box)
+ * would never have been found; the fix (visit children first, regardless
+ * of whether the parent itself contains the point) makes it findable
+ * again. on_v5_escaped_click (example/tbox_app.c) is registered on
+ * ".v5-escaped-child" and flips its background-color on click -- the
+ * interactive proof. .v5-after-escape-parent renders directly below the
+ * small .v5-escape-parent (not pushed down by the much taller escaped
+ * child), proving the escaped child never counted toward its parent's
+ * auto-height either. */
+.v5-escape-parent {
+    width: 80px;
+    height: 50px;
+    background-color: whitesmoke;
+    position: relative;
+}
+
+.v5-escaped-child {
+    width: 120px;
+    height: 80px;
+    background-color: mediumseagreen;
+    position: absolute;
+    top: 60px;
+    left: 400px;
+}
+
+.v5-escaped-child-clicked {
+    background-color: crimson;
+}
+
+.v5-after-escape-parent {
+    width: 260px;
+    height: 40px;
+    background-color: honeydew;
+}

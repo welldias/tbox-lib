@@ -18,6 +18,46 @@
   <div class="collapse-first"></div>
   <div class="collapse-second"></div>
 
+  <!-- v5: position: relative containing a position: absolute child, offset
+       against the parent's padding box (not the viewport). -->
+  <div class="v5-relative-parent">
+    <div class="v5-absolute-in-parent"></div>
+  </div>
+  <div class="v5-after-relative-parent"></div>
+
+  <!-- v5: position: absolute with NO positioned ancestor at all -- its
+       containing block is the viewport (initial containing block), pinned
+       to a corner of the window. v5-after-absolute-no-ancestor right after
+       it proves it takes no space in the flow: it lands exactly where it
+       would if the absolute element above it didn't exist. -->
+  <div class="v5-absolute-no-ancestor"></div>
+  <div class="v5-after-absolute-no-ancestor"></div>
+
+  <!-- v5: position: fixed nested inside a DIFFERENT position: relative
+       ancestor than the pair above, proving fixed ignores that ancestor
+       and uses the viewport instead. v5-after-fixed-host proves the fixed
+       descendant doesn't inflate v5-fixed-host's own flow height either. -->
+  <div class="v5-fixed-host">
+    <div class="v5-fixed-child"></div>
+  </div>
+  <div class="v5-after-fixed-host"></div>
+
+  <!-- v5: position: sticky with top/left declared. See the CSS comment on
+       .v5-sticky-demo for the "sticky == relative" proof (Tarefa 3 already
+       has an automated byte-exact test for this; no visual side-by-side
+       pair is needed here). -->
+  <div class="v5-sticky-demo"></div>
+
+  <!-- v5: position: absolute deliberately escaping its DOM parent's
+       border_box (small parent, large top/left offset on the child) --
+       clickable via on_v5_escaped_click (registered in example/tbox_app.c),
+       proving the Orchestration hit-test fix from Tarefa 2 finds a click
+       landing outside the parent's own border box. -->
+  <div class="v5-escape-parent">
+    <div class="v5-escaped-child"></div>
+  </div>
+  <div class="v5-after-escape-parent"></div>
+
   <div class="box off"></div>
 
   <div class="hoverable"></div>

@@ -98,10 +98,16 @@
  * v2 stacked a full h1..h6 ladder plus two paragraphs below the box, which
  * needed 900px. v3 adds five more demo elements (hoverable, bubbling pair,
  * stopPropagation pair, unbind, rename) above the heading ladder -- bumped
- * to 1400px purely so a screenshot taken during the smoke test below can
- * show the whole document at once; nothing about the layout pipeline
- * requires this specific height. */
-#define TBOX_APP_DEMO_HEIGHT 1400
+ * to 1400px. v5 inserts several more flow elements (see
+ * example/tbox_app_demo.html/.css's "v5:" blocks) between .collapse-second
+ * and .box, pushing the document's own total (in-flow) height to ~1723px
+ * with the fonts this build actually resolves -- bumped again to 1900px so
+ * a screenshot can show the whole document PLUS the `position: fixed`
+ * element pinned to the window's bottom-right corner (bottom: 20px;
+ * right: 20px against this exact viewport height, deliberately placed
+ * below all in-flow content with room to spare, not overlapping it).
+ * Nothing about the layout pipeline requires this specific height either. */
+#define TBOX_APP_DEMO_HEIGHT 1900
 
 #ifndef TBOX_APP_DEMO_HTML_PATH
 #error "TBOX_APP_DEMO_HTML_PATH must be defined by the build (see example/CMakeLists.txt)"
@@ -259,6 +265,28 @@ static bool on_rename_target_click(tbox_context *ctx, tbox_html_node *node, void
     return true;
 }
 
+/* NOVO v5 -- Orchestration hit-test fix (Tarefa 2) interactive proof.
+ * Registered on ".v5-escaped-child" (example/tbox_app_demo.html/.css): a
+ * `position: absolute` box whose top/left deliberately place it well
+ * outside its own DOM parent's (.v5-escape-parent, a small 80x50 box)
+ * border_box. Before the fix, tbox_context_hit_test_box gave up as soon as
+ * a box's own border_box failed to contain the click point, so a click
+ * landing only inside this escaped child -- never inside its small
+ * parent's border_box -- would never have reached this handler at all. If
+ * this fires and recolors the element (same whole-attribute-replace shape
+ * as on_bubble_inner_click above), the fix works end to end through the
+ * real Style -> Layout -> Orchestration pipeline, not just at the unit
+ * level tests/context/test_context.c already covers. */
+static bool on_v5_escaped_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)userdata;
+    tbox_log("[v5 hit-test] .v5-escaped-child clicked outside its parent's border_box -- hit-test fix confirmed");
+
+    tbox_string_view class_name = tbox_string_view_make("class", strlen("class"));
+    tbox_string_view new_class  = tbox_string_view_make("v5-escaped-child v5-escaped-child-clicked", strlen("v5-escaped-child v5-escaped-child-clicked"));
+    tbox_html_node_set_attribute(tbox_context_document(ctx), node, class_name, new_class);
+    return true;
+}
+
 /* Milliseconds elapsed since `start` (CLOCK_MONOTONIC) -- same helper shape
  * as example/tbox_wayland.c's tbox_wayland_elapsed_ms. */
 static long tbox_app_demo_elapsed_ms(const struct timespec *start) {
@@ -309,6 +337,7 @@ int main(void) {
     tbox_app_demo_register(app, ".stop-outer", on_stop_outer_click, NULL, NULL);
     tbox_app_demo_register(app, ".unbind-target", on_unbind_target_click, &unbind_target_binding, &unbind_target_binding);
     tbox_app_demo_register(app, ".rename-target", on_rename_target_click, NULL, NULL);
+    tbox_app_demo_register(app, ".v5-escaped-child", on_v5_escaped_click, NULL, NULL);
 
     struct timespec start_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);

@@ -1,5 +1,6 @@
 #include <tbox/style.h>
 
+#include <stdio.h>
 #include <string.h>
 
 #include "base/tbox_arena.h"
@@ -412,7 +413,7 @@ int tbox_test_style_run(void) {
     }
 
     /* 21: position: relative is recognized; absence, or an unrecognized
-     * value (e.g. "absolute"), fall back to the initial value STATIC. */
+     * value (e.g. "sticky-typo"), fall back to the initial value STATIC. */
     {
         tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
         const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
@@ -436,13 +437,64 @@ int tbox_test_style_run(void) {
 
         tbox_html_document *doc3    = parse_html_cstr("<div>x</div>");
         const tbox_html_node *div3  = tbox_html_document_root(doc3)->first_child;
-        tbox_css_stylesheet *sheet3 = parse_css_cstr("div { position: absolute; }");
+        tbox_css_stylesheet *sheet3 = parse_css_cstr("div { position: sticky-typo; }");
 
         tbox_style style3 = resolve_node(sheet3, div3, NULL);
         TBOX_TEST_ASSERT_MSG(style3.position == TBOX_STYLE_POSITION_STATIC, "an unrecognized position value should fall back to STATIC");
 
         tbox_css_stylesheet_destroy(sheet3);
         tbox_html_document_destroy(doc3);
+    }
+
+    /* 21b: NOVO v5 -- position: absolute/fixed/sticky each resolve to their
+     * own enum value (not folded into STATIC like an unrecognized keyword,
+     * and not folded into each other). */
+    {
+        static const struct {
+            const char *css;
+            tbox_style_position expected;
+        } cases[] = {
+            { "div { position: absolute; }", TBOX_STYLE_POSITION_ABSOLUTE },
+            { "div { position: fixed; }", TBOX_STYLE_POSITION_FIXED },
+            { "div { position: sticky; }", TBOX_STYLE_POSITION_STICKY },
+        };
+
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+            const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+            tbox_css_stylesheet *sheet = parse_css_cstr(cases[i].css);
+
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT(style.position == cases[i].expected);
+
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
+    /* 21c: NOVO v5 -- none of absolute/fixed/sticky inherit from the parent;
+     * a child with no `position` declared stays STATIC even though its
+     * parent is `position: absolute` (same non-inheritance already proven
+     * for `relative` in test 23 below). */
+    {
+        static const char *parent_positions[] = { "absolute", "fixed", "sticky" };
+
+        for (size_t i = 0; i < sizeof(parent_positions) / sizeof(parent_positions[0]); i++) {
+            tbox_html_document *doc   = parse_html_cstr("<div><p>x</p></div>");
+            const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+            const tbox_html_node *p   = div->first_child;
+
+            char css[64];
+            snprintf(css, sizeof(css), "div { position: %s; }", parent_positions[i]);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+
+            tbox_style parent_style = resolve_node(sheet, div, NULL);
+            tbox_style child_style  = resolve_node(sheet, p, &parent_style);
+            TBOX_TEST_ASSERT_MSG(child_style.position == TBOX_STYLE_POSITION_STATIC, "position must not inherit from the parent");
+
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
     }
 
     /* 22: top/left declared resolve to the right offset[]; bottom/right

@@ -286,14 +286,26 @@ static bool tbox_style_resolve_border(const tbox_css_computed_style *computed, d
     return true;
 }
 
-/* NOVO v4: `position` only recognizes `static`/`relative`, case-insensitive
- * -- any other value (absent, unparsable, or an out-of-scope keyword like
- * `absolute`) falls back to the initial value STATIC, same posture as
- * `display` since v0. */
+/* NOVO v4: `position` recognizes `static`/`relative`, case-insensitive.
+ * NOVO v5: `absolute`/`fixed`/`sticky` added, same case-insensitive
+ * treatment -- see ARCHITECTURE.md's v5 Style section (`sticky` is just
+ * another enum value here; it is only treated as a synonym of `relative`
+ * outside the Style layer). Any other value (absent, unparsable, or an
+ * out-of-scope keyword) falls back to the initial value STATIC, same
+ * posture as `display` since v0. */
 static tbox_style_position tbox_style_resolve_position(const tbox_css_computed_style *computed) {
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("position"));
-    if (decl != NULL && tbox_string_view_equal_ascii_ci(tbox_style_trim(decl->value), tbox_string_view_from_cstr("relative"))) {
-        return TBOX_STYLE_POSITION_RELATIVE;
+    if (decl != NULL) {
+        tbox_string_view value = tbox_style_trim(decl->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("relative"))) {
+            return TBOX_STYLE_POSITION_RELATIVE;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("absolute"))) {
+            return TBOX_STYLE_POSITION_ABSOLUTE;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("fixed"))) {
+            return TBOX_STYLE_POSITION_FIXED;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("sticky"))) {
+            return TBOX_STYLE_POSITION_STICKY;
+        }
     }
     return TBOX_STYLE_POSITION_STATIC;
 }

@@ -731,6 +731,260 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 22: NOVO v5 -- `position: absolute` child of a `position: relative`
+     * parent positions against the PARENT'S padding_box (not the viewport,
+     * not the parent's content_box) -- see ARCHITECTURE.md "Layout Tree --
+     * containing block posicionado". The parent has non-zero padding so its
+     * padding_box origin differs from both its content_box origin and
+     * (0, 0), making this a discriminating test. */
+    {
+        tbox_html_document *doc     = parse_html_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>");
+        const tbox_html_node *root  = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root;
+        tbox_css_stylesheet *sheet  = parse_css_cstr(".outer { position: relative; width: 300px; height: 200px; padding: 10px; } .inner { position: absolute; top: 5px; left: 7px; width: 50px; height: 20px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *inner_box = outer_box->first_child;
+            TBOX_TEST_ASSERT(inner_box != NULL);
+            if (inner_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.x == outer_box->padding_box.x + 7.0, "absolute child must position against the parent's padding_box, not content_box/viewport");
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.y == outer_box->padding_box.y + 5.0, "absolute child's top must be measured from the parent's padding_box");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 23: NOVO v5 -- `position: absolute` with NO positioned ancestor
+     * positions against the viewport (the initial containing block), not
+     * its immediate DOM parent -- even though that parent has a margin that
+     * would shift its own content_box away from the viewport origin. */
+    {
+        tbox_html_document *doc     = parse_html_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>");
+        const tbox_html_node *root  = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root;
+        tbox_css_stylesheet *sheet  = parse_css_cstr(".outer { width: 300px; height: 200px; margin: 0px 0px 0px 50px; } .inner { position: absolute; top: 15px; left: 20px; width: 50px; height: 10px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            TBOX_TEST_ASSERT_MSG(outer_box->content_box.x == 50.0, "test setup: outer's own content_box.x must be shifted by its 50px left margin");
+
+            tbox_layout_box *inner_box = outer_box->first_child;
+            TBOX_TEST_ASSERT(inner_box != NULL);
+            if (inner_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.x == 20.0, "absolute with no positioned ancestor must position against the viewport (x=0+left), not the parent's shifted content_box");
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.y == 15.0, "same, vertically");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 24: NOVO v5 -- `position: fixed` nested inside a `position: relative`
+     * ancestor still positions against the viewport, ignoring that
+     * ancestor entirely -- different from `absolute` (test 22 above). The
+     * relative ancestor is shifted (left: 100px) so this is discriminating:
+     * a bug that let FIXED see the relative ancestor as its containing
+     * block would land the fixed child 100px further right than expected. */
+    {
+        tbox_html_document *doc     = parse_html_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>");
+        const tbox_html_node *root  = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root;
+        tbox_css_stylesheet *sheet  = parse_css_cstr(".outer { position: relative; left: 100px; width: 300px; height: 200px; } .inner { position: fixed; top: 15px; left: 20px; width: 50px; height: 10px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            TBOX_TEST_ASSERT_MSG(outer_box->content_box.x == 100.0, "test setup: outer's relative shift must land it at x=100");
+
+            tbox_layout_box *inner_box = outer_box->first_child;
+            TBOX_TEST_ASSERT(inner_box != NULL);
+            if (inner_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.x == 20.0, "fixed must ignore the relative ancestor and position against the viewport (x=0+left)");
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.y == 15.0, "same, vertically");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 25: NOVO v5 -- `position: sticky` with `top`/`left` must produce
+     * EXACTLY the same content_box/border_box/margin_box as the same
+     * element with `position: relative` and the same offsets -- proof of
+     * "sticky == relative" (ARCHITECTURE.md's "Escopo deliberadamente
+     * contido"). Built as two independent trees (one per position value)
+     * so this doesn't depend on any shared mutable state. */
+    {
+        tbox_html_document *doc_relative     = parse_html_cstr("<div><div class=\"a\">x</div></div>");
+        const tbox_html_node *root_relative   = tbox_html_document_root(doc_relative);
+        const tbox_html_node *outer_relative  = root_relative->first_child;
+        tbox_css_stylesheet *sheet_relative   = parse_css_cstr(".a { height: 30px; width: 40px; position: relative; top: 10px; left: 5px; }");
+
+        tbox_arena arena_relative               = tbox_arena_create(0);
+        tbox_css_cascade_source source_relative = { sheet_relative, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table_relative         = tbox_style_resolve_tree(&arena_relative, root_relative, &source_relative, 1);
+        tbox_layout_box *outer_box_relative     = tbox_layout_build(&arena_relative, outer_relative, &table_relative, fonts, 800.0, 600.0);
+
+        tbox_html_document *doc_sticky    = parse_html_cstr("<div><div class=\"a\">x</div></div>");
+        const tbox_html_node *root_sticky  = tbox_html_document_root(doc_sticky);
+        const tbox_html_node *outer_sticky = root_sticky->first_child;
+        tbox_css_stylesheet *sheet_sticky  = parse_css_cstr(".a { height: 30px; width: 40px; position: sticky; top: 10px; left: 5px; }");
+
+        tbox_arena arena_sticky               = tbox_arena_create(0);
+        tbox_css_cascade_source source_sticky = { sheet_sticky, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table_sticky         = tbox_style_resolve_tree(&arena_sticky, root_sticky, &source_sticky, 1);
+        tbox_layout_box *outer_box_sticky     = tbox_layout_build(&arena_sticky, outer_sticky, &table_sticky, fonts, 800.0, 600.0);
+
+        TBOX_TEST_ASSERT(outer_box_relative != NULL && outer_box_sticky != NULL);
+        if (outer_box_relative != NULL && outer_box_sticky != NULL) {
+            tbox_layout_box *relative_box = outer_box_relative->first_child;
+            tbox_layout_box *sticky_box   = outer_box_sticky->first_child;
+            TBOX_TEST_ASSERT(relative_box != NULL && sticky_box != NULL);
+            if (relative_box != NULL && sticky_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(relative_box->content_box.x == sticky_box->content_box.x && relative_box->content_box.y == sticky_box->content_box.y &&
+                                          relative_box->content_box.width == sticky_box->content_box.width && relative_box->content_box.height == sticky_box->content_box.height,
+                                      "sticky's content_box must exactly match relative's with the same offsets");
+                TBOX_TEST_ASSERT_MSG(relative_box->border_box.x == sticky_box->border_box.x && relative_box->border_box.y == sticky_box->border_box.y, "sticky's border_box must exactly match relative's");
+                TBOX_TEST_ASSERT_MSG(relative_box->margin_box.x == sticky_box->margin_box.x && relative_box->margin_box.y == sticky_box->margin_box.y, "sticky's margin_box must exactly match relative's");
+            }
+        }
+
+        tbox_arena_destroy(&arena_relative);
+        tbox_css_stylesheet_destroy(sheet_relative);
+        tbox_html_document_destroy(doc_relative);
+        tbox_arena_destroy(&arena_sticky);
+        tbox_css_stylesheet_destroy(sheet_sticky);
+        tbox_html_document_destroy(doc_sticky);
+    }
+
+    /* 26: NOVO v5 -- an `absolute`/`fixed` child does not add to the
+     * parent's auto-height (its 500px height must NOT appear in the
+     * parent's summed content_box.height), and does not participate in
+     * margin collapsing with either flow sibling even though it sits
+     * between them in document order -- the gap between the two flow
+     * siblings must still collapse to max(10, 20) == 20, exactly as if the
+     * out-of-flow sibling weren't there (see test 19). The out-of-flow
+     * child must still be linked normally into first_child/next_sibling/
+     * last_child. */
+    {
+        tbox_html_document *doc     = parse_html_cstr("<div><div class=\"a\">x</div><div class=\"pos\">y</div><div class=\"b\">z</div></div>");
+        const tbox_html_node *root  = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root->first_child;
+        tbox_css_stylesheet *sheet  = parse_css_cstr(".a { height: 30px; margin: 0px 0px 10px 0px; } .pos { position: absolute; top: 0px; left: 0px; width: 20px; height: 500px; } .b { height: 40px; margin: 20px 0px 0px 0px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            TBOX_TEST_ASSERT_MSG(outer_box->content_box.height == 90.0, "a 500px absolute child must not inflate the parent's auto-height (30 + collapsed-20 + 40 == 90)");
+
+            tbox_layout_box *a_box   = outer_box->first_child;
+            tbox_layout_box *pos_box = a_box != NULL ? a_box->next_sibling : NULL;
+            tbox_layout_box *b_box   = outer_box->last_child;
+            TBOX_TEST_ASSERT(a_box != NULL && pos_box != NULL && b_box != NULL && pos_box->next_sibling == b_box);
+            if (a_box != NULL && b_box != NULL) {
+                double gap = b_box->border_box.y - (a_box->border_box.y + a_box->border_box.height);
+                TBOX_TEST_ASSERT_MSG(gap == 20.0, "the out-of-flow sibling between them must not disturb margin collapsing between the two flow siblings");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 27: NOVO v5 -- `width: auto` on an `absolute` box fills the
+     * containing block (minus its own margin/padding/border), rather than
+     * shrinking to its content -- the documented CSS 10.3.7 simplification
+     * (ARCHITECTURE.md "Layout Tree -- geometria de absolute/fixed"). The
+     * SAME box's `height: auto` -- with zero ELEMENT children -- comes out
+     * as 0, exactly like the pre-existing (unchanged since v0) flow
+     * auto-height formula: ARCHITECTURE.md documents content_height as
+     * "inalterado ... AUTO continua sendo a soma dos filhos ... exatamente
+     * como hoje" for absolute/fixed too -- only content_width reuses the
+     * flow AUTO formula in a way that happens to fill rather than shrink. */
+    {
+        tbox_html_document *doc     = parse_html_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>");
+        const tbox_html_node *root  = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root;
+        tbox_css_stylesheet *sheet  = parse_css_cstr(".outer { position: relative; width: 300px; height: 200px; padding: 10px; } .inner { position: absolute; top: 0px; left: 0px; width: auto; height: auto; margin: 5px; padding: 3px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *inner_box = outer_box->first_child;
+            TBOX_TEST_ASSERT(inner_box != NULL);
+            if (inner_box != NULL) {
+                /* outer's padding_box is 320x220 (300x200 content + 10px padding
+                 * all around); inner's width:auto must fill that minus its own
+                 * 5px margin and 3px padding on each side: 320 - 10 - 6 == 304. */
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.width == 304.0, "width:auto on an absolute box must fill the containing block, not shrink to content");
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.height == 0.0, "height:auto with zero element children must still be the (unchanged) children sum, not an implicit fill");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 28: NOVO v5 -- `left`/`right`/`top`/`bottom` all `auto` on an
+     * `absolute` box falls back to the containing block's own origin
+     * (the documented "no real static position" simplification). */
+    {
+        tbox_html_document *doc     = parse_html_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>");
+        const tbox_html_node *root  = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root;
+        tbox_css_stylesheet *sheet  = parse_css_cstr(".outer { position: relative; width: 300px; height: 200px; padding: 10px; } .inner { position: absolute; width: 50px; height: 20px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *inner_box = outer_box->first_child;
+            TBOX_TEST_ASSERT(inner_box != NULL);
+            if (inner_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.x == outer_box->padding_box.x, "all-AUTO offsets must fall back to the containing block's own x origin");
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.y == outer_box->padding_box.y, "all-AUTO offsets must fall back to the containing block's own y origin");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

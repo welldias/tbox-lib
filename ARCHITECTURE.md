@@ -1951,6 +1951,276 @@ Um app tbox que:
   regra "sem globals sem discussão explícita" (ver "Thread-safety futura"
   abaixo).
 
+## v5 — `position: absolute`/`fixed`/`sticky`
+
+Continuação direta do v4: `position: relative` já existe e não introduziu
+nenhum conceito novo de containing block porque o deslocamento é só visual.
+Os três valores desta versão são diferentes — cada um remove o elemento do
+fluxo normal (não ocupa espaço, não participa de margin collapsing, não
+soma no auto-height do pai) e o posiciona contra um containing block que
+não é mais "o content box do pai": o ancestral posicionado mais próximo
+(`absolute`), o viewport (`fixed`), ou nenhum dos dois de verdade
+(`sticky`, ver abaixo). Critério de "pronto" no fim desta seção.
+
+Escopo deliberadamente contido:
+- **`position: sticky` é implementado como um sinônimo exato de
+  `position: relative`.** Isso não é um atalho barato: a tbox não tem
+  scroll/overflow em lugar nenhum do projeto (viewport único, sem
+  scrollport) — e a própria especificação do CSS define que um elemento
+  `sticky` renderiza EXATAMENTE como `relative` (com o mesmo `top`/`right`/
+  `bottom`/`left`) enquanto o scrollport não cruza o threshold de "grudar".
+  Sem scroll, esse threshold nunca é cruzado, então `relative` já é o
+  comportamento espec-correto aqui, não uma simplificação com desvio de
+  comportamento. `sticky` ainda conta como "elemento posicionado" pra
+  efeito de ser containing block dos próprios descendentes `absolute`
+  (mesmo tratamento de `relative`).
+- **Sem `z-index`/stacking contexts** — o projeto já não tem essa noção
+  desde o v0 (Render Pipeline pinta em ordem de árvore/DOM, sem reordenar).
+  Um elemento `absolute`/`fixed` não tem garantia de aparecer "por cima" de
+  conteúdo posterior no DOM — mesma limitação já aceita, só ficando mais
+  visível agora que sobreposição real é possível.
+- **Sem o algoritmo completo de "auto" do CSS 2.1 10.3.7** para largura/
+  altura de elementos `absolute`/`fixed` (o sistema de equações que resolve
+  `left`/`width`/`right`/margens simultaneamente, incluindo shrink-to-fit
+  quando `width` E os dois lados horizontais são `auto`) — ver "Layout Tree"
+  abaixo pra a simplificação adotada, registrada como débito no fim do
+  documento.
+- **Sem posição estática verdadeira** quando AMBOS os lados de um eixo são
+  `auto` (CSS define isso como "onde o elemento estaria se fosse
+  `static`" — calculável em teoria, mas exigiria layout normal também para
+  um elemento que por definição está fora do fluxo) — cai num fallback
+  simples (origem do containing block), documentado como débito.
+
+### Style — `position: absolute`/`fixed`/`sticky`
+
+`tbox_style_position` ganha 3 valores novos:
+```c
+typedef enum tbox_style_position {
+    TBOX_STYLE_POSITION_STATIC,   /* initial */
+    TBOX_STYLE_POSITION_RELATIVE,
+    TBOX_STYLE_POSITION_ABSOLUTE, /* NOVO v5 */
+    TBOX_STYLE_POSITION_FIXED,    /* NOVO v5 */
+    TBOX_STYLE_POSITION_STICKY,   /* NOVO v5 -- tratado como RELATIVE em todo lugar fora da Style layer, ver acima */
+} tbox_style_position;
+```
+`tbox_style_resolve` passa a reconhecer `absolute`/`fixed`/`sticky`
+case-insensitive além de `static`/`relative` já existentes; qualquer outro
+valor continua caindo no initial `STATIC`. Nenhum campo novo em
+`tbox_style` além do enum — `offset[4]` (top/right/bottom/left) já existe
+desde o v4 e é reaproveitado por todos os 4 valores não-`STATIC`.
+
+### Layout Tree — containing block posicionado
+
+O conceito central desta versão: em vez de só `tbox_layout_containing_block`
+(o container de FLUXO — content box do pai, ou viewport na raiz), a
+recursão passa a carregar também um `tbox_layout_positioned_context`:
+
+```c
+/* NOVO v5: rastreia, durante a recursão top-down da Layout Tree, contra o
+ * que um descendente `absolute`/`fixed` deve se posicionar.
+ * `nearest_ancestor` é o padding_box do ancestral posicionado mais próximo
+ * (relative/absolute/fixed/sticky) já visitado -- ou o viewport inteiro, se
+ * nenhum ancestral posicionado existir ainda (mesma regra do CSS: sem
+ * ancestral posicionado, o containing block é o initial containing block).
+ * `viewport` é sempre o viewport original, nunca atualizado pela recursão
+ * -- é o que `position: fixed` usa incondicionalmente, ignorando qualquer
+ * `nearest_ancestor` que exista. Usar o padding_box (não o content_box) do
+ * ancestral é a regra exata do CSS 10.1 -- o padding box já existe como
+ * campo de tbox_layout_box, nenhuma geometria nova precisa ser calculada
+ * pra isso. */
+typedef struct tbox_layout_positioned_context {
+    tbox_rect nearest_ancestor;
+    tbox_rect viewport;
+} tbox_layout_positioned_context;
+```
+
+Threading: `tbox_layout_build` inicializa
+`{ .nearest_ancestor = viewport_rect, .viewport = viewport_rect }` (sem
+ancestral posicionado na raiz, containing block inicial = viewport).
+`tbox_layout_build_element`/`_build_children` passam a receber esse valor
+como parâmetro adicional. Depois de montar `box->padding_box` (mesmo ponto
+onde border/padding já são resolvidos hoje), se `style->position !=
+TBOX_STYLE_POSITION_STATIC` (ou seja: relative, absolute, fixed OU sticky —
+os 4 contam como "elemento posicionado" pro propósito de ser containing
+block de alguém, mesma regra do CSS), o `nearest_ancestor` repassado pros
+FILHOS deste box vira `box->padding_box` (o valor recém-calculado, já
+incluindo qualquer deslocamento de `relative`/`sticky`); senão, repassa
+`positioned_context` recebido sem alteração. `viewport` nunca muda.
+
+### Layout Tree — filhos fora de fluxo (`absolute`/`fixed`)
+
+Em `tbox_layout_build_children`, o `child_style->position` passa a ser
+espiado (mesmo padrão já usado pra `margin[0]` no v4) ANTES de decidir como
+montar cada filho:
+- `display: none` continua descartando o filho inteiramente, sem box —
+  checado primeiro, sem mudança.
+- `ABSOLUTE`/`FIXED` (NOVO v5): o filho é construído com um `container` de
+  FLUXO diferente do normal -- em vez de `children_container` (o content
+  box do pai), monta-se um `tbox_layout_containing_block` a partir de
+  `positioned_context.nearest_ancestor` (pra `ABSOLUTE`) ou
+  `positioned_context.viewport` (pra `FIXED`), com `height_definite = true`
+  sempre (é um rect já concreto). **Esse filho NÃO participa de nada do
+  fluxo**: não usa/atualiza `border_bottom`/`pending_margin_bottom`
+  (margin collapsing nunca olha pra ele, nem como colapsante nem como
+  colapsado -- mesma regra do CSS, elementos fora de fluxo nunca colapsam
+  margem), e sua altura não soma no `total_height` retornado (não conta pro
+  auto-height do pai). Ainda assim é linkado normalmente em
+  `parent_box->first_child`/`last_child`/`next_sibling` -- continua sendo
+  filho da MESMA caixa DOM que era seu pai antes (não é reparentado pra
+  dentro da caixa do ancestral posicionado), só com geometria calculada de
+  forma diferente; isso mantém Render Pipeline e hit-test inalterados na
+  forma como percorrem a árvore.
+- Qualquer outro valor (`STATIC`/`RELATIVE`/`STICKY`): fluxo normal,
+  inalterado desde o v4 (incluindo margin collapsing e o deslocamento
+  visual de `RELATIVE`/`STICKY`).
+
+### Layout Tree — geometria de `absolute`/`fixed`
+
+Dentro de `tbox_layout_build_element`, margin/padding/`effective_border`
+continuam resolvidos exatamente como hoje contra `container.width` — como
+o `container` já chega pré-trocado pelo containing block posicionado (ver
+acima), nenhuma mudança é necessária nessas linhas. O mesmo vale pro
+`content_width` (PX/PERCENT/AUTO): a fórmula AUTO existente (`container.width
+- margens - padding - 2*effective_border`) é reaproveitada tal e qual —
+**essa é a simplificação do CSS 10.3.7 citada no escopo**: um `absolute`
+com `width: auto` preenche a largura do containing block posicionado (menos
+margem/padding/borda), em vez do shrink-to-fit-baseado-em-conteúdo que o
+CSS de verdade calcularia. `content_height` também é inalterado (PX/PERCENT
+contra `container.height`, sempre definido; AUTO continua sendo a soma dos
+filhos, calculada DEPOIS deles serem montados, exatamente como hoje).
+
+O que muda de verdade é como `content_x`/`content_y` (e por extensão
+`border_box`) são calculados quando `style->position` é `ABSOLUTE` ou
+`FIXED` — em vez de vir de `cursor_y` (fluxo), vêm de resolver `left`/
+`right`/`top`/`bottom` contra `container` (que já é o containing block
+posicionado certo nesse ponto):
+```c
+/* NOVO v5: `left` (ou `right`, negado e a partir da borda direita) é
+ * medido do containing block até a MARGIN edge da caixa (CSS 10.3.7) --
+ * por isso o resultado aqui é margin_box.x, não border_box.x diretamente;
+ * border_box.x = margin_box.x + margin_left, mesma relação que todo o
+ * resto da Layout Tree já usa. Quando os dois lados são AUTO,
+ * cai no início do containing block (simplificação -- ver escopo desta
+ * seção: o algoritmo real usaria a posição estática do elemento). */
+static double tbox_layout_resolve_absolute_edge(tbox_style_length primary, tbox_style_length opposite, double container_origin, double container_size, double margin_box_size);
+```
+Chamada uma vez pro eixo horizontal (`left`/`right` contra `container.x`/
+`container.width`) e uma vez pro vertical (`top`/`bottom` contra
+`container.y`/`container.height`) — só depois de `content_width`/`border_box.width`
+já resolvidos (necessários pra saber `margin_box.width` antes de aplicar a
+fórmula do lado direito). Pro eixo vertical, quando `top` é AUTO e `bottom`
+não é, E `height` também é AUTO ao mesmo tempo — o caso genuinamente
+circular do CSS (a posição depende da altura, que depende do conteúdo, que
+só é conhecido depois de posicionar os filhos) — cai no mesmo fallback de
+"ambos AUTO" (topo do containing block), em vez de resolver o sistema.
+Quando `top` é definido, não há circularidade: `content_y` sai direto de
+`top`, os filhos são montados normalmente contra ele, e `content_height`
+AUTO soma como sempre.
+
+`FIXED` reaproveita exatamente esse mesmo caminho, só trocando qual rect
+entra como `container` (viewport em vez do ancestral posicionado) — nenhum
+código de geometria é duplicado entre os dois.
+
+### Orchestration — correção de hit-test pra caixas fora de fluxo
+
+**Bug real descoberto durante o design desta versão** (mesmo espírito da
+auditoria que achou o bug de parênteses do CSS Parser na v3 — não é
+especulação, é uma leitura do código existente à luz do que esta versão
+introduz): `tbox_context_hit_test_box` hoje para de descer na árvore assim
+que o `border_box` do PRÓPRIO `box` não contém o ponto — comentário
+explícito no código: *"v0's block-flow siblings never overlap, so once
+box's border_box fails to contain (x, y), no descendant of box can contain
+it either"*. Essa suposição é verdadeira em fluxo normal, mas
+**deixa de valer com `absolute`/`fixed`**: nada impede um descendente
+posicionado de aparecer geometricamente fora do `border_box` do próprio
+pai DOM (é literalmente o objetivo de tirá-lo do fluxo). Com o código
+atual, um clique sobre um elemento `absolute` que "escapou" da caixa do pai
+simplesmente não é encontrado.
+
+**Correção:** duas mudanças em `tbox_context_hit_test_box`
+(`src/context/tbox_context.c`):
+1. Não retornar cedo se `box` não contém o ponto — sempre visitar os
+   filhos primeiro, e só então checar `box` propriamente (mesma
+   política "aceitável pra árvores do tamanho de uma UI" que
+   `tbox_style_table_find`/`tbox_css_computed_style_find` já assumem em
+   outro lugar do projeto — busca linear, não indexada).
+2. Entre os filhos que casam, ficar com o ÚLTIMO (não retornar no
+   primeiro) — sem isso, duas caixas sobrepostas (agora possível com
+   `absolute`/`fixed`, ou mesmo com margens negativas desde o v4) fariam o
+   hit-test devolver a que está POR BAIXO (pintada primeiro), não a que
+   está por cima (pintada depois, sempre a última em ordem de documento —
+   sem stacking context, "por cima" é sempre "mais tarde no DOM" aqui).
+   Para conteúdo v0-v4 (nunca overlapping de propósito), no máximo um
+   filho jamais casa ao mesmo tempo, então o comportamento observável não
+   muda em nada — regressão zero.
+
+```c
+/* Reescrita: visita TODOS os filhos (não pára cedo se `box` não contém o
+ * ponto -- ver acima), guarda o ÚLTIMO que casar (mais tarde em ordem de
+ * documento == pintado por cima, já que não há stacking context), e só
+ * usa `box` propriamente como último recurso se nenhum filho casou. */
+static const tbox_layout_box *tbox_context_hit_test_box(const tbox_layout_box *box, double x, double y);
+```
+
+### Render Pipeline
+
+**Sem mudança nenhuma.** `tbox_render_build_display_list` já pinta em
+ordem de árvore/DOM (pré-ordem), sem olhar geometria de containing
+block nenhuma — um box `absolute`/`fixed` é só mais um box com `border_box`/
+`padding_box`/`content_box`/`text_runs` já corretos quando chega até ele;
+nada no algoritmo de emissão de paint ops precisa saber que esse box está
+fora de fluxo.
+
+### Fatia vertical v5 — critério de "pronto"
+
+Um app tbox que:
+- tem um elemento `position: relative` contendo um filho `position:
+  absolute` com `top`/`left` posicionado visualmente dentro da área do pai
+  (containing block = padding box do pai, não o viewport);
+- tem um elemento `position: absolute` SEM nenhum ancestral posicionado —
+  posicionado contra o viewport inteiro (containing block = initial
+  containing block), não contra seu pai DOM imediato;
+- tem um elemento `position: fixed` posicionado contra o viewport mesmo
+  estando aninhado dentro de um ancestral `position: relative` (prova de
+  que `fixed` ignora ancestrais posicionados, diferente de `absolute`);
+- tem um elemento `position: sticky` com `top` declarado, visualmente
+  idêntico a `position: relative` com o mesmo `top` (prova do "sticky ==
+  relative" desta versão);
+- um clique/hover sobre um elemento `absolute` posicionado de forma a
+  escapar visualmente do `border_box` do seu pai DOM ainda é corretamente
+  detectado pelo hit-test (prova da correção do Orchestration);
+- nenhum dos elementos `absolute`/`fixed` acima ocupa espaço no fluxo
+  normal (um sibling logo depois de cada um continua na posição que teria
+  se o elemento fora de fluxo não existisse);
+- continua sem regredir nada de v0-v4.
+
+## Decisões já tomadas (v5)
+
+- **`position: sticky` implementado como sinônimo exato de `relative`** —
+  espec-correto (não um atalho), já que a tbox não tem scroll/overflow em
+  lugar nenhum; o "modo grudento" de verdade só teria efeito observável
+  com um scrollport existindo.
+- **Sem o algoritmo CSS 10.3.7 completo de auto-width/height pra
+  `absolute`/`fixed`** — reaproveita a mesma fórmula AUTO já usada pelo
+  fluxo normal (preenche o containing block, não shrink-to-fit), e cai num
+  fallback simples (origem do containing block) quando ambos os lados de
+  um eixo são AUTO, em vez de calcular a posição estática verdadeira.
+- **`fixed` reaproveita 100% do código de geometria de `absolute`**, só
+  trocando qual rect é usado como containing block (viewport vs. ancestral
+  posicionado mais próximo) — nenhuma duplicação de algoritmo.
+- **Filhos fora de fluxo continuam filhos do mesmo pai DOM na árvore de
+  layout** (não são reparentados pra dentro da caixa do ancestral
+  posicionado) — Render Pipeline e a forma geral da árvore não mudam,
+  só a geometria e a participação em fluxo/margin-collapsing/auto-height.
+- **Bug de hit-test corrigido** (parar cedo quando `box` não contém o
+  ponto, e retornar o primeiro filho que casa em vez do último) —
+  descoberto durante o design desta versão, não uma mudança de
+  comportamento opcional: sem essa correção, clique/hover em conteúdo
+  `absolute`/`fixed` que escapa do pai DOM simplesmente não funcionaria.
+- Nenhum novo estado global/estático introduzido — `tbox_layout_positioned_context`
+  é passado por valor através da recursão (mesmo padrão de
+  `tbox_layout_containing_block` já existente), não é global nem estático.
+
 ## Débito de design conhecido (pós-v0)
 
 Trabalho futuro real, conscientemente adiado — não bloqueia o v0, mas tem
@@ -2251,24 +2521,94 @@ entre siblings e o gap errado for visivelmente notado — não antes.
 **Toca:** Layout Tree (`tbox_layout_build_children`).
 
 ### `position: absolute`/`fixed`/`sticky`
-**O que é:** a v4 só resolve `position: relative`; os outros três valores
-de `position` continuam fora — cada um exige um containing block diferente
-do fluxo normal (o ancestro posicionado mais próximo, o viewport, ou um
-híbrido dos dois), diferente do que a v4 confirmou ser suficiente (nenhum
-conceito novo de containing block).
-**Por que importa:** popups/tooltips/modais (já citados no débito "Árvore
-pública de mutação" acima) tipicamente dependem de `position: absolute`
-pra se posicionar sem participar do fluxo normal — os dois débitos
-provavelmente precisam ser revisitados juntos.
-**Gatilho para revisitar:** junto do débito "Árvore pública de mutação"
-acima (popup/tooltip/modal), ou antes, se algum layout real exigir
-`position: absolute` isoladamente.
-**Toca:** Style (`tbox_style_position`, mais valores), Layout Tree (novo
-conceito de containing block).
+**Resolvido na v5.** Os três valores agora existem (ver seção "v5 —
+`position: absolute`/`fixed`/`sticky`" acima) — `absolute` contra o
+ancestral posicionado mais próximo, `fixed` contra o viewport, `sticky`
+como sinônimo de `relative` (espec-correto sem scroll). O que a v5
+deliberadamente NÃO resolveu vira os itens de débito novos logo abaixo
+("Algoritmo CSS 10.3.7 completo...", "Posição estática verdadeira...",
+"`position: sticky` com scroll de verdade..."). O débito "Árvore pública de
+mutação" (popup/tooltip/modal) continua em aberto, mas agora tem
+`position: absolute`/`fixed` disponíveis como pré-requisito já resolvido.
+
+### Algoritmo CSS 10.3.7 completo (auto-width/height de `absolute`/`fixed`)
+**O que é:** o CSS de verdade resolve largura/altura `auto` de um elemento
+`absolute`/`fixed` via um sistema de equações envolvendo `left`/`width`/
+`right`/margens (e o equivalente vertical), incluindo shrink-to-fit
+baseado no conteúdo quando `width` e os dois lados horizontais são `auto`
+ao mesmo tempo. A v5 simplifica: `width`/`height` `auto` preenchem o
+containing block posicionado (mesma fórmula do fluxo normal), nunca
+encolhem pro conteúdo.
+**Por que importa:** um `absolute`/`fixed` com `width: auto` na v5 fica do
+tamanho do containing block inteiro (menos margem/padding/borda) mesmo
+quando o conteúdo é bem menor — visualmente diferente de um browser real
+nesse caso específico (`width`/`height` explícitos, o caso mais comum na
+prática, não são afetados).
+**Gatilho para revisitar:** quando um layout real precisar de um
+`absolute`/`fixed` do tamanho do próprio conteúdo (ex.: um tooltip que
+"abraça" seu texto) — o caso mais comum de precisar disso de verdade.
+**Toca:** Layout Tree (`tbox_layout_build_element`, exigiria um passe de
+medição de conteúdo antes de decidir a largura, algo que a arquitetura
+atual não tem pra nenhum tipo de caixa).
+
+### Posição estática verdadeira (`absolute`/`fixed` com os dois lados de um eixo em `auto`)
+**O que é:** quando `left` E `right` (ou `top` E `bottom`) são ambos `auto`,
+o CSS de verdade usa "onde o elemento estaria se fosse `position: static`"
+como a posição — um cálculo bem definido, mas que exigiria rodar o layout
+de fluxo normal também para um elemento que, por definição, está fora
+dele. A v5 usa um fallback simples: a origem do containing block
+posicionado (equivalente a `top: 0; left: 0`).
+**Por que importa:** visualmente perceptível só quando NENHUM offset é
+declarado num eixo — um `position: absolute` sem `top`/`left`/`right`/
+`bottom` nenhum vai pro canto do containing block em vez de ficar "onde
+estaria naturalmente", que é o mais comum em CSS real quando alguém
+esquece de declarar offset (raro ser intencional).
+**Gatilho para revisitar:** mesmo gatilho do item acima (ambos costumam
+aparecer juntos em qualquer caso real que precise de shrink-to-fit).
+**Toca:** Layout Tree (mesma função, exigiria computar a posição de fluxo
+em paralelo mesmo pra um elemento fora dele).
+
+### `position: sticky` com scroll de verdade
+**O que é:** a v5 trata `sticky` como sinônimo exato de `relative`, correto
+enquanto a tbox não tiver nenhum conceito de scroll/overflow/scrollport. O
+dia em que scroll for implementado, `sticky` precisa de tratamento próprio
+de verdade (alternar entre "relative" e "grudado numa borda do scrollport"
+conforme a posição de scroll).
+**Por que importa:** um app real usando `sticky` esperando o comportamento
+de "cabeçalho que gruda ao rolar" não vai ver isso até esse débito ser
+resolvido — hoje é indistinguível de `relative`.
+**Gatilho para revisitar:** quando `overflow`/scroll (não implementado em
+lugar nenhum do projeto hoje) entrar em escopo de alguma versão futura —
+esse é o pré-requisito direto, não algo que se decide isoladamente.
+**Toca:** Style (`position: sticky` já existe, comportamento muda),
+Layout Tree, Orchestration (precisaria saber a posição de scroll atual).
+
+### Containing block de um ancestral posicionado com `height: auto`
+**O que é:** descoberto durante a implementação da v5 (não previsto no
+design original). O `nearest_ancestor` repassado pros descendentes
+`absolute`/`fixed` de uma caixa posicionada (`relative`/`absolute`/`fixed`/
+`sticky`) é computado ANTES de `tbox_layout_build_children` rodar — mas se
+essa caixa posicionada tem `height: auto`, sua altura real (soma dos
+filhos) só é conhecida DEPOIS. O `padding_box` usado como containing block
+pros descendentes fica, nesse caso, com altura ainda zerada (só padding),
+não a altura final. Um descendente `absolute`/`fixed` que resolva `bottom`
+contra esse ancestral vê um containing block menor que o real.
+**Por que importa:** afeta especificamente a combinação "ancestral
+posicionado com altura automática" + "descendente `absolute`/`fixed`
+ancorado por `bottom`" — uma combinação real em CSS (ex.: um card de altura
+variável com um badge `absolute` colado no canto inferior), não só um caso
+de borda teórico.
+**Gatilho para revisitar:** quando um caso real precisar de `bottom` contra
+um ancestral de altura automática — nesse ponto, resolver exigiria uma
+segunda passada (montar os filhos de fluxo primeiro pra saber a altura
+final do ancestral, só depois posicionar os descendentes fora de fluxo que
+dependem dela), mudança de fluxo de controle não trivial na Layout Tree.
+**Toca:** Layout Tree (`tbox_layout_build_element`, o ponto onde
+`context_for_children.nearest_ancestor` é montado antes da recursão).
 
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3 e v4 (registrada nas seções de cada camada) ou
-consolidada como débito de design conhecido acima, com gatilho explícito
+fechada para v0, v1, v2, v3, v4 e v5 (registrada nas seções de cada camada)
+ou consolidada como débito de design conhecido acima, com gatilho explícito
 de quando revisitar.

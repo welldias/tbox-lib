@@ -55,11 +55,17 @@ typedef enum tbox_style_border_style {
     TBOX_STYLE_BORDER_STYLE_SOLID,
 } tbox_style_border_style;
 
-/* NOVO v4: only the visual-offset axis of `position: relative` -- no
- * `absolute`/`fixed`/`sticky` (see ARCHITECTURE.md's v4 Style section). */
+/* NOVO v4: the visual-offset axis of `position: relative`. NOVO v5:
+ * `absolute`/`fixed`/`sticky` -- see ARCHITECTURE.md's v5 Style section.
+ * `STICKY` is treated as an exact synonym of `RELATIVE` everywhere outside
+ * the Style layer (Layout Tree, Render Pipeline, Orchestration); here it is
+ * just one more enum value the Style layer recognizes. */
 typedef enum tbox_style_position {
     TBOX_STYLE_POSITION_STATIC, /* initial */
     TBOX_STYLE_POSITION_RELATIVE,
+    TBOX_STYLE_POSITION_ABSOLUTE, /* NOVO v5 */
+    TBOX_STYLE_POSITION_FIXED,    /* NOVO v5 */
+    TBOX_STYLE_POSITION_STICKY,   /* NOVO v5 -- treated as RELATIVE outside the Style layer, see above */
 } tbox_style_position;
 
 typedef struct tbox_style {
@@ -133,15 +139,14 @@ typedef struct tbox_style {
  * exact per-token classification; `border-top`/`-right`/`-bottom`/`-left`
  * and the longhands `border-width`/`border-style`/`border-color` are out of
  * scope, as is any `border-style` besides `solid`/`none`), `position`
- * (NOVO v4: only `static`/`relative`, case-insensitive; any other value --
- * including `absolute`/`fixed`/`sticky`, out of scope -- falls back to the
- * initial value `STATIC`, same posture as `display` since v0), `top`,
- * `right`, `bottom`, `left` (NOVO v4: same length parser as `width`/
- * `margin` -- `auto`, px, or `%` -- only meaningful when `position:
- * relative`, but always resolved regardless of `position`). Out of scope:
- * `float`, flex/grid, `z-index`, `position: absolute/fixed/sticky`,
- * `white-space` (v0 always behaves as `white-space: normal`), `font-style`
- * (italic). */
+ * (NOVO v4: `static`/`relative`; NOVO v5: `absolute`/`fixed`/`sticky`, all
+ * case-insensitive; any other value falls back to the initial value
+ * `STATIC`, same posture as `display` since v0), `top`, `right`, `bottom`,
+ * `left` (NOVO v4: same length parser as `width`/`margin` -- `auto`, px, or
+ * `%` -- only meaningful when `position` is non-`static`, but always
+ * resolved regardless of `position`). Out of scope: `float`, flex/grid,
+ * `z-index`, `white-space` (v0 always behaves as `white-space: normal`),
+ * `font-style` (italic). */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 
 typedef struct tbox_style_entry {

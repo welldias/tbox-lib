@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "context/tbox_context_hit_test.h"
 #include "test_support.h"
 
 /* This is the first true end-to-end integration test in the codebase: it
@@ -857,6 +858,78 @@ int tbox_test_context_run(void) {
 
             tbox_context_close(ctx);
         }
+    }
+
+    /* 26: v5's Orchestration hit-test fix -- tbox_context_hit_test_box
+     * called directly against a hand-built tbox_layout_box tree (no HTML/
+     * CSS, no Style/Layout pipeline needed: this is about the hit-test
+     * algorithm itself, see ARCHITECTURE.md's "Orchestration -- correção
+     * de hit-test pra caixas fora de fluxo"). Two artificially overlapping
+     * SIBLINGS: a point in the overlap must resolve to the LATER sibling
+     * in `next_sibling` order (the one painted on top, since the project
+     * has no stacking context/z-index and always paints in document
+     * order), not the first one that happens to match. */
+    {
+        tbox_layout_box root_box;
+        memset(&root_box, 0, sizeof(root_box));
+        root_box.border_box = (tbox_rect){0.0, 0.0, 100.0, 100.0};
+
+        tbox_layout_box sibling_a;
+        memset(&sibling_a, 0, sizeof(sibling_a));
+        sibling_a.parent     = &root_box;
+        sibling_a.border_box = (tbox_rect){0.0, 0.0, 50.0, 50.0};
+
+        tbox_layout_box sibling_b;
+        memset(&sibling_b, 0, sizeof(sibling_b));
+        sibling_b.parent     = &root_box;
+        /* Deliberately overlapping sibling_a in [10,50) x [10,50). */
+        sibling_b.border_box = (tbox_rect){10.0, 10.0, 50.0, 50.0};
+
+        root_box.first_child      = &sibling_a;
+        root_box.last_child       = &sibling_b;
+        sibling_a.next_sibling    = &sibling_b;
+
+        const tbox_layout_box *overlap_hit = tbox_context_hit_test_box(&root_box, 20.0, 20.0);
+        TBOX_TEST_ASSERT_MSG(overlap_hit == &sibling_b, "a point in the overlap of two siblings must resolve to the LATER sibling in next_sibling order (painted on top), not the first match found by recursion");
+
+        /* Sanity: a point inside sibling_a's exclusive area (not covered by
+         * sibling_b) must still resolve to sibling_a -- the "last match
+         * wins" rule only matters when more than one candidate matches. */
+        const tbox_layout_box *exclusive_hit = tbox_context_hit_test_box(&root_box, 5.0, 5.0);
+        TBOX_TEST_ASSERT_MSG(exclusive_hit == &sibling_a, "a point matching only sibling_a must still resolve to sibling_a");
+    }
+
+    /* 27: a child positioned entirely OUTSIDE its own DOM parent's
+     * border_box (as an out-of-flow `position: absolute`/`fixed` box can
+     * be, from v5 on) is still found -- proof that the hit-test no longer
+     * returns early just because the parent's border_box misses the
+     * point. */
+    {
+        tbox_layout_box parent_box;
+        memset(&parent_box, 0, sizeof(parent_box));
+        parent_box.border_box = (tbox_rect){0.0, 0.0, 50.0, 50.0};
+
+        tbox_layout_box escaped_child;
+        memset(&escaped_child, 0, sizeof(escaped_child));
+        escaped_child.parent     = &parent_box;
+        /* Fully outside parent_box's border_box ([0,50) x [0,50)). */
+        escaped_child.border_box = (tbox_rect){200.0, 200.0, 30.0, 30.0};
+
+        parent_box.first_child = &escaped_child;
+        parent_box.last_child  = &escaped_child;
+
+        /* A point that only falls inside the escaped child, not the parent. */
+        const tbox_layout_box *escaped_hit = tbox_context_hit_test_box(&parent_box, 210.0, 210.0);
+        TBOX_TEST_ASSERT_MSG(escaped_hit == &escaped_child, "a child positioned outside its own parent's border_box must still be found by a point that falls only inside the child");
+
+        /* A point inside the parent only (the child doesn't match) must
+         * still fall back to the parent itself. */
+        const tbox_layout_box *parent_hit = tbox_context_hit_test_box(&parent_box, 5.0, 5.0);
+        TBOX_TEST_ASSERT_MSG(parent_hit == &parent_box, "a point inside the parent but outside every child must still resolve to the parent itself");
+
+        /* A point inside neither must miss entirely. */
+        const tbox_layout_box *miss = tbox_context_hit_test_box(&parent_box, 1000.0, 1000.0);
+        TBOX_TEST_ASSERT_MSG(miss == NULL, "a point inside neither the parent nor any child must return NULL");
     }
 
     tbox_font_face_cache_destroy(fonts);
