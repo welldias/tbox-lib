@@ -338,3 +338,58 @@ body {
     height: 40px;
     background-color: honeydew;
 }
+
+/* v6: implicit </p> closing demo (see the HTML comment on
+ * .v6-unclosed-p-first/-second for the parser-behavior rationale). Two
+ * strongly contrasting background colors so the screenshot shows two
+ * clearly distinct, stacked blocks -- if the implicit closing regressed
+ * and the second <p> nested inside the first instead, this would show up
+ * as one block containing the other rather than two separate ones. */
+.v6-unclosed-p-first {
+    background-color: lightpink;
+}
+
+.v6-unclosed-p-second {
+    background-color: lightsalmon;
+}
+
+/* v6: implicit </li> closing demo (see the HTML comment on
+ * .v6-li-one/-two/-three). <li> is not one of Layout Tree's fixed
+ * text-rendering tags (h1-h6/p, see ARCHITECTURE.md's Layout Tree "Regra
+ * explícita") -- text inside it never shows, so the "item N" wording in
+ * the HTML is documentation only, not a rendered proof. An explicit
+ * width/height is required for the exact same reason a plain <div> fixture
+ * needs one elsewhere in this file: with no text box to derive an
+ * auto-height from and no element children, height:auto would resolve to
+ * 0 and the element would be invisible regardless of background-color.
+ * Three STRONGLY contrasting colors (not near-identical pale tones -- a
+ * first attempt using honeydew/mintcream/paleturquoise here made the first
+ * two bands nearly indistinguishable from each other in a screenshot) are
+ * the actual visual proof that these are THREE separate sibling boxes, not
+ * one <li> nesting the other two -- three clearly distinct horizontal
+ * bands, not one. */
+.v6-li-one {
+    width: 260px;
+    height: 40px;
+    background-color: gold;
+}
+
+.v6-li-two {
+    width: 260px;
+    height: 40px;
+    background-color: mediumorchid;
+}
+
+.v6-li-three {
+    width: 260px;
+    height: 40px;
+    background-color: dodgerblue;
+}
+
+/* v6: entity-decoding demo (see the HTML comment on .v6-entities). No
+ * special color needed to prove the point -- the text itself is the
+ * proof -- but a light background makes the paragraph easy to find in a
+ * screenshot. */
+.v6-entities {
+    background-color: lightyellow;
+}

@@ -2230,51 +2230,66 @@ abaixo (decisões pequenas e de curto prazo): aqui o "quando" é um gatilho
 explícito, não "em breve".
 
 ### Fechamento implícito de tags no HTML Parser
-**O que é:** um browser real fecha tags automaticamente em vários casos —
-o exemplo mais comum: um novo `<p>` fecha implicitamente um `<p>` já
-aberto sem `</p>` explícito. O tree builder de tbox não tem esse
-conhecimento por-tag; hoje um `<p>` sem fechamento explícito engole tudo
-que vem depois (incluindo tags de bloco não relacionadas) até achar o
-próximo `</p>` no documento, produzindo uma árvore estruturalmente errada
-— confirmado por auditoria empírica na v3 (não é suposição). Não é falha
-nem crash: o parser continua tolerante a entrada malformada (nunca falha
-por markup inválido, como já documentado em "Convenções"), só produz uma
-árvore diferente da que um browser real produziria.
-**Por que importa:** HTML "solto" (sem fechamento explícito de `<p>`,
-entre outras tags) é comum o bastante no mundo real pra distorcer
-visivelmente o resultado quando alguém aponta a tbox pra uma página que
-não foi escrita pensando nela. O algoritmo completo do HTML5 tem dezenas
-de regras de fechamento implícito por tag (`<p>`, `<li>`, `<tr>`/`<td>`/
-`<th>`, `<option>`, etc.) — implementar tudo é desproporcional ao
-tamanho do resto do parser; mesmo um subconjunto pequeno (só `<p>`, por
-exemplo) já exige decidir e testar caso a caso.
-**Gatilho para revisitar:** quando a expectativa de v3 (v3 assume
-HTML/CSS de entrada bem-formado) deixar de valer — por exemplo, o dia em
-que a tbox precisar processar conteúdo de origem não controlada/não
-confiável, onde markup quebrado é esperado, não excepcional.
-**Toca:** HTML Parser (`src/html_parser/tbox_html_tree_builder.c`, o
-open-elements stack que já existe — as regras de fechamento implícito se
-encaixariam ali).
+**Parcialmente resolvido na v6.** `<p>` e `<li>` agora fecham
+implicitamente (ver seção "v6 — Robustez de HTML" acima). O que continua
+em aberto vira o item "Fechamento implícito de `<tr>`/`<td>`/`<th>`/
+`<option>`" logo abaixo — o resto da lista completa do HTML5 (dezenas de
+regras por tag) continua fora de escopo indefinidamente, mesmo racional de
+sempre (desproporcional ao tamanho do resto do parser).
+
+### Fechamento implícito de `<tr>`/`<td>`/`<th>`/`<option>`
+**O que é:** a v6 implementou só `<p>`/`<li>` (ver acima); o próximo
+subconjunto mais comum de HTML solto do mundo real é dentro de `<table>`
+(uma nova `<tr>` fecha uma `<tr>` aberta; uma nova `<td>`/`<th>` fecha uma
+`<td>`/`<th>` aberta) e `<select>` (uma nova `<option>` fecha uma
+`<option>` aberta).
+**Por que importa:** tabelas e `<select>` escritos à mão (não gerados por
+ferramenta) frequentemente omitem esses fechamentos — mesma categoria de
+problema que motivou fazer `<p>`/`<li>` na v6, só que para um HTML menos
+onipresente que parágrafo/lista.
+**Gatilho para revisitar:** quando um caso real de tabela ou `<select>`
+com fechamento omitido precisar renderizar corretamente — mesmo mecanismo
+de truncamento da pilha `open_elements` que `<p>`/`<li>` já usam, só mais
+duas/três entradas de regra.
+**Toca:** HTML Parser (`tbox_html_tree_builder_handle_start_tag`, mesmo
+lugar onde `<p>`/`<li>` foram implementados na v6).
 
 ### Decodificação de entidades HTML no HTML Parser
-**O que é:** `&amp;`, `&nbsp;`, `&#39;`, `&#x27;` e qualquer outra
-referência de caractere (nomeada ou numérica) não são decodificadas —
-aparecem como texto literal (`&amp;amp;` mesmo) em qualquer lugar onde
-apareceriam no texto/atributo de origem. Confirmado por auditoria
-empírica na v3, junto do item acima.
-**Por que importa:** cosmético, não estrutural (não quebra a árvore nem
-o layout) — mas visível em qualquer conteúdo real que use `&amp;`/
-`&nbsp;`/acentuação via referência numérica. A tabela completa de
-entidades nomeadas do HTML5 tem ~2000 entradas; mesmo um subconjunto
-prático (as ~15-20 mais comuns) mais as referências numéricas
-(`&#NNN;`/`&#xHHH;`, que cobrem qualquer caractere Unicode com um
-algoritmo simples e completo, sem tabela) é trabalho real, só adiado por
-não ser prioridade de nenhuma versão até agora.
-**Gatilho para revisitar:** mesmo gatilho do item acima (conteúdo de
-origem não controlada) — ou antes, se alguma fatia futura specificamente
-sobre fidelidade de texto/tipografia precisar disso.
-**Toca:** HTML Parser (tokenizer — onde o texto/valor de atributo é
-extraído).
+**Parcialmente resolvido na v6.** Referências numéricas
+(`&#NNN;`/`&#xHHH;`, qualquer codepoint) e um conjunto fixo de ~23
+entidades nomeadas comuns agora são decodificadas (ver seção "v6 —
+Robustez de HTML" acima). O que continua em aberto vira os dois itens
+abaixo.
+
+### Tabela completa de entidades nomeadas do HTML5
+**O que é:** a v6 reconhece só ~23 entidades nomeadas (as mais comuns); a
+tabela oficial do HTML5 tem quase 2000 entradas (incluindo variantes com
+e sem `;` final, e algumas com grafia maiúscula distinta da minúscula).
+**Por que importa:** conteúdo real eventualmente usa uma entidade fora do
+conjunto reduzido (ex.: símbolos matemáticos, letras gregas, ícones tipo
+`&spades;`) — continua aparecendo como texto literal até esse ponto.
+**Gatilho para revisitar:** quando um caso real precisar de uma entidade
+fora da lista da v6 — nesse ponto, vale considerar gerar a tabela
+completa a partir da especificação oficial (JSON publicado pelo WHATWG)
+em vez de expandir a lista manualmente entrada por entrada.
+**Toca:** HTML Parser (`tbox_html_entities.c`, a tabela nome→codepoint).
+
+### Remapeamento legado windows-1252 e maiúsculas alternativas de entidades
+**O que é:** o HTML5 de verdade redireciona referências numéricas na
+faixa `0x80`-`0x9F` pra um conjunto de caracteres tipográficos (Windows-1252,
+por compatibilidade histórica) em vez de tratá-las como codepoints Unicode
+diretos, e tem algumas entidades nomeadas com uma variante toda-maiúscula
+distinta da minúscula (`&AMP;` além de `&amp;`). A v6 não implementa
+nenhum dos dois — uma referência numérica em `0x80`-`0x9F` vira o
+caractere Unicode literal daquele valor (não o remapeamento), e só a
+grafia minúscula padrão de cada entidade nomeada é reconhecida.
+**Por que importa:** ambos são casos de borda raros em HTML real moderno
+(o remapeamento windows-1252 é quase sempre invisível — a maioria do
+conteúdo real não usa essa faixa de código de propósito) — baixa
+prioridade mesmo quando o resto da tabela de entidades for expandido.
+**Gatilho para revisitar:** só se um caso real específico depender de um
+dos dois — nenhum indício disso até agora.
+**Toca:** HTML Parser (`tbox_html_entities.c`).
 
 ### Unidades relativas a fonte (`em`, `%` de `font-size`) na Style layer
 **O que é:** resolver `font-size` e valores em `em`/`%` de fonte exige uma
@@ -2606,9 +2621,196 @@ dependem dela), mudança de fluxo de controle não trivial na Layout Tree.
 **Toca:** Layout Tree (`tbox_layout_build_element`, o ponto onde
 `context_for_children.nearest_ancestor` é montado antes da recursão).
 
+## v6 — Robustez de HTML (fechamento implícito de tags + entidades)
+
+Resolve os dois itens de débito registrados desde a v3 ("Fechamento
+implícito de tags no HTML Parser" e "Decodificação de entidades HTML no
+HTML Parser", ambos confirmados por auditoria empírica na v3 — ver seções
+de débito acima). Diferente de v1-v5, esta versão não toca Style/Layout
+Tree/Render Pipeline nenhum — é inteiramente contida no HTML Parser, e não
+muda nenhuma assinatura pública (`include/tbox/html_parser.h` fica
+intacto): tanto o fechamento implícito quanto a decodificação de entidades
+acontecem inteiramente dentro do Tree Builder, sem o resto do pipeline
+saber que algo mudou. Critério de "pronto" no fim desta seção.
+
+Escopo desta versão, decidido nesta sessão entre três níveis de cobertura
+apresentados para fechamento implícito:
+- **Fechamento implícito: só `<p>` e `<li>`** (não `<tr>`/`<td>`/`<th>`/
+  `<option>` — ficam registrados como débito atualizado no fim do
+  documento). Cobre os dois casos mais comuns de HTML solto do mundo real
+  (parágrafo sem `</p>`, item de lista sem `</li>`).
+- **Entidades: só numéricas (`&#NNN;`/`&#xHHH;`, cobrem qualquer
+  codepoint Unicode) + um conjunto fixo de ~23 nomeadas mais comuns**
+  (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`, `&nbsp;`, `&copy;`,
+  `&reg;`, `&trade;`, `&mdash;`, `&ndash;`, `&hellip;`, `&lsquo;`,
+  `&rsquo;`, `&ldquo;`, `&rdquo;`, `&euro;`, `&pound;`, `&yen;`, `&cent;`,
+  `&sect;`, `&para;`, `&middot;`, `&deg;` — não a tabela completa de
+  ~2000 entidades nomeadas do HTML5). Exige o `;` final em ambos os casos
+  (sem o modo de compatibilidade legado do HTML5 que aceita um punhado de
+  entidades nomeadas sem `;` em certos contextos) — uma referência sem `;`
+  fica como texto literal, mesma postura de "não reconhecido = literal"
+  já usada em todo o resto do parser tolerante.
+- **Sem remapeamento legado windows-1252** pra referências numéricas na
+  faixa `0x80`-`0x9F` (um punhado de códigos de controle que o HTML5
+  redireciona pra caracteres tipográficos por compatibilidade histórica com
+  paginas antigas) — esses códigos, e qualquer codepoint inválido (surrogate,
+  zero, ou fora de `0x10FFFF`), viram o caractere de substituição Unicode
+  (U+FFFD) em vez de crashar ou produzir UTF-8 inválido.
+- **Sem entidades em maiúsculas alternativas** (`&AMP;`, `&COPY;`, etc. —
+  o HTML5 de verdade tem algumas entidades com variantes de maiúscula
+  distintas da minúscula) — só a grafia padrão minúscula de cada uma das
+  ~23 é reconhecida.
+- **Decodificação nunca acontece dentro de `<script>`/`<style>`** (conteúdo
+  raw-text, como já era desde o v0/v1 — `&amp;` dentro de um `<script>`
+  continua sendo `&amp;` literal, correto: é JS/CSS puro, não texto HTML) —
+  nem dentro de comentários/DOCTYPE (o HTML5 de verdade também não decodifica
+  entidades nesses dois lugares).
+
+### HTML Parser — fechamento implícito de `<p>`/`<li>`
+
+O Tree Builder (`tbox_html_tree_builder.c`) já tem toda a infraestrutura
+necessária: `open_elements` (pilha de elementos abertos) e
+`tbox_html_tree_builder_find_matching` (busca um nome de tag na pilha, de
+cima pra baixo) já existem desde o v0 e já são usados por `END_TAG` pra
+truncar a pilha até o elemento que casa (o que, como efeito colateral já
+existente, já fecha implicitamente qualquer coisa aninhada DENTRO do
+elemento fechado — ex.: `<div><span></div>` já fecha o `span` junto do
+`div` hoje). O que falta é o mesmo truncamento disparado por um START TAG
+novo, não só por um END TAG explícito.
+
+Em `tbox_html_tree_builder_handle_start_tag`, logo depois de `tag_name`
+já estar resolvido (lowercased) e ANTES do novo nó ser criado/anexado:
+```c
+/* Lista oficial do HTML5 (WHATWG "in body" insertion mode) de tags cujo
+ * start tag fecha implicitamente um <p> em aberto -- inclui "li" (abrir
+ * um <li> também fecha um <p> em aberto, além de fechar um <li> em
+ * aberto separadamente, ver abaixo). */
+static const char *const tbox_html_p_closing_tags[] = {
+    "address", "article", "aside", "blockquote", "details", "div", "dl",
+    "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3",
+    "h4", "h5", "h6", "header", "hgroup", "hr", "li", "main", "menu", "nav",
+    "ol", "p", "pre", "section", "table", "ul",
+};
+```
+Se `tag_name` está nessa lista E há um `<p>` aberto em algum lugar da pilha
+(via `find_matching`), a pilha é truncada até (e incluindo) esse `<p>` —
+mesmo mecanismo de truncamento que `END_TAG` já usa. Separadamente
+(independente do que acabou de acontecer): se `tag_name` é exatamente
+`"li"` E há um `<li>` aberto na pilha, a pilha é truncada até (e incluindo)
+esse `<li>` também. As duas checagens são independentes e ambas podem
+disparar pro mesmo `<li>` (fecha o `<p>` mais próximo primeiro, se houver,
+depois fecha o `<li>` mais próximo, se houver — ordem não importa aqui já
+que operam em nomes de tag diferentes). Depois de qualquer truncamento, o
+"top" da pilha é recalculado (a função deixa de receber `top` como
+parâmetro fixo do chamador — passa a chamar `tbox_html_tree_builder_top`
+internamente, DEPOIS de qualquer truncamento, pra anexar o novo nó no lugar
+certo).
+
+**Fora de escopo:** `<tr>`/`<td>`/`<th>` (fechamento implícito de
+célula/linha de tabela) e `<option>` (fechamento implícito ao abrir outro
+`<option>`) — candidatos naturais pro próximo incremento deste débito,
+registrados como débito atualizado no fim do documento. Fechamento
+implícito de QUALQUER outra tag fora dessas duas regras (a lista completa
+do HTML5 tem dezenas de regras por tag) continua fora de escopo
+indefinidamente, mesmo racional de sempre (desproporcional ao resto do
+parser).
+
+### HTML Parser — decodificação de entidades
+
+Novo módulo pequeno, próprio: `src/html_parser/tbox_html_entities.c`/
+`.h` (arquivos internos, não expostos em `include/tbox/html_parser.h` —
+mesma convenção de arquivo interno já usada por
+`tbox_html_tokenizer.c`/`.h` dentro do mesmo diretório de módulo):
+```c
+/* Copia `text` para `arena`, decodificando qualquer referência de caractere
+ * numérica (`&#NNN;`/`&#xHHH;`/`&#XHHH;`, qualquer codepoint Unicode) ou
+ * nomeada (um conjunto fixo de ~23 entidades comuns -- ver
+ * ARCHITECTURE.md's v6 "Escopo") encontrada em `text`. Uma referência que
+ * não é reconhecida (nome fora da tabela, numérica sem dígitos, ou
+ * qualquer uma das duas sem o ';' final) fica como texto literal, sem
+ * consumir nada além do '&' -- mesma postura de "não reconhecido = deixa
+ * passar" do resto do parser tolerante. Um codepoint numérico decodificado
+ * como 0, surrogate (0xD800-0xDFFF), ou > 0x10FFFF vira o caractere de
+ * substituição Unicode (U+FFFD) em vez de produzir UTF-8 inválido -- ver
+ * "Fora de escopo" pra o que NÃO é replicado do algoritmo completo do
+ * HTML5 aqui (remapeamento legado windows-1252 pra 0x80-0x9F). Reaproveita
+ * tbox_string_builder_append_codepoint (já existente em Base) tanto pra
+ * entidades numéricas quanto nomeadas -- a tabela de entidades nomeadas
+ * mapeia nome -> codepoint (int), nunca guarda a string UTF-8 já
+ * codificada, pra ter só um caminho de codificação. */
+tbox_string_view tbox_html_decode_entities(tbox_arena *arena, tbox_string_view text);
+```
+Algoritmo: varre `text` byte a byte; ao achar um `&`, tenta (1) uma
+referência numérica (`#` seguido de dígitos decimais, ou `#x`/`#X` seguido
+de dígitos hexadecimais, terminada em `;`) e, se falhar, (2) uma referência
+nomeada (letras ASCII até um `;`, comparadas contra a tabela fixa,
+case-sensitive — mesma exigência de case do HTML5 de verdade); se nenhuma
+das duas casar, emite o `&` literal e avança só 1 byte (o resto do que
+seria o nome/número segue sendo copiado como texto comum nas iterações
+seguintes, sem tratamento especial). Todo trecho de texto entre duas
+referências é copiado em bloco (`tbox_string_builder_append_view`), não
+byte a byte, pra não desperdiçar trabalho no caso comum (texto sem
+nenhuma entidade).
+
+**Onde é chamado (`tbox_html_tree_builder.c`):** uma nova função
+`tbox_html_tree_builder_copy_decoded` (ao lado de
+`tbox_html_tree_builder_copy`/`_copy_lower` já existentes) chama
+`tbox_html_decode_entities` em vez de só copiar. Ela substitui a chamada
+de cópia simples em exatamente dois lugares:
+1. Conteúdo de nó `TEXT` — MAS só quando o `top` atual (o elemento pai que
+   vai receber esse texto) não é `<script>`/`<style>` (raw text nunca
+   decodifica, ver "Escopo" acima) — mesma checagem de tag name que já
+   decide entrar em raw-text mode no tokenizer, só que consultada aqui do
+   lado do Tree Builder, contra `top->element.tag_name`.
+2. Valor de atributo, em `tbox_html_tree_builder_handle_start_tag`.
+Comentários/DOCTYPE continuam usando `tbox_html_tree_builder_copy` sem
+decodificação (nenhuma mudança nesses dois casos), e nomes de tag/atributo
+continuam usando `tbox_html_tree_builder_copy_lower` sem decodificação
+(entidades não existem em nomes, por definição da gramática do HTML).
+
+### Fatia vertical v6 — critério de "pronto"
+
+Um app tbox que:
+- carrega um HTML com `<p>texto sem fechar<p>outro parágrafo</p>` (dois
+  `<p>` sem o primeiro fechamento explícito) e produz DOIS parágrafos
+  irmãos na árvore (não um aninhado dentro do outro) — visualmente, duas
+  linhas de texto separadas, não uma dentro da área da outra;
+- carrega uma lista `<ul><li>um<li>dois<li>três</ul>` (sem nenhum
+  `</li>`) e produz TRÊS `<li>` irmãos (não aninhados);
+- exibe texto usando `&amp;`, `&nbsp;`, `&mdash;`, `&copy;` e uma
+  referência numérica (`&#233;` ou `&#xE9;`, "é") decodificados
+  corretamente na tela — não como texto literal `&amp;` etc.;
+- um `<script>`/`<style>` contendo `&amp;` no meio do código (ex.: um
+  comentário JS mencionando "a &amp; b") continua aparecendo literal
+  (prova de que raw text não decodifica);
+- continua sem regredir nada de v0-v5.
+
+## Decisões já tomadas (v6)
+
+- **Fechamento implícito só de `<p>` e `<li>`** — escolhido entre três
+  níveis de cobertura apresentados (só `<p>`; `<p>` + `<li>`; os dois mais
+  tabela/`<option>`). `<tr>`/`<td>`/`<th>`/`<option>` ficam pro próximo
+  incremento deste débito, registrado abaixo.
+- **`<li>` também fecha um `<p>` em aberto** (além de fechar outro `<li>`
+  em aberto) — replica a regra real do HTML5 (o algoritmo de `<li>` do
+  spec fecha um `<p>` em button scope antes de qualquer outra coisa), não
+  é invenção desta sessão.
+- **Entidades exigem o `;` final** em ambos os casos (numérica/nomeada) —
+  sem o modo de compatibilidade legado do HTML5 que aceita algumas sem
+  `;`. Uma referência mal-formada vira texto literal, nunca erro.
+- **Tabela de entidades nomeadas mapeia pra codepoint (`int`), não pra
+  string UTF-8 pré-codificada** — reaproveita
+  `tbox_string_builder_append_codepoint` (já existente em Base) como único
+  caminho de codificação, tanto pra entidades nomeadas quanto numéricas.
+- **Sem novo estado global/estático** — `tbox_html_decode_entities` é uma
+  função pura (arena + view de entrada, view de saída), e o fechamento
+  implícito só mexe na pilha `open_elements` que já é campo de instância
+  de `tbox_html_tree_builder`, não global.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3, v4 e v5 (registrada nas seções de cada camada)
-ou consolidada como débito de design conhecido acima, com gatilho explícito
+fechada para v0, v1, v2, v3, v4, v5 e v6 (registrada nas seções de cada
+camada) ou consolidada como débito de design conhecido acima, com gatilho
+explícito
 de quando revisitar.

@@ -85,4 +85,49 @@
   <p>Este parágrafo tem texto normal, <b>uma parte em negrito</b>, e <em>uma parte em itálico</em> (que ainda renderiza
     igual ao texto normal -- Fonte/Texto só tem face regular/bold em v2, sem itálico de verdade), continuando até
     quebrar a linha sozinho dentro da largura da janela.</p>
+
+  <!-- v6: implicit </p> closing demo. Neither <p> below has an explicit
+       closing tag -- the first <p> is closed implicitly by the second <p>'s
+       start tag (tbox_html_tree_builder_handle_start_tag's
+       tbox_html_p_closing_tags truncation), producing two SIBLING <p>
+       elements, not one nested inside the other. .v6-unclosed-p-first/
+       -second give each one a distinct background-color so the screenshot
+       shows two clearly separate blocks stacked vertically, not one box
+       containing the other. -->
+  <p class="v6-unclosed-p-first">v6: primeiro parágrafo (sem &lt;/p&gt; explícito)
+  <p class="v6-unclosed-p-second">v6: segundo parágrafo -- irmão do primeiro, não filho dele</p>
+
+  <!-- v6: implicit </li> closing demo. None of the three <li> below has an
+       explicit closing tag -- opening the 2nd/3rd <li> implicitly closes
+       the previous one (same truncation mechanism, "li" branch), and
+       opening a *new* <li> also closes a still-open <p> if there were one.
+       Produces three SIBLING <li> children of the same <ul>, not nested.
+       <li> isn't in Layout Tree's fixed text-tag list (h1-h6/p only), so
+       this text never actually renders -- it documents intent for anyone
+       reading the source, but the real visual proof is
+       .v6-li-one/-two/-three's three alternating background colors (see
+       tbox_app_demo.css), since tbox has no list-style/marker support to
+       show bullets or numbers. -->
+  <ul>
+    <li class="v6-li-one">item 1 (li implícito)
+    <li class="v6-li-two">item 2 (li implícito)
+    <li class="v6-li-three">item 3 (li implícito)
+  </ul>
+
+  <!-- v6: entity decoding demo -- &amp;, &nbsp;, &mdash;, &copy; and a
+       numeric reference (&#233;, "é") mixed into one paragraph. The
+       rendered text must show the decoded characters ("Tom & Jerry",
+       "café", an em dash, a copyright sign, a plain space where &nbsp; is),
+       never the literal entity syntax. -->
+  <p class="v6-entities">v6: Tom &amp; Jerry tomam&nbsp;caf&#233; &mdash; tbox &copy; 2026</p>
+
+  <!-- v6: documentation only, not a visual check (raw text inside
+       <script>/comments never decodes -- already covered by an automated
+       test in tbox_html_entities/tree_builder's test suite, see
+       tests/html_parser/test_tree.c). -->
+  <!-- a &amp; b -->
+  <script>
+    // v6: raw text -- "a &amp; b" must stay literal here, never decoded.
+    var raw = "a &amp; b";
+  </script>
 </body>

@@ -625,5 +625,165 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 43: two unclosed <p> tags in a row become siblings, not nested --
+     * each keeps its own text. */
+    {
+        tbox_html_document *doc    = parse_cstr("<p>primeiro<p>segundo</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+
+        const tbox_html_node *p1 = root->first_child;
+        TBOX_TEST_ASSERT(p1 != NULL && text_eq(p1->element.tag_name, "p"));
+        TBOX_TEST_ASSERT(text_eq(p1->first_child->text.text, "primeiro"));
+        TBOX_TEST_ASSERT(p1->first_child == p1->last_child);
+
+        const tbox_html_node *p2 = p1->next_sibling;
+        TBOX_TEST_ASSERT(p2 != NULL && p2->type == TBOX_HTML_NODE_ELEMENT && text_eq(p2->element.tag_name, "p"));
+        TBOX_TEST_ASSERT(text_eq(p2->first_child->text.text, "segundo"));
+        TBOX_TEST_ASSERT(p2 == root->last_child);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 44: a p-closing start tag (<div>) inside an open <p> closes the <p>
+     * first -- the inner <div> becomes a sibling of <p>, not its child. */
+    {
+        tbox_html_document *doc  = parse_cstr("<div><p>texto<div>outro</div></p></div>");
+        tbox_html_node *outer    = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(text_eq(outer->element.tag_name, "div"));
+
+        const tbox_html_node *p = outer->first_child;
+        TBOX_TEST_ASSERT(p != NULL && text_eq(p->element.tag_name, "p"));
+        TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "texto"));
+        TBOX_TEST_ASSERT(p->first_child == p->last_child);
+
+        const tbox_html_node *inner = p->next_sibling;
+        TBOX_TEST_ASSERT(inner != NULL && inner->type == TBOX_HTML_NODE_ELEMENT && text_eq(inner->element.tag_name, "div"));
+        TBOX_TEST_ASSERT(text_eq(inner->first_child->text.text, "outro"));
+        TBOX_TEST_ASSERT(inner == outer->last_child);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 45: an unclosed <ul><li> list produces sibling <li>s, all direct
+     * children of <ul>. */
+    {
+        tbox_html_document *doc    = parse_cstr("<ul><li>um<li>dois<li>três</ul>");
+        const tbox_html_node *ul   = tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(text_eq(ul->element.tag_name, "ul"));
+
+        const tbox_html_node *li1 = ul->first_child;
+        TBOX_TEST_ASSERT(li1 != NULL && text_eq(li1->element.tag_name, "li"));
+        TBOX_TEST_ASSERT(text_eq(li1->first_child->text.text, "um"));
+
+        const tbox_html_node *li2 = li1->next_sibling;
+        TBOX_TEST_ASSERT(li2 != NULL && text_eq(li2->element.tag_name, "li"));
+        TBOX_TEST_ASSERT(text_eq(li2->first_child->text.text, "dois"));
+
+        const tbox_html_node *li3 = li2->next_sibling;
+        TBOX_TEST_ASSERT(li3 != NULL && text_eq(li3->element.tag_name, "li"));
+        TBOX_TEST_ASSERT(text_eq(li3->first_child->text.text, "três"));
+        TBOX_TEST_ASSERT(li3 == ul->last_child);
+        TBOX_TEST_ASSERT(li3->next_sibling == NULL);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 46: <li> also closes an open <p> (not just another <li>). */
+    {
+        tbox_html_document *doc    = parse_cstr("<p>x<li>y</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+
+        const tbox_html_node *p = root->first_child;
+        TBOX_TEST_ASSERT(p != NULL && text_eq(p->element.tag_name, "p"));
+        TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "x"));
+        TBOX_TEST_ASSERT(p->first_child == p->last_child);
+
+        const tbox_html_node *li = p->next_sibling;
+        TBOX_TEST_ASSERT(li != NULL && li->type == TBOX_HTML_NODE_ELEMENT && text_eq(li->element.tag_name, "li"));
+        TBOX_TEST_ASSERT(text_eq(li->first_child->text.text, "y"));
+        TBOX_TEST_ASSERT(li == root->last_child);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 47: regression -- cross-nested closing (<div><span></div>) still
+     * closes both, unchanged since v0. */
+    {
+        tbox_html_document *doc  = parse_cstr("<div><span></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(text_eq(div->element.tag_name, "div"));
+        TBOX_TEST_ASSERT(div->next_sibling == NULL);
+
+        const tbox_html_node *span = div->first_child;
+        TBOX_TEST_ASSERT(span != NULL && text_eq(span->element.tag_name, "span"));
+        TBOX_TEST_ASSERT(span->first_child == NULL);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 48: named and numeric (decimal + hex) entities decode correctly in
+     * text content. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>&amp; &lt; &nbsp; &mdash; &#233; &#xE9;</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *t = p->first_child;
+        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(t->text.text, "& < \xC2\xA0 \xE2\x80\x94 \xC3\xA9 \xC3\xA9"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 49: an entity inside an attribute value also decodes. */
+    {
+        tbox_html_document *doc = parse_cstr("<a title=\"Tom &amp; Jerry\">x</a>");
+        const tbox_html_node *a = tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(a->element.attribute_count == 1);
+        TBOX_TEST_ASSERT(text_eq(a->element.attributes[0].name, "title"));
+        TBOX_TEST_ASSERT(text_eq(a->element.attributes[0].value, "Tom & Jerry"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 50: a malformed/unrecognized reference is left as literal text,
+     * without disturbing the surrounding text. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>a&naoexiste;b c&ampd e&#;f</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *t = p->first_child;
+        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(t->text.text, "a&naoexiste;b c&ampd e&#;f"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 51: an invalid numeric codepoint (0, surrogate, out of range) becomes
+     * U+FFFD, and the result stays valid UTF-8. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>&#0;&#xD800;&#99999999;</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *t = p->first_child;
+        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(t->text.text, "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD"));
+        TBOX_TEST_ASSERT(tbox_string_view_valid_utf8(t->text.text));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 52: <script> content keeps "&amp;" literal (raw text never decodes),
+     * unlike the same text outside a <script>. */
+    {
+        tbox_html_document *doc       = parse_cstr("<script>a &amp; b</script><p>a &amp; b</p>");
+        const tbox_html_node *root    = tbox_html_document_root(doc);
+        const tbox_html_node *script  = root->first_child;
+        TBOX_TEST_ASSERT(text_eq(script->element.tag_name, "script"));
+        TBOX_TEST_ASSERT(text_eq(script->first_child->text.text, "a &amp; b"));
+
+        const tbox_html_node *p = script->next_sibling;
+        TBOX_TEST_ASSERT(p != NULL && text_eq(p->element.tag_name, "p"));
+        TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "a & b"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 53: a comment keeps "&amp;" literal -- comments never decode. */
+    {
+        tbox_html_document *doc     = parse_cstr("<!-- a &amp; b -->");
+        const tbox_html_node *root  = tbox_html_document_root(doc);
+        const tbox_html_node *comment = root->first_child;
+        TBOX_TEST_ASSERT(comment->type == TBOX_HTML_NODE_COMMENT);
+        TBOX_TEST_ASSERT(text_eq(comment->text.text, " a &amp; b "));
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }
