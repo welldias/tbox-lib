@@ -1692,6 +1692,265 @@ Um app tbox que:
   bug real do CSS Parser (profundidade de parênteses) é corrigido porque
   é um bug de verdade, não uma lacuna de escopo.
 
+## v4 — Modelo de Caixa CSS Completo
+
+Depois da v3 (interatividade avançada), a v4 volta para fidelidade visual e
+fecha três lacunas do modelo de caixa CSS deixadas de fora desde o v0:
+`border`, `position: relative` e margin collapsing entre siblings verticais.
+Completa o que já existe (Style/Layout Tree já resolvem margin/padding/
+width/height e já carregam um box model de 4 rects por caixa —
+`margin_box`/`border_box`/`padding_box`/`content_box`) em vez de abrir uma
+camada nova. Critério de "pronto" no fim desta seção.
+
+Escopo deliberadamente contido, em três eixos independentes:
+- **Border**: só o shorthand `border` (largura + estilo + cor, ordem livre,
+  os três opcionais), aplicado igualmente aos 4 lados. Sem `border-top`/
+  `-right`/`-bottom`/`-left` nem os longhands `border-width`/`border-style`/
+  `border-color` isolados — mesmo tratamento que margin/padding já recebem
+  desde o v0 (shorthand CSS2.1 apenas; longhands fora de escopo). Só o
+  estilo `solid` é desenhado (decisão explícita desta sessão); `none` e
+  qualquer outro valor (incluindo os não suportados `dashed`/`dotted`/
+  `double`/etc.) resolvem para "sem borda", igual a não declarar `border`
+  nenhum. Sem `currentColor` (a cor da borda usa sempre o initial value
+  opaco preto quando ausente, não a `color` resolvida do próprio elemento
+  como um browser real faz — ver "fora de escopo" na subseção Style).
+- **`position: relative`**: só o eixo de deslocamento visual (`top`/`right`/
+  `bottom`/`left`), sem `position: absolute`/`fixed`/`sticky`, sem
+  `z-index`/stacking contexts (Render Pipeline já não tem stacking contexts
+  desde o v0). Confirmado nesta sessão: não precisa de nenhum conceito novo
+  de containing block na Layout Tree — o deslocamento é um ajuste de
+  coordenada na hora de posicionar a própria caixa (e, por construção, tudo
+  dentro dela), sem tocar no fluxo de nenhum outro elemento.
+- **Margin collapsing**: só entre siblings de bloco adjacentes verticalmente,
+  dentro do mesmo pai — sem collapsing pai/primeiro-filho nem
+  pai/último-filho (CSS2.1 8.3.1 tem os três casos; só o de siblings entra
+  aqui, framing original da v2). Sem o algoritmo completo de margens
+  negativas do CSS2.1 (max dos positivos menos max do valor absoluto dos
+  negativos) — um par onde qualquer um dos dois lados é negativo
+  simplesmente não colapsa, cai no comportamento de hoje (soma as duas
+  margens), registrado como débito no fim do documento.
+
+### Style — `border` (shorthand único, só `solid`)
+
+```c
+typedef enum tbox_style_border_style {
+    TBOX_STYLE_BORDER_STYLE_NONE,  /* initial */
+    TBOX_STYLE_BORDER_STYLE_SOLID,
+} tbox_style_border_style;
+```
+
+Novos campos em `tbox_style` (não-herdáveis, mesmo tratamento de `width`/
+`background-color`: sempre cascade-ou-initial, nunca olha o pai):
+```c
+double border_width;                  /* px; initial 0.0 -- sem thin/medium/thick */
+tbox_style_border_style border_style; /* initial NONE */
+tbox_css_rgba border_color;           /* initial: opaque black (simplificação -- ver "fora de escopo") */
+```
+
+`tbox_style_resolve` ganha o parsing do shorthand `border`: separa `value`
+por espaço em até 3 tokens (ordem livre, cada um opcional — sintaxe real do
+CSS pro shorthand `border`), classifica cada token, primeiro classificador
+que aceitar vence:
+1. termina em `px` e o resto parseia como número → `border_width` (mesmo
+   parser de comprimento que `width`/`margin` já usam, sem `%` — borda
+   percentual não existe em CSS de verdade);
+2. bate case-insensitive com `solid` → `border_style = SOLID`; bate com
+   `none` → `border_style = NONE` (reconhecido mesmo sem desenhar nada —
+   útil pra sobrescrever, via especificidade, uma regra de `border`
+   anterior);
+3. senão, tenta `tbox_css_color_parse` → `border_color`.
+
+Um token que não bate em nenhuma das três categorias é ignorado
+silenciosamente (mesma postura de robustez do resto do CSS Parser/Style —
+um valor não reconhecido nunca derruba a declaração inteira). `border_style`
+sem token reconhecido continua `NONE` mesmo que `border-width`/
+`border-color` tenham sido dados — é o initial real do CSS (`border-style:
+none` é o que faz uma borda declarada não aparecer, comportamento que
+browsers reais têm e este design preserva).
+
+**Fora de escopo:** `border-top`/`-right`/`-bottom`/`-left` (per-side), os
+longhands `border-width`/`border-style`/`border-color` como propriedades
+próprias (só o shorthand `border` é lido), qualquer `border-style` além de
+`solid`/`none` (`dashed`, `dotted`, `double`, `groove`, ...),
+`border-radius`, e a palavra-chave `currentColor`.
+
+### Style — `position: relative` + offsets
+
+```c
+typedef enum tbox_style_position {
+    TBOX_STYLE_POSITION_STATIC,   /* initial */
+    TBOX_STYLE_POSITION_RELATIVE,
+} tbox_style_position;
+```
+
+Novos campos em `tbox_style` (não-herdáveis):
+```c
+tbox_style_position position;  /* initial STATIC */
+tbox_style_length offset[4];   /* top right bottom left; initial AUTO -- mesmo tipo de margin/padding */
+```
+
+`tbox_style_resolve` ganha: `position` (só reconhece `static`/`relative`,
+case-insensitive; qualquer outro valor — incluindo `absolute`/`fixed`/
+`sticky`, fora de escopo — cai no initial `STATIC`, mesma postura de
+`display` desde o v0) e as quatro propriedades `top`/`right`/`bottom`/
+`left`, cada uma reaproveitando o mesmo parser de comprimento de `width`/
+`margin` (`auto`, px, ou `%`). Percentual em `top`/`bottom` resolve contra a
+altura do containing block (só quando definida — ver Layout Tree abaixo);
+em `left`/`right`, contra a largura, igual a margin/padding.
+
+**Fora de escopo:** `position: absolute`/`fixed`/`sticky` (cada um
+precisaria de um containing block diferente do fluxo normal — fora do que
+esta versão confirma ser necessário), `z-index`/stacking contexts.
+
+### Layout Tree — geometria de borda
+
+`box->border_box` deixa de ser sempre igual a `box->padding_box`
+(identidade que valia de v0 a v3, já que não havia borda). `tbox_layout_build_element`
+calcula `effective_border = (style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID)
+? style->border_width : 0.0` — um `border-width` declarado sem
+`border-style: solid` não ocupa espaço nenhum, mesma regra do CSS de
+verdade. `border_box` passa a ser `padding_box` crescido por
+`effective_border` nos 4 lados (mesma relação geométrica que já liga
+`padding_box` a `content_box`, e `margin_box` a `border_box`);
+`content_width` no ramo AUTO passa a subtrair `2 * effective_border` além de
+padding (borda conta contra a largura disponível igual padding,
+`box-sizing: content-box` de sempre); `content_x`/`content_y` passam a
+somar `effective_border` além de `padding_left`/`padding_top`.
+
+**Fora de escopo:** `box-sizing: border-box` — não existe em nenhuma versão
+da tbox ainda, continua fora daqui também.
+
+### Layout Tree — deslocamento visual de `position: relative`
+
+Resolvido nesta sessão: **nenhum conceito novo de containing block** — o
+deslocamento entra como um ajuste de `content_x`/`content_y` computado ANTES
+de `tbox_layout_build_element` recursar pros filhos (não depois), pra que
+`children_container` já carregue a posição deslocada e a subárvore inteira
+acompanhe automaticamente, sem precisar propagar o offset separadamente. O
+auto-height do pai (`tbox_layout_build_children`'s `total_height`) e o
+`cursor_y` que posiciona os siblings seguintes continuam olhando só
+`child_box->margin_box.height` — que não muda com o deslocamento (só x/y
+mudam) — então `position: relative` nunca afeta o fluxo de nenhum outro
+elemento, exatamente o comportamento do CSS de verdade.
+
+```c
+/* Resolve um par (lado primário, lado oposto) de offset por CSS2.1 9.4.3:
+ * lado primário não-auto vence; senão o oposto, negado; senão 0. Usado uma
+ * vez para (left, right) contra a largura do container, outra para (top,
+ * bottom) contra a altura -- só quando `height_definite` (mesma guarda que
+ * já existe pra height:% contra um container de altura AUTO, ver
+ * tbox_layout_containing_block); um container de altura indefinida faz
+ * qualquer top/bottom em % cair em 0, nunca crashar/produzir NaN. */
+static double tbox_layout_resolve_offset(tbox_style_length primary, tbox_style_length opposite, double percent_base, bool percent_base_definite);
+```
+
+Dentro de `tbox_layout_build_element`, logo depois de resolver `margin_top`/
+`padding_top`/etc. (mesmo ponto onde `content_x`/`content_y` já são
+computados hoje): se `style->position == TBOX_STYLE_POSITION_RELATIVE`,
+soma `dx`/`dy` (vindos de `tbox_layout_resolve_offset` para os dois eixos)
+direto em `content_x`/`content_y` antes de qualquer uso posterior deles
+(inclusive `children_container.x`, `box->content_box.x/y`, e por
+consequência `padding_box`/`border_box`/`margin_box`, que já derivam de
+`content_x`/`content_y` na cadeia de cálculo existente).
+
+**Fora de escopo:** qualquer coisa que exigiria um containing block
+diferente do fluxo normal (absolute/fixed/sticky, já fora de escopo desde a
+Style layer acima).
+
+### Layout Tree — margin collapsing entre siblings
+
+Hoje (v0-v3), `tbox_layout_build_children` empilha siblings somando margens
+integralmente: a margem inferior de um box e a margem superior do próximo
+se somam, nunca colapsam. Muda para: a margem inferior do anterior e a
+margem superior do seguinte colapsam num único gap igual a
+`max(margem_inferior_anterior, margem_superior_seguinte)` — só quando as
+duas são >= 0; se qualquer uma for negativa, o par não colapsa (fica a soma
+de hoje, débito registrado no fim do documento). O primeiro filho de um pai
+não tem sibling anterior, então sua margem superior nunca colapsa com nada
+(comportamento inalterado).
+
+Isso muda a implementação interna de `tbox_layout_build_children` (função
+`static`, sem impacto em `<tbox/layout.h>`): em vez de só acumular
+`cursor_y`/`total_height`, passa a rastrear entre iterações `border_bottom`
+(a posição do fim do `border_box` do último sibling posicionado, NÃO seu
+`margin_box` — a margem inferior pendente ainda não foi "gasta", pode
+colapsar com a margem superior do próximo) e `pending_margin_bottom` (essa
+margem inferior ainda não gasta; `0.0` antes do primeiro filho, por isso ele
+nunca colapsa nada). Cada `tbox_layout_build_element` passa a ser chamado
+com um `cursor_y` ajustado — `border_bottom + max(pending_margin_bottom,
+child_margin_top) - child_margin_top`, quando ambas >= 0, senão o `cursor_y`
+corrido de hoje (`border_bottom + pending_margin_bottom`) — em vez do
+`cursor_y` corrido puro. Isso exige espiar `child_style->margin[0]`
+(resolvido contra `children_container.width`, mesma base que qualquer
+margem já usa) ANTES de chamar `tbox_layout_build_element`, já que o valor
+entra na conta do `cursor_y` passado pra dentro dela. Ao final do loop, a
+margem inferior do ÚLTIMO filho nunca colapsou com nada depois dele (fora
+de escopo: collapsing com a margem do próprio pai) — soma-se integralmente
+ao `total_height` retornado.
+
+**Fora de escopo:** collapsing pai/primeiro-filho e pai/último-filho
+(CSS2.1 8.3.1, os outros dois casos), o algoritmo completo de margens
+negativas (aqui, qualquer negativo simplesmente desliga o collapse daquele
+par), collapsing através de um elemento com padding/border/`overflow`
+diferente de `visible` entre os dois (CSS2.1 exige isso pra collapsing
+vertical entre pai e filho, não entre siblings puros, então não se aplica
+aqui de qualquer forma).
+
+### Render Pipeline — pintura da borda
+
+Sem mudança de assinatura em `<tbox/render.h>` — zero paint op kind novo.
+`tbox_render_build_display_list` passa a emitir, logo depois do `FILL_RECT`
+de fundo sobre `border_box` (mesmo ponto de hoje) e antes de recursar pros
+filhos/text runs, até 4 `FILL_RECT` adicionais com `style->border_color`,
+um por lado, cada um cobrindo a faixa entre `border_box` e `padding_box`
+daquele lado — só quando `effective_border > 0` (ver Layout Tree acima;
+nenhum lado é emitido se a borda não ocupa espaço). A ordem (depois do
+fundo, antes do conteúdo) casa com o que qualquer navegador real desenha:
+borda sobre o fundo, texto/filhos sobre a borda.
+
+**Fora de escopo:** qualquer border-style que não seja um retângulo sólido
+preenchido (dashed/dotted precisariam de um paint op novo, tracejado — fora
+de escopo desde a Style layer).
+
+### Fatia vertical v4 — critério de "pronto"
+
+Um app tbox que:
+- tem um elemento com `border: <largura>px solid <cor>` visivelmente
+  desenhada nos 4 lados, com a cor e a largura corretas;
+- tem um elemento com `border-style: none` (ou sem `border` nenhum) que não
+  desenha nada, mesmo com `border-width`/`border-color` declarados;
+- tem um elemento `position: relative` com `top`/`left` deslocando sua
+  posição visual sem empurrar nenhum sibling (o espaço que ele ocuparia no
+  fluxo normal continua reservado);
+- tem dois siblings de bloco adjacentes cujas margens (inferior do
+  primeiro, superior do segundo) colapsam visivelmente num gap igual ao
+  maior dos dois, não a soma;
+- continua sem regredir nada de v0/v1/v2/v3.
+
+## Decisões já tomadas (v4)
+
+- **`border-style` só suporta `solid`** (decidido nesta sessão, entre três
+  opções apresentadas: só `solid`, `solid` + `none`, ou um conjunto maior
+  incluindo `dashed`/`dotted`) — menor escopo, sem custo de rasterização
+  por estilo no backend Wayland.
+- **Só o shorthand `border`**, sem longhands `border-width`/`border-style`/
+  `border-color` nem variantes per-side — mesmo precedente de margin/
+  padding desde o v0.
+- **`position: relative` não introduz nenhum conceito novo de containing
+  block** — o deslocamento é aplicado como ajuste de coordenada antes de
+  recursar pros filhos, mantendo a assinatura de
+  `tbox_layout_containing_block` intacta.
+- **Margin collapsing escopado só a siblings adjacentes**, não
+  pai/primeiro-filho nem pai/último-filho — framing original da v2-era,
+  confirmado nesta sessão. Margens negativas desligam o collapse do par
+  (fallback: soma, comportamento de hoje) em vez de implementar o algoritmo
+  completo do CSS2.1 pra esse caso.
+- Nenhum novo estado global/estático introduzido — as três features vivem
+  inteiramente em `tbox_style`/`tbox_layout_box` e em variáveis locais de
+  `tbox_layout_build_element`/`_build_children`, então não conflita com a
+  regra "sem globals sem discussão explícita" (ver "Thread-safety futura"
+  abaixo).
+
 ## Débito de design conhecido (pós-v0)
 
 Trabalho futuro real, conscientemente adiado — não bloqueia o v0, mas tem
@@ -1960,9 +2219,56 @@ sozinho.
 **Toca:** potencialmente todo o projeto — Base (`tbox_arena`), CSS
 Selector (contexto de hover), qualquer cache/estado global futuro.
 
+### Border per-side e outros `border-style`
+**O que é:** `border-top`/`-right`/`-bottom`/`-left` (largura/estilo/cor
+independentes por lado) e qualquer `border-style` além de `solid`/`none`
+(`dashed`, `dotted`, `double`, `groove`, `ridge`, `inset`, `outset`),
+`border-radius`, e a palavra-chave `currentColor` para `border-color` —
+todos deliberadamente fora do escopo da v4 (ver sua seção acima).
+**Por que importa:** `border-top`/etc. per-side é um padrão comum em CSS
+real (ex.: só uma borda inferior, tipo `<hr>` visual ou divisor de lista);
+`dashed`/`dotted` exigem um paint op novo no Render Pipeline (hoje só
+`FILL_RECT`/`TEXT_RUN`), não apenas mais um campo em `tbox_style`.
+**Gatilho para revisitar:** quando algum caso de uso real precisar de um
+desses (ex.: um exemplo/demo que só faz sentido com borda per-side), não
+antes — mesmo espírito de adiamento de todo outro item aqui.
+**Toca:** Style (`tbox_style_resolve`, mais campos ou um array `[4]` como
+margin/padding já têm), Render Pipeline (paint op novo, se `dashed`/`dotted`
+entrarem em escopo).
+
+### Margens negativas no collapsing entre siblings
+**O que é:** a v4 implementa collapsing de margens só para o caso comum
+(ambos os lados >= 0, gap = max); o algoritmo completo do CSS2.1 8.3.1 para
+margens negativas (a margem resultante usa o maior valor positivo entre os
+dois lados, menos o maior valor absoluto entre os negativos) não está
+implementado — um par com qualquer lado negativo cai de volta pra soma
+simples (comportamento de v0-v3, nunca colapsa).
+**Por que importa:** margem negativa é usada de propósito em CSS real (para
+sobrepor elementos ligeiramente) — o fallback pra soma produz um gap maior
+que o esperado nesse caso específico, embora nunca quebre/crashe.
+**Gatilho para revisitar:** quando um exemplo/demo real usar margem negativa
+entre siblings e o gap errado for visivelmente notado — não antes.
+**Toca:** Layout Tree (`tbox_layout_build_children`).
+
+### `position: absolute`/`fixed`/`sticky`
+**O que é:** a v4 só resolve `position: relative`; os outros três valores
+de `position` continuam fora — cada um exige um containing block diferente
+do fluxo normal (o ancestro posicionado mais próximo, o viewport, ou um
+híbrido dos dois), diferente do que a v4 confirmou ser suficiente (nenhum
+conceito novo de containing block).
+**Por que importa:** popups/tooltips/modais (já citados no débito "Árvore
+pública de mutação" acima) tipicamente dependem de `position: absolute`
+pra se posicionar sem participar do fluxo normal — os dois débitos
+provavelmente precisam ser revisitados juntos.
+**Gatilho para revisitar:** junto do débito "Árvore pública de mutação"
+acima (popup/tooltip/modal), ou antes, se algum layout real exigir
+`position: absolute` isoladamente.
+**Toca:** Style (`tbox_style_position`, mais valores), Layout Tree (novo
+conceito de containing block).
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2 e v3 (registrada nas seções de cada camada) ou
+fechada para v0, v1, v2, v3 e v4 (registrada nas seções de cada camada) ou
 consolidada como débito de design conhecido acima, com gatilho explícito
 de quando revisitar.

@@ -335,5 +335,153 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 17: border shorthand with all 3 tokens, in the "canonical" order
+     * width/style/color. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { border: 2px solid red; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.border_width == 2.0);
+        TBOX_TEST_ASSERT(style.border_style == TBOX_STYLE_BORDER_STYLE_SOLID);
+        TBOX_TEST_ASSERT(rgba_eq(style.border_color, (tbox_css_rgba){ 255, 0, 0, 255 }));
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 18: border shorthand tokens in a different order produce the exact
+     * same result -- order-free parsing. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { border: solid red 2px; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.border_width == 2.0, "border shorthand should be order-free");
+        TBOX_TEST_ASSERT(style.border_style == TBOX_STYLE_BORDER_STYLE_SOLID);
+        TBOX_TEST_ASSERT(rgba_eq(style.border_color, (tbox_css_rgba){ 255, 0, 0, 255 }));
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 19: "border: none;" sets border_style to NONE; absence of `border`
+     * altogether also produces the initial values (NONE / 0px / opaque
+     * black). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { border: none; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.border_style == TBOX_STYLE_BORDER_STYLE_NONE);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+
+        tbox_html_document *doc2    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div2  = tbox_html_document_root(doc2)->first_child;
+        tbox_css_stylesheet *sheet2 = parse_css_cstr("");
+
+        tbox_style style2 = resolve_node(sheet2, div2, NULL);
+        TBOX_TEST_ASSERT_MSG(style2.border_style == TBOX_STYLE_BORDER_STYLE_NONE, "no border declared should be the initial value NONE");
+        TBOX_TEST_ASSERT(style2.border_width == 0.0);
+        TBOX_TEST_ASSERT_MSG(rgba_eq(style2.border_color, (tbox_css_rgba){ 0, 0, 0, 255 }), "border-color initial value is opaque black");
+
+        tbox_css_stylesheet_destroy(sheet2);
+        tbox_html_document_destroy(doc2);
+    }
+
+    /* 20: an unrecognized token inside `border` (e.g. "dashed") does not
+     * knock down the other two valid tokens -- only border_style stays at
+     * its initial value NONE, since no token matched solid/none. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { border: 2px dashed red; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.border_width == 2.0, "an unrecognized token should not knock down other valid tokens");
+        TBOX_TEST_ASSERT_MSG(rgba_eq(style.border_color, (tbox_css_rgba){ 255, 0, 0, 255 }), "an unrecognized token should not knock down other valid tokens");
+        TBOX_TEST_ASSERT_MSG(style.border_style == TBOX_STYLE_BORDER_STYLE_NONE, "no token matched solid/none, so border_style stays at its initial value");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 21: position: relative is recognized; absence, or an unrecognized
+     * value (e.g. "absolute"), fall back to the initial value STATIC. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { position: relative; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.position == TBOX_STYLE_POSITION_RELATIVE);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+
+        tbox_html_document *doc2    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div2  = tbox_html_document_root(doc2)->first_child;
+        tbox_css_stylesheet *sheet2 = parse_css_cstr("");
+
+        tbox_style style2 = resolve_node(sheet2, div2, NULL);
+        TBOX_TEST_ASSERT_MSG(style2.position == TBOX_STYLE_POSITION_STATIC, "no position declared should be the initial value STATIC");
+
+        tbox_css_stylesheet_destroy(sheet2);
+        tbox_html_document_destroy(doc2);
+
+        tbox_html_document *doc3    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div3  = tbox_html_document_root(doc3)->first_child;
+        tbox_css_stylesheet *sheet3 = parse_css_cstr("div { position: absolute; }");
+
+        tbox_style style3 = resolve_node(sheet3, div3, NULL);
+        TBOX_TEST_ASSERT_MSG(style3.position == TBOX_STYLE_POSITION_STATIC, "an unrecognized position value should fall back to STATIC");
+
+        tbox_css_stylesheet_destroy(sheet3);
+        tbox_html_document_destroy(doc3);
+    }
+
+    /* 22: top/left declared resolve to the right offset[]; bottom/right
+     * absent stay AUTO (the initial value). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { top: 10px; left: 5%; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.offset[0].kind == TBOX_STYLE_LENGTH_PX && style.offset[0].value == 10.0);                 /* top */
+        TBOX_TEST_ASSERT(style.offset[3].kind == TBOX_STYLE_LENGTH_PERCENT && style.offset[3].value == 5.0);             /* left */
+        TBOX_TEST_ASSERT_MSG(style.offset[1].kind == TBOX_STYLE_LENGTH_AUTO, "right should stay AUTO when undeclared");  /* right */
+        TBOX_TEST_ASSERT_MSG(style.offset[2].kind == TBOX_STYLE_LENGTH_AUTO, "bottom should stay AUTO when undeclared"); /* bottom */
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 23: none of border/position/offset inherit from the parent -- a
+     * child with no `top` declared stays AUTO even though its parent has
+     * `top: 10px`. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { position: relative; top: 10px; border: 2px solid red; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.offset[0].kind == TBOX_STYLE_LENGTH_PX && parent_style.offset[0].value == 10.0);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.offset[0].kind == TBOX_STYLE_LENGTH_AUTO, "top must not inherit from the parent");
+        TBOX_TEST_ASSERT_MSG(child_style.position == TBOX_STYLE_POSITION_STATIC, "position must not inherit from the parent");
+        TBOX_TEST_ASSERT_MSG(child_style.border_style == TBOX_STYLE_BORDER_STYLE_NONE, "border must not inherit from the parent");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

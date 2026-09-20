@@ -1,4 +1,6 @@
-body { background-color: white; }
+body {
+    background-color: white;
+}
 
 /* v1: clickable box, toggled between these two classes by on_box_click().
  * A plain <div> never renders text regardless of any TEXT children it has
@@ -6,16 +8,32 @@ body { background-color: white; }
  * box) -- every <div> in this stylesheet is therefore an intentionally
  * empty, purely-visual colored box; every element whose text is meant to
  * be visible below is a <p> instead. */
-.box { width: 300px; height: 60px; }
-.off { background-color: cornflowerblue; }
-.on { background-color: tomato; }
+.box {
+    width: 300px;
+    height: 60px;
+}
+
+.off {
+    background-color: cornflowerblue;
+}
+
+.on {
+    background-color: tomato;
+}
 
 /* v3: :hover -- pure CSS, no click handler at all. tbox_app_step polls
  * tbox_backend_wayland_pointer_position every tick and feeds it to
  * tbox_context_update_hover, which this author rule's cascade resolution
  * picks up on the next tbox_context_run_frame. */
-.hoverable { width: 300px; height: 50px; background-color: lightgray; }
-.hoverable:hover { background-color: gold; }
+.hoverable {
+    width: 300px;
+    height: 50px;
+    background-color: lightgray;
+}
+
+.hoverable:hover {
+    background-color: gold;
+}
 
 /* v3: bubbling demo. .bubble-inner nests inside .bubble-outer (same
  * width/height-on-both-levels shape tests/context/test_context.c's own
@@ -26,20 +44,51 @@ body { background-color: white; }
  * appends its own "-fired" token to its own class (fixed
  * whole-attribute-replace, same shape as v1's on_box_click) so both
  * colors below show at once after one click. */
-.bubble-outer { width: 300px; height: 110px; background-color: whitesmoke; }
-.bubble-outer-fired { background-color: mediumpurple; }
-.bubble-inner { width: 180px; height: 60px; background-color: lavender; }
-.bubble-inner-fired { background-color: plum; }
+.bubble-outer {
+    width: 300px;
+    height: 110px;
+    background-color: whitesmoke;
+}
+
+.bubble-outer-fired {
+    background-color: mediumpurple;
+}
+
+.bubble-inner {
+    width: 180px;
+    height: 60px;
+    background-color: lavender;
+}
+
+.bubble-inner-fired {
+    background-color: plum;
+}
 
 /* v3: stopPropagation demo -- a SEPARATE nested pair from .bubble-*
  * above, so the two scenarios can't be confused with each other.
  * on_stop_inner_click fires and returns false; on_stop_outer_click must
  * never run, so .stop-outer-fired's color below should never appear no
  * matter how many times the inner box is clicked. */
-.stop-outer { width: 300px; height: 110px; background-color: whitesmoke; }
-.stop-outer-fired { background-color: crimson; } /* should never appear */
-.stop-inner { width: 180px; height: 60px; background-color: lavender; }
-.stop-inner-fired { background-color: seagreen; }
+.stop-outer {
+    width: 300px;
+    height: 110px;
+    background-color: whitesmoke;
+}
+
+.stop-outer-fired {
+    background-color: crimson;
+}
+
+/* should never appear */
+.stop-inner {
+    width: 180px;
+    height: 60px;
+    background-color: lavender;
+}
+
+.stop-inner-fired {
+    background-color: seagreen;
+}
 
 /* v3: tbox_context_unbind_click demo. Must be a <p> (not a <div>) so its
  * text -- rewritten by on_unbind_target_click via
@@ -47,9 +96,93 @@ body { background-color: white; }
  * the top of this file). on_unbind_target_click unbinds its own
  * registration on the first click; a second click's lack of any further
  * effect (the text never changes again) is the visible proof. */
-.unbind-target { background-color: lightyellow; }
+.unbind-target {
+    background-color: lightyellow;
+}
 
 /* v3: tbox_html_node_set_text_content demo, independent of the unbind one
  * above (this one stays bound and keeps firing on every click). Also a
  * <p> for the same text-rendering reason. */
-.rename-target { background-color: lightcyan; }
+.rename-target {
+    background-color: lightcyan;
+}
+
+/* v4: `border` shorthand demo -- a large, high-contrast 6px solid crimson
+ * border on a light-blue box, visible on all 4 sides. Proves
+ * border_width/border_style/border_color parse from the shorthand and
+ * paint through tbox_layout_build_element's effective_border geometry +
+ * tbox_render's 4 border FILL_RECT strips (ARCHITECTURE.md's v4 "Fatia
+ * vertical v4" criterion #1). */
+.border-solid {
+    width: 200px;
+    height: 80px;
+    background-color: lightsteelblue;
+    border: 6px solid crimson;
+}
+
+/* v4: border-declared-but-not-effectively-styled demo, placed right next
+ * to .border-solid above for an immediate side-by-side contrast. Both
+ * width (6px) and color (darkorange) tokens are present in the
+ * shorthand, but the third token is `dashed`, a border-style this engine
+ * does not classify (only `solid`/`none` are recognized -- see
+ * src/style/tbox_style.c's tbox_style_resolve_border and
+ * ARCHITECTURE.md's v4 Style section), so it is silently ignored and
+ * `border_style` stays at its initial NONE: effective_border is 0 and
+ * nothing should be painted at all, even though width/color were
+ * declared. Proves ARCHITECTURE.md's v4 criterion #2. */
+.border-none {
+    width: 200px;
+    height: 80px;
+    background-color: lightsteelblue;
+    border: 6px dashed darkorange;
+}
+
+/* v4: `position: relative` demo -- shifted 30px right and 20px up from
+ * its normal-flow position via top/left offsets. tbox_layout_build_element
+ * applies the shift only to content_x/content_y (and everything derived
+ * from them for this box and its subtree), never to cursor_y or this
+ * box's own margin_box.height as seen by the sibling loop in
+ * tbox_layout_build_children -- so .after-relative right below, a plain
+ * `position: static` sibling, must render exactly where it would have if
+ * .relative-shifted had never moved (i.e. NOT pulled up to close the
+ * gap), while .relative-shifted itself visibly overlaps upward into the
+ * space above it. Proves ARCHITECTURE.md's v4 criterion #3. */
+.relative-shifted {
+    width: 200px;
+    height: 60px;
+    background-color: mediumseagreen;
+    position: relative;
+    top: -20px;
+    left: 30px;
+}
+
+.after-relative {
+    width: 200px;
+    height: 60px;
+    background-color: paleturquoise;
+}
+
+/* v4: margin collapsing demo -- two adjacent block siblings with
+ * DIFFERENT margins facing each other (40px vs 20px), set via the
+ * `margin` shorthand's 2-value form (top/bottom, left/right) since this
+ * engine has no margin-top/margin-bottom longhand properties (only the
+ * `margin` shorthand is resolved -- see
+ * tbox_style_resolve_box_shorthand). Each box gets its own background
+ * color so the gap between them reads unambiguously: it must be 40px
+ * (the larger of the two margins), never 60px (their sum) --
+ * tbox_layout_build_children's border_bottom/pending_margin_bottom
+ * tracking implements exactly that collapse. Proves ARCHITECTURE.md's v4
+ * criterion #4. */
+.collapse-first {
+    width: 200px;
+    height: 60px;
+    background-color: khaki;
+    margin: 40px 0;
+}
+
+.collapse-second {
+    width: 200px;
+    height: 60px;
+    background-color: thistle;
+    margin: 20px 0;
+}

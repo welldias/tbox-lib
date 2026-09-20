@@ -337,6 +337,36 @@ static double tbox_layout_resolve_edge(tbox_style_length length, double percent_
     }
 }
 
+/* NOVO v4: resolves one (primary, opposite) pair of `position: relative`
+ * offsets per CSS2.1 9.4.3 -- a non-AUTO primary side wins outright; else a
+ * non-AUTO opposite side wins, negated (moving by `-opposite` is exactly
+ * equivalent to moving by `+primary` when only one side is given); else 0
+ * (both AUTO, the common case: `position: relative` with no offset at all
+ * moves nothing). Called once for (left, right) against the container's
+ * width (always definite) and once for (top, bottom) against its height,
+ * where `percent_base_definite` guards against resolving a `%` against an
+ * indefinite (AUTO-height) container -- same guard `height: %` already uses
+ * in tbox_layout_build_element below -- falling back to 0 instead of
+ * producing a bogus/NaN offset. A PX side is never affected by
+ * `percent_base_definite` since it doesn't depend on `percent_base` at all. */
+static double tbox_layout_resolve_offset(tbox_style_length primary, tbox_style_length opposite, double percent_base, bool percent_base_definite) {
+    if (primary.kind != TBOX_STYLE_LENGTH_AUTO) {
+        if (primary.kind == TBOX_STYLE_LENGTH_PERCENT && !percent_base_definite) {
+            return 0.0;
+        }
+        return tbox_layout_resolve_edge(primary, percent_base);
+    }
+
+    if (opposite.kind != TBOX_STYLE_LENGTH_AUTO) {
+        if (opposite.kind == TBOX_STYLE_LENGTH_PERCENT && !percent_base_definite) {
+            return 0.0;
+        }
+        return -tbox_layout_resolve_edge(opposite, percent_base);
+    }
+
+    return 0.0;
+}
+
 /* The containing block a box is laid out against: the parent's (or the
  * viewport's, for the root) content-box x/width, plus its content height --
  * `height_definite` says whether that height came from an explicit value
@@ -360,15 +390,39 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
  * their own box, see ARCHITECTURE.md), skipping any whose resolved
  * style->display == TBOX_STYLE_DISPLAY_NONE entirely -- no box, no
  * recursion into its subtree, no contribution to the height sum returned.
- * Stacks the rest vertically starting at `start_y` (no margin collapsing:
- * each box's own margin is applied independently -- see the module doc
- * comment), linking them onto `parent_box`'s first_child/last_child/
- * next_sibling. Returns the sum of every built child's margin_box.height,
- * for the parent's own AUTO/shrink-to-fit height. */
+ *
+ * NOVO v4: adjacent siblings now collapse their touching margins (CSS2.1
+ * 8.3.1's sibling case -- see ARCHITECTURE.md) instead of always summing
+ * them. In place of a single running `cursor_y`, this tracks `border_bottom`
+ * (the y just past the last positioned sibling's OWN border_box -- not its
+ * margin_box: its bottom margin hasn't been "spent" yet, so it stays free to
+ * collapse with the next sibling's top margin) and `pending_margin_bottom`
+ * (that unspent margin; 0.0 before the first child, which is why the first
+ * child's own top margin never collapses with anything -- out of scope here,
+ * unchanged since v0-v3). Before building each child, its OWN top margin is
+ * resolved (against `children_container.width`, the same base every margin
+ * already resolves against) so the gap can be decided ahead of the call: when
+ * both the pending bottom margin and this child's top margin are >= 0, the
+ * gap collapses to `max(pending_margin_bottom, child_margin_top)`; otherwise
+ * (either one negative -- CSS2.1's full negative-margin algorithm is out of
+ * scope, see ARCHITECTURE.md) the pair falls back to today's behavior, a
+ * plain sum of the two. Once the child is built, `border_bottom`/
+ * `pending_margin_bottom` are refreshed for the next iteration -- deriving
+ * `border_bottom` as `cursor_y + child_box->margin_box.height -
+ * child_margin_bottom` rather than reading `child_box->border_box.y`
+ * directly: a `position: relative` child's border_box/margin_box carry its
+ * visual offset (see below), but `cursor_y` (the static flow position this
+ * child was placed at) and `margin_box.height` (unaffected by an x/y-only
+ * offset) are not, so this keeps margin collapsing computed entirely in the
+ * same unshifted flow coordinate space v0-v3 always used -- a
+ * `position: relative` sibling still never disturbs where the next sibling
+ * lands. The last child's pending bottom margin never collapses with
+ * anything after it (parent/last-child collapsing is out of scope), so it's
+ * added in full to the returned total. */
 static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block children_container, double start_y, tbox_layout_box *parent_box) {
-    double cursor_y           = start_y;
-    double total_height       = 0.0;
-    tbox_layout_box *previous = NULL;
+    double border_bottom         = start_y;
+    double pending_margin_bottom = 0.0;
+    tbox_layout_box *previous    = NULL;
 
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
         if (child->type != TBOX_HTML_NODE_ELEMENT) {
@@ -378,6 +432,16 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
         const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
         if (child_style->display == TBOX_STYLE_DISPLAY_NONE) {
             continue;
+        }
+
+        double child_margin_top = tbox_layout_resolve_edge(child_style->margin[0], children_container.width);
+
+        double cursor_y;
+        if (pending_margin_bottom >= 0.0 && child_margin_top >= 0.0) {
+            double gap = pending_margin_bottom > child_margin_top ? pending_margin_bottom : child_margin_top;
+            cursor_y   = border_bottom + gap - child_margin_top;
+        } else {
+            cursor_y = border_bottom + pending_margin_bottom;
         }
 
         tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, children_container, cursor_y);
@@ -390,11 +454,12 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
         parent_box->last_child = child_box;
         previous               = child_box;
 
-        cursor_y += child_box->margin_box.height;
-        total_height += child_box->margin_box.height;
+        double child_margin_bottom = tbox_layout_resolve_edge(child_style->margin[2], children_container.width);
+        border_bottom              = cursor_y + child_box->margin_box.height - child_margin_bottom;
+        pending_margin_bottom      = child_margin_bottom;
     }
 
-    return total_height;
+    return (border_bottom - start_y) + pending_margin_bottom;
 }
 
 /* Builds and positions the box for one ELEMENT `node` (already known to not
@@ -423,10 +488,17 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     double padding_bottom = tbox_layout_resolve_edge(style->padding[2], container.width);
     double padding_left   = tbox_layout_resolve_edge(style->padding[3], container.width);
 
+    /* NOVO v4: `border` occupies space exactly like padding does (there is
+     * no `box-sizing: border-box` -- see ARCHITECTURE.md) -- but only when
+     * `border-style: solid` actually applies; a declared border-width/color
+     * without `solid` (or with the initial `none`) occupies zero space,
+     * same as not declaring `border` at all. */
+    double effective_border = (style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID) ? style->border_width : 0.0;
+
     /* Width: the same rule for every node, text-tag or not -- see
      * ARCHITECTURE.md's clarification that measured text never resizes the
-     * box (D4). There is no border in v0 (always 0), so border/padding box
-     * width differ from content width only by padding. */
+     * box (D4). Border counts against the available width in the AUTO
+     * branch exactly like padding does. */
     double content_width;
     switch (style->width.kind) {
     case TBOX_STYLE_LENGTH_PX:
@@ -437,12 +509,32 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         break;
     case TBOX_STYLE_LENGTH_AUTO:
     default:
-        content_width = container.width - margin_left - margin_right - padding_left - padding_right;
+        content_width = container.width - margin_left - margin_right - padding_left - padding_right - 2.0 * effective_border;
         break;
     }
 
-    double content_x = container.x + margin_left + padding_left;
-    double content_y = cursor_y + margin_top + padding_top;
+    double content_x = container.x + margin_left + padding_left + effective_border;
+    double content_y = cursor_y + margin_top + padding_top + effective_border;
+
+    /* NOVO v4: `position: relative` -- a pure visual-coordinate shift, no
+     * new containing-block concept (confirmed in ARCHITECTURE.md). Applied
+     * to content_x/content_y BEFORE anything below derives from them --
+     * children_container (so the whole subtree shifts automatically) and
+     * content_box/padding_box/border_box/margin_box (all built from
+     * content_x/content_y further down). Deliberately NOT applied to
+     * cursor_y/margin_box.height as seen by the sibling loop in
+     * tbox_layout_build_children: those are computed independently of
+     * content_x/content_y (cursor_y is the function's own parameter, and
+     * margin_box.height only ever depends on content_height/padding/
+     * border/margin, never x/y), so a `position: relative` box never
+     * disturbs the normal flow of any other element, exactly as CSS
+     * specifies. */
+    if (style->position == TBOX_STYLE_POSITION_RELATIVE) {
+        double dx = tbox_layout_resolve_offset(style->offset[3], style->offset[1], container.width, true);
+        double dy = tbox_layout_resolve_offset(style->offset[0], style->offset[2], container.height, container.height_definite);
+        content_x += dx;
+        content_y += dy;
+    }
 
     double content_height;
     if (tbox_layout_is_text_tag(node)) {
@@ -500,13 +592,22 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     box->content_box.width  = content_width;
     box->content_box.height = content_height;
 
-    /* padding_box/border_box are identical in v0 (border is always 0
-     * width); both are content_box grown back out by padding. */
+    /* padding_box is content_box grown back out by padding (note:
+     * content_x/content_y already include effective_border -- see above --
+     * so subtracting only padding_left/padding_top here correctly lands on
+     * the padding_box edge, between border and padding). NOVO v4:
+     * border_box is padding_box grown back out by effective_border on all 4
+     * sides (0.0 when there's no effective border, preserving the v0-v3
+     * identity border_box == padding_box exactly). */
     box->padding_box.x      = content_x - padding_left;
     box->padding_box.y      = content_y - padding_top;
     box->padding_box.width  = content_width + padding_left + padding_right;
     box->padding_box.height = content_height + padding_top + padding_bottom;
-    box->border_box         = box->padding_box;
+
+    box->border_box.x      = box->padding_box.x - effective_border;
+    box->border_box.y      = box->padding_box.y - effective_border;
+    box->border_box.width  = box->padding_box.width + 2.0 * effective_border;
+    box->border_box.height = box->padding_box.height + 2.0 * effective_border;
 
     /* margin_box is border_box grown back out by margin -- its x/y land
      * back on (container.x, cursor_y) exactly, per the geometry above. */

@@ -50,13 +50,20 @@ typedef struct tbox_display_list {
 
 /* Builds the display list for `root`'s subtree (may be NULL, producing an
  * empty list), pre-order: for each box, first (if its style's
- * background_color is non-transparent) a FILL_RECT over its border_box, then
- * (NOVO v2) one TEXT_RUN per entry of box->text_runs, in the order Layout
- * Tree built them (already line-order, left-to-right/top-to-bottom) -- in
- * that order relative to the FILL_RECT, since backgrounds sit under text --
- * and only then its first_child and the rest of the next_sibling chain,
- * recursively, in the same order. See ARCHITECTURE.md's "Render Pipeline"
- * section (no stacking contexts, clipping).
+ * background_color is non-transparent) a FILL_RECT over its border_box,
+ * then (NOVO v4) if `effective_border > 0` (re-derived here from
+ * `style->border_style`/`border_width`, same formula as Layout Tree's
+ * Tarefa 2 -- only `solid` ever paints) up to 4 more FILL_RECTs in
+ * `style->border_color`, one per side, each covering the strip between
+ * `border_box` and `padding_box` (top/bottom span the full border_box
+ * width including corners; left/right span only the padding_box height),
+ * then (NOVO v2) one TEXT_RUN per entry of box->text_runs, in the order
+ * Layout Tree built them (already line-order, left-to-right/top-to-bottom)
+ * -- in that order relative to the FILL_RECTs, since backgrounds and
+ * borders sit under text -- and only then its first_child and the rest of
+ * the next_sibling chain, recursively, in the same order. See
+ * ARCHITECTURE.md's "Render Pipeline" section (no stacking contexts,
+ * clipping).
  *
  * This never calls into <tbox/font.h>: a run's `font` pointer is only
  * copied into the resulting paint op's `face`, never dereferenced -- Output

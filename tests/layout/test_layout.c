@@ -480,6 +480,257 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 14: NOVO v4 -- `border: 3px solid black` grows border_box 3px past
+     * padding_box on every side, and (width: auto) shrinks content_width by
+     * an extra 6px (2 * 3px) compared to the same element with no border. */
+    {
+        tbox_html_document *doc_border    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *root_border = tbox_html_document_root(doc_border);
+        tbox_css_stylesheet *sheet_border  = parse_css_cstr("div { border: 3px solid black; }");
+
+        tbox_arena arena_border               = tbox_arena_create(0);
+        tbox_css_cascade_source source_border = { sheet_border, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table_border         = tbox_style_resolve_tree(&arena_border, root_border, &source_border, 1);
+        tbox_layout_box *box_border           = tbox_layout_build(&arena_border, root_border, &table_border, fonts, 800.0, 600.0);
+
+        tbox_html_document *doc_plain    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *root_plain = tbox_html_document_root(doc_plain);
+        tbox_css_stylesheet *sheet_plain  = parse_css_cstr("");
+
+        tbox_arena arena_plain               = tbox_arena_create(0);
+        tbox_css_cascade_source source_plain = { sheet_plain, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table_plain         = tbox_style_resolve_tree(&arena_plain, root_plain, &source_plain, 1);
+        tbox_layout_box *box_plain           = tbox_layout_build(&arena_plain, root_plain, &table_plain, fonts, 800.0, 600.0);
+
+        TBOX_TEST_ASSERT(box_border != NULL && box_plain != NULL);
+        if (box_border != NULL && box_plain != NULL) {
+            TBOX_TEST_ASSERT_MSG(box_border->border_box.x == box_border->padding_box.x - 3.0, "left border must grow border_box 3px past padding_box");
+            TBOX_TEST_ASSERT_MSG(box_border->border_box.y == box_border->padding_box.y - 3.0, "top border must grow border_box 3px past padding_box");
+            TBOX_TEST_ASSERT_MSG(box_border->border_box.width == box_border->padding_box.width + 6.0, "border_box width must exceed padding_box width by 2*3px (left+right)");
+            TBOX_TEST_ASSERT_MSG(box_border->border_box.height == box_border->padding_box.height + 6.0, "border_box height must exceed padding_box height by 2*3px (top+bottom)");
+            TBOX_TEST_ASSERT_MSG(box_border->content_box.width == box_plain->content_box.width - 6.0, "width:auto must shrink content_width by an extra 2*border_width when bordered");
+        }
+
+        tbox_arena_destroy(&arena_border);
+        tbox_css_stylesheet_destroy(sheet_border);
+        tbox_html_document_destroy(doc_border);
+        tbox_arena_destroy(&arena_plain);
+        tbox_css_stylesheet_destroy(sheet_plain);
+        tbox_html_document_destroy(doc_plain);
+    }
+
+    /* 15: NOVO v4 -- no effective border (no `border` declared at all, or a
+     * declared but unsupported style like `dashed`) keeps the v0-v3
+     * identity border_box == padding_box exactly. */
+    {
+        const char *cases[] = { "", "div { border: 5px dashed red; }" };
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+            const tbox_html_node *root = tbox_html_document_root(doc);
+            tbox_css_stylesheet *sheet = parse_css_cstr(cases[i]);
+
+            tbox_arena arena               = tbox_arena_create(0);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                TBOX_TEST_ASSERT_MSG(box->border_box.x == box->padding_box.x && box->border_box.y == box->padding_box.y &&
+                                          box->border_box.width == box->padding_box.width && box->border_box.height == box->padding_box.height,
+                                      "no effective border (absent, or an unsupported border-style) must keep border_box == padding_box");
+            }
+
+            tbox_arena_destroy(&arena);
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
+    /* 16: NOVO v4 -- `position: relative; top: 10px; left: 5px;` shifts
+     * content_box/padding_box/border_box/margin_box all by (5, 10) versus
+     * the static position, but the NEXT sibling is positioned exactly as if
+     * the shifted box hadn't moved (same cursor_y it would get without
+     * `position: relative`). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><div class=\"a\">x</div><div class=\"b\">y</div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(".a { height: 30px; position: relative; top: 10px; left: 5px; } .b { height: 40px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *first  = outer_box->first_child;
+            tbox_layout_box *second = outer_box->last_child;
+            TBOX_TEST_ASSERT(first != NULL && second != NULL && first != second);
+            if (first != NULL && second != NULL) {
+                TBOX_TEST_ASSERT_MSG(first->content_box.x == outer_box->content_box.x + 5.0, "left: 5px must shift content_box.x by +5");
+                TBOX_TEST_ASSERT_MSG(first->content_box.y == outer_box->content_box.y + 10.0, "top: 10px must shift content_box.y by +10");
+                TBOX_TEST_ASSERT_MSG(first->padding_box.x == outer_box->content_box.x + 5.0, "padding_box must shift by the same (5, 10)");
+                TBOX_TEST_ASSERT_MSG(first->border_box.x == outer_box->content_box.x + 5.0, "border_box must shift by the same (5, 10)");
+                TBOX_TEST_ASSERT_MSG(first->margin_box.x == outer_box->content_box.x + 5.0, "margin_box must shift by the same (5, 10)");
+                TBOX_TEST_ASSERT_MSG(first->margin_box.y == outer_box->content_box.y + 10.0, "margin_box.y must shift by the same (5, 10)");
+                /* the shift never pushes the next sibling: `second` lands at
+                 * exactly the same y it would without `position: relative`
+                 * (right after the first box's UNSHIFTED 30px height). */
+                TBOX_TEST_ASSERT_MSG(second->margin_box.y == outer_box->content_box.y + 30.0, "position:relative must not move the next sibling's flow position");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 17: NOVO v4 -- a child of a `position: relative` parent shifts along
+     * automatically (it inherits the parent's offset via the parent's
+     * already-shifted children_container, no separate offset propagation
+     * needed). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(".outer { position: relative; top: 10px; left: 5px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *inner_box = outer_box->first_child;
+            TBOX_TEST_ASSERT(inner_box != NULL);
+            if (inner_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.x == outer_box->content_box.x, "a child of a shifted parent must land inside the parent's already-shifted content box");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 18: NOVO v4 -- `top: 20%` against a containing block with an
+     * indefinite (AUTO) height must resolve to 0, not NaN/crash. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><div class=\"a\">x</div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(".a { position: relative; top: 20%; height: 10px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *inner_box = outer_box->first_child;
+            TBOX_TEST_ASSERT(inner_box != NULL);
+            if (inner_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.y == outer_box->content_box.y, "top:20% against an AUTO-height container must resolve to 0, not NaN");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 19: NOVO v4 -- two block siblings with margin-bottom:10px (first) /
+     * margin-top:20px (second) collapse into a single 20px gap between the
+     * end of the first's border_box and the start of the second's
+     * border_box -- NOT the 30px sum v0-v3 produced. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><div class=\"a\">x</div><div class=\"b\">y</div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(".a { height: 30px; margin: 0px 0px 10px 0px; } .b { height: 40px; margin: 20px 0px 0px 0px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *first  = outer_box->first_child;
+            tbox_layout_box *second = outer_box->last_child;
+            TBOX_TEST_ASSERT(first != NULL && second != NULL && first != second);
+            if (first != NULL && second != NULL) {
+                double gap = second->border_box.y - (first->border_box.y + first->border_box.height);
+                TBOX_TEST_ASSERT_MSG(gap == 20.0, "adjacent siblings' margins must collapse to max(10, 20) == 20, not sum to 30");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 20: NOVO v4 -- same as above, but the second sibling's margin-top is
+     * negative (-5px): the pair must NOT collapse (a negative side always
+     * falls back to today's sum), leaving a 5px gap (10 + (-5)). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><div class=\"a\">x</div><div class=\"b\">y</div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(".a { height: 30px; margin: 0px 0px 10px 0px; } .b { height: 40px; margin: -5px 0px 0px 0px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *first  = outer_box->first_child;
+            tbox_layout_box *second = outer_box->last_child;
+            TBOX_TEST_ASSERT(first != NULL && second != NULL && first != second);
+            if (first != NULL && second != NULL) {
+                double gap = second->border_box.y - (first->border_box.y + first->border_box.height);
+                TBOX_TEST_ASSERT_MSG(gap == 5.0, "a negative margin on either side must disable collapsing, falling back to the sum (10 + -5 == 5)");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 21: NOVO v4 -- the FIRST child of a parent never collapses its top
+     * margin with anything, even a large one: it lands exactly
+     * margin-top px below the parent's content box top. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><div class=\"a\">x</div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *outer = root->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(".a { height: 10px; margin: 50px 0px 0px 0px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(outer_box != NULL);
+        if (outer_box != NULL) {
+            tbox_layout_box *first = outer_box->first_child;
+            TBOX_TEST_ASSERT(first != NULL);
+            if (first != NULL) {
+                TBOX_TEST_ASSERT_MSG(first->border_box.y == outer_box->content_box.y + 50.0, "the first child's top margin must never collapse with anything, even a large one");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

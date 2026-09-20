@@ -334,6 +334,152 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* 10: NOVO v4 -- a box with an effective border (border_style == SOLID,
+     * border_width > 0) produces, after the background FILL_RECT, exactly 4
+     * more FILL_RECTs in border_color: top/bottom spanning the full
+     * border_box width (including corners), left/right spanning only the
+     * padding_box height -- together covering exactly border_box minus
+     * padding_box, no overlap/gap at the corners. */
+    {
+        tbox_style style        = tbox_test_render_default_style();
+        style.background_color  = (tbox_css_rgba){ 50, 50, 50, 255 };
+        style.border_style      = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.border_width      = 3.0;
+        style.border_color      = (tbox_css_rgba){ 200, 0, 0, 255 };
+        tbox_layout_box box     = tbox_test_render_default_box(&style);
+        box.content_box         = (tbox_rect){ 13.0, 13.0, 100.0, 50.0 };
+        box.padding_box         = (tbox_rect){ 3.0, 3.0, 120.0, 70.0 };
+        box.border_box          = (tbox_rect){ 0.0, 0.0, 126.0, 76.0 };
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 5, "background + effective border must produce 1 background + 4 border FILL_RECTs");
+        if (list.count == 5) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_FILL_RECT);
+            TBOX_TEST_ASSERT_MSG(rect_equal(list.items[0].rect, box.border_box), "op 0 must still be the background over border_box");
+
+            for (size_t i = 1; i <= 4; i++) {
+                TBOX_TEST_ASSERT(list.items[i].kind == TBOX_PAINT_FILL_RECT);
+                TBOX_TEST_ASSERT_MSG(list.items[i].color.r == 200 && list.items[i].color.g == 0 && list.items[i].color.b == 0 && list.items[i].color.a == 255, "border FILL_RECTs must carry style->border_color");
+            }
+
+            tbox_rect top    = list.items[1].rect;
+            tbox_rect bottom = list.items[2].rect;
+            tbox_rect left   = list.items[3].rect;
+            tbox_rect right  = list.items[4].rect;
+
+            TBOX_TEST_ASSERT_MSG(rect_equal(top, ((tbox_rect){ 0.0, 0.0, 126.0, 3.0 })), "top border strip must span the full border_box width, from border_box.y to padding_box.y");
+            TBOX_TEST_ASSERT_MSG(rect_equal(bottom, ((tbox_rect){ 0.0, 73.0, 126.0, 3.0 })), "bottom border strip must span the full border_box width, from padding_box bottom to border_box bottom");
+            TBOX_TEST_ASSERT_MSG(rect_equal(left, ((tbox_rect){ 0.0, 3.0, 3.0, 70.0 })), "left border strip must span only the padding_box height, from border_box.x to padding_box.x");
+            TBOX_TEST_ASSERT_MSG(rect_equal(right, ((tbox_rect){ 123.0, 3.0, 3.0, 70.0 })), "right border strip must span only the padding_box height, from padding_box right edge to border_box right edge");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 11: NOVO v4 -- no effective border (border_style != SOLID, or
+     * border_width == 0) produces zero border FILL_RECTs -- only the
+     * background's, same as v0-v3 (regression). Two sub-cases: NONE style
+     * with a non-zero width, and SOLID style with a zero width. */
+    {
+        tbox_style style        = tbox_test_render_default_style();
+        style.background_color  = (tbox_css_rgba){ 60, 60, 60, 255 };
+        style.border_style      = TBOX_STYLE_BORDER_STYLE_NONE;
+        style.border_width      = 5.0; /* declared but style isn't SOLID -- must not paint */
+        style.border_color      = (tbox_css_rgba){ 200, 0, 0, 255 };
+        tbox_layout_box box     = tbox_test_render_default_box(&style);
+        box.border_box          = (tbox_rect){ 0.0, 0.0, 100.0, 50.0 };
+        box.padding_box         = box.border_box;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 1, "border_style != SOLID must produce zero border FILL_RECTs, only the background's");
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_FILL_RECT);
+        }
+        tbox_arena_destroy(&arena);
+    }
+    {
+        tbox_style style        = tbox_test_render_default_style();
+        style.background_color  = (tbox_css_rgba){ 60, 60, 60, 255 };
+        style.border_style      = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.border_width      = 0.0; /* SOLID but zero width -- must not paint */
+        style.border_color      = (tbox_css_rgba){ 200, 0, 0, 255 };
+        tbox_layout_box box     = tbox_test_render_default_box(&style);
+        box.border_box          = (tbox_rect){ 0.0, 0.0, 100.0, 50.0 };
+        box.padding_box         = box.border_box;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 1, "border_width == 0 must produce zero border FILL_RECTs, only the background's");
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_FILL_RECT);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 12: NOVO v4 -- op order for a box with background + effective border +
+     * text: background, then the 4 border FILL_RECTs, then TEXT_RUN. */
+    {
+        tbox_style style        = tbox_test_render_default_style();
+        style.background_color  = (tbox_css_rgba){ 9, 9, 9, 255 };
+        style.border_style      = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.border_width      = 2.0;
+        style.border_color      = (tbox_css_rgba){ 100, 100, 100, 255 };
+        tbox_layout_box box     = tbox_test_render_default_box(&style);
+        box.padding_box         = (tbox_rect){ 2.0, 2.0, 50.0, 16.0 };
+        box.border_box          = (tbox_rect){ 0.0, 0.0, 54.0, 20.0 };
+
+        tbox_layout_text_run run;
+        run.rect = (tbox_rect){ 2.0, 2.0, 16.0, 16.0 };
+        run.text = tbox_test_render_view_from_cstr("hi");
+        run.font = font;
+
+        box.text_runs      = &run;
+        box.text_run_count = 1;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 6, "background + border + text must produce 1 + 4 + 1 = 6 ops");
+        if (list.count == 6) {
+            TBOX_TEST_ASSERT_MSG(list.items[0].kind == TBOX_PAINT_FILL_RECT, "op 0 must be the background");
+            TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_FILL_RECT && list.items[2].kind == TBOX_PAINT_FILL_RECT && list.items[3].kind == TBOX_PAINT_FILL_RECT && list.items[4].kind == TBOX_PAINT_FILL_RECT, "ops 1-4 must be the 4 border strips");
+            TBOX_TEST_ASSERT_MSG(list.items[5].kind == TBOX_PAINT_TEXT_RUN, "op 5 must be the TEXT_RUN, after background and border");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 13: NOVO v4 -- a box with an effective border but no children/text
+     * still just produces background + 4 border FILL_RECTs, and its child
+     * (in tree pre-order) is visited afterwards. */
+    {
+        tbox_style parent_style       = tbox_test_render_default_style();
+        parent_style.border_style     = TBOX_STYLE_BORDER_STYLE_SOLID;
+        parent_style.border_width     = 1.0;
+        parent_style.border_color     = (tbox_css_rgba){ 7, 7, 7, 255 };
+        tbox_style child_style        = tbox_test_render_default_style();
+        child_style.background_color  = (tbox_css_rgba){ 3, 3, 3, 255 };
+
+        tbox_layout_box child = tbox_test_render_default_box(&child_style);
+        tbox_layout_box parent = tbox_test_render_default_box(&parent_style);
+        parent.border_box     = (tbox_rect){ 0.0, 0.0, 10.0, 10.0 };
+        parent.padding_box    = (tbox_rect){ 1.0, 1.0, 8.0, 8.0 };
+        parent.first_child    = &child;
+        parent.last_child     = &child;
+        child.parent          = &parent;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &parent);
+        TBOX_TEST_ASSERT_MSG(list.count == 5, "borderless-background parent with effective border + one child with a background must produce 4 border ops + 1 child background op");
+        if (list.count == 5) {
+            for (size_t i = 0; i < 4; i++) {
+                TBOX_TEST_ASSERT(list.items[i].kind == TBOX_PAINT_FILL_RECT);
+                TBOX_TEST_ASSERT(list.items[i].color.r == 7 && list.items[i].color.g == 7 && list.items[i].color.b == 7);
+            }
+            TBOX_TEST_ASSERT_MSG(list.items[4].color.r == 3, "child's own background must come after the parent's border ops");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
     tbox_font_face_destroy(bold_font);
     tbox_font_face_destroy(font);
     free(font_data);

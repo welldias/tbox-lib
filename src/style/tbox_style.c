@@ -235,6 +235,69 @@ static bool tbox_style_resolve_box_shorthand(const tbox_css_computed_style *comp
     return true;
 }
 
+/* NOVO v4: parses the `border` shorthand per ARCHITECTURE.md's v4 Style
+ * section -- splits on whitespace into up to 3 tokens (order-free, each
+ * optional), classifying each token by the first rule that accepts it:
+ * (1) ends in "px" and the rest parses as a number -> border_width; (2)
+ * case-insensitive "solid"/"none" -> border_style; (3) otherwise, tries
+ * tbox_css_color_parse -> border_color. A token matching none of the three
+ * is silently ignored -- it never invalidates the other tokens, nor the
+ * declaration as a whole (same robustness posture as the rest of Style/CSS
+ * Parser). `out_width`/`out_style`/`out_color` are only written when their
+ * respective token classifies successfully; on entry they already hold the
+ * caller's initial values. Returns whether a `border` declaration was found
+ * at all (false when absent, callers just keep the pre-filled initial
+ * values). */
+static bool tbox_style_resolve_border(const tbox_css_computed_style *computed, double *out_width, tbox_style_border_style *out_style, tbox_css_rgba *out_color) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("border"));
+    if (decl == NULL) {
+        return false;
+    }
+
+    tbox_string_view text = tbox_style_trim(decl->value);
+    size_t i              = 0;
+    while (i < text.size) {
+        while (i < text.size && tbox_style_is_space(text.data[i])) {
+            i++;
+        }
+        if (i >= text.size) {
+            break;
+        }
+        size_t start = i;
+        while (i < text.size && !tbox_style_is_space(text.data[i])) {
+            i++;
+        }
+        tbox_string_view token = tbox_string_view_make(text.data + start, i - start);
+
+        double width;
+        tbox_css_rgba color;
+        if (token.size > 2 && tbox_string_view_equal_ascii_ci(tbox_string_view_make(token.data + token.size - 2, 2), tbox_string_view_from_cstr("px")) && tbox_style_parse_number(tbox_string_view_make(token.data, token.size - 2), &width)) {
+            *out_width = width;
+        } else if (tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("solid"))) {
+            *out_style = TBOX_STYLE_BORDER_STYLE_SOLID;
+        } else if (tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("none"))) {
+            *out_style = TBOX_STYLE_BORDER_STYLE_NONE;
+        } else if (tbox_css_color_parse(token, &color)) {
+            *out_color = color;
+        }
+        /* else: unrecognized token, ignored -- keep scanning. */
+    }
+
+    return true;
+}
+
+/* NOVO v4: `position` only recognizes `static`/`relative`, case-insensitive
+ * -- any other value (absent, unparsable, or an out-of-scope keyword like
+ * `absolute`) falls back to the initial value STATIC, same posture as
+ * `display` since v0. */
+static tbox_style_position tbox_style_resolve_position(const tbox_css_computed_style *computed) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("position"));
+    if (decl != NULL && tbox_string_view_equal_ascii_ci(tbox_style_trim(decl->value), tbox_string_view_from_cstr("relative"))) {
+        return TBOX_STYLE_POSITION_RELATIVE;
+    }
+    return TBOX_STYLE_POSITION_STATIC;
+}
+
 static tbox_style_length tbox_style_resolve_length_property(const tbox_css_computed_style *computed, const char *property) {
     tbox_style_length result                  = { TBOX_STYLE_LENGTH_AUTO, 0.0 };
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(property));
@@ -324,6 +387,22 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     } else {
         style.font_weight_bold = false;
     }
+
+    /* border: NOVO v4. Not inheritable -- always cascade-or-initial. */
+    style.border_width   = 0.0;
+    style.border_style   = TBOX_STYLE_BORDER_STYLE_NONE;
+    style.border_color.r = 0;
+    style.border_color.g = 0;
+    style.border_color.b = 0;
+    style.border_color.a = 255;
+    tbox_style_resolve_border(computed, &style.border_width, &style.border_style, &style.border_color);
+
+    /* position + offsets: NOVO v4. Not inheritable. */
+    style.position  = tbox_style_resolve_position(computed);
+    style.offset[0] = tbox_style_resolve_length_property(computed, "top");
+    style.offset[1] = tbox_style_resolve_length_property(computed, "right");
+    style.offset[2] = tbox_style_resolve_length_property(computed, "bottom");
+    style.offset[3] = tbox_style_resolve_length_property(computed, "left");
 
     return style;
 }

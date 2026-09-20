@@ -46,6 +46,22 @@ typedef enum tbox_style_display {
     TBOX_STYLE_DISPLAY_NONE,
 } tbox_style_display;
 
+/* NOVO v4: only `solid` is ever painted (see Render Pipeline); `none` and
+ * any unsupported keyword both resolve here, indistinguishable from each
+ * other and from "no border declared" -- see ARCHITECTURE.md's v4 Style
+ * section. */
+typedef enum tbox_style_border_style {
+    TBOX_STYLE_BORDER_STYLE_NONE, /* initial */
+    TBOX_STYLE_BORDER_STYLE_SOLID,
+} tbox_style_border_style;
+
+/* NOVO v4: only the visual-offset axis of `position: relative` -- no
+ * `absolute`/`fixed`/`sticky` (see ARCHITECTURE.md's v4 Style section). */
+typedef enum tbox_style_position {
+    TBOX_STYLE_POSITION_STATIC, /* initial */
+    TBOX_STYLE_POSITION_RELATIVE,
+} tbox_style_position;
+
 typedef struct tbox_style {
     /* Initial value in v0 is TBOX_STYLE_DISPLAY_BLOCK, NOT CSS2.1's
      * spec-correct `inline` -- a deliberate v0 simplification, since there
@@ -72,6 +88,16 @@ typedef struct tbox_style {
      * section for what's out of scope (numeric 100-900, bolder/lighter).
      * Inheritable like `color`; initial value (no parent): false. */
     bool font_weight_bold;
+    /* NOVO v4: `border` shorthand (width + style + color, order-free, each
+     * optional -- only `solid` is ever painted). Not inheritable, same
+     * treatment as `width`/`background-color`: always cascade-or-initial,
+     * never looks at the parent. See ARCHITECTURE.md's v4 Style section. */
+    double border_width;                  /* px; initial 0.0 -- no thin/medium/thick */
+    tbox_style_border_style border_style; /* initial NONE */
+    tbox_css_rgba border_color;           /* initial: opaque black (no currentColor) */
+    /* NOVO v4: `position: relative` + offsets. Not inheritable. */
+    tbox_style_position position; /* initial STATIC */
+    tbox_style_length offset[4];  /* top right bottom left; initial: AUTO, same type as margin/padding */
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
@@ -101,10 +127,21 @@ typedef struct tbox_style {
  * case-insensitive keyword `bold` sets `font_weight_bold = true`; anything
  * else -- absent, `normal`, a numeric 100-900, `bolder`/`lighter` -- out of
  * scope --, inherits `parent_style->font_weight_bold`, same inheritance
- * mechanism as `color`, or falls back to `false` with no parent). Out of
- * scope: `position`, `float`, flex/grid, `z-index`, any `border-*`
- * property, `white-space` (v0 always behaves as `white-space: normal`),
- * `font-style` (italic). */
+ * mechanism as `color`, or falls back to `false` with no parent), `border`
+ * (NOVO v4: shorthand only -- width/style/color, order-free, each optional;
+ * see tbox_style_border_style and ARCHITECTURE.md's v4 Style section for the
+ * exact per-token classification; `border-top`/`-right`/`-bottom`/`-left`
+ * and the longhands `border-width`/`border-style`/`border-color` are out of
+ * scope, as is any `border-style` besides `solid`/`none`), `position`
+ * (NOVO v4: only `static`/`relative`, case-insensitive; any other value --
+ * including `absolute`/`fixed`/`sticky`, out of scope -- falls back to the
+ * initial value `STATIC`, same posture as `display` since v0), `top`,
+ * `right`, `bottom`, `left` (NOVO v4: same length parser as `width`/
+ * `margin` -- `auto`, px, or `%` -- only meaningful when `position:
+ * relative`, but always resolved regardless of `position`). Out of scope:
+ * `float`, flex/grid, `z-index`, `position: absolute/fixed/sticky`,
+ * `white-space` (v0 always behaves as `white-space: normal`), `font-style`
+ * (italic). */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 
 typedef struct tbox_style_entry {
