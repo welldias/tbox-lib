@@ -251,8 +251,7 @@ static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const ch
 }
 
 tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height) {
-    tbox_ua_style_config unused_config; /* never read: use_config == false below */
-    memset(&unused_config, 0, sizeof(unused_config));
+    tbox_ua_style_config unused_config = { 0 };
     return tbox_app_create_from_files_impl(html_path, css_path, width, height, false, unused_config);
 }
 

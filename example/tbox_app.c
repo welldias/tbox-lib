@@ -302,11 +302,13 @@ int main(void) {
      * out of its userdata to unbind itself after firing once. */
     int unbind_target_binding = -1;
 
-    bool ok = tbox_app_demo_register(app, ".box", on_box_click, NULL, NULL) && tbox_app_demo_register(app, ".bubble-inner", on_bubble_inner_click, NULL, NULL) && tbox_app_demo_register(app, ".bubble-outer", on_bubble_outer_click, NULL, NULL) && tbox_app_demo_register(app, ".stop-inner", on_stop_inner_click, NULL, NULL) && tbox_app_demo_register(app, ".stop-outer", on_stop_outer_click, NULL, NULL) && tbox_app_demo_register(app, ".unbind-target", on_unbind_target_click, &unbind_target_binding, &unbind_target_binding) && tbox_app_demo_register(app, ".rename-target", on_rename_target_click, NULL, NULL);
-    if (!ok) {
-        tbox_app_close(app);
-        return 1;
-    }
+    tbox_app_demo_register(app, ".box", on_box_click, NULL, NULL);
+    tbox_app_demo_register(app, ".bubble-inner", on_bubble_inner_click, NULL, NULL);
+    tbox_app_demo_register(app, ".bubble-outer", on_bubble_outer_click, NULL, NULL);
+    tbox_app_demo_register(app, ".stop-inner", on_stop_inner_click, NULL, NULL);
+    tbox_app_demo_register(app, ".stop-outer", on_stop_outer_click, NULL, NULL);
+    tbox_app_demo_register(app, ".unbind-target", on_unbind_target_click, &unbind_target_binding, &unbind_target_binding);
+    tbox_app_demo_register(app, ".rename-target", on_rename_target_click, NULL, NULL);
 
     struct timespec start_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
