@@ -401,3 +401,44 @@ body {
 .v7-entities {
     background-color: lightcyan;
 }
+
+/* v8: numbered list demo (see the HTML comment on the <ol> above). Same
+ * shape as .v6-li-one/-two/-three (explicit width/height, since <li> has
+ * no element children and no auto-height would otherwise apply) with
+ * three strongly contrasting colors, distinct from the <ul> demo's own
+ * palette so the two lists are never visually confused with each other. */
+.v8-ol-one {
+    width: 260px;
+    height: 40px;
+    background-color: springgreen;
+}
+
+.v8-ol-two {
+    width: 260px;
+    height: 40px;
+    background-color: deeppink;
+}
+
+.v8-ol-three {
+    width: 260px;
+    height: 40px;
+    background-color: darkorange;
+}
+
+/* v8: `em` resolved against the element's OWN font-size, not the
+ * inherited one (see the HTML comment on .v8-em-margin). font-size: 20px
+ * here is deliberately different from body's inherited 16px -- margin:
+ * 2em must resolve to 40px (2 x this element's OWN 20px, not 32px, which
+ * is what 2 x the inherited 16px would give), and padding: 1em must
+ * resolve to 20px (1 x this element's own 20px). width/height give the
+ * content box itself a visible footprint independent of its text, and
+ * the high-contrast background makes both the box and the margin/padding
+ * space around it easy to measure directly off the screenshot. */
+.v8-em-margin {
+    width: 220px;
+    height: 60px;
+    font-size: 20px;
+    margin: 2em;
+    padding: 1em;
+    background-color: crimson;
+}

@@ -987,7 +987,12 @@ int tbox_test_layout_run(void) {
 
     /* 29: NOVO v7 -- <ul><li>oi mundo</li></ul>: <li> is now on the fixed
      * text-tag list, so its box gets the same text-box treatment as a <p>
-     * (see test 5) -- one merged run whose text is exactly "oi mundo". */
+     * (see test 5). NOVO v8: tbox_layout_push_list_marker now prepends the
+     * bullet "•" (U+2022) as the FIRST word of this <li> (its direct parent
+     * is <ul>), so the merged run (marker + "oi" + "mundo" all share the
+     * <li>'s own face, so they land in a single run, same as before) is now
+     * "• oi mundo", not "oi mundo" -- an intentional v8 behavior change, see
+     * ARCHITECTURE.md "v8 -- Layout Tree -- marcador de <li>". */
     {
         tbox_html_document *doc    = parse_html_cstr("<ul><li>oi mundo</li></ul>");
         const tbox_html_node *root = tbox_html_document_root(doc);
@@ -1004,9 +1009,9 @@ int tbox_test_layout_run(void) {
             TBOX_TEST_ASSERT_MSG(li_box != NULL, "<ul> must have the <li> as its first child box");
             if (li_box != NULL) {
                 TBOX_TEST_ASSERT_MSG(li_box->node != NULL && string_view_equal_cstr(li_box->node->element.tag_name, "li"), "test setup: first child box must be the <li>");
-                TBOX_TEST_ASSERT_MSG(li_box->text_run_count == 1, "<li> is on the fixed text-tag list now -- \"oi mundo\" must fit on a single run");
+                TBOX_TEST_ASSERT_MSG(li_box->text_run_count == 1, "<li> is on the fixed text-tag list now -- \"\xE2\x80\xA2 oi mundo\" must fit on a single run (marker + text share the same face)");
                 if (li_box->text_run_count == 1) {
-                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(li_box->text_runs[0].text, "oi mundo"), "the <li>'s run must contain its full text content");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(li_box->text_runs[0].text, "\xE2\x80\xA2 oi mundo"), "NOVO v8: the <li>'s run must be prefixed with the bullet marker ahead of its own text content");
                 }
             }
         }
@@ -1018,7 +1023,9 @@ int tbox_test_layout_run(void) {
 
     /* 30: NOVO v7 -- <ul><li>um</li><li>dois</li><li>três</li></ul>: three
      * sibling <li> boxes, each with its OWN text_run_count == 1 and its own
-     * correct text -- not a single box with the three words concatenated. */
+     * correct text -- not a single box with the three words concatenated.
+     * NOVO v8: each <li>'s single run is now prefixed with the bullet
+     * marker (its direct parent is <ul>) ahead of its own word. */
     {
         tbox_html_document *doc    = parse_html_cstr("<ul><li>um</li><li>dois</li><li>três</li></ul>");
         const tbox_html_node *root = tbox_html_document_root(doc);
@@ -1042,9 +1049,9 @@ int tbox_test_layout_run(void) {
                 TBOX_TEST_ASSERT_MSG(second->text_run_count == 1, "second <li> must have its own single run");
                 TBOX_TEST_ASSERT_MSG(third->text_run_count == 1, "third <li> must have its own single run");
                 if (first->text_run_count == 1 && second->text_run_count == 1 && third->text_run_count == 1) {
-                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(first->text_runs[0].text, "um"), "first <li>'s text must not include the other items' words");
-                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(second->text_runs[0].text, "dois"), "second <li>'s text must be its own, not concatenated");
-                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(third->text_runs[0].text, "três"), "third <li>'s text must be its own, not concatenated");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(first->text_runs[0].text, "\xE2\x80\xA2 um"), "NOVO v8: first <li>'s run must be prefixed with the bullet marker, and must not include the other items' words");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(second->text_runs[0].text, "\xE2\x80\xA2 dois"), "NOVO v8: second <li>'s text must be its own (with its own bullet), not concatenated");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(third->text_runs[0].text, "\xE2\x80\xA2 três"), "NOVO v8: third <li>'s text must be its own (with its own bullet), not concatenated");
                 }
             }
         }
@@ -1072,6 +1079,199 @@ int tbox_test_layout_run(void) {
         if (ul_box != NULL) {
             TBOX_TEST_ASSERT_MSG(ul_box->text_run_count == 0, "<ul> must not become a text tag just because Tarefa 1 added <li> to the list");
             TBOX_TEST_ASSERT(ul_box->text_runs == NULL);
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 32: NOVO v8 -- <ul><li>um</li></ul>: the marker word ("•") and the
+     * <li>'s own word ("um") share the exact same face (the <li>'s own,
+     * since no CSS is declared) -- tbox_layout_build_line_runs only starts a
+     * new run when the face changes, so in practice they land in a SINGLE
+     * merged run, "\xE2\x80\xA2 um", not two separate text_runs. Verified
+     * against the actual code behavior (not assumed) -- see the sibling
+     * comment on test 29 above for the same reasoning applied there. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<ul><li>um</li></ul>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(ul_box != NULL);
+        if (ul_box != NULL) {
+            tbox_layout_box *li_box = ul_box->first_child;
+            TBOX_TEST_ASSERT_MSG(li_box != NULL, "<ul> must have the <li> as its first child box");
+            if (li_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(li_box->text_run_count == 1, "marker + \"um\" share the same face -- they must merge into a single run");
+                if (li_box->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(li_box->text_runs[0].text, "\xE2\x80\xA2 um"), "the <li>'s only run must begin with the bullet marker, followed by its own text");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 33: NOVO v8 -- <ol><li>um</li><li>dois</li><li>três</li></ol>: each
+     * <li>'s marker is "N." where N counts <li> siblings of the same <ol> in
+     * document order, 1-based, never restarting -- "1.", "2.", "3." in that
+     * exact order. Same face-merging behavior as test 32 above, so each
+     * <li> still produces a single run. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<ol><li>um</li><li>dois</li><li>três</li></ol>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *ol_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(ol_box != NULL);
+        if (ol_box != NULL) {
+            tbox_layout_box *first  = ol_box->first_child;
+            tbox_layout_box *second = first != NULL ? first->next_sibling : NULL;
+            tbox_layout_box *third  = second != NULL ? second->next_sibling : NULL;
+            TBOX_TEST_ASSERT_MSG(first != NULL && second != NULL && third != NULL, "<ol> must have three <li> sibling boxes");
+            if (first != NULL && second != NULL && third != NULL) {
+                TBOX_TEST_ASSERT_MSG(first->text_run_count == 1 && second->text_run_count == 1 && third->text_run_count == 1, "each <ol> <li> must have its own single merged run");
+                if (first->text_run_count == 1 && second->text_run_count == 1 && third->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(first->text_runs[0].text, "1. um"), "first <li> must be numbered \"1.\", not reset or skipped");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(second->text_runs[0].text, "2. dois"), "second <li> must be numbered \"2.\", incrementing from the first");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(third->text_runs[0].text, "3. três"), "third <li> must be numbered \"3.\", incrementing from the second");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 34: NOVO v8 -- <ul><li></li></ul>, an EMPTY <li>: intentional
+     * behavior change from v7 -- an empty text-tag box used to have
+     * word_count == 0 and thus text_run_count == 0 (the "no words at all"
+     * path in tbox_layout_build_text_runs). Now the marker itself is a
+     * word, so the <li> has word_count == 1 (just "•") and takes the normal
+     * line-breaking path, producing text_run_count == 1 -- a single run
+     * containing only the bullet. This matches a real browser (an empty
+     * <li></li> still shows an empty bullet), and is NOT a bug to "fix" by
+     * preserving the old text_run_count == 0. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<ul><li></li></ul>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(ul_box != NULL);
+        if (ul_box != NULL) {
+            tbox_layout_box *li_box = ul_box->first_child;
+            TBOX_TEST_ASSERT_MSG(li_box != NULL, "<ul> must have the empty <li> as its first child box");
+            if (li_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(li_box->text_run_count == 1, "NOVO v8: an empty <li> inside <ul> must now have text_run_count == 1 (just the marker), not 0 like v7");
+                if (li_box->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(li_box->text_runs[0].text, "\xE2\x80\xA2"), "the empty <li>'s only run must be the bare bullet marker, no trailing text");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 35: NOVO v8 regression -- <p>texto</p> continues with NO marker at
+     * all: <li> is the only tag list_marker ever touches, so a <p> (also on
+     * the fixed text-tag list, see tbox_layout_is_text_tag) must render its
+     * text exactly as before, unprefixed. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>texto</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "<p>texto</p> must still produce a single run");
+            if (box->text_run_count == 1) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "texto"), "NOVO v8 regression: <p> must never gain a list marker -- text must be exactly \"texto\"");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 36: NOVO v8 regression -- <h1>texto</h1> continues with NO marker,
+     * same reasoning as test 35 above but for another fixed text tag. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<h1>texto</h1>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "<h1>texto</h1> must still produce a single run");
+            if (box->text_run_count == 1) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "texto"), "NOVO v8 regression: <h1> must never gain a list marker -- text must be exactly \"texto\"");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 37: NOVO v8 regression -- <div><li>solto</li></div>: a <li> whose
+     * DIRECT parent is neither <ul> nor <ol> (here, a <div>) must get NO
+     * marker at all -- deliberate simplification documented in
+     * ARCHITECTURE.md's "v8 -- Escopo" (a loose/malformed <li> is not
+     * treated as "always disc" the way real CSS does). The <li> itself is
+     * still on the fixed text-tag list (tbox_layout_is_text_tag doesn't
+     * care about the parent), so it still gets a text box -- just without a
+     * marker prefix. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><li>solto</li></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *li_box = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(li_box != NULL, "<div> must have the <li> as its first child box");
+            if (li_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(li_box->text_run_count == 1, "a loose <li> (parent isn't <ul>/<ol>) must still get a text box, just no marker");
+                if (li_box->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(li_box->text_runs[0].text, "solto"), "NOVO v8 regression: a <li> whose direct parent is not <ul>/<ol> must get NO marker prefix");
+                }
+            }
         }
 
         tbox_arena_destroy(&arena);

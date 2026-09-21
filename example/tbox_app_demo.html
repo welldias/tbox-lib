@@ -46,14 +46,46 @@
        .v6-li-one/-two/-three's three alternating background colors are
        the container proof (three separate sibling boxes, not one <li>
        nesting the other two), and the "item N" text itself is now the
-       text-rendering proof, same as any other text tag. tbox still has no
-       list-style/marker support (no bullets/numbers) -- kept class names
-       are v6-prefixed since they predate v7 and no rename was needed. -->
+       text-rendering proof, same as any other text tag. v8 adds list
+       markers (Layout Tree's tbox_layout_push_list_marker): each <li>
+       below now also shows a real "•" bullet as the first word of its
+       own text, before "item N" -- no HTML/CSS change needed for that,
+       the marker comes from the Layout Tree purely because the parent is
+       <ul>. Kept class names are v6-prefixed since they predate v7/v8 and
+       no rename was needed. -->
   <ul>
     <li class="v6-li-one">item 1 (li implícito)
     <li class="v6-li-two">item 2 (li implícito)
     <li class="v6-li-three">item 3 (li implícito)
   </ul>
+
+  <!-- v8: numbered list demo (<ol>), same implicit-</li>-closing pattern
+       as the <ul> above (no <li> below has an explicit closing tag --
+       opening the next <li> implicitly closes the previous one). Each
+       item's own text is prefixed with "1.", "2.", "3." by
+       tbox_layout_push_list_marker, since the parent here is <ol> instead
+       of <ul> -- the number comes from counting <li> siblings in document
+       order, not from a CSS counter. Three strongly contrasting colors,
+       same rationale as .v6-li-one/-two/-three, prove these are three
+       separate sibling boxes and make the sequential numbering easy to
+       read off the screenshot. -->
+  <ol>
+    <li class="v8-ol-one">item um (ol implícito)
+    <li class="v8-ol-two">item dois (ol implícito)
+    <li class="v8-ol-three">item três (ol implícito)
+  </ol>
+
+  <!-- v8: `em` resolved against the element's OWN font-size demo (not the
+       inherited/parent one). This element declares font-size: 20px
+       (different from body's inherited 16px) and margin: 2em -- the
+       resolved margin must be 40px (2 x this element's OWN 20px), not
+       32px (2 x the inherited 16px) and not the padding/margin of any
+       ancestor. padding: 1em on the same element must resolve to 20px (1
+       x its own 20px) for the same reason. A high-contrast background
+       plus explicit width/height make the box and its surrounding
+       spacing easy to measure directly off the screenshot. -->
+  <div class="v8-em-margin">v8: font-size 20px próprio, margin 2em (=40px) e padding 1em (=20px), ambos contra o
+    PRÓPRIO font-size, não o do body (16px).</div>
 
   <!-- v6: entity decoding demo -- &amp;, &nbsp;, &mdash;, &copy; and a
        numeric reference (&#233;, "é") mixed into one paragraph. The

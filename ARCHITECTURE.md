@@ -2292,23 +2292,18 @@ algum dos três — nenhum indício disso até agora.
 **Toca:** HTML Parser (`tbox_html_entities.c`).
 
 ### Marcadores visuais e estilos padrão de listas (`<ul>`/`<ol>`/`<li>`)
-**O que é:** a v7 faz o texto de `<li>` renderizar (ver seção "v7" acima),
-mas sem marcador (bullet `•` pra `<ul>`, número `N.` pra `<ol>`) e sem os
-estilos padrão de user-agent que browsers reais aplicam a listas
-(`margin`/`padding-left` que recuam o conteúdo). Hoje uma lista renderiza
-como uma pilha de blocos de texto sem indentação nem marcador nenhum.
-**Por que importa:** visualmente, uma lista sem marcador nem indentação
-não parece uma lista — cosmético, mas é a diferença mais perceptível
-entre o que tbox renderiza hoje pra esse HTML e o que qualquer browser
-real mostra.
-**Gatilho para revisitar:** quando fidelidade visual de lista importar
-pra um caso de uso real. Nesse ponto: indentação é só mais duas
-declarações na UA stylesheet (`margin`/`padding-left` em `ul`/`ol`, ver
-`tbox_ua_style_generate_css`); marcador exige desenhar um
-caractere/numeral antes do texto de cada `<li>` na Render Pipeline (ou um
-`::marker` simplificado, mecanismo próprio, mais trabalho).
-**Toca:** CSS Cascade/Orchestration (UA stylesheet), Layout Tree
-(geometria do marcador), Render Pipeline (desenhar o marcador).
+**Resolvido na v8.** `<li>` agora ganha marcador (bullet `•`/número `N.`,
+como prefixo do próprio texto — ver seção "v8" abaixo) e `<ul>`/`<ol>`
+ganham `margin`/`padding-left` padrão via UA stylesheet. **O que continua
+em aberto:** `list-style-type` como propriedade CSS de verdade (autor não
+consegue trocar bullet por `circle`/`square`/`none` etc. — sempre o
+padrão fixo por tag), uma marker box separada de verdade (hoje é só texto
+prefixado, sem hanging indent real — ver "Decisões já tomadas (v8)"),
+listas aninhadas (mesma limitação de `tbox_html_node_text_content` já
+registrada na v7). Nenhum desses tem gatilho concreto de revisita — só se
+um caso de uso real pedir.
+**Toca:** CSS Cascade/Orchestration (UA stylesheet), Layout Tree (a
+palavra do marcador).
 
 ### Unidades relativas a fonte (`em`, `%` de `font-size`) na Style layer
 **O que é:** resolver `font-size` e valores em `em`/`%` de fonte exige uma
@@ -2330,13 +2325,19 @@ em vez de global).
 resolve `em`/`%`/`px` de `font-size` contra o `font_size` do pai já
 resolvido (ver seção "v2 — Fidelidade Visual" → "Style"), e a Fonte/Texto
 carrega faces sob demanda por (peso, tamanho) via `tbox_font_face_cache`,
-não mais uma única face fixa pro documento. **O que continua em aberto:**
-`em`/`%` em qualquer OUTRA propriedade (`width`, `margin`, `padding`,
-...) — a v2 evita isso de propósito nas margens da UA stylesheet
-(aproximadas em `px` fixo) para não ter que generalizar `em` em
-`tbox_style_length`. Gatilho pra revisitar isso continua em aberto: só
-quando alguma necessidade real empurrar (CSS de autor com `margin: 1em`,
-por exemplo).
+não mais uma única face fixa pro documento.
+
+**`em` em outras propriedades resolvido na v8** (ver seção "v8" abaixo) —
+`width`/`height`/`margin`/`padding`/`top`/`right`/`bottom`/`left` agora
+aceitam `em`, resolvido contra o `font-size` já computado do PRÓPRIO nó
+(não o do pai — regra diferente de `font-size: Nem`, que é sempre contra o
+pai). `%` nessas mesmas propriedades já funcionava desde antes da v8
+(resolvido contra o containing block, no Layout Tree — não precisou de
+mudança). **O que continua em aberto:** `em`/`%` em `border-width` (parser
+próprio, separado de `tbox_style_parse_length`, só aceita `px` — ver "v8"
+→ "Fora de escopo"); `rem` (relativo à raiz do documento, não ao pai/nó —
+nenhuma das duas noções existe aqui) em propriedade nenhuma. Gatilho pra
+revisitar qualquer um dos dois: só quando um caso de uso real pedir.
 
 ### Modelo de invalidação (dirty-tracking) do pipeline
 **O que é:** como a Orchestration evita recomputar Style → Layout → Render →
@@ -3043,10 +3044,190 @@ consumidor ainda, adicionar quando houver.
   bit a bit dentro da própria chamada, sem tabela pré-computada guardada
   entre chamadas.
 
+## v8 — Marcadores de lista + `em` em propriedades além de `font-size`
+
+Resolve dois débitos independentes entre si, cada um contido numa única
+camada: (1) `<ul>`/`<ol>`/`<li>` sem marcador nem indentação, registrado
+como débito na v7; (2) `em` fora de `font-size` (`width`, `margin`,
+`padding`, `top`/`right`/`bottom`/`left`) não suportado, débito registrado
+desde a v2. Nenhuma dependência entre as duas — (1) toca CSS Cascade (UA
+stylesheet) e Layout Tree; (2) toca só a Style layer. Critério de "pronto"
+no fim desta seção.
+
+Escopo desta versão, decidido nesta sessão:
+- **Marcador: prefixo de texto, não marker box separada** — "• " (bullet,
+  U+2022) ou "N. " (número, 1-based, contagem dos `<li>` irmãos diretos
+  do mesmo `<ul>`/`<ol>` em ordem de documento) é inserido como a PRIMEIRA
+  palavra do próprio texto do `<li>`, reaproveitando o pipeline de
+  palavras/quebra de linha que já existe desde a v2 (`tbox_layout_push_words`)
+  — nenhuma caixa nova, nenhum campo novo em `tbox_layout_box`, nenhuma
+  mudança no Render Pipeline. Não é pixel-perfect CSS (sem hanging indent
+  de verdade — se o texto do item quebra linha, a segunda linha começa
+  alinhada com o início do texto, não com a margem do marcador, diferente
+  de um browser real), mas visualmente já parece uma lista.
+- **`list-style-type`: só o padrão fixo por tag** — `<ul>` sempre bullet,
+  `<ol>` sempre número, decidido pelo tag name do PAI DIRETO do `<li>` (não
+  uma propriedade CSS herdável) — qualquer `list-style-type`/`list-style`
+  no CSS do autor é ignorado. Um `<li>` cujo pai direto não é `<ul>` nem
+  `<ol>` (HTML malformado, ou uso solto de `<li>`) não ganha marcador
+  nenhum — simplificação deliberada, não o "sempre disc" que o CSS real
+  usa nesse caso.
+- **`em` resolvido contra o `font-size` do PRÓPRIO nó**, não o do pai —
+  regra correta do CSS pra `em` em qualquer propriedade que não seja
+  `font-size` (que é a única exceção: resolve contra o pai). Resolvido
+  inteiramente na Style layer, sem precisar de um novo `TBOX_STYLE_LENGTH_EM`
+  na Layout Tree — como o `font-size` do nó já está calculado antes de
+  `width`/`margin`/`padding`/offsets nessa mesma passada, `em` vira `px`
+  ali mesmo (armazenado como `TBOX_STYLE_LENGTH_PX` de saída, igual a
+  qualquer valor que já nascesse em `px`).
+
+### Style — `em` em `width`/`height`/`margin`/`padding`/offsets
+
+`tbox_style_parse_length` (hoje só `auto`/`px`/`%`) ganha um parâmetro
+`double font_size` e um terceiro sufixo reconhecido:
+```c
+static bool tbox_style_parse_length(tbox_string_view raw, double font_size, tbox_style_length *out);
+```
+Um valor terminado em `"em"` (case-insensitive, mesma checagem de sufixo
+que `tbox_style_resolve_font_size` já faz) parseia o número antes do
+sufixo e escreve `out->kind = TBOX_STYLE_LENGTH_PX; out->value = font_size
+* number;` — resolvido imediatamente, não carregado como um "kind" novo
+adiante. `tbox_style_resolve_length_property` e
+`tbox_style_resolve_box_shorthand` (as duas únicas chamadoras de
+`tbox_style_parse_length`) ganham o mesmo parâmetro `font_size` e só
+repassam adiante.
+
+Em `tbox_style_resolve`: `style.font_size` precisa ser calculado ANTES de
+`width`/`height`/`margin`/`padding`/`offset` (hoje é calculado depois —
+ver a ordem atual da função) — reordena só isso, sem mudar nenhum dos
+cálculos em si. Todo call site de `tbox_style_resolve_length_property`/
+`tbox_style_resolve_box_shorthand` dentro de `tbox_style_resolve` passa
+`style.font_size` (já calculado) como o novo argumento.
+
+**Fora de escopo:** `em`/`%` em `border-width` (parser próprio dentro de
+`tbox_style_resolve_border`, inteiramente separado de
+`tbox_style_parse_length`, só aceita `px` — generalizar isso é um débito à
+parte, não tocado aqui); `rem` (não existe noção de "elemento raiz" com
+tratamento especial neste engine — todo `em` é sempre contra o nó mais
+próximo, nunca a raiz do documento).
+
+### Layout Tree — marcador de `<li>`
+
+Uma função nova, chamada de dentro de `tbox_layout_build_text_runs`
+(`src/layout/tbox_layout.c`) logo depois de `tbox_vector_init(&words, ...)`
+e ANTES de `tbox_layout_collect_words`:
+```c
+static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words);
+```
+No-op imediato a menos que `node` seja um elemento `<li>` cujo
+`node->parent` seja `<ul>` ou `<ol>`. Pra `<ul>`: empurra "•" (U+2022, 3
+bytes UTF-8) via `tbox_layout_push_words` — a mesma função que qualquer
+palavra de texto normal usa, então o marcador ganha `space_width`/quebra
+de linha idênticos a uma palavra real, sem código de raster novo. Pra
+`<ol>`: conta os `<li>` irmãos diretos do mesmo pai, em ordem de documento,
+até (e incluindo) `node` — esse contador vira `"N."` (via `snprintf` num
+buffer pequeno, copiado pra dentro de `arena` já que `tbox_layout_word.text`
+precisa apontar pra memória que sobrevive ao resto do frame, não pra uma
+variável de pilha) — empurrado do mesmo jeito. A face usada é a do próprio
+`<li>` (`tbox_font_face_cache_get(fonts, style->font_weight_bold,
+style->font_size)`, mesma chamada que `tbox_layout_collect_words` já faz
+pros nós TEXT diretos do elemento) — o marcador nunca herda peso/tamanho
+de um `<b>`/`<em>` aninhado, sempre a face do `<li>` em si.
+
+**Por que isso faz o `<li>` vazio (`word_count == 0` hoje) deixar de cair
+no caso "sem palavra nenhuma"?** Um `<li>` sem texto próprio, mas dentro de
+`<ul>`/`<ol>`, agora tem pelo menos UMA palavra (o marcador) — cai no
+caminho normal de quebra de linha, produzindo uma linha só com o marcador.
+Isso é uma mudança de comportamento observável (antes: `text_run_count ==
+0` pra um `<li>` vazio; agora: `1`) — mas é o comportamento correto (um
+`<li></li>` real também mostra o bullet vazio num browser).
+
+### CSS Cascade / Orchestration — UA stylesheet de `<ul>`/`<ol>`/`<li>`
+
+`tbox_ua_style_config` (`include/tbox/context.h`) ganha dois campos novos:
+```c
+typedef struct tbox_ua_style_margin_config {
+    double heading_px[6];
+    double paragraph_px;
+    double body_px;
+    double list_px; /* NOVO v8: margin (top/bottom) de <ul>/<ol> */
+} tbox_ua_style_margin_config;
+
+typedef struct tbox_ua_style_config {
+    tbox_ua_style_font_config font;
+    tbox_ua_style_margin_config margin;
+    double list_padding_left_px; /* NOVO v8: indentação de <ul>/<ol> -- não é "margin", por isso fora de tbox_ua_style_margin_config */
+} tbox_ua_style_config;
+```
+`tbox_ua_style_config_default()` preenche `margin.list_px = 16.0` (mesmo
+valor de `paragraph_px` — 1em no `base_px` padrão de 16px, aproximado em
+`px` fixo, mesmo racional já usado pra todo outro valor desta struct) e
+`list_padding_left_px = 40.0` (valor clássico de todo browser real).
+`tbox_ua_style_generate_css` (`src/context/tbox_context.c`) ganha duas
+linhas no template:
+```c
+"ul, ol { display: block; margin: %gpx 0px; padding: 0px 0px 0px %gpx; }\n"
+"li { display: block; }\n"
+```
+O `padding-left` é escrito como o shorthand `padding` de 4 valores (`0 0 0
+N`), não como a longhand `padding-left` — `tbox_style_resolve` só lê a
+propriedade `"padding"` (shorthand) hoje, então uma declaração
+`padding-left` isolada seria simplesmente ignorada (mesma armadilha já
+documentada pro `margin: ... 0` sem unidade, na v2). `li { display: block;
+}` é redundante com o valor inicial (`BLOCK` já é o default de
+`tbox_style_resolve` pra qualquer elemento), mas segue a mesma convenção
+já usada por `div { display: block; }` no template — explícito por
+clareza, não por necessidade.
+
+**Fora de escopo:** `list-style-position` (`inside`/`outside` — sempre um
+comportamento fixo, já que não existe marker box separada pra posicionar);
+`::marker` como pseudo-elemento de verdade (cor/fonte próprios,
+independente do texto do `<li>` — hoje o marcador sempre herda a mesma
+face do `<li>`).
+
+### Fatia vertical v8 — critério de "pronto"
+
+Um app tbox que:
+- exibe uma lista `<ul><li>um<li>dois<li>três</ul>` (reaproveitando o
+  fechamento implícito da v6) com CADA item mostrando um bullet "•" antes
+  do texto, e a lista inteira visivelmente recuada (indentada) em relação
+  ao texto ao redor;
+- exibe uma lista `<ol><li>um<li>dois<li>três</ol>` com cada item mostrando
+  "1.", "2.", "3." (nessa ordem, sem pular número) antes do texto;
+- exibe uma propriedade CSS de autor usando `em` numa propriedade que não
+  seja `font-size` (ex.: `margin: 2em;` ou `padding: 1.5em;` num elemento
+  com `font-size` diferente do herdado do pai) e o resultado em pixels
+  bate com `font-size do PRÓPRIO elemento × o número` — não o do pai;
+- continua sem regredir nada de v0-v7 (inclusive a demo de `<li>` da v7,
+  que agora deve mostrar bullet além do texto).
+
+## Decisões já tomadas (v8)
+
+- **Marcador é texto prefixado, não marker box** — reaproveita o pipeline
+  de palavras da v2 inteiro, sem tocar Render Pipeline nem adicionar campo
+  novo a `tbox_layout_box`. Trade-off aceito: sem hanging indent real.
+- **`list-style-type` fixo por tag do pai direto**, sem virar propriedade
+  CSS — `<li>` fora de `<ul>`/`<ol>` não ganha marcador algum.
+- **`em` sempre contra o `font-size` do próprio nó**, nunca do pai (exceto
+  `font-size` em si, que continua sendo a única propriedade cujo `em`
+  resolve contra o PAI — comportamento inalterado desde a v2).
+- **Sem `TBOX_STYLE_LENGTH_EM` novo** — `em` resolve pra `px` dentro da
+  própria Style layer, reaproveitando o `kind` `PX` já existente; só `%`
+  continua precisando ser resolvido tarde (Layout Tree), porque só `%`
+  depende de algo que a Style layer não conhece (o containing block).
+- **`padding-left` da UA stylesheet via shorthand de 4 valores**, não uma
+  longhand nova — evita ensinar `tbox_style_resolve` a entender
+  `padding-left`/`margin-left`/etc. como propriedades próprias nesta
+  versão.
+- **Sem novo estado global/estático** — a função de marcador é pura (lê a
+  árvore de nós + arena do frame, escreve só no vetor de palavras que já é
+  parâmetro); os dois campos novos de `tbox_ua_style_config` são
+  configuração passada por valor, não estado global.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3, v4, v5, v6 e v7 (registrada nas seções de
+fechada para v0, v1, v2, v3, v4, v5, v6, v7 e v8 (registrada nas seções de
 cada camada), pra "Ferramentas de desenvolvimento — captura de tela
 headless" acima (não uma versão da escada, mas com o mesmo nível de
 decisão documentada), ou consolidada como débito de design conhecido

@@ -49,12 +49,17 @@ static bool tbox_style_parse_number(tbox_string_view text, double *out_value) {
     return true;
 }
 
-/* Parses a <length> the way v0 scopes it: the keyword "auto", a bare number
- * followed by "px", or a bare number followed by "%". No em/rem (out of
- * scope until the font/text layer exists) -- anything else, including a
+/* Parses a <length> the way v0 scopes it, extended by v8 with "em": the
+ * keyword "auto", a bare number followed by "px", a bare number followed by
+ * "%", or (NOVO v8) a bare number followed by "em" -- resolved immediately
+ * against `font_size` (the caller's own node, already computed earlier in
+ * tbox_style_resolve -- see ARCHITECTURE.md's v8 Style section for why this
+ * is the own node's font-size, not the parent's, unlike `font-size: em`
+ * itself) into a plain TBOX_STYLE_LENGTH_PX. Still no rem (out of scope --
+ * no "root element" notion in this engine) -- anything else, including a
  * bare unitless number, fails so the caller can fall back to the initial
  * value, same as an undeclared property. */
-static bool tbox_style_parse_length(tbox_string_view raw, tbox_style_length *out) {
+static bool tbox_style_parse_length(tbox_string_view raw, double font_size, tbox_style_length *out) {
     tbox_string_view text = tbox_style_trim(raw);
     if (text.size == 0) {
         return false;
@@ -85,6 +90,15 @@ static bool tbox_style_parse_length(tbox_string_view raw, tbox_style_length *out
             }
             out->kind  = TBOX_STYLE_LENGTH_PX;
             out->value = value;
+            return true;
+        }
+        if (tbox_string_view_equal_ascii_ci(suffix, tbox_string_view_from_cstr("em"))) {
+            double value;
+            if (!tbox_style_parse_number(tbox_string_view_make(text.data, text.size - 2), &value)) {
+                return false;
+            }
+            out->kind  = TBOX_STYLE_LENGTH_PX;
+            out->value = font_size * value;
             return true;
         }
     }
@@ -193,7 +207,7 @@ static bool tbox_style_split_box_shorthand(tbox_string_view text, tbox_string_vi
  * single token failing to parse as a <length> -- leaves `out` untouched, so
  * the caller can pre-fill it with the initial value (0px on every side)
  * before calling this. */
-static bool tbox_style_resolve_box_shorthand(const tbox_css_computed_style *computed, const char *property, tbox_style_length out[4]) {
+static bool tbox_style_resolve_box_shorthand(const tbox_css_computed_style *computed, const char *property, double font_size, tbox_style_length out[4]) {
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(property));
     if (decl == NULL) {
         return false;
@@ -207,7 +221,7 @@ static bool tbox_style_resolve_box_shorthand(const tbox_css_computed_style *comp
 
     tbox_style_length parsed[4];
     for (size_t i = 0; i < count; i++) {
-        if (!tbox_style_parse_length(tokens[i], &parsed[i])) {
+        if (!tbox_style_parse_length(tokens[i], font_size, &parsed[i])) {
             return false;
         }
     }
@@ -310,12 +324,12 @@ static tbox_style_position tbox_style_resolve_position(const tbox_css_computed_s
     return TBOX_STYLE_POSITION_STATIC;
 }
 
-static tbox_style_length tbox_style_resolve_length_property(const tbox_css_computed_style *computed, const char *property) {
+static tbox_style_length tbox_style_resolve_length_property(const tbox_css_computed_style *computed, const char *property, double font_size) {
     tbox_style_length result                  = { TBOX_STYLE_LENGTH_AUTO, 0.0 };
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(property));
     if (decl != NULL) {
         tbox_style_length parsed;
-        if (tbox_style_parse_length(decl->value, &parsed)) {
+        if (tbox_style_parse_length(decl->value, font_size, &parsed)) {
             result = parsed;
         }
     }
@@ -338,8 +352,17 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         }
     }
 
-    style.width  = tbox_style_resolve_length_property(computed, "width");
-    style.height = tbox_style_resolve_length_property(computed, "height");
+    /* font-size: NOVO v2. Inheritable through the parent's already-resolved
+     * value (not re-parsed); falls back to the CSS2.1-ish 16px initial
+     * value with no parent -- same default already used by Fonte/Texto
+     * since v0. MOVIDO v8: precisa ser calculado antes de
+     * width/height/margin/padding/offset, já que `em` nessas propriedades
+     * (NOVO v8) resolve contra este mesmo `style.font_size`. */
+    double parent_font_size = (parent_style != NULL) ? parent_style->font_size : 16.0;
+    style.font_size         = tbox_style_resolve_font_size(computed, parent_font_size);
+
+    style.width  = tbox_style_resolve_length_property(computed, "width", style.font_size);
+    style.height = tbox_style_resolve_length_property(computed, "height", style.font_size);
 
     for (int i = 0; i < 4; i++) {
         style.margin[i].kind   = TBOX_STYLE_LENGTH_PX;
@@ -347,8 +370,8 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.padding[i].kind  = TBOX_STYLE_LENGTH_PX;
         style.padding[i].value = 0.0;
     }
-    tbox_style_resolve_box_shorthand(computed, "margin", style.margin);
-    tbox_style_resolve_box_shorthand(computed, "padding", style.padding);
+    tbox_style_resolve_box_shorthand(computed, "margin", style.font_size, style.margin);
+    tbox_style_resolve_box_shorthand(computed, "padding", style.font_size, style.padding);
 
     /* color: inheritable. Falls back to the parent's resolved color when
      * undeclared/unparsable and there is a parent, otherwise to opaque
@@ -379,13 +402,6 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.background_color.a = 0;
     }
 
-    /* font-size: NOVO v2. Inheritable through the parent's already-resolved
-     * value (not re-parsed); falls back to the CSS2.1-ish 16px initial
-     * value with no parent -- same default already used by Fonte/Texto
-     * since v0. */
-    double parent_font_size = (parent_style != NULL) ? parent_style->font_size : 16.0;
-    style.font_size         = tbox_style_resolve_font_size(computed, parent_font_size);
-
     /* font-weight: NOVO v2. Only the exact case-insensitive keyword "bold"
      * sets true; anything else (absent, "normal", 100-900, bolder/lighter
      * -- all out of scope) inherits the parent's already-resolved value,
@@ -411,10 +427,10 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
 
     /* position + offsets: NOVO v4. Not inheritable. */
     style.position  = tbox_style_resolve_position(computed);
-    style.offset[0] = tbox_style_resolve_length_property(computed, "top");
-    style.offset[1] = tbox_style_resolve_length_property(computed, "right");
-    style.offset[2] = tbox_style_resolve_length_property(computed, "bottom");
-    style.offset[3] = tbox_style_resolve_length_property(computed, "left");
+    style.offset[0] = tbox_style_resolve_length_property(computed, "top", style.font_size);
+    style.offset[1] = tbox_style_resolve_length_property(computed, "right", style.font_size);
+    style.offset[2] = tbox_style_resolve_length_property(computed, "bottom", style.font_size);
+    style.offset[3] = tbox_style_resolve_length_property(computed, "left", style.font_size);
 
     return style;
 }

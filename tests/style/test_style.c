@@ -535,5 +535,79 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 24: NOVO v8 -- "2em" in `width` resolves against the node's OWN
+     * already-computed font-size (2 x 20px = 40px), not the 16px default
+     * nor a parent's font-size (there is no parent here). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-size: 20px; width: 2em; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.width.kind == TBOX_STYLE_LENGTH_PX);
+        TBOX_TEST_ASSERT_MSG(style.width.value == 40.0, "width: 2em should resolve against the node's own font-size (20px), not the 16px default");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 25: NOVO v8 -- `em` in `margin` (any property other than font-size)
+     * resolves against the node's OWN font-size, not the parent's -- unlike
+     * `font-size: em`, which is the one exception that resolves against the
+     * parent. Here <div> has font-size 10px and <p> has font-size 30px;
+     * `p { margin: 1em; }` must use 30px, giving margin[0].value == 30.0,
+     * not 10.0. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-size: 10px; } p { font-size: 30px; margin: 1em; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.font_size == 10.0);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT(child_style.font_size == 30.0);
+        TBOX_TEST_ASSERT_MSG(child_style.margin[0].value == 30.0, "margin: 1em should resolve against the child's own font-size (30px), not the parent's (10px)");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 26: regression -- `width: 50%` and `margin: 10px` still resolve
+     * exactly as before adding `em` support (kind PERCENT/PX, values
+     * unchanged). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { width: 50%; margin: 10px; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.width.kind == TBOX_STYLE_LENGTH_PERCENT);
+        TBOX_TEST_ASSERT(style.width.value == 50.0);
+        TBOX_TEST_ASSERT(style.margin[0].kind == TBOX_STYLE_LENGTH_PX && style.margin[0].value == 10.0);
+        TBOX_TEST_ASSERT(style.margin[1].kind == TBOX_STYLE_LENGTH_PX && style.margin[1].value == 10.0);
+        TBOX_TEST_ASSERT(style.margin[2].kind == TBOX_STYLE_LENGTH_PX && style.margin[2].value == 10.0);
+        TBOX_TEST_ASSERT(style.margin[3].kind == TBOX_STYLE_LENGTH_PX && style.margin[3].value == 10.0);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 27: regression -- a value with an unrecognized unit (e.g. "2foo")
+     * still fails to parse and falls back to the initial value AUTO, same
+     * as before `em` support was added. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { width: 2foo; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.width.kind == TBOX_STYLE_LENGTH_AUTO, "an unrecognized unit should still fail to parse and fall back to AUTO");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

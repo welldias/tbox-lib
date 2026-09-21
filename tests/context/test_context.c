@@ -932,6 +932,72 @@ int tbox_test_context_run(void) {
         TBOX_TEST_ASSERT_MSG(miss == NULL, "a point inside neither the parent nor any child must return NULL");
     }
 
+    /* 28: NOVO v8 -- a <ul><li>x</li></ul> with no author CSS gets a
+     * vertical margin (UA: "ul, ol { margin: %gpx 0px; }", config.margin.
+     * list_px) AND a horizontal indentation (UA: "ul, ol { ... padding:
+     * 0px 0px 0px %gpx; }", config.list_padding_left_px) by default, same
+     * as every real browser. Hit-testing at a point that clears the <ul>'s
+     * own margin-top but stays INSIDE its padding-left gutter (x well below
+     * list_padding_left_px) must land on the <ul>'s own border_box, not the
+     * nested <li>'s -- the <li>'s border_box only starts at the <ul>'s
+     * content_box (i.e. past the padding-left), same reasoning test 17
+     * below uses for <p>'s margin, one level of nesting deeper. */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+
+        TBOX_TEST_ASSERT_MSG(default_config.list_padding_left_px > 5.0, "test setup assumption: x = 5.0 must fall inside the padding-left gutter (outside the nested <li>'s own box) for this hit-test to land on the <ul>");
+
+        tbox_context *ctx = open_cstr("<ul><li>x</li></ul>", "", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            const tbox_layout_box *ul_box = tbox_context_hit_test(ctx, 5.0, default_config.margin.list_px + 2.0);
+            TBOX_TEST_ASSERT_MSG(ul_box != NULL, "hit-testing just past the UA margin-top, inside the padding-left gutter, must land inside the <ul>'s own border_box");
+            if (ul_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(ul_box->node != NULL && string_view_equal_cstr(ul_box->node->element.tag_name, "ul"), "test setup assumption: the point picked (inside the padding-left gutter) must hit the <ul> box itself, not the nested <li>");
+                TBOX_TEST_ASSERT_MSG(ul_box->content_box.y - ul_box->margin_box.y == default_config.margin.list_px, "the <ul>'s content_box must sit exactly one UA list margin-top below its margin_box's top edge");
+                TBOX_TEST_ASSERT_MSG(ul_box->content_box.x - ul_box->border_box.x == default_config.list_padding_left_px, "the <ul>'s content_box must be indented from its border_box by exactly the UA list padding-left");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 29: regression -- a <p>/<h1> in isolation (no <ul>/<ol> anywhere)
+     * still resolve to exactly the same UA margin as before the v8
+     * ul/ol/li template lines and TBOX_UA_STYLE_CSS_BUFFER_SIZE bump were
+     * added -- proves growing the template/buffer didn't perturb the
+     * elements that already existed. Same assertions test 17 above already
+     * makes for <p> alone; repeated here (plus <h1>) explicitly as a
+     * regression check tied to this task's template/buffer change. */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+
+        tbox_context *p_ctx  = open_cstr("<p>oi</p>", "", fonts);
+        tbox_context *h1_ctx = open_cstr("<h1>oi</h1>", "", fonts);
+        TBOX_TEST_ASSERT_MSG(p_ctx != NULL && h1_ctx != NULL, "tbox_context_open must succeed for both documents");
+        if (p_ctx != NULL && h1_ctx != NULL) {
+            tbox_display_list p_list, h1_list;
+            tbox_context_run_frame(p_ctx, 800.0, 600.0, &p_list);
+            tbox_context_run_frame(h1_ctx, 800.0, 600.0, &h1_list);
+
+            const tbox_layout_box *p_box  = tbox_context_hit_test(p_ctx, 5.0, default_config.margin.paragraph_px + 2.0);
+            const tbox_layout_box *h1_box = tbox_context_hit_test(h1_ctx, 5.0, default_config.margin.heading_px[0] + 2.0);
+            TBOX_TEST_ASSERT_MSG(p_box != NULL && h1_box != NULL, "hit-testing just past each box's own UA margin-top must land inside its border_box");
+            if (p_box != NULL && h1_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(p_box->content_box.y - p_box->margin_box.y == default_config.margin.paragraph_px, "the <p>'s UA margin-top must be unchanged by the v8 template/buffer change");
+                TBOX_TEST_ASSERT_MSG(h1_box->content_box.y - h1_box->margin_box.y == default_config.margin.heading_px[0], "the <h1>'s UA margin-top must be unchanged by the v8 template/buffer change");
+                TBOX_TEST_ASSERT_MSG(p_box->content_box.x == p_box->border_box.x, "the <p>'s UA stylesheet declares no padding -- content_box and border_box must still align horizontally, unaffected by <ul>/<ol>'s new padding-left rule");
+                TBOX_TEST_ASSERT_MSG(h1_box->content_box.x == h1_box->border_box.x, "the <h1>'s UA stylesheet declares no padding -- content_box and border_box must still align horizontally, unaffected by <ul>/<ol>'s new padding-left rule");
+            }
+
+            tbox_context_close(p_ctx);
+            tbox_context_close(h1_ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

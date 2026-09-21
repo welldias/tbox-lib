@@ -76,16 +76,21 @@ typedef struct tbox_ua_style_margin_config {
     double heading_px[6]; /* same indexing as tbox_ua_style_font_config::heading_em */
     double paragraph_px;
     double body_px;
+    double list_px; /* NOVO v8: margin (top/bottom) of <ul>/<ol> -- same unit/semantics as paragraph_px */
 } tbox_ua_style_margin_config;
 
 typedef struct tbox_ua_style_config {
     tbox_ua_style_font_config font;
     tbox_ua_style_margin_config margin;
+    double list_padding_left_px; /* NOVO v8: <ul>/<ol> indentation (padding-left) -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, because it is a padding value, not a margin one, and that sub-struct is specifically for margin fields */
 } tbox_ua_style_config;
 
 /* The classic browser values ARCHITECTURE.md documents (heading em scale
  * 2/1.5/1.17/1/0.83/0.67 for h1..h6; heading margins, approximated in px,
- * 21/19/18/21/22/25; paragraph margin 16px; body margin 8px; base_px 16).
+ * 21/19/18/21/22/25; paragraph margin 16px; body margin 8px; base_px 16;
+ * NOVO v8: list margin (top/bottom of <ul>/<ol>) 16px, same as
+ * paragraph_px; list padding-left (indentation of <ul>/<ol>) 40px, the
+ * classic value used by every real browser).
  * Never fails, never allocates -- plain field assignment. */
 tbox_ua_style_config tbox_ua_style_config_default(void);
 

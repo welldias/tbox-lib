@@ -1,6 +1,8 @@
 #include <tbox/layout.h>
 
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
@@ -268,6 +270,76 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
     }
 }
 
+/* NOVO v8: prepends the <li> marker word (bullet or number), if any, as the
+ * FIRST entry of `words` -- called before tbox_layout_collect_words so the
+ * marker always lands ahead of the <li>'s own text. A no-op unless `node` is
+ * an ELEMENT `<li>` whose DIRECT parent is an ELEMENT `<ul>` or `<ol>` (see
+ * ARCHITECTURE.md "v8 -- Escopo": the marker kind is decided by the parent's
+ * tag name alone, never a CSS property, and a <li> outside <ul>/<ol> gets no
+ * marker at all). Reuses tbox_layout_push_words for the actual push --
+ * measuring/word-splitting the marker exactly like any other word, so it
+ * gets the same space_width/line-break treatment as real text, with no
+ * duplicated tbox_font_measure_text call here. */
+static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words) {
+    if (node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(node->element.tag_name, "li")) {
+        return;
+    }
+
+    const tbox_html_node *parent = node->parent;
+    if (parent == NULL || parent->type != TBOX_HTML_NODE_ELEMENT) {
+        return;
+    }
+
+    bool parent_is_ul = tbox_string_view_equal_cstr(parent->element.tag_name, "ul");
+    bool parent_is_ol = tbox_string_view_equal_cstr(parent->element.tag_name, "ol");
+    if (!parent_is_ul && !parent_is_ol) {
+        return;
+    }
+
+    /* The marker always uses the <li>'s OWN face -- never a nested <b>/<em>'s
+     * -- same call tbox_layout_collect_words already makes for the <li>'s
+     * direct TEXT children. */
+    const tbox_font_face *face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
+    if (face == NULL) {
+        return;
+    }
+
+    if (parent_is_ul) {
+        static const tbox_string_view bullet = { "\xE2\x80\xA2", 3 };
+        tbox_layout_push_words(words, bullet, face);
+        return;
+    }
+
+    /* <ol>: count this <li>'s direct <li> siblings (same parent), in
+     * document order, up to and including `node` itself -- a plain 1-based
+     * position, never restarting across sibling groups. */
+    size_t index = 0;
+    for (const tbox_html_node *sibling = parent->first_child; sibling != NULL; sibling = sibling->next_sibling) {
+        if (sibling->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(sibling->element.tag_name, "li")) {
+            index++;
+        }
+        if (sibling == node) {
+            break;
+        }
+    }
+
+    char buffer[24];
+    int written = snprintf(buffer, sizeof(buffer), "%zu.", index);
+    if (written <= 0) {
+        return;
+    }
+    size_t length = (size_t)written < sizeof(buffer) ? (size_t)written : sizeof(buffer) - 1;
+
+    /* `tbox_layout_word.text` must point at memory that outlives this call
+     * (the rest of the frame) -- `buffer` is a stack array, so the formatted
+     * number is copied into `arena` before becoming a tbox_string_view. */
+    char *copy = (char *)tbox_arena_alloc(arena, length);
+    memcpy(copy, buffer, length);
+
+    tbox_string_view number = tbox_string_view_make(copy, length);
+    tbox_layout_push_words(words, number, face);
+}
+
 /* Builds `box`'s text_runs/text_run_count (a leaf box, one of the fixed
  * text tags) and returns its content-box height: the sum of every line's
  * height (NOVO v2 -- replaces v0/v1's single fixed line height), or, for a
@@ -278,6 +350,7 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
 static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, double content_x, double content_y, double available_width, tbox_layout_box *box) {
     tbox_vector words;
     tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+    tbox_layout_push_list_marker(arena, node, style, fonts, &words);
     tbox_layout_collect_words(arena, node, style, styles, fonts, &words);
 
     size_t word_count = tbox_vector_length(&words);

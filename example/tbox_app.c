@@ -126,8 +126,14 @@
  * anything beyond the configured window height just never gets painted),
  * so this is bumped to 2100px, with headroom to spare, for the same reason
  * v2/v3/v5 each bumped it before: purely a window-size constant tracking
- * accumulated fixture content, not a layout-pipeline requirement. */
-#define TBOX_APP_DEMO_HEIGHT 2100
+ * accumulated fixture content, not a layout-pipeline requirement. v8 adds
+ * a numbered <ol> list (three more <li> boxes, same shape as the <ul>
+ * demo) plus a `margin`/`padding: em` demo element right after it -- a
+ * screenshot at 2100px again showed the bottom of the document (the
+ * .bubble-/.stop- pairs and the bottom-right-pinned `position: fixed` box)
+ * silently cropped off, so this is bumped to 2500px, same reasoning as
+ * every prior bump. */
+#define TBOX_APP_DEMO_HEIGHT 2500
 
 #ifndef TBOX_APP_DEMO_HTML_PATH
 #error "TBOX_APP_DEMO_HTML_PATH must be defined by the build (see example/CMakeLists.txt)"
