@@ -102,12 +102,14 @@
        the previous one (same truncation mechanism, "li" branch), and
        opening a *new* <li> also closes a still-open <p> if there were one.
        Produces three SIBLING <li> children of the same <ul>, not nested.
-       <li> isn't in Layout Tree's fixed text-tag list (h1-h6/p only), so
-       this text never actually renders -- it documents intent for anyone
-       reading the source, but the real visual proof is
-       .v6-li-one/-two/-three's three alternating background colors (see
-       tbox_app_demo.css), since tbox has no list-style/marker support to
-       show bullets or numbers. -->
+       v7 added "li" to Layout Tree's fixed text-tag list (h1-h6/p/li), so
+       each item's text now renders for real inside its own colored box --
+       .v6-li-one/-two/-three's three alternating background colors are
+       the container proof (three separate sibling boxes, not one <li>
+       nesting the other two), and the "item N" text itself is now the
+       text-rendering proof, same as any other text tag. tbox still has no
+       list-style/marker support (no bullets/numbers) -- kept class names
+       are v6-prefixed since they predate v7 and no rename was needed. -->
   <ul>
     <li class="v6-li-one">item 1 (li implícito)
     <li class="v6-li-two">item 2 (li implícito)
@@ -120,6 +122,17 @@
        "café", an em dash, a copyright sign, a plain space where &nbsp; is),
        never the literal entity syntax. -->
   <p class="v6-entities">v6: Tom &amp; Jerry tomam&nbsp;caf&#233; &mdash; tbox &copy; 2026</p>
+
+  <!-- v7: named-entity table demo, using entities OUTSIDE the ~23-name v6
+       set -- a symbol (&spades;), a Greek letter (&alpha;), and a
+       digit-in-name entity (&frac12;, the case that proves
+       tbox_html_parse_named_reference's name-scanner digit fix from
+       Tarefa 2). Same entities the automated tests in
+       tests/html_parser/test_tree.c cover, so this demo is directly tied
+       to that test coverage. The rendered text must show the decoded
+       characters (a spades suit symbol, the Greek letter alpha, "½"),
+       never the literal entity syntax. -->
+  <p class="v7-entities">v7: &spades; naipe de espadas, letra grega &alpha;, e a fração &frac12;.</p>
 
   <!-- v6: documentation only, not a visual check (raw text inside
        <script>/comments never decodes -- already covered by an automated

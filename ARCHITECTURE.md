@@ -2262,34 +2262,53 @@ Robustez de HTML" acima). O que continua em aberto vira os dois itens
 abaixo.
 
 ### Tabela completa de entidades nomeadas do HTML5
-**O que é:** a v6 reconhece só ~23 entidades nomeadas (as mais comuns); a
-tabela oficial do HTML5 tem quase 2000 entradas (incluindo variantes com
-e sem `;` final, e algumas com grafia maiúscula distinta da minúscula).
-**Por que importa:** conteúdo real eventualmente usa uma entidade fora do
-conjunto reduzido (ex.: símbolos matemáticos, letras gregas, ícones tipo
-`&spades;`) — continua aparecendo como texto literal até esse ponto.
-**Gatilho para revisitar:** quando um caso real precisar de uma entidade
-fora da lista da v6 — nesse ponto, vale considerar gerar a tabela
-completa a partir da especificação oficial (JSON publicado pelo WHATWG)
-em vez de expandir a lista manualmente entrada por entrada.
-**Toca:** HTML Parser (`tbox_html_entities.c`, a tabela nome→codepoint).
+**Resolvido na v7.** A tabela agora tem ~2200 entradas, geradas a partir
+do `entities.json` oficial do WHATWG em vez das ~23 hardcoded à mão da v6
+(ver seção "v7 — Listas HTML e tabela completa de entidades" acima). O
+que continua em aberto (entidades multi-codepoint, modo de
+compatibilidade legado sem `;`, remapeamento windows-1252, variantes
+maiúsculas) vira o item logo abaixo.
 
-### Remapeamento legado windows-1252 e maiúsculas alternativas de entidades
-**O que é:** o HTML5 de verdade redireciona referências numéricas na
-faixa `0x80`-`0x9F` pra um conjunto de caracteres tipográficos (Windows-1252,
-por compatibilidade histórica) em vez de tratá-las como codepoints Unicode
-diretos, e tem algumas entidades nomeadas com uma variante toda-maiúscula
-distinta da minúscula (`&AMP;` além de `&amp;`). A v6 não implementa
-nenhum dos dois — uma referência numérica em `0x80`-`0x9F` vira o
-caractere Unicode literal daquele valor (não o remapeamento), e só a
-grafia minúscula padrão de cada entidade nomeada é reconhecida.
-**Por que importa:** ambos são casos de borda raros em HTML real moderno
-(o remapeamento windows-1252 é quase sempre invisível — a maioria do
-conteúdo real não usa essa faixa de código de propósito) — baixa
-prioridade mesmo quando o resto da tabela de entidades for expandido.
-**Gatilho para revisitar:** só se um caso real específico depender de um
-dos dois — nenhum indício disso até agora.
+### Remapeamento legado windows-1252, maiúsculas alternativas e entidades multi-codepoint
+**O que é:** três lacunas remanescentes da tabela de entidades, nenhuma
+coberta pela v6 nem pela v7. (1) O HTML5 de verdade redireciona
+referências numéricas na faixa `0x80`-`0x9F` pra um conjunto de
+caracteres tipográficos (Windows-1252, por compatibilidade histórica) em
+vez de tratá-las como codepoints Unicode diretos — hoje viram o caractere
+Unicode literal daquele valor. (2) Algumas entidades nomeadas têm uma
+variante toda-maiúscula distinta da minúscula (`&AMP;` além de `&amp;`) —
+só a grafia padrão (a mesma usada como chave no `entities.json`, tipicamente
+minúscula) é reconhecida. (3) Uma dúzia de entidades do spec expandem pra
+2 codepoints (ex. `&NotEqualTilde;`) — a tabela da v7 só cobre entidades
+de 1 codepoint, essas ficam de fora (tratadas como "não reconhecida").
+Nenhuma dessas três exige o modo de compatibilidade legado sem `;` final
+— essa exigência continua deliberadamente fora de escopo também (decisão
+da v6, reafirmada na v7).
+**Por que importa:** todos são casos de borda raros em HTML real moderno
+— baixa prioridade mesmo com a tabela principal de entidades já completa
+desde a v7.
+**Gatilho para revisitar:** só se um caso real específico depender de
+algum dos três — nenhum indício disso até agora.
 **Toca:** HTML Parser (`tbox_html_entities.c`).
+
+### Marcadores visuais e estilos padrão de listas (`<ul>`/`<ol>`/`<li>`)
+**O que é:** a v7 faz o texto de `<li>` renderizar (ver seção "v7" acima),
+mas sem marcador (bullet `•` pra `<ul>`, número `N.` pra `<ol>`) e sem os
+estilos padrão de user-agent que browsers reais aplicam a listas
+(`margin`/`padding-left` que recuam o conteúdo). Hoje uma lista renderiza
+como uma pilha de blocos de texto sem indentação nem marcador nenhum.
+**Por que importa:** visualmente, uma lista sem marcador nem indentação
+não parece uma lista — cosmético, mas é a diferença mais perceptível
+entre o que tbox renderiza hoje pra esse HTML e o que qualquer browser
+real mostra.
+**Gatilho para revisitar:** quando fidelidade visual de lista importar
+pra um caso de uso real. Nesse ponto: indentação é só mais duas
+declarações na UA stylesheet (`margin`/`padding-left` em `ul`/`ol`, ver
+`tbox_ua_style_generate_css`); marcador exige desenhar um
+caractere/numeral antes do texto de cada `<li>` na Render Pipeline (ou um
+`::marker` simplificado, mecanismo próprio, mais trabalho).
+**Toca:** CSS Cascade/Orchestration (UA stylesheet), Layout Tree
+(geometria do marcador), Render Pipeline (desenhar o marcador).
 
 ### Unidades relativas a fonte (`em`, `%` de `font-size`) na Style layer
 **O que é:** resolver `font-size` e valores em `em`/`%` de fonte exige uma
@@ -2807,10 +2826,129 @@ Um app tbox que:
   implícito só mexe na pilha `open_elements` que já é campo de instância
   de `tbox_html_tree_builder`, não global.
 
+## v7 — Listas HTML (texto em `<li>`) e tabela completa de entidades nomeadas
+
+Resolve dois itens de débito complementares e independentes entre si: (1)
+texto dentro de `<li>` nunca aparecia na tela — limitação descoberta e
+documentada durante a v6 (o comentário em `example/tbox_app_demo.html`
+sobre `.v6-li-one/-two/-three` já apontava isso: `<li>` não está na lista
+fixa de tags que o Layout Tree reconhece como "text tag"); (2) a tabela de
+entidades nomeadas da v6 cobre só ~23 nomes comuns, contra a tabela oficial
+do HTML5 (WHATWG) com ~2200 entradas. Toca duas camadas sem relação uma
+com a outra (Layout Tree pra (1), HTML Parser pra (2)) — nenhuma
+depende da outra. Critério de "pronto" no fim desta seção.
+
+Escopo desta versão, decidido nesta sessão:
+- **`<li>` como text tag: só o mínimo** — reconhecer `<li>` na lista fixa
+  de tags do Layout Tree, pra texto dentro dele renderizar. **Sem**
+  marcador visual (bullet/número) e **sem** estilos padrão de user-agent
+  pra `<ul>`/`<ol>`/`<li>` (margin/padding-left como browsers reais) —
+  escolhido entre três níveis de cobertura apresentados (só texto; texto +
+  marcador; texto + marcador + UA stylesheet). Os dois últimos ficam como
+  débito novo, registrado no fim do documento. `<ul>`/`<ol>` continuam
+  FORA da lista de text tags (não têm texto direto próprio em HTML bem
+  formado — só filhos `<li>`).
+- **Tabela de entidades: gerar a partir do JSON oficial do WHATWG**
+  (`entities.json`, publicado em
+  https://html.spec.whatwg.org/entities.json) em vez de expandir a lista
+  manualmente entrada por entrada — escolhido sobre uma tabela curada
+  maior porém incompleta, pra ter fidelidade total ao spec sem risco de
+  erro de digitação numa tabela de milhares de entradas.
+- **Só entidades de 1 codepoint** — o spec tem uma dúzia de entidades que
+  expandem pra 2 codepoints (ex. `&NotEqualTilde;`); ficam de fora
+  (tratadas como "não reconhecida", texto literal), registradas como
+  débito atualizado no fim do documento junto com o restante do débito de
+  compatibilidade legado.
+- **`;` final continua obrigatório** (mesma decisão da v6, sem mudança) —
+  o JSON do WHATWG tem entradas com e sem `;` pro mesmo nome (o
+  subconjunto legado de ~106 nomes); só as chaves terminadas em `;` entram
+  na tabela gerada.
+
+### Layout Tree — `<li>` como text tag
+
+Mudança de uma linha em `tbox_layout_is_text_tag`
+(`src/layout/tbox_layout.c:52`):
+```c
+static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li" };
+```
+Mesmo caminho que `h1`-`h6`/`p` já usam (`tbox_layout_is_text_tag` é o
+único lugar que a lista fixa vive, ver "Regra explícita" na seção Layout
+Tree do v0 — nenhuma outra parte do Layout Tree precisa saber que `li` é
+especial). `tbox_html_node_text_content` (já existente, sem mudança)
+concatena todo texto descendente do `<li>`, igual já faz pra `<p>`.
+
+**Fora de escopo:** listas aninhadas (`<li>` contendo outro `<ul>`/`<ol>`
+dentro) — o `<li>` pai concatenaria o texto da lista aninhada inteira
+junto do próprio (mesma limitação de `tbox_html_node_text_content` que já
+existe hoje pra qualquer elemento com filhos de bloco fora do inline
+formatting context — não é regressão nova desta versão). Marcador visual
+e estilos padrão de `<ul>`/`<ol>` — ver débito atualizado no fim do
+documento.
+
+### HTML Parser — tabela completa de entidades nomeadas
+
+Muda só a TABELA de dados em `tbox_html_entities.c`, gerada uma vez a
+partir do `entities.json` oficial do WHATWG (filtrando: chave termina em
+`;` E o valor mapeia pra exatamente 1 codepoint) — `tbox_html_entity`,
+`tbox_html_decode_entities` e o resto do algoritmo (numérica vs. nomeada,
+"não reconhecida = texto literal") não mudam. O script usado pra gerar a
+tabela a partir do JSON não entra no repositório (uso único, sem valor de
+build-time — mesmo raciocínio de "sem abstração prematura" já usado no
+projeto; se o spec for atualizado no futuro, regenerar é um trabalho
+pontual novo, não uma dependência de build contínua).
+
+**Correção necessária em `tbox_html_parse_named_reference`:** o scanner
+de nome hoje só aceita letras ASCII (`a`-`z`/`A`-`Z`) — várias entidades
+reais do HTML5 têm dígito no nome (`frac12`, `frac14`, `frac34`, `sup1`,
+`sup2`, `sup3`, `there4`, etc.), que falhariam a reconhecer mesmo já
+estando na tabela nova. A classe de caractere do loop muda de "letra" pra
+"letra OU dígito" — o resto da lógica não muda (todo nome real do spec
+começa com letra, então "onde o nome começa" continua igual; só "até onde
+o nome vai" passa a aceitar dígito também).
+
+**Fora de escopo:** entidades multi-codepoint, modo de compatibilidade
+legado sem `;`, remapeamento windows-1252, variantes maiúsculas — ver
+débito atualizado no fim do documento (mesmo item da v6, sem mudança de
+escopo).
+
+### Fatia vertical v7 — critério de "pronto"
+
+Um app tbox que:
+- exibe uma lista `<ul><li>item um<li>item dois<li>item três</ul>` (sem
+  fechamento explícito de `</li>`, reaproveitando o fechamento implícito
+  já testado visualmente na v6) e o TEXTO de cada item aparece na tela
+  (não só a caixa colorida vazia que a v6 usava como prova) — três linhas
+  de texto legíveis, uma por item;
+- exibe texto usando uma entidade nomeada fora do conjunto de ~23 da v6
+  (ex.: `&spades;`, `&alpha;`, `&frac12;` — um símbolo, uma letra grega, e
+  uma entidade com dígito no nome) decodificada corretamente na tela;
+- continua sem regredir nada de v0-v6 (inclusive a demo de `&amp;`/
+  `&nbsp;`/`&mdash;`/`&copy;`/numérica da v6, que deve continuar
+  funcionando com a tabela nova).
+
+## Decisões já tomadas (v7)
+
+- **`<li>` só como text tag, sem marcador/UA stylesheet** — resolve
+  exatamente o problema relatado (texto não aparecia); marcador visual e
+  indentação padrão ficam pro próximo incremento (débito registrado).
+- **`<ul>`/`<ol>` não entram na lista de text tags** — não têm texto
+  direto próprio em HTML bem formado, só filhos `<li>`.
+- **Tabela de entidades gerada do JSON oficial do WHATWG**, não expandida
+  à mão — fidelidade total ao spec sem risco de erro de digitação numa
+  tabela de milhares de entradas.
+- **Só entidades de 1 codepoint** — a dúzia de entidades multi-codepoint
+  do spec fica de fora, mesma postura "não reconhecida = texto literal".
+- **`;` final continua obrigatório** — mesma decisão da v6, sem exceção
+  legada.
+- **Sem novo estado global/estático** — a tabela de entidades continua
+  `static const` (dado imutável, não é o tipo de estado que a regra de
+  "sem global sem discussão" mira — mesmo raciocínio já usado na v6); e a
+  mudança do Layout Tree é literalmente uma entrada a mais num array
+  `static const` já existente.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3, v4, v5 e v6 (registrada nas seções de cada
-camada) ou consolidada como débito de design conhecido acima, com gatilho
-explícito
-de quando revisitar.
+fechada para v0, v1, v2, v3, v4, v5, v6 e v7 (registrada nas seções de
+cada camada) ou consolidada como débito de design conhecido acima, com
+gatilho explícito de quando revisitar.

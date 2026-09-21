@@ -393,3 +393,11 @@ body {
 .v6-entities {
     background-color: lightyellow;
 }
+
+/* v7: named-entity table demo (see the HTML comment on .v7-entities). No
+ * special color needed to prove the point -- the text itself is the
+ * proof -- but a light background makes the paragraph easy to find in a
+ * screenshot, same pattern as .v6-entities above. */
+.v7-entities {
+    background-color: lightcyan;
+}

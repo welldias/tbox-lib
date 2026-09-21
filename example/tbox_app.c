@@ -105,9 +105,17 @@
  * a screenshot can show the whole document PLUS the `position: fixed`
  * element pinned to the window's bottom-right corner (bottom: 20px;
  * right: 20px against this exact viewport height, deliberately placed
- * below all in-flow content with room to spare, not overlapping it).
- * Nothing about the layout pipeline requires this specific height either. */
-#define TBOX_APP_DEMO_HEIGHT 1900
+ * below all in-flow content with room to spare, not overlapping it). v7
+ * makes the three <li> boxes actually grow their in-flow height with real
+ * text (Tarefa 1's Layout Tree change) and appends one more paragraph
+ * (.v7-entities) after .v6-entities, pushing the total past 1900px again --
+ * a screenshot confirmed the new content was being silently cropped off the
+ * bottom of the window at 1900px (this engine has no scroll/overflow, so
+ * anything beyond the configured window height just never gets painted),
+ * so this is bumped to 2100px, with headroom to spare, for the same reason
+ * v2/v3/v5 each bumped it before: purely a window-size constant tracking
+ * accumulated fixture content, not a layout-pipeline requirement. */
+#define TBOX_APP_DEMO_HEIGHT 2100
 
 #ifndef TBOX_APP_DEMO_HTML_PATH
 #error "TBOX_APP_DEMO_HTML_PATH must be defined by the build (see example/CMakeLists.txt)"

@@ -785,5 +785,49 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 54: entities outside the old v6 set of ~23 decode correctly from the
+     * full WHATWG table -- a symbol (&spades; = U+2660), a Greek letter
+     * (&alpha; = U+03B1), and a name with a digit in it (&frac12; =
+     * U+00BD), which also exercises the scanner's new "letter or digit"
+     * name-length rule. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>&spades; &alpha; &frac12;</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *t = p->first_child;
+        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(t->text.text, "\xE2\x99\xA0 \xCE\xB1 \xC2\xBD"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 55: regression -- the ~23 v6 entities still decode identically now
+     * that they come from the full generated table instead of the old
+     * hand-picked ~23-entry one. */
+    {
+        tbox_html_document *doc = parse_cstr(
+            "<p>&amp; &lt; &gt; &quot; &apos; &nbsp; &copy; &reg; &trade; &mdash; &ndash; &hellip; "
+            "&lsquo; &rsquo; &ldquo; &rdquo; &euro; &pound; &yen; &cent; &sect; &para; &middot; &deg;</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *t = p->first_child;
+        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(t->text.text,
+                                  "& < > \" ' \xC2\xA0 \xC2\xA9 \xC2\xAE \xE2\x84\xA2 \xE2\x80\x94 \xE2\x80\x93 "
+                                  "\xE2\x80\xA6 \xE2\x80\x98 \xE2\x80\x99 \xE2\x80\x9C \xE2\x80\x9D \xE2\x82\xAC "
+                                  "\xC2\xA3 \xC2\xA5 \xC2\xA2 \xC2\xA7 \xC2\xB6 \xC2\xB7 \xC2\xB0"));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 56: "&amp" (one of the ~106 legacy WHATWG names with a semicolon-less
+     * sibling key) without a trailing ';' is still left as literal text --
+     * proof the Step 2 filter excluded the semicolon-less keys, since the
+     * scanner keeps requiring ';' regardless. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>a&amp b</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *t = p->first_child;
+        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_ASSERT(text_eq(t->text.text, "a&amp b"));
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

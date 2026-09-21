@@ -985,6 +985,100 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 29: NOVO v7 -- <ul><li>oi mundo</li></ul>: <li> is now on the fixed
+     * text-tag list, so its box gets the same text-box treatment as a <p>
+     * (see test 5) -- one merged run whose text is exactly "oi mundo". */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<ul><li>oi mundo</li></ul>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(ul_box != NULL);
+        if (ul_box != NULL) {
+            tbox_layout_box *li_box = ul_box->first_child;
+            TBOX_TEST_ASSERT_MSG(li_box != NULL, "<ul> must have the <li> as its first child box");
+            if (li_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(li_box->node != NULL && string_view_equal_cstr(li_box->node->element.tag_name, "li"), "test setup: first child box must be the <li>");
+                TBOX_TEST_ASSERT_MSG(li_box->text_run_count == 1, "<li> is on the fixed text-tag list now -- \"oi mundo\" must fit on a single run");
+                if (li_box->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(li_box->text_runs[0].text, "oi mundo"), "the <li>'s run must contain its full text content");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 30: NOVO v7 -- <ul><li>um</li><li>dois</li><li>três</li></ul>: three
+     * sibling <li> boxes, each with its OWN text_run_count == 1 and its own
+     * correct text -- not a single box with the three words concatenated. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<ul><li>um</li><li>dois</li><li>três</li></ul>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(ul_box != NULL);
+        if (ul_box != NULL) {
+            tbox_layout_box *first  = ul_box->first_child;
+            tbox_layout_box *second = first != NULL ? first->next_sibling : NULL;
+            tbox_layout_box *third  = second != NULL ? second->next_sibling : NULL;
+            TBOX_TEST_ASSERT_MSG(first != NULL && second != NULL && third != NULL, "<ul> must have three <li> sibling boxes");
+            if (first != NULL && second != NULL && third != NULL) {
+                TBOX_TEST_ASSERT(third->next_sibling == NULL);
+
+                TBOX_TEST_ASSERT_MSG(first->text_run_count == 1, "first <li> must have its own single run");
+                TBOX_TEST_ASSERT_MSG(second->text_run_count == 1, "second <li> must have its own single run");
+                TBOX_TEST_ASSERT_MSG(third->text_run_count == 1, "third <li> must have its own single run");
+                if (first->text_run_count == 1 && second->text_run_count == 1 && third->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(first->text_runs[0].text, "um"), "first <li>'s text must not include the other items' words");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(second->text_runs[0].text, "dois"), "second <li>'s text must be its own, not concatenated");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(third->text_runs[0].text, "três"), "third <li>'s text must be its own, not concatenated");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 31: NOVO v7 regression -- <ul><li>texto</li></ul> with no CSS at all:
+     * the <ul> box itself is still a plain container (text_run_count == 0,
+     * same pattern as test 6's <span>) -- <ul> does NOT become a text tag,
+     * only <li> does. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<ul><li>texto</li></ul>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(ul_box != NULL);
+        if (ul_box != NULL) {
+            TBOX_TEST_ASSERT_MSG(ul_box->text_run_count == 0, "<ul> must not become a text tag just because Tarefa 1 added <li> to the list");
+            TBOX_TEST_ASSERT(ul_box->text_runs == NULL);
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 
