@@ -18,10 +18,17 @@ extern "C" {
  * per ruleset -- which single declaration among every applicable one wins.
  * Priority order, highest first:
  *   1. origin + !important (see tbox_css_origin below for the exact order;
- *      this library extends CSS2.1's five levels to six, per CSS Cascading
- *      Level 4, to give "user-agent origin + !important" a defined place --
- *      CSS2.1 itself leaves that combination unspecified).
+ *      this library extends CSS2.1's five levels to eight, per CSS Cascading
+ *      Level 4 (for "user-agent origin + !important", a combination CSS2.1
+ *      itself leaves unspecified) plus this library's own
+ *      TBOX_CSS_ORIGIN_AUTHOR_INLINE step (v9) for the `style=""` HTML
+ *      attribute, which CSS2.1/Level 4 both express instead as "infinite
+ *      specificity" rather than a distinct origin).
  *   2. selector specificity (a, b, c) -- see tbox_css_cascade_specificity.
+ *      Not consulted at all between two TBOX_CSS_ORIGIN_AUTHOR_INLINE
+ *      declarations, since tbox_css_cascade_resolve synthesizes at most one
+ *      such declaration per property per node (see TBOX_CSS_ORIGIN_AUTHOR_INLINE
+ *      below).
  *   3. source order: a stylesheet later in the `sources` array beats an
  *      earlier one; within one stylesheet, a ruleset later in
  *      tbox_css_stylesheet_rulesets beats an earlier one; within one
@@ -30,7 +37,12 @@ extern "C" {
  * tbox_css_stylesheet carries no origin of its own; the caller assigns one
  * per stylesheet via tbox_css_cascade_source when calling
  * tbox_css_cascade_resolve. Property/value validity is not checked here
- * either, matching tbox_css_parse's own stance (see <tbox/css_parser.h>). */
+ * either, matching tbox_css_parse's own stance (see <tbox/css_parser.h>).
+ * The one exception to "the caller assigns every origin": TBOX_CSS_ORIGIN_AUTHOR_INLINE
+ * is never assigned by a caller via `sources` -- tbox_css_cascade_resolve
+ * synthesizes it itself, straight from `node`'s own `style=""` HTML
+ * attribute (see TBOX_CSS_ORIGIN_AUTHOR_INLINE below); no caller needs to
+ * know that step exists. */
 
 /* CSS2.1 selector specificity as the tuple (a, b, c):
  *   a: number of ID simple selectors.
@@ -39,9 +51,11 @@ extern "C" {
  * Summed across every simple selector of the entire chain -- every compound
  * of the selector, not just the one that matched the node directly -- e.g.
  * "div.a > span#b" contributes c += 2 (div, span), b += 1 (.a), a += 1
- * (#b). Universal selectors ('*') contribute to none of the three. There is
- * no fourth "style attribute" bucket: tbox has no concept of an inline
- * `style` attribute overriding the cascade. */
+ * (#b). Universal selectors ('*') contribute to none of the three. This
+ * type has no fourth "style attribute" bucket: an inline `style=""` HTML
+ * attribute overrides the cascade not by an infinite specificity value here,
+ * but via a dedicated origin step, TBOX_CSS_ORIGIN_AUTHOR_INLINE (see
+ * below) -- specificity as computed by this function plays no part in that. */
 typedef struct tbox_css_specificity {
     unsigned int a;
     unsigned int b;
@@ -80,20 +94,40 @@ int tbox_css_cascade_specificity_compare(tbox_css_specificity x, tbox_css_specif
  * does. */
 tbox_string_view tbox_css_cascade_strip_important(tbox_string_view value, bool *out_important);
 
-/* Where a stylesheet sits in the cascade (CSS2.1 chapter 6.4, extended per
- * CSS Cascading Level 4 for the origin+!important ordering below). Purely a
- * label the caller attaches per stylesheet via tbox_css_cascade_source --
- * tbox_css_stylesheet itself carries no origin. From lowest to highest
- * final priority once !important is folded in:
- *   user-agent normal < user normal < author normal
- *     < author !important < user !important < user-agent !important
- * (CSS2.1 defines only the first five of those six; placing "user-agent +
- * !important" at the very top is the CSS Cascading Level 4 refinement this
- * library follows, since CSS2.1 leaves that combination unspecified). */
+/* Where a stylesheet -- or, for TBOX_CSS_ORIGIN_AUTHOR_INLINE, a node's own
+ * `style=""` HTML attribute -- sits in the cascade (CSS2.1 chapter 6.4,
+ * extended per CSS Cascading Level 4 for the origin+!important ordering
+ * below, and further extended by this library (v9) with
+ * TBOX_CSS_ORIGIN_AUTHOR_INLINE). For the three "real" origins below, this
+ * is purely a label the caller attaches per stylesheet via
+ * tbox_css_cascade_source -- tbox_css_stylesheet itself carries no origin.
+ * From lowest to highest final priority once !important is folded in:
+ *   user-agent normal < user normal < author normal < author-inline normal
+ *     < author !important < author-inline !important
+ *       < user !important < user-agent !important
+ * (CSS2.1 defines only the first five of those eight steps; placing
+ * "user-agent + !important" at the very top is the CSS Cascading Level 4
+ * refinement this library follows, since CSS2.1 leaves that combination
+ * unspecified. The two "author-inline" steps are this library's own v9
+ * addition -- see TBOX_CSS_ORIGIN_AUTHOR_INLINE below -- standing in for
+ * the "infinite specificity" the real CSS spec gives an inline `style=""`
+ * attribute instead of a distinct origin; author-inline always outranks
+ * author of either !important-ness, but always loses to user/user-agent,
+ * including at the !important tier). */
 typedef enum tbox_css_origin {
     TBOX_CSS_ORIGIN_USER_AGENT,
     TBOX_CSS_ORIGIN_USER,
     TBOX_CSS_ORIGIN_AUTHOR,
+
+    /* v9: a node's own `style=""` HTML attribute. Never assigned by a
+     * caller via tbox_css_cascade_source -- tbox_css_cascade_resolve
+     * synthesizes declarations with this origin itself, straight from
+     * `node`'s "style" attribute, for every call (no opt-in needed). Added
+     * at the end of the enum, after TBOX_CSS_ORIGIN_AUTHOR, so existing
+     * code that already references TBOX_CSS_ORIGIN_AUTHOR (or indexes an
+     * array by tbox_css_origin) keeps compiling and behaving exactly as
+     * before -- purely additive, nothing renamed or renumbered. */
+    TBOX_CSS_ORIGIN_AUTHOR_INLINE,
 } tbox_css_origin;
 
 /* One stylesheet paired with the origin it should be resolved as, for

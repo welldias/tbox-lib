@@ -998,6 +998,112 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* 30: NOVO v9 -- an embedded <style>.algo{background-color:blue;}</style>
+     * (no external CSS at all -- `css` is "") must reach the cascade: a
+     * <div class="algo"> resolves the FILL_RECT blue, proving <style>
+     * content, until now inert text (same treatment as <script>), now
+     * participates in the cascade.
+     *
+     * Wrapped in an outer <div> (rather than two top-level siblings):
+     * tbox_layout_build only ever lays out the FIRST top-level element under
+     * the document root (a pre-existing v0 limitation, unrelated to this
+     * task -- see ARCHITECTURE.md's v9 "Escopo" note about a <style> inside
+     * a never-drawn <head>). A bare <style>.algo{...}</style><div
+     * class="algo">...</div> at the top level would make <style> itself the
+     * one element Layout builds, and the following <div> would never be laid
+     * out at all. Nesting both inside one wrapper sidesteps that: the
+     * wrapper is the sole top-level element, and <style> (not one of Layout
+     * Tree's fixed text-tag list -- h1-h6/p/li -- so its raw text content is
+     * never collected as words) paints nothing of its own, leaving the FILL_RECT
+     * count entirely attributable to div.algo. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><style>.algo{background-color:blue;}</style><div class=\"algo\">x</div></div>", "", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed for a document with an embedded <style>");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            TBOX_TEST_ASSERT_MSG(list.count == 1, "the .algo div must paint exactly one FILL_RECT");
+            if (list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 0 && list.items[0].color.g == 0 && list.items[0].color.b == 255, "an internal <style> rule with no external CSS at all must resolve -- .algo must paint blue");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 31: the same document, but now with an external stylesheet declaring
+     * .algo with the SAME specificity (a single class) but a DIFFERENT
+     * color -- the internal <style> must win the tie against the external
+     * CSS (decision documented in ARCHITECTURE.md's v9 "Escopo": internal
+     * is placed LAST in tbox_context_run_frame's sources array). */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><style>.algo{background-color:blue;}</style><div class=\"algo\">x</div></div>",
+            ".algo{background-color:green;}", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            TBOX_TEST_ASSERT_MSG(list.count == 1, "the .algo div must paint exactly one FILL_RECT");
+            if (list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 0 && list.items[0].color.g == 0 && list.items[0].color.b == 255, "at equal (class) specificity, the internal <style> must win the tie against the external CSS -- .algo must still paint blue, not green");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 32: regression -- a document with NO <style> element embedded at all
+     * still resolves the external CSS exactly as before (no behavior
+     * change for documents that don't use the new feature). */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div class=\"algo\">x</div>", ".algo{background-color:green;}", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            TBOX_TEST_ASSERT_MSG(list.count == 1, "the .algo div must paint exactly one FILL_RECT");
+            if (list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 0 && list.items[0].color.g == 128 && list.items[0].color.b == 0, "a document with no embedded <style> at all must resolve the external CSS unchanged -- .algo must paint green");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 33: two SEPARATE <style> blocks, at different positions in the
+     * document, both apply -- proof the concatenation in
+     * tbox_context_collect_style_elements walks the WHOLE tree and doesn't
+     * stop at (or drop) any block after the first one found. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div>"
+            "<style>.a{background-color:blue;}</style>"
+            "<div class=\"a\">x</div>"
+            "<style>.b{background-color:green;}</style>"
+            "<div class=\"b\">y</div>"
+            "</div>",
+            "", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            TBOX_TEST_ASSERT_MSG(list.count == 2, "both divs must paint their own FILL_RECT");
+            if (list.count == 2) {
+                TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 0 && list.items[0].color.g == 0 && list.items[0].color.b == 255, "the FIRST <style> block's rule (.a -> blue) must apply to the first div");
+                TBOX_TEST_ASSERT_MSG(list.items[1].color.r == 0 && list.items[1].color.g == 128 && list.items[1].color.b == 0, "the SECOND <style> block's rule (.b -> green), found later in the tree, must also apply -- not dropped by the concatenation");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

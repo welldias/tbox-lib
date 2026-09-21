@@ -10,6 +10,7 @@
 #include <tbox/style.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 #include "context/tbox_context_hit_test.h"
 
@@ -44,6 +45,7 @@ struct tbox_context {
     tbox_html_document *document;       /* owned: parsed in tbox_context_open, destroyed in tbox_context_close */
     tbox_css_stylesheet *stylesheet;    /* owned, same lifecycle; author-only (see tbox_context_run_frame) */
     tbox_css_stylesheet *ua_stylesheet; /* NOVO v2: owned, same lifecycle -- generated from a tbox_ua_style_config and parsed once in tbox_context_open_with_config, TBOX_CSS_ORIGIN_USER_AGENT in tbox_context_run_frame's cascade */
+    tbox_css_stylesheet *internal_stylesheet; /* NOVO v9: owned, same lifecycle as `stylesheet` -- NULL se o documento não tem nenhum <style>; concatenação de todo <style> encontrado na árvore, mesma origem TBOX_CSS_ORIGIN_AUTHOR que `stylesheet` em tbox_context_run_frame */
     tbox_font_face_cache *fonts;        /* borrowed -- built/destroyed by the caller, never by tbox_context (NOVO v2: was a single tbox_font_face) */
     tbox_layout_box *root;              /* last computed layout tree (lives in frame_arena); NULL until the first run_frame */
     tbox_arena frame_arena;             /* backing for tbox_style_table + tbox_layout_box + tbox_display_list; reset at the start of every run_frame */
@@ -148,14 +150,62 @@ static bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer
     return written >= 0 && (size_t)written < buffer_size;
 }
 
+/* NOVO v9: pre-order traversal of the WHOLE document tree (starting at
+ * tbox_html_document_root -- the real root, which may have several
+ * top-level children such as <head> and <body>, not the single "first
+ * top-level element" tbox_layout_build isolates for itself in a separate
+ * layer -- see ARCHITECTURE.md's v9 "Escopo"), appending the raw text
+ * content of every <style> element found onto `builder`, in document
+ * order. tbox_html_node_text_content already returns raw (non-entity-
+ * decoded) text for a raw-text element like <style>, which is exactly what
+ * CSS text needs. Pure function: reads the tree, writes only to `builder`
+ * (a parameter) -- no global/static state. */
+static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder) {
+    if (node == NULL) {
+        return;
+    }
+
+    if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "style")) {
+        tbox_string_view text = tbox_html_node_text_content(arena, node);
+        tbox_string_builder_append_view(builder, text);
+    }
+
+    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+        tbox_context_collect_style_elements(arena, child, builder);
+    }
+}
+
 tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_ua_style_config config) {
     tbox_html_document *document = tbox_html_parse(html, html_length);
     if (document == NULL) {
         return NULL;
     }
 
+    /* NOVO v9: gathers every <style> element's raw text from the WHOLE
+     * document (not just what Layout later renders) into one concatenated
+     * buffer, parsed as a single extra author stylesheet below. `scratch`
+     * only needs to survive long enough for tbox_css_parse to copy the
+     * concatenated text into its own arena -- destroyed right after. */
+    tbox_arena scratch = tbox_arena_create(0);
+    tbox_string_builder style_builder;
+    tbox_string_builder_init(&style_builder, &scratch, 0);
+    tbox_context_collect_style_elements(&scratch, tbox_html_document_root(document), &style_builder);
+    tbox_string_view internal_css_text = tbox_string_builder_finish(&style_builder);
+
+    tbox_css_stylesheet *internal_stylesheet = NULL;
+    if (internal_css_text.size > 0) {
+        internal_stylesheet = tbox_css_parse(internal_css_text.data, internal_css_text.size);
+        if (internal_stylesheet == NULL) {
+            tbox_arena_destroy(&scratch);
+            tbox_html_document_destroy(document);
+            return NULL;
+        }
+    }
+    tbox_arena_destroy(&scratch);
+
     tbox_css_stylesheet *stylesheet = tbox_css_parse(css, css_length);
     if (stylesheet == NULL) {
+        tbox_css_stylesheet_destroy(internal_stylesheet);
         tbox_html_document_destroy(document);
         return NULL;
     }
@@ -163,6 +213,7 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     char ua_css_text[TBOX_UA_STYLE_CSS_BUFFER_SIZE];
     if (!tbox_ua_style_generate_css(config, ua_css_text, sizeof(ua_css_text))) {
         tbox_css_stylesheet_destroy(stylesheet);
+        tbox_css_stylesheet_destroy(internal_stylesheet);
         tbox_html_document_destroy(document);
         return NULL;
     }
@@ -170,6 +221,7 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     tbox_css_stylesheet *ua_stylesheet = tbox_css_parse(ua_css_text, strlen(ua_css_text));
     if (ua_stylesheet == NULL) {
         tbox_css_stylesheet_destroy(stylesheet);
+        tbox_css_stylesheet_destroy(internal_stylesheet);
         tbox_html_document_destroy(document);
         return NULL;
     }
@@ -178,17 +230,19 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     if (ctx == NULL) {
         tbox_css_stylesheet_destroy(ua_stylesheet);
         tbox_css_stylesheet_destroy(stylesheet);
+        tbox_css_stylesheet_destroy(internal_stylesheet);
         tbox_html_document_destroy(document);
         return NULL;
     }
 
-    ctx->document      = document;
-    ctx->stylesheet    = stylesheet;
-    ctx->ua_stylesheet = ua_stylesheet;
-    ctx->fonts         = fonts;
-    ctx->root          = NULL;
-    ctx->frame_arena   = tbox_arena_create(0);
-    ctx->handler_arena = tbox_arena_create(0);
+    ctx->document            = document;
+    ctx->stylesheet          = stylesheet;
+    ctx->ua_stylesheet       = ua_stylesheet;
+    ctx->internal_stylesheet = internal_stylesheet;
+    ctx->fonts               = fonts;
+    ctx->root                = NULL;
+    ctx->frame_arena         = tbox_arena_create(0);
+    ctx->handler_arena       = tbox_arena_create(0);
     tbox_vector_init(&ctx->handlers, &ctx->handler_arena, sizeof(tbox_context_click_binding), 0);
     ctx->next_handler_id = 0;
     ctx->hovered_node    = NULL;
@@ -222,6 +276,7 @@ void tbox_context_close(tbox_context *ctx) {
 
     tbox_css_stylesheet_destroy(ctx->ua_stylesheet);
     tbox_css_stylesheet_destroy(ctx->stylesheet);
+    tbox_css_stylesheet_destroy(ctx->internal_stylesheet);
     tbox_html_document_destroy(ctx->document);
     tbox_arena_destroy(&ctx->frame_arena);
     free(ctx);
@@ -245,17 +300,26 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * contract this call fulfills. */
     tbox_css_selector_set_hover_context(ctx->hovered_node);
 
-    /* NOVO v2: two cascade sources -- the user-agent stylesheet and the
-     * author stylesheet -- replacing the 1-element placeholder array
-     * TASKS.md's Tarefa 1/Tarefa 3 left here. Order in this array does not
-     * affect cascade priority (tbox_css_cascade_resolve already ranks by
-     * origin internally regardless of array order); kept UA-then-AUTHOR for
-     * readability, matching the order ARCHITECTURE.md lists them in. */
-    tbox_css_cascade_source sources[2] = {
+    /* NOVO v2: three cascade sources -- the user-agent stylesheet, the
+     * external author stylesheet, and (NOVO v9) the internal stylesheet
+     * assembled from every <style> element found in the document -- replacing
+     * the 1-element placeholder array TASKS.md's Tarefa 1/Tarefa 3 left here.
+     * Order in this array does not affect cascade priority BETWEEN DIFFERENT
+     * origins (tbox_css_cascade_resolve already ranks by origin internally
+     * regardless of array order) -- true for USER_AGENT vs. AUTHOR here, as
+     * before. It is NO LONGER true between `stylesheet` and
+     * `internal_stylesheet` specifically: both carry the SAME origin
+     * (TBOX_CSS_ORIGIN_AUTHOR), so when a property ties in specificity
+     * between the two, tbox_css_cascade_wins_or_ties's ">=" tie-break makes
+     * whichever comes LAST in this array win -- `internal_stylesheet` is
+     * placed after `stylesheet` on purpose, so an embedded <style> wins ties
+     * against the external CSS (see ARCHITECTURE.md's v9 "Escopo"). */
+    tbox_css_cascade_source sources[3] = {
         { ctx->ua_stylesheet, TBOX_CSS_ORIGIN_USER_AGENT },
         { ctx->stylesheet, TBOX_CSS_ORIGIN_AUTHOR },
+        { ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR },
     };
-    tbox_style_table styles = tbox_style_resolve_tree(&ctx->frame_arena, root, sources, 2);
+    tbox_style_table styles = tbox_style_resolve_tree(&ctx->frame_arena, root, sources, 3);
 
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
      * so tbox_context_hit_test has something to search (or not) between

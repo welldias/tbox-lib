@@ -409,5 +409,83 @@ int tbox_test_css_cascade_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 18: style="" inline, no stylesheet at all -- resolves straight from the
+     * attribute. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p style=\"color: red;\">x</p>");
+        const tbox_html_node *p    = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_css_computed_style style = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        const tbox_css_resolved_declaration *color = find_cstr(&style, "color");
+        TBOX_TEST_ASSERT(color != NULL && text_eq(color->value, "red") && color->origin == TBOX_CSS_ORIGIN_AUTHOR_INLINE);
+
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 19: style="" inline beats an author rule of the highest possible
+     * per-selector specificity (an ID selector). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p id=\"x\" style=\"color: red;\">x</p>");
+        const tbox_html_node *p    = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("#x { color: blue; }");
+
+        tbox_css_computed_style style = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        TBOX_TEST_ASSERT(text_eq(find_cstr(&style, "color")->value, "red"));
+
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 20: style="" inline !important beats an author !important rule of a
+     * strong selector. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p id=\"x\" style=\"color: red !important;\">x</p>");
+        const tbox_html_node *p    = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("#x { color: blue !important; }");
+
+        tbox_css_computed_style style = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        const tbox_css_resolved_declaration *color = find_cstr(&style, "color");
+        TBOX_TEST_ASSERT(color != NULL && text_eq(color->value, "red") && color->important);
+
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 21: regression -- a <p> with no style="" attribute at all resolves
+     * exactly as before. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p id=\"x\">x</p>");
+        const tbox_html_node *p    = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("#x { color: blue; }");
+
+        tbox_css_computed_style style = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        TBOX_TEST_ASSERT(text_eq(find_cstr(&style, "color")->value, "blue"));
+
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 22: regression -- style="" present but empty contributes nothing, same
+     * as not having the attribute at all. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p id=\"x\" style=\"\">x</p>");
+        const tbox_html_node *p    = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("#x { color: blue; }");
+
+        tbox_css_computed_style style = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        TBOX_TEST_ASSERT(style.count == 1);
+        TBOX_TEST_ASSERT(text_eq(find_cstr(&style, "color")->value, "blue"));
+
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

@@ -442,3 +442,44 @@ body {
     padding: 1em;
     background-color: crimson;
 }
+
+/* v9: `<style>` interno vencendo empate demo (see the HTML comment above
+ * .v9-internal-wins in tbox_app_demo.html for the full rationale). Same
+ * bare-class specificity as the embedded <style> block's own
+ * .v9-internal-wins rule -- this is the LOSING declaration (blue):
+ * tbox_context_run_frame's `sources` array places the external sheet
+ * BEFORE the internal one, so on a tie the internal (red) rule wins and
+ * this blue never actually paints. width/height give the box a visible
+ * footprint since it has no text/children of its own. */
+.v9-internal-wins {
+    width: 220px;
+    height: 60px;
+    background-color: blue;
+}
+
+/* v9: `style=""` inline vs. high-specificity selector demo (see the HTML
+ * comment above the matching <div id="v9-inline-id" ...> in
+ * tbox_app_demo.html). #v9-inline-id.v9-inline-wins is an ID+class
+ * compound selector -- (1,1,0) specificity, far higher than any bare-class
+ * rule elsewhere in this file -- yet TBOX_CSS_ORIGIN_AUTHOR_INLINE still
+ * outranks it unconditionally. This green never actually paints; the
+ * element's own inline `style="background-color: orange;"` wins instead. */
+#v9-inline-id.v9-inline-wins {
+    width: 220px;
+    height: 60px;
+    background-color: green;
+}
+
+/* v9: `style="...!important"` inline vs. `!important` on a strong ID
+ * selector demo (see the HTML comment above the matching
+ * <div id="v9-inline-important-id" ...> in tbox_app_demo.html). This
+ * purple !important never actually paints; the element's own inline
+ * `style="background-color: gold !important;"` wins instead, per
+ * ARCHITECTURE.md's v9 rank table (AUTHOR_INLINE !important outranks
+ * AUTHOR !important). width/height give the box a visible footprint since
+ * it has no text/children of its own. */
+#v9-inline-important-id {
+    width: 220px;
+    height: 60px;
+    background-color: purple !important;
+}

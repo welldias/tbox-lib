@@ -176,4 +176,48 @@
     <div class="stop-inner"></div>
   </div>
 
+  <!-- v9: embedded <style> block, found by tbox_context_collect_style_elements's
+       whole-document traversal (Orchestration, Tarefa 2) and parsed into
+       ctx->internal_stylesheet, entering the cascade AFTER the external
+       tbox_app_demo.css sheet in tbox_context_run_frame's `sources` array
+       (same TBOX_CSS_ORIGIN_AUTHOR as the external sheet -- no new origin
+       for it). .v9-internal-wins below is declared TWICE at the exact same
+       specificity (bare class selector, both here and in the external
+       .css) with two strongly contrasting colors -- red here, blue in
+       tbox_app_demo.css -- so whichever one the .v9-internal-wins box
+       actually renders as proves who wins the tie. Per ARCHITECTURE.md's
+       v9 "Escopo", the later source in the array wins a tie, and internal
+       is placed after external precisely so internal wins: the box below
+       must render RED, never blue. -->
+  <style>
+    .v9-internal-wins {
+      background-color: red;
+    }
+  </style>
+
+  <div class="v9-internal-wins"></div>
+
+  <!-- v9: `style=""` inline vs. a high-specificity author selector
+       (#v9-inline-id.v9-inline-wins, an ID + class compound -- far higher
+       (a,b,c) specificity than any bare-class/bare-ID rule elsewhere in
+       this stylesheet) declared in tbox_app_demo.css as green. The same
+       element also carries an inline `style="background-color: orange;"`.
+       Per ARCHITECTURE.md's v9 cascade, TBOX_CSS_ORIGIN_AUTHOR_INLINE
+       outranks TBOX_CSS_ORIGIN_AUTHOR unconditionally, regardless of
+       selector specificity -- the box must render ORANGE, never green,
+       proving inline beats even the strongest author selector. -->
+  <div id="v9-inline-id" class="v9-inline-wins" style="background-color: orange;"></div>
+
+  <!-- v9: `style="...!important"` inline vs. an `!important` author rule
+       on a strong ID selector (#v9-inline-important-id, declared purple
+       !important in tbox_app_demo.css). The same element also carries an
+       inline `style="background-color: gold !important;"`. Per
+       ARCHITECTURE.md's v9 rank table, AUTHOR_INLINE !important outranks
+       AUTHOR !important too (both sit below USER/USER_AGENT !important,
+       but AUTHOR_INLINE !important is still one step above AUTHOR
+       !important) -- the box must render GOLD, never purple, proving
+       inline !important wins even against a strong-selector !important
+       rule. -->
+  <div id="v9-inline-important-id" style="background-color: gold !important;"></div>
+
 </body>

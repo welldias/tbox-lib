@@ -3224,11 +3224,270 @@ Um app tbox que:
   parâmetro); os dois campos novos de `tbox_ua_style_config` são
   configuração passada por valor, não estado global.
 
+## v9 — CSS de autor: inline (`style=""`) e `<style>` interno na cascata
+
+Hoje CSS de autor só chega de um jeito: um texto separado (`css`/`css_path`)
+passado ao lado do HTML — `<style>` dentro do documento vira texto puro,
+inerte pro pipeline (mesmo tratamento de `<script>`, nunca lido de volta), e
+o atributo `style="..."` de um elemento é só mais um atributo genérico,
+nunca interpretado como CSS. Confirmado por auditoria de código nesta
+sessão: `include/tbox/css_cascade.h:43-44` documenta essa ausência
+explicitamente ("tbox has no concept of an inline `style` attribute
+overriding the cascade").
+
+Desenho revisado nesta sessão (mais simples que uma primeira versão
+descartada, que teria dividido `TBOX_CSS_ORIGIN_AUTHOR` em três valores
+distintos e replicado a lógica de resolução na Style layer): **o CSS
+externo e o `<style>` interno continuam sendo a MESMA origem
+`TBOX_CSS_ORIGIN_AUTHOR`** (o CSS de verdade não distingue `<link>`/
+`<style>` por tipo pra fins de prioridade, só por ordem de documento — a
+mesma origem, dois `tbox_css_cascade_source` diferentes no array, com a
+prioridade de empate saindo de graça só pela ORDEM entre os dois). **Só
+`style=""` (inline) precisa de um valor de origem novo**,
+`TBOX_CSS_ORIGIN_AUTHOR_INLINE` — puramente aditivo ao enum, nada que já
+existe muda de nome ou de valor. E a resolução de inline fica **inteira
+dentro de `tbox_css_cascade_resolve`** (CSS Cascade), não na Style layer:
+como essa função já recebe `node` — o elemento exato sendo resolvido —,
+ela mesma pode checar o atributo `style` desse nó direto, sem precisar que
+NENHUM chamador (Style layer, `tbox_css_cascade_resolve_stylesheet`,
+testes) saiba que inline existe. Resultado: só duas camadas mudam (CSS
+Cascade e Orchestration), a Style layer fica intocada, e a única mudança
+de API pública é uma entrada nova no enum (aditiva, não quebra nada que já
+compila hoje — confirmado: não existe nenhum `switch` exaustivo sobre
+`tbox_css_origin` em lugar nenhum do código, só indexação de array).
+
+Ordem final de prioridade (a mesma que `css_cascade.h` já documenta,
+estendida com o degrau de `AUTHOR_INLINE`):
+```
+user-agent normal < user normal < author normal < author-inline normal
+  < author !important < author-inline !important
+    < user !important < user-agent !important
+```
+`author-inline` fica sempre acima do `author` normal por seletor (mesmo
+efeito que o CSS real consegue via "especificidade infinita" do atributo
+`style` — aqui, mais simples de expressar como um degrau a mais na tabela
+de prioridade já existente do que sintetizar uma especificidade especial
+por declaração), mas sempre abaixo de `user`/`user-agent`, inclusive na
+metade `!important`.
+
+Escopo desta versão, decidido nesta sessão:
+- **Parsing do `style=""`: envolver num ruleset sintético `"* { ... }"` e
+  reaproveitar `tbox_css_parse`** — sem API nova de "só lista de
+  declarações" no CSS Parser, e sem expor essa função publicamente (fica
+  `static`, interna a `tbox_css_cascade.c` — só `tbox_css_cascade_resolve`
+  precisa dela). `tbox_css_parse` já copia o texto de entrada pra dentro
+  do próprio arena (não precisa sobreviver além da chamada), e já suporta
+  seletor universal (`*`), então o wrapper é só concatenação de string,
+  sem risco de quebrar nada que uma string CSS legítima (aspas contendo
+  `{`/`}`, por exemplo) já não precisasse tratar de qualquer jeito.
+- **`TBOX_CSS_ORIGIN_AUTHOR_INLINE`: um valor a mais no enum, nada
+  renomeado** — `TBOX_CSS_ORIGIN_AUTHOR` continua existindo, com o mesmo
+  valor, usado pelo CSS externo E pelo `<style>` interno igual antes. Sem
+  mudança quebrando compatibilidade: todo código que já referencia
+  `TBOX_CSS_ORIGIN_AUTHOR` continua compilando e se comportando
+  exatamente igual.
+- **`!important` dentro de `style=""` suportado**, reaproveitando
+  `tbox_css_cascade_strip_important` (já existe, já é usado por todo o
+  resto da cascata) — sem código novo de parsing pra isso, só mais uma
+  chamada no mesmo lugar de sempre.
+- **Busca por `<style>` percorre o DOCUMENTO INTEIRO**, não só o primeiro
+  elemento de topo que o Layout Tree acaba desenhando — um `<style>`
+  dentro de um `<head>` irmão de `<body>` (a convenção real do HTML5)
+  continua sendo encontrado e aplicado à cascata, mesmo que `<head>` em si
+  nunca seja desenhado (limitação do Layout Tree já documentada desde o
+  v0, sem mudança nesta versão — só a busca por `<style>` é mais ampla que
+  o que o Layout Tree efetivamente renderiza).
+- **Múltiplos `<style>` no documento: concatenados num stylesheet só**, em
+  ordem de documento, antes de um único `tbox_css_parse` — cascade-
+  equivalente a tratá-los como stylesheets separados (a prioridade entre
+  regras de dois `<style>` diferentes já seria decidida só pela ordem, que
+  a concatenação preserva), mais simples que manter um array de
+  stylesheets internos.
+- **Empate entre CSS externo e `<style>` interno: interno vence** (`<style>`
+  embutido no documento sobrepõe o CSS externo compartilhado numa
+  especificidade igual) — decisão desta sessão, sem equivalente universal
+  no mundo real (a posição do `css`/`css_path` de tbox não tem uma posição
+  de documento natural pra comparar). Implementado só pela ORDEM do array
+  de `sources` passado a `tbox_css_cascade_resolve` (externo antes, interno
+  depois — mesma origem `AUTHOR` pros dois, o mecanismo de desempate por
+  ordem de array já existe: `tbox_css_cascade_wins_or_ties` usa `>=` na
+  comparação de especificidade), nenhuma lógica nova precisa ser escrita
+  pra isso.
+
+### CSS Cascade — `TBOX_CSS_ORIGIN_AUTHOR_INLINE` + resolução de inline dentro de `tbox_css_cascade_resolve`
+
+`include/tbox/css_cascade.h` — um valor a mais, no FIM do enum (não no
+meio, pra não reordenar os valores existentes por acidente):
+```c
+typedef enum tbox_css_origin {
+    TBOX_CSS_ORIGIN_USER_AGENT,
+    TBOX_CSS_ORIGIN_USER,
+    TBOX_CSS_ORIGIN_AUTHOR,
+    TBOX_CSS_ORIGIN_AUTHOR_INLINE,
+} tbox_css_origin;
+```
+`src/css_cascade/tbox_css_cascade.c`, `tbox_css_cascade_rank` (a tabela
+`rank[origin][important]` que já existe, cresce de 3 pra 4 linhas):
+```c
+static const int rank[4][2] = {
+    /* USER_AGENT    */ { 0, 7 },
+    /* USER          */ { 1, 6 },
+    /* AUTHOR        */ { 2, 4 },
+    /* AUTHOR_INLINE */ { 3, 5 },
+};
+```
+Nenhuma outra linha de `tbox_css_cascade_wins_or_ties` muda — só a TABELA
+cresce.
+
+`tbox_css_cascade_resolve` ganha um passo a mais, DEPOIS do loop que já
+escaneia `sources` (esse loop não muda em nada): lê
+`tbox_html_node_get_attribute(node, "style")`; se existe e não está vazio,
+uma função nova `static tbox_css_stylesheet
+*tbox_css_cascade_parse_inline_style(tbox_string_view declarations)`
+sintetiza `"* { " + declarations + " }"` (buffer do tamanho exato —
+`declarations.size` é arbitrário, um `style=""` real pode ser longo, e
+truncar silenciosamente seria um bug visível, não uma simplificação
+aceitável) e chama `tbox_css_parse` nele; o (único) ruleset resultante tem
+suas declarações jogadas no MESMO loop "existe candidato pra essa
+propriedade? vence ou empata? substitui" que o loop de `sources` já usa
+internamente (reaproveita a função `tbox_css_cascade_wins_or_ties` já
+existente, sem duplicar a lógica de decisão) — só que com `origin =
+TBOX_CSS_ORIGIN_AUTHOR_INLINE`. O stylesheet sintético é destruído antes
+de `tbox_css_cascade_resolve` retornar — existe só durante essa chamada,
+nunca é guardado em lugar nenhum.
+
+**Por que isso não precisa de mudança na Style layer:** `tbox_style_resolve_tree_walk`
+já chama `tbox_css_cascade_resolve(sources, source_count, node)` uma vez
+por elemento, passando o `node` exato — o novo passo interno dessa função
+já tem tudo que precisa (o `node`) sem receber nada novo do chamador.
+Qualquer código que já chama `tbox_css_cascade_resolve`/
+`tbox_css_cascade_resolve_stylesheet` (Style layer, testes,
+`example/css_cascade_origins.c`) passa a resolver `style=""`
+automaticamente, de graça, sem precisar saber que a feature existe.
+
+### Orchestration — extração de `<style>` do documento inteiro
+
+`struct tbox_context` (`src/context/tbox_context.c`) ganha um campo:
+```c
+tbox_css_stylesheet *internal_stylesheet; /* NOVO v9: owned, mesmo ciclo de vida de `stylesheet` -- NULL se o documento não tem nenhum <style> */
+```
+Em `tbox_context_open_with_config`, depois do HTML já parseado
+(`tbox_html_parse` bem-sucedido) e antes de `stylesheet` (o CSS externo)
+ser parseado: uma travessia recursiva nova, privada a este arquivo,
+percorre `tbox_html_document_root(document)` — a raiz de VERDADE do
+documento, não o que `tbox_layout_build` trata como "o primeiro elemento
+de topo" (ver "Escopo" acima pra o porquê) — concatenando (via
+`tbox_string_builder`, arena `scratch` própria, destruída depois) o texto
+de todo elemento `<style>` encontrado (`tbox_html_node_text_content`,
+mesma função que já extrai texto de qualquer elemento — `<style>` sendo
+raw text, o resultado já vem sem decodificação de entidade, correto pra
+CSS). Se o texto concatenado tem tamanho > 0, `tbox_css_parse` nele vira
+`internal_stylesheet`; senão, `internal_stylesheet = NULL`. Falha de
+alocação aqui segue o mesmo padrão de toda falha em
+`tbox_context_open_with_config`: desfaz o que já foi alocado, retorna
+`NULL`.
+
+`tbox_context_close`: mais um `tbox_css_stylesheet_destroy(ctx->internal_stylesheet)`
+(seguro com `NULL`, mesma convenção já usada por toda função `_destroy`
+deste projeto) ao lado do `stylesheet`/`ua_stylesheet` já destruídos.
+
+`tbox_context_run_frame`: o array `sources` cresce de 2 pra 3 elementos
+fixos, os dois novos com a MESMA origem `AUTHOR` (não uma origem cada):
+```c
+tbox_css_cascade_source sources[3] = {
+    { ctx->ua_stylesheet, TBOX_CSS_ORIGIN_USER_AGENT },
+    { ctx->stylesheet, TBOX_CSS_ORIGIN_AUTHOR },
+    { ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR },
+};
+```
+**Atenção ao comentário existente nessa linha** ("Order in this array does
+not affect cascade priority") — isso deixa de ser verdade sem qualificação
+a partir desta versão: `stylesheet` (externo) e `internal_stylesheet`
+agora têm a MESMA origem, então a ORDEM entre os dois especificamente
+passa a decidir o empate (interno depois de externo no array = interno
+vence empate, decisão já registrada em "Escopo"). Atualize o comentário
+pra refletir isso em vez de apagar a explicação antiga inteira — a
+afirmação "origem diferente sempre ignora ordem" continua verdadeira pra
+`USER_AGENT` vs. `AUTHOR`, só não mais entre os dois `AUTHOR` entre si.
+
+### Fora de escopo
+
+CSS custom properties (`--var`) dentro de `style=""` (nem sequer existem
+em stylesheet nenhum ainda — fora de escopo geral do projeto, não
+específico desta versão); `style=""` sendo mutado em runtime por uma
+futura API de mutação (a Application já tem `tbox_html_node_set_attribute`
+genérico — um `style=""` mutado por ele já funcionaria automaticamente na
+próxima `tbox_context_run_frame`, já que a Style layer reparseia o atributo
+a cada resolve, sem cache — mas nenhum teste/demo dedicado a esse cenário
+específico entra nesta versão); múltiplos `<style media="...">` com query
+de mídia (`media` é só mais um atributo ignorado, mesmo tratamento de
+qualquer atributo não reconhecido).
+
+### Fatia vertical v9 — critério de "pronto"
+
+Um app tbox que:
+- carrega um documento com um `<style>` embutido (não passado via
+  `css_path`) contendo uma regra `.algo { color: blue; }`, e um elemento
+  com `class="algo"` mostra o texto azul — prova de que `<style>` interno
+  agora participa da cascata;
+- o mesmo `css_path` externo declara `.algo { color: green; }` (mesma
+  especificidade, `class`) — o resultado final é AZUL (interno vence
+  empate contra externo, per "Escopo");
+- um elemento com `style="color: red;"` (inline) E uma classe que bateria
+  `color: blue` num seletor de alta especificidade (ex. `#id.algo`) no CSS
+  externo/interno mostra VERMELHO — inline vence qualquer seletor author,
+  não importa a especificidade dele;
+- um elemento com um `style="color: red !important;"` inline E uma regra
+  externa `!important` pra mesma propriedade com um seletor MUITO
+  específico mostra VERMELHO mesmo assim — inline `!important` continua
+  vencendo qualquer `!important` de seletor;
+- continua sem regredir nada de v0-v8.
+
+## Decisões já tomadas (v9)
+
+- **Só um valor novo no enum (`TBOX_CSS_ORIGIN_AUTHOR_INLINE`), aditivo**
+  — `TBOX_CSS_ORIGIN_AUTHOR` continua existindo, sem renomear, usado pelo
+  CSS externo E pelo `<style>` interno igual antes. Nenhuma mudança
+  quebrando compatibilidade nesta versão (confirmado: sem `switch`
+  exaustivo sobre o enum em lugar nenhum do código). Desenho revisado
+  nesta sessão a partir de uma pergunta direta sobre por que a primeira
+  versão do design tocava 4 camadas — a resposta (jogar a resolução de
+  inline pra DENTRO de `tbox_css_cascade_resolve`, que já recebe `node`)
+  reduziu pra 2 camadas e eliminou a necessidade das três sub-origens.
+- **Resolução de `style=""` inteira dentro de `tbox_css_cascade_resolve`**,
+  não na Style layer — qualquer chamador dessa função ganha suporte a
+  inline automaticamente, sem precisar saber que a feature existe. A
+  função sintética de parsing (`tbox_css_cascade_parse_inline_style`) fica
+  `static`, sem virar API pública — só `tbox_css_cascade_resolve` precisa
+  dela.
+- **Inline expresso como dois degraus a mais na tabela de rank** (não uma
+  "especificidade sintética infinita" por declaração) — mais simples de
+  implementar dado que a tabela de rank já existe e já é o único lugar
+  que decide prioridade entre origens; o efeito observável é idêntico ao
+  espec real (inline sempre vence author normal, sempre perde pra
+  user/user-agent important).
+- **`style=""` parseado via wrapper `"* {...}"` + `tbox_css_parse`
+  reaproveitado** — sem API nova de "lista de declarações" no CSS Parser.
+- **Busca por `<style>` parte da raiz REAL do documento**, não do que o
+  Layout Tree efetivamente desenha — decisão deliberada pra não perder um
+  `<style>` dentro de um `<head>` irmão de `<body>`.
+- **Múltiplos `<style>` concatenados num stylesheet interno só**, não um
+  array — cascade-equivalente, mais simples.
+- **Empate CSS externo/`<style>` interno: interno vence**, implementado só
+  pela ordem do array de `sources` (mesma origem `AUTHOR` pros dois, sem
+  lógica de desempate nova).
+- **`!important` suportado dentro de `style=""`**, reaproveitando
+  `tbox_css_cascade_strip_important` já existente.
+- **Sem novo estado global/estático** — `internal_stylesheet` é campo de
+  instância de `tbox_context` (não global); o stylesheet sintético de
+  inline é local à chamada de `tbox_css_cascade_resolve`, destruído antes
+  dela retornar — nunca compartilhado entre nós nem frames.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3, v4, v5, v6, v7 e v8 (registrada nas seções de
-cada camada), pra "Ferramentas de desenvolvimento — captura de tela
-headless" acima (não uma versão da escada, mas com o mesmo nível de
+fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8 e v9 (registrada nas
+seções de cada camada), pra "Ferramentas de desenvolvimento — captura de
+tela headless" acima (não uma versão da escada, mas com o mesmo nível de
 decisão documentada), ou consolidada como débito de design conhecido
 acima, com gatilho explícito de quando revisitar.

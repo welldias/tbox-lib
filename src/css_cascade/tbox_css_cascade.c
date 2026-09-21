@@ -3,6 +3,7 @@
 #include <tbox/css_selector.h>
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
@@ -115,12 +116,11 @@ tbox_string_view tbox_css_cascade_strip_important(tbox_string_view value, bool *
 /* Total order over (origin, important) per this header's documented
  * priority -- rank[origin][important ? 1 : 0]. */
 static int tbox_css_cascade_rank(tbox_css_origin origin, bool important) {
-    static const int rank[3][2] = {
-        /* USER_AGENT */ { 0, 5 },
-        /* USER       */
-        { 1, 4 },
-        /* AUTHOR     */
-        { 2, 3 },
+    static const int rank[4][2] = {
+        /* USER_AGENT    */ { 0, 7 },
+        /* USER          */ { 1, 6 },
+        /* AUTHOR        */ { 2, 4 },
+        /* AUTHOR_INLINE */ { 3, 5 },
     };
     return rank[origin][important ? 1 : 0];
 }
@@ -132,6 +132,64 @@ static bool tbox_css_cascade_wins_or_ties(const tbox_css_resolved_declaration *c
         return candidate_rank > existing_rank;
     }
     return tbox_css_cascade_specificity_compare(candidate->specificity, existing->specificity) >= 0;
+}
+
+/* Shared "does a winner already exist for this property? does the candidate
+ * win or tie against it?" bookkeeping -- used both by the sources scan below
+ * and by the style="" inline step, so the decision logic lives in exactly
+ * one place. `winners` holds tbox_css_resolved_declaration items, one per
+ * distinct property seen so far. */
+static void tbox_css_cascade_offer(tbox_vector *winners, const tbox_css_resolved_declaration *candidate) {
+    tbox_css_resolved_declaration *existing = NULL;
+    size_t winner_count                     = tbox_vector_length(winners);
+    for (size_t w = 0; w < winner_count; w++) {
+        tbox_css_resolved_declaration *item = tbox_vector_at(winners, w);
+        if (tbox_string_view_equal(item->property, candidate->property)) {
+            existing = item;
+            break;
+        }
+    }
+
+    if (existing == NULL) {
+        *(tbox_css_resolved_declaration *)tbox_vector_push(winners) = *candidate;
+    } else if (tbox_css_cascade_wins_or_ties(candidate, existing)) {
+        *existing = *candidate;
+    }
+}
+
+/* Wraps `declarations` (the raw text of a node's style="" HTML attribute) in
+ * a synthetic "* { ... }" ruleset -- the universal selector matches any
+ * node, so every declaration in it applies unconditionally -- and parses
+ * that via tbox_css_parse, exactly like any other CSS text. Returns NULL if
+ * `declarations` is empty, or if tbox_css_parse itself fails (allocation
+ * failure only -- propagated as-is, not treated specially). The scratch
+ * buffer built here is freed before returning: tbox_css_parse already
+ * copies everything it needs out of `input` before it returns (see
+ * <tbox/css_parser.h>), so the buffer doesn't need to outlive this call. */
+static tbox_css_stylesheet *tbox_css_cascade_parse_inline_style(tbox_string_view declarations) {
+    if (declarations.size == 0) {
+        return NULL;
+    }
+
+    static const char prefix[] = "* {";
+    static const char suffix[] = "}";
+    const size_t prefix_length = sizeof(prefix) - 1;
+    const size_t suffix_length = sizeof(suffix) - 1;
+    const size_t css_length    = prefix_length + declarations.size + suffix_length;
+
+    char *buffer = malloc(css_length + 1);
+    if (buffer == NULL) {
+        return NULL;
+    }
+
+    memcpy(buffer, prefix, prefix_length);
+    memcpy(buffer + prefix_length, declarations.data, declarations.size);
+    memcpy(buffer + prefix_length + declarations.size, suffix, suffix_length);
+    buffer[css_length] = '\0';
+
+    tbox_css_stylesheet *result = tbox_css_parse(buffer, css_length);
+    free(buffer);
+    return result;
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node) {
@@ -187,22 +245,42 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
                 candidate.value       = tbox_css_cascade_strip_important(declaration->value, &candidate.important);
                 candidate.specificity = best_specificity;
 
-                tbox_css_resolved_declaration *existing = NULL;
-                size_t winner_count                     = tbox_vector_length(&winners);
-                for (size_t w = 0; w < winner_count; w++) {
-                    tbox_css_resolved_declaration *item = tbox_vector_at(&winners, w);
-                    if (tbox_string_view_equal(item->property, candidate.property)) {
-                        existing = item;
-                        break;
+                tbox_css_cascade_offer(&winners, &candidate);
+            }
+        }
+    }
+
+    /* v9: style="" inline -- resolved here, inside tbox_css_cascade_resolve
+     * itself, so every caller (Style layer, tbox_css_cascade_resolve_stylesheet,
+     * tests) gets it automatically without knowing it exists. Runs after the
+     * sources loop above (unchanged) so it can reuse `winners` as-is. */
+    if (node != NULL) {
+        const tbox_html_attribute *style_attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("style", 5));
+        if (style_attribute != NULL && style_attribute->value.size > 0) {
+            tbox_css_stylesheet *inline_sheet = tbox_css_cascade_parse_inline_style(style_attribute->value);
+            if (inline_sheet != NULL) {
+                size_t ruleset_count             = tbox_css_stylesheet_ruleset_count(inline_sheet);
+                const tbox_css_ruleset *rulesets = tbox_css_stylesheet_rulesets(inline_sheet);
+
+                for (size_t r = 0; r < ruleset_count; r++) {
+                    const tbox_css_ruleset *ruleset = &rulesets[r];
+
+                    for (size_t d = 0; d < ruleset->declaration_count; d++) {
+                        const tbox_css_declaration *declaration = &ruleset->declarations[d];
+
+                        tbox_css_resolved_declaration candidate;
+                        candidate.ruleset     = ruleset;
+                        candidate.selector    = ruleset->selector_count > 0 ? &ruleset->selectors[0] : NULL;
+                        candidate.origin      = TBOX_CSS_ORIGIN_AUTHOR_INLINE;
+                        candidate.property    = declaration->property;
+                        candidate.value       = tbox_css_cascade_strip_important(declaration->value, &candidate.important);
+                        candidate.specificity = (tbox_css_specificity){ 0, 0, 0 };
+
+                        tbox_css_cascade_offer(&winners, &candidate);
                     }
                 }
-
-                if (existing == NULL) {
-                    *(tbox_css_resolved_declaration *)tbox_vector_push(&winners) = candidate;
-                } else if (tbox_css_cascade_wins_or_ties(&candidate, existing)) {
-                    *existing = candidate;
-                }
             }
+            tbox_css_stylesheet_destroy(inline_sheet);
         }
     }
 
