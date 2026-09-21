@@ -3693,12 +3693,253 @@ visualmente pra `001.html` (só headings): as caixas vermelhas cercam
 cada palavra, consistente com "mesmo texto, fonte diferente", não um bug
 de comparação.
 
+## v11 — `<hr>`, `<br>`, `<pre>` e `text-align`
+
+Quatro itens do débito de HTML/CSS que `tests/assets/` (v10) já deixou
+visíveis. **`font-family` fica pra v12** (decisão desta sessão — o
+mantenedor quer pensar melhor no desenho antes de mexer na camada de
+Fonte/Texto, que hoje só resolve UMA família fixa, uma vez, na abertura
+do app; suportar `font-family` de verdade exige o cache de fontes crescer
+sob demanda, mudança estrutural maior que cabe melhor numa versão própria
+depois de mais discussão). Isso tem uma consequência direta pro escopo
+de `<pre>` aqui: ele ganha preservação de espaço em branco/quebras de
+linha literais, mas **continua usando a mesma fonte sans-serif de
+sempre** — sem monoespaçado de verdade até `font-family` existir.
+
+Auditoria de código desta sessão confirma: os três elementos (`<hr>`,
+`<br>`, `<pre>`) já são reconhecidos pelo HTML Parser (todos já entram na
+árvore corretamente — `<hr>`/`<br>` já são elementos vazios/self-closing
+via `tbox_html_void_elements`, `<hr>` já fecha um `<p>` aberto
+implicitamente desde a v6), mas **nenhum dos três, nem `text-align`, tem
+qualquer tratamento na Style layer ou no Layout Tree hoje** — confirmado
+por grep, sem resultado nenhum pra "font-family"/"text-align" em
+`tbox_style.c`/`style.h`, e `<br>`/`<pre>` caem no mesmo "elemento sem
+tratamento especial = não contribui nada" que qualquer tag desconhecida
+já recebe.
+
+Escopo desta versão, decidido nesta sessão:
+- **`<hr>`: só UA stylesheet, zero código novo de Style/Layout** — vira
+  `display: block` (já é o padrão) + `height` explícito + `background-color`
+  + `margin` vertical, todos recursos que já existem desde v0/v4/v8. Não
+  usa `border` (mesmo que browsers reais desenhem `<hr>` com uma borda
+  "inset"/"groove" — tbox só suporta `border-style: solid`/`none`
+  uniforme nos 4 lados, sem estilo de relevo, então uma barra sólida via
+  `background-color` é a aproximação mais simples e honesta hoje).
+- **`<br>`: quebra de linha forçada**, um novo campo `hard_break` no tipo
+  `tbox_layout_word` já existente — reaproveita inteiramente o pipeline
+  de palavras/linhas da v2 (`tbox_layout_break_lines` já divide em linhas;
+  só ganha a capacidade de terminar uma linha ANTES do limite de largura
+  quando encontra uma palavra marcada `hard_break`).
+- **`<pre>`: adicionado à lista fixa de text tags**, tratado com uma
+  função de coleta de palavras PRÓPRIA (não `tbox_layout_collect_words`) —
+  sem `tbox_string_collapse_whitespace`, cada linha física (texto entre
+  duas `\n`) vira UMA palavra só (espaços internos preservados
+  literalmente, nunca divididos), separadas por `hard_break`. Sem quebra
+  por largura (`white-space: pre` de verdade — não `pre-wrap`): uma linha
+  física comprida ultrapassa a caixa visualmente em vez de quebrar, mesmo
+  comportamento de qualquer conteúdo largo demais que a Layout Tree já
+  tem hoje (ver D4 do v0).
+- **`text-align`: `left`/`center`/`right`, sem `justify`** — `justify`
+  precisa redistribuir espaço ENTRE palavras (mexer em `space_width` por
+  ocorrência, não por face), categoria de complexidade diferente das
+  outras três; fica registrado como débito, não implementado agora.
+  Aplicado como um passo de PÓS-processamento por linha (desloca o `x`
+  dos runs já construídos), não uma mudança em como os runs são
+  construídos — `tbox_layout_build_line_runs` não muda nenhuma linha.
+- **`<pre>` ignora estrutura interna** (`<b>`/`<em>` aninhados dentro de
+  um `<pre>` renderizam no MESMO face do `<pre>`, não no deles) —
+  `tbox_html_node_text_content` (já existente, mesma função que achata
+  texto de qualquer elemento) fornece o texto já sem a estrutura, então
+  isso é consequência natural da implementação mais simples, não uma
+  limitação escolhida à parte.
+
+### Style — `text-align`
+
+`include/tbox/style.h`:
+```c
+typedef enum tbox_style_text_align {
+    TBOX_STYLE_TEXT_ALIGN_LEFT, /* initial */
+    TBOX_STYLE_TEXT_ALIGN_CENTER,
+    TBOX_STYLE_TEXT_ALIGN_RIGHT,
+} tbox_style_text_align;
+```
+`tbox_style` ganha `tbox_style_text_align text_align;` — **inheritable**,
+mesmo mecanismo de `color`/`font_weight_bold` (herda do pai já resolvido
+se não declarado/reconhecido; `LEFT` sem pai). `tbox_style_resolve`: uma
+função `tbox_style_parse_text_align` nova, reconhecendo `left`/`center`/
+`right` case-insensitive; qualquer outro valor (incluindo `justify`,
+fora de escopo) cai no mesmo tratamento de "não reconhecido = herda",
+igual `font-weight` já faz pra qualquer coisa fora de `bold`.
+
+### Layout Tree — `<br>` (quebra forçada)
+
+`tbox_layout_word` (`src/layout/tbox_layout.c`) ganha `bool hard_break;`
+(toda função que já empurra uma palavra — `tbox_layout_push_words`,
+`tbox_layout_push_list_marker` via ela — passa a setar explicitamente
+`hard_break = false`, sem depender de zero-init do `tbox_vector`). Nova
+função:
+```c
+static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face *face);
+```
+Empurra uma palavra sem texto (`width = 0`, `space_width = 0`,
+`hard_break = true`) — `face` é guardado só como referência de altura pra
+uma linha em branco entre duas quebras consecutivas (ver abaixo).
+`tbox_layout_collect_words`: no loop que já percorre os filhos diretos,
+um `child` que é ELEMENT com `tag_name == "br"` (checado ANTES do teste
+de `display == INLINE` que já existe — `<br>` não precisa de `display:
+inline` pra isso funcionar) empurra um `hard_break` com a face do
+elemento-texto atual (`tbox_font_face_cache_get(fonts,
+style->font_weight_bold, style->font_size)`) e `continue` pro próximo
+filho.
+
+`tbox_layout_break_lines` ganha um passo novo NO TOPO do corpo do loop
+(antes do cálculo de `prospective`/encaixe por largura, que não muda
+nenhuma linha): se `words[i].hard_break`, fecha a linha atual em
+`[line_start, i)` — se esse intervalo está VAZIO (`i == line_start`, ou
+seja, esta quebra vem logo depois de outra quebra, ou é a primeira
+palavra), a altura da linha não tem de onde vir do jeito normal (o loop
+de altura por face não itera nada) — usa `tbox_font_face_line_height(words[i].face)`
+como fallback (a face que `tbox_layout_push_hard_break` guardou), pra uma
+linha em branco entre duas quebras (`<br><br>`) ainda ocupar
+aproximadamente uma linha de altura, não zero. `line_start = i + 1`
+(pula a própria quebra). Depois do loop inteiro: o push da linha final
+(que hoje é incondicional) ganha uma guarda `if (line_start < word_count)`
+— sem isso, uma quebra sozinha no FINAL do texto (`"texto<br>"`, nada
+depois) criaria uma linha em branco fantasma que nenhum browser real
+mostra; com a guarda, só cria linha final quando sobra conteúdo de
+verdade depois da última quebra.
+
+### Layout Tree — `<pre>` (texto verbatim)
+
+`tbox_layout_is_text_tag`: `"pre"` entra na lista fixa (junto de
+`h1-h6`/`p`/`li`).
+
+Nova função, chamada em vez de `tbox_layout_collect_words` quando
+`node`'s tag é `"pre"`:
+```c
+static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words);
+```
+Pega `tbox_html_node_text_content(arena, node)` (texto já achatado, sem
+decodificação alterada — entidades continuam decodificando normalmente,
+`<pre>` não é raw text como `<script>`/`<style>`) e varre byte a byte:
+cada trecho entre duas `\n` (ou entre o início/`\n` anterior e o
+fim/próxima `\n`) vira UMA `tbox_layout_word` cujo `text` é o trecho
+INTEIRO (sem dividir por espaço — `tbox_layout_push_words` NÃO é
+reaproveitada aqui, de propósito, porque ela divide em palavras
+separadas, exatamente o que `<pre>` não deve fazer), medida via
+`tbox_font_measure_text` normalmente. Entre duas linhas físicas, empurra
+um `tbox_layout_push_hard_break` (mesma função do `<br>` — reaproveitada
+sem mudança).
+
+`tbox_layout_break_lines` ganha um parâmetro novo, `bool no_wrap` (último
+parâmetro): quando `true`, a condição de quebra por largura
+(`prospective > available_width`) nunca dispara — linhas só terminam em
+`hard_break` (ou no fim das palavras). `tbox_layout_build_text_runs`
+passa `no_wrap = (tag_name == "pre")` nessa chamada — `false` mantém o
+comportamento de quebra por largura de sempre pra `h1-h6`/`p`/`li`.
+
+### Layout Tree — aplicação de `text-align`
+
+Em `tbox_layout_build_text_runs`, o loop que já chama
+`tbox_layout_build_line_runs` uma vez por linha ganha um passo de
+pós-processamento, só quando `style->text_align != TBOX_STYLE_TEXT_ALIGN_LEFT`:
+guarda `tbox_vector_length(&runs)` antes e depois da chamada (o range de
+runs que essa LINHA específica acabou de empurrar); calcula a largura
+renderizada da linha (`(x + width)` do último run empurrado, menos
+`content_x`); calcula o deslocamento (`(available_width - line_width) /
+2` pra `CENTER`, `available_width - line_width` pra `RIGHT`); se positivo
+(nunca desloca pra fora à esquerda em caso de overflow — uma linha mais
+larga que `available_width` já estoura visualmente, mesmo comportamento
+de D4), soma esse deslocamento ao `rect.x` de cada run daquele range.
+`tbox_layout_build_line_runs` em si não muda nenhuma linha — o
+deslocamento é inteiramente um ajuste posterior sobre os runs que ela já
+produziu.
+
+### Orchestration — UA stylesheet de `<hr>`
+
+`tbox_ua_style_config` ganha `double hr_height_px;` (direto na struct,
+como `list_padding_left_px` da v8 — não é margin nem faz sentido dentro
+de `tbox_ua_style_margin_config`). `tbox_ua_style_margin_config` ganha
+`double hr_px;` (margin vertical, mesmo padrão de `list_px`).
+`tbox_ua_style_config_default()`: `hr_height_px = 2.0`, `margin.hr_px =
+8.0` (~0.5em num `base_px` de 16px, aproximando o `margin-block: 0.5em`
+que browsers reais usam). Template CSS (`tbox_ua_style_generate_css`)
+ganha:
+```c
+"hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"
+```
+`"gray"` já é uma cor nomeada suportada (`Gray`, `0x80,0x80,0x80`, tabela
+de 140 cores CSS já implementada, comparação case-insensitive) — sem
+mudança nenhuma na Style layer ou no CSS Cascade pra isso.
+
+### Fora de escopo
+
+`justify` em `text-align` (redistribuição de espaço entre palavras — ver
+"Escopo"). `white-space` como propriedade CSS de verdade (o tratamento de
+`<pre>` é hardcoded por tag name, igual o marcador de lista da v8 foi —
+não dá pra escrever `<div style="white-space: pre">` e ganhar o mesmo
+efeito). Expansão de tab (`\t` dentro de `<pre>` passa como caractere
+literal pro rasterizador, sem virar N espaços alinhados a colunas fixas).
+Estrutura interna preservada dentro de `<pre>` (negrito/itálico aninhado
+não muda de face). Fonte monoespaçada de verdade pra `<pre>` (depende de
+`font-family`, v12). `<hr>` com aparência "inset"/"groove" (depende de
+`border-style` além de solid/none).
+
+### Fatia vertical v11 — critério de "pronto"
+
+Um app tbox que:
+- exibe um `<hr>` entre dois parágrafos — uma barra horizontal visível
+  (altura + cor de fundo), com espaçamento vertical acima/abaixo;
+- exibe `"linha um<br>linha dois<br><br>linha quatro"` dentro de um
+  `<p>` — quatro linhas visíveis (a terceira em branco), não uma linha só
+  nem três;
+- exibe um `<pre>` com múltiplos espaços internos (`"a    b"`) e uma
+  quebra de linha literal no HTML fonte — os espaços aparecem largos de
+  verdade (não colapsados pra um só) e a quebra de linha é respeitada
+  sem precisar de `<br>`;
+- exibe três parágrafos com `text-align: left`/`center`/`right`
+  explícitos — visivelmente alinhados de formas diferentes (esquerda
+  rente à borda, centro equidistante, direita rente à borda oposta);
+- continua sem regredir nada de v0-v10 (inclusive `tests/assets/003.html`
+  e `010.html`, que já usam `font-size`/`text-align` via `style=""` —
+  `010.html` deve mostrar `text-align: center` funcionando pela primeira
+  vez, ainda que `font-family:verdana`/`courier` desse mesmo arquivo
+  continue sem efeito até a v12).
+
+## Decisões já tomadas (v11)
+
+- **`font-family` adiado pra v12** — pedido explícito do mantenedor, pra
+  pensar melhor na resolução de fontes sob demanda antes de mexer na
+  camada de Fonte/Texto.
+- **`<pre>` sem fonte monoespaçada nesta versão** — consequência direta
+  da decisão acima; só preservação de espaço/quebra de linha.
+- **`<hr>` só via UA stylesheet** (`background-color`, não `border`) —
+  zero código novo de Style/Layout, e evita a limitação de
+  `border-style` uniforme (sem "inset"/"groove").
+- **`<br>`/`<pre>` reaproveitam o MESMO mecanismo de `hard_break`** — uma
+  função (`tbox_layout_push_hard_break`) serve os dois casos, sem
+  duplicar lógica de quebra forçada.
+- **`text-align` sem `justify`** — categoria de complexidade diferente
+  (redistribuição de espaço entre palavras), registrado como débito.
+- **`text-align` aplicado como pós-processamento de posição**, não uma
+  mudança em como os runs são construídos — mantém
+  `tbox_layout_build_line_runs` intocada.
+- **`<pre>` ignora estrutura interna** (negrito/itálico aninhado não
+  muda de face) — simplificação direta de usar `tbox_html_node_text_content`
+  em vez de percorrer filhos como o caminho normal de texto faz.
+- **Sem novo estado global/estático** — `hard_break` é campo de uma
+  struct de pilha (`tbox_layout_word`), `text_align` é campo de
+  `tbox_style` (por nó, não global), os dois campos novos de
+  `tbox_ua_style_config` são configuração passada por valor.
+
 ## Perguntas em aberto (consolidado)
 
-Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 e v10 (registrada nas
-seções de cada camada), pra "Ferramentas de desenvolvimento — captura de
-tela headless" acima (não uma versão da escada, mas com o mesmo nível de
-decisão documentada), ou consolidada como débito de design conhecido
-acima, com gatilho explícito de quando
+**`font-family` está deliberadamente em aberto pra v12** — adiado nesta
+sessão a pedido do mantenedor, sem desenho ainda (ver seção "v11" acima).
+Fora isso, nenhuma pendência de curto prazo restante. Toda lacuna
+identificada foi fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
+e v11 (registrada nas seções de cada camada), pra "Ferramentas de
+desenvolvimento — captura de tela headless" acima (não uma versão da
+escada, mas com o mesmo nível de decisão documentada), ou consolidada
+como débito de design conhecido acima, com gatilho explícito de quando
 revisitar.

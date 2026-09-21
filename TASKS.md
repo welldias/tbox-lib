@@ -1,35 +1,39 @@
-# tbox — Tarefas da v9
+# tbox — Tarefas da v11
 
-Quebra da seção "v9 — CSS de autor: inline (`style=""`) e `<style>` interno
-na cascata" do `ARCHITECTURE.md` em tarefas executáveis por agentes sem
-contexto desta conversa. Cada tarefa abaixo é auto-contida: aponta para a
-subseção exata do `ARCHITECTURE.md` (a fonte da verdade de *o quê*
-construir) e acrescenta só o que esse documento não cobre — caminho de
-arquivo, como registrar teste, como verificar que ficou pronto.
+Quebra da seção "v11 — `<hr>`, `<br>`, `<pre>` e `text-align`" do
+`ARCHITECTURE.md` em tarefas executáveis por agentes sem contexto desta
+conversa. Cada tarefa abaixo é auto-contida: aponta para a subseção exata
+do `ARCHITECTURE.md` (a fonte da verdade de *o quê* construir) e
+acrescenta só o que esse documento não cobre — caminho de arquivo, como
+registrar teste, como verificar que ficou pronto.
 
-(Este arquivo substitui a quebra de tarefas da v8, que está completa e
-commitada — ver `ARCHITECTURE.md` para o design de cada camada v0-v9 e
-`git log -- TASKS.md` para recuperar quebras de tarefas anteriores, se
-precisar consultá-las.)
+(Este arquivo substitui a quebra de tarefas da v10, que está completa —
+ver `ARCHITECTURE.md` para o design de cada camada v0-v11 e `git log --
+TASKS.md` para recuperar quebras de tarefas anteriores, se precisar
+consultá-las.)
 
 ## Regra que vale pra TODA tarefa deste arquivo, sem exceção
 
 **Nenhuma tarefa deve introduzir uma variável global/estática MUTÁVEL nova
 além das que o `ARCHITECTURE.md` já especifica explicitamente pra ela**
 (ver o item de débito "Thread-safety futura" no fim do `ARCHITECTURE.md`).
-A v9 não especifica nenhum global/estático mutável novo — se a
+A v11 não especifica nenhum global/estático mutável novo — se a
 implementação de alguma tarefa parecer precisar de um, **pare e reporte
 isso no relatório final da tarefa em vez de adicionar por conta própria**.
+
+**`font-family` NÃO entra nesta versão** (adiado pra v12, decisão do
+mantenedor) — nenhuma tarefa abaixo deve tentar resolver fontes por nome
+nem mudar `tbox_font_face_cache`/`tbox_font_source_*`. `<pre>` usa a mesma
+fonte sans-serif de sempre.
 
 ## Convenção entre tarefas (leia antes de despachar qualquer uma)
 
 **As Tarefas 1 e 2 abaixo não compartilham NENHUM arquivo** (módulos
-diferentes: `css_cascade` vs. `context`) — rodam em paralelo sem risco de
-conflito de merge. Nenhuma das duas depende da outra: a Tarefa 1 (inline)
-não precisa que `<style>` interno exista pra funcionar, e a Tarefa 2
-(`<style>` interno) não precisa que inline exista — cada uma é
-independentemente testável, e só a fatia vertical (Tarefa 3) precisa das
-duas juntas pra mostrar o cenário completo.
+diferentes: `style` vs. `context`) — rodam em paralelo sem risco de
+conflito de merge. **A Tarefa 3 depende da Tarefa 1** (precisa do campo
+`text_align` que a Tarefa 1 acrescenta a `tbox_style` pra compilar) — só
+pode começar depois dela mergeada. A Tarefa 3 NÃO depende da Tarefa 2
+(arquivos completamente diferentes: `tbox_layout.c` vs. `tbox_context.c`).
 
 Toda tarefa que roda `cmake`/`ctest` assume o padrão já usado no
 `CMakeLists.txt` raiz: `cmake -S . -B build && cmake --build build`, depois
@@ -37,247 +41,294 @@ Toda tarefa que roda `cmake`/`ctest` assume o padrão já usado no
 passar limpo com `-Wall -Wextra -Wpedantic -Werror` (já é como o projeto
 builda hoje — nenhuma tarefa deve silenciar warning, deve corrigi-lo).
 
-**Importante sobre compatibilidade:** esta versão NÃO renomeia
-`TBOX_CSS_ORIGIN_AUTHOR` (decisão revisada nesta sessão, ver
-"ARCHITECTURE.md"'s v9 — a primeira versão do design teria dividido em
-três valores; a versão final só ACRESCENTA `TBOX_CSS_ORIGIN_AUTHOR_INLINE`
-no fim do enum). Nenhum código existente que já usa
-`TBOX_CSS_ORIGIN_AUTHOR` precisa mudar — não toque nesses usos a menos que
-a tarefa mande explicitamente.
-
 ---
 
 ## Tier 0 — sem dependência de tarefa nova
 
-### Tarefa 1 — CSS Cascade: `style=""` inline
+### Tarefa 1 — Style: propriedade `text-align`
 **Depende de:** nada. **Bloqueia:** Tarefa 3.
 
-**Leia primeiro:** `ARCHITECTURE.md`, seção "v9 — CSS de autor..." →
-"Escopo" (por que só um valor novo no enum, aditivo; por que a resolução
-fica dentro de `tbox_css_cascade_resolve`; por que `!important` é
-suportado) e "CSS Cascade — `TBOX_CSS_ORIGIN_AUTHOR_INLINE` + resolução de
-inline dentro de `tbox_css_cascade_resolve`" INTEIRA (assinaturas exatas,
-a tabela de rank nova, onde o passo de inline entra na função).
-`src/css_cascade/tbox_css_cascade.c` inteiro — em especial
-`tbox_css_cascade_rank` (a tabela que cresce), `tbox_css_cascade_resolve`
-(onde o loop de `sources` já existe e onde o passo novo entra DEPOIS
-dele), e a struct local `winners`/a lógica "existe candidato pra essa
-propriedade? `tbox_css_cascade_wins_or_ties`? substitui" que já existe
-nesse loop — o passo novo REAPROVEITA essa mesma lógica, não duplica.
-`include/tbox/css_parser.h` — `tbox_css_ruleset`/`tbox_css_declaration`
-(pra iterar as declarações do stylesheet sintético) e a doc comment de
-`tbox_css_parse` (confirma que a entrada é copiada pro arena da própria
-biblioteca, então um buffer sintético pode ser liberado logo depois da
-chamada retornar). `include/tbox/html_parser.h` —
-`tbox_html_node_get_attribute` (já devia estar acessível neste arquivo,
-confirme o include).
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v11 — `<hr>`, `<br>`,
+`<pre>` e `text-align`" → "Escopo" (por que sem `justify`) e "Style —
+`text-align`" INTEIRA (o enum exato, a inheritance, o parsing
+case-insensitive). `include/tbox/style.h` — a struct `tbox_style` (onde o
+campo novo entra, ao lado de `font_weight_bold` que já é o exemplo mais
+próximo de "propriedade booleana/enum simples, herdável, com fallback pra
+não-reconhecido") e o comentário "Scope" logo abaixo de
+`tbox_style_resolve` (que precisa ser atualizado pra listar `text-align`
+como suportado, tirando-o implicitamente de "fora de escopo" — hoje ele
+não é mencionado nem como suportado nem como fora de escopo nesse
+comentário específico, mas confira se `white-space`/outros continuam
+corretos). `src/style/tbox_style.c` — `tbox_style_resolve` inteiro (em
+especial como `font-weight` já trata herança + fallback pra
+não-reconhecido, é o padrão a replicar) e `tbox_style_parse_display`
+(mesmo padrão de função pequena com `if`/`else if` por palavra-chave
+case-insensitive, pra `tbox_style_parse_text_align` seguir o mesmo
+estilo).
 
 **Arquivos a editar:**
-- `include/tbox/css_cascade.h`: `tbox_css_origin` ganha
-  `TBOX_CSS_ORIGIN_AUTHOR_INLINE` no FIM do enum (depois de
-  `TBOX_CSS_ORIGIN_AUTHOR`, que não muda de posição nem de valor).
-  Atualize o comentário de ordem de prioridade acima do enum (hoje
-  documenta só 3 origens) pra incluir o degrau de inline (ver a ordem
-  completa no ARCHITECTURE.md). Remova/reescreva a frase "There is no
-  fourth 'style attribute' bucket..." — ela deixa de ser verdade a partir
-  desta versão.
-- `src/css_cascade/tbox_css_cascade.c`:
-  1. `tbox_css_cascade_rank`: tabela `rank[3][2]` vira `rank[4][2]` — os
-     valores exatos estão no ARCHITECTURE.md (não invente números
-     diferentes, a ordem relativa importa: UA-normal < USER-normal <
-     AUTHOR-normal < AUTHOR_INLINE-normal < AUTHOR-important <
-     AUTHOR_INLINE-important < USER-important < UA-important).
-  2. Nova função `static tbox_css_stylesheet
-     *tbox_css_cascade_parse_inline_style(tbox_string_view declarations)`:
-     se `declarations.size == 0`, retorna `NULL`. Senão, aloca (`malloc`,
-     liberado antes de retornar — não precisa sobreviver além desta
-     função, já que `tbox_css_parse` copia tudo que precisa) um buffer do
-     tamanho EXATO `strlen("* {") + declarations.size + strlen("}") + 1`
-     (não um tamanho fixo — `style=""` real pode ser longo, truncar
-     seria um bug visível), monta o texto `"* {" + declarations + "}"`,
-     chama `tbox_css_parse(buffer, tamanho_sem_o_nul)`, libera o buffer,
-     retorna o resultado (pode ser `NULL` se `tbox_css_parse` falhar —
-     propague).
-  3. Em `tbox_css_cascade_resolve`: DEPOIS do loop que já escaneia
-     `sources` (esse loop não muda nenhuma linha), adicione: se `node !=
-     NULL`, chame `tbox_html_node_get_attribute(node, tbox_string_view_make("style", 5))`;
-     se achou um atributo com `value.size > 0`, chame
-     `tbox_css_cascade_parse_inline_style(attr->value)`; se o resultado
-     não é `NULL`, itere o (único) ruleset desse stylesheet sintético
-     (`tbox_css_stylesheet_rulesets`/`tbox_css_stylesheet_ruleset_count`,
-     mesmas funções que o loop de `sources` já usa) e, pra cada
-     `tbox_css_declaration`, monte um `tbox_css_resolved_declaration`
-     candidato com `origin = TBOX_CSS_ORIGIN_AUTHOR_INLINE`,
-     `specificity = {0,0,0}` (não importa pro rank de inline, que já
-     vence só pela origem — mas preencha com um valor válido, não
-     deixe lixo), `value = tbox_css_cascade_strip_important(declaration->value, &candidate.important)`
-     (mesma chamada que o loop de `sources` já faz) — e jogue esse
-     candidato no MESMO "existe pra essa propriedade? vence/empata?
-     substitui" que o loop de `sources` já usa (extraia isso pra uma
-     função/bloco reaproveitável se for mais limpo do que duplicar o
-     texto, mas NÃO duplique a lógica de decisão em si). Destrua o
-     stylesheet sintético (`tbox_css_stylesheet_destroy`) antes da
-     função retornar, em QUALQUER caminho de saída (sucesso ou não).
-  4. `tbox_css_cascade_resolve_stylesheet` não muda (continua usando
-     `TBOX_CSS_ORIGIN_AUTHOR` pro único stylesheet que recebe) — o inline
-     agora é automático pra ela também, de graça, sem precisar de
-     nenhuma mudança na função em si.
-- `tests/css_cascade/test_cascade.c` — casos novos (grupo `css_cascade`
-  já registrado, mesmo padrão de `tbox_css_cascade_resolve_stylesheet`/
-  `find_cstr`/`TBOX_TEST_ASSERT` já usado no arquivo):
-  - `<p style="color: red;">x</p>` sem stylesheet nenhum (`sheet = ""`)
-    — `color` resolve pra `"red"`;
-  - `<p id="x" style="color: red;">x</p>` com stylesheet
-    `"#x { color: blue; }"` (especificidade de ID, a mais alta possível
-    por seletor) — `color` AINDA resolve pra `"red"` (inline vence
-    QUALQUER seletor, não importa a especificidade);
-  - `<p style="color: red !important;">x</p>` com stylesheet
-    `"#x { color: blue !important; }"` no mesmo `<p id="x" ...>` — `color`
-    resolve pra `"red"` (inline `!important` vence author `!important` de
-    seletor forte);
-  - regressão: um `<p>` sem atributo `style` nenhum resolve exatamente
-    como antes (nenhuma mudança de comportamento pra quem não usa
-    inline);
-  - regressão: `style=""` (atributo presente, vazio) não contribui
-    NADA pro resultado (mesmo efeito de não ter o atributo).
+- `include/tbox/style.h`:
+  1. Novo enum, antes de `typedef struct tbox_style`:
+     ```c
+     typedef enum tbox_style_text_align {
+         TBOX_STYLE_TEXT_ALIGN_LEFT, /* initial */
+         TBOX_STYLE_TEXT_ALIGN_CENTER,
+         TBOX_STYLE_TEXT_ALIGN_RIGHT,
+     } tbox_style_text_align;
+     ```
+  2. `tbox_style` ganha `tbox_style_text_align text_align;` — comentário
+     ao lado documentando que é herdável, igual `color`/`font_weight_bold`.
+  3. Atualize a doc comment de "Scope" de `tbox_style_resolve` pra
+     mencionar `text-align` (`left`/`center`/`right`, sem `justify`) como
+     suportado nesta versão.
+- `src/style/tbox_style.c`:
+  1. Nova função `static bool tbox_style_parse_text_align(tbox_string_view raw, tbox_style_text_align *out)`
+     — reconhece `"left"`/`"center"`/`"right"` case-insensitive (mesma
+     função de comparação que `tbox_style_parse_display` já usa pra
+     `"block"`/`"inline"`/`"none"`), retorna `false` pra qualquer outro
+     valor (incluindo `"justify"`).
+  2. Em `tbox_style_resolve`: resolve `text-align` com o MESMO padrão de
+     herança que `font-weight` já usa — se a declaração existe e
+     `tbox_style_parse_text_align` reconhece o valor, usa o valor
+     parseado; senão, herda `parent_style->text_align` se houver pai;
+     senão, `TBOX_STYLE_TEXT_ALIGN_LEFT` (o valor inicial, que também é
+     `0` — o primeiro membro do enum, então nem precisa de
+     inicialização explícita se a struct já for zero-inicializada em
+     algum lugar, mas siga o padrão explícito que `font_weight_bold` já
+     usa, não confie em zero-init implícito).
+- `tests/style/test_style.c` — casos novos (grupo `style` já registrado,
+  mesmo padrão `resolve_node`/`TBOX_TEST_ASSERT` já usado no arquivo):
+  - `div { text-align: center; }` resolve `style.text_align ==
+    TBOX_STYLE_TEXT_ALIGN_CENTER`;
+  - `div { text-align: RIGHT; }` (maiúsculas) resolve `RIGHT` — confirma
+    case-insensitive;
+  - um `<div><p>x</p></div>` com `div { text-align: center; }` e `p` SEM
+    `text-align` próprio — o `p` herda `CENTER` do pai (mesmo padrão do
+    teste de herança de `color`/`font-weight` já existente no arquivo,
+    procure por eles como referência);
+  - `div { text-align: justify; }` cai no valor herdado/inicial (`LEFT`
+    sem pai) — `justify` não é reconhecido, mesmo tratamento que qualquer
+    valor não suportado já recebe;
+  - regressão: um `div` sem `text-align` nenhum, sem pai, resolve `LEFT`
+    (o valor inicial).
 
-**Critério de pronto:** `ctest --test-dir build -R '^css_cascade$'` verde
-+ suíte inteira sem regressão.
+**Critério de pronto:** `ctest --test-dir build -R '^style$'` verde +
+suíte inteira sem regressão.
 
-### Tarefa 2 — Orchestration: `<style>` interno na cascata
-**Depende de:** nada. **Bloqueia:** Tarefa 3.
+### Tarefa 2 — Orchestration: UA stylesheet de `<hr>`
+**Depende de:** nada. **Bloqueia:** nada (a fatia vertical, Tarefa 4,
+depende dela, mas nenhuma outra tarefa desta versão).
 
-**Leia primeiro:** `ARCHITECTURE.md`, seção "v9 — CSS de autor..." →
-"Escopo" (por que a busca percorre o documento INTEIRO, não só o que o
-Layout Tree renderiza; por que múltiplos `<style>` são concatenados num
-stylesheet só; por que `<style>` interno vence empate contra CSS externo)
-e "Orchestration — extração de `<style>` do documento inteiro" INTEIRA
-(assinatura do campo novo, onde a travessia entra em
-`tbox_context_open_with_config`, o array `sources` de 3 elementos em
-`tbox_context_run_frame`, e o aviso sobre o comentário existente que
-precisa ser atualizado). `src/context/tbox_context.c` inteiro — em
-especial `struct tbox_context` (o campo novo), `tbox_context_open_with_config`
-(onde a travessia entra), `tbox_context_close` (o destroy novo), e
-`tbox_context_run_frame` (o array `sources`). `include/tbox/html_parser.h`
-— `tbox_html_document_root`, `tbox_html_node_text_content` (reaproveitada
-pra extrair o texto raw de cada `<style>`), e os campos
-`first_child`/`next_sibling`/`type`/`element.tag_name` de `tbox_html_node`
-(pra escrever a travessia recursiva). `src/base/tbox_string.h` —
-`tbox_string_builder_init`/`_append_view`/`_finish` (pra concatenar o
-texto de múltiplos `<style>`).
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v11 — `<hr>`, `<br>`,
+`<pre>` e `text-align`" → "Escopo" (por que `background-color` em vez de
+`border`) e "Orchestration — UA stylesheet de `<hr>`" INTEIRA (os campos
+novos exatos, os valores default, a linha de template). `include/tbox/context.h`
+— `tbox_ua_style_config`/`tbox_ua_style_margin_config` (as structs que
+ganham campo novo — mesmo padrão que `list_px`/`list_padding_left_px` já
+adicionaram na v8, veja como esses foram documentados como referência
+direta de estilo). `src/context/tbox_context.c` —
+`tbox_ua_style_config_default` e `tbox_ua_style_generate_css` (o template
+`snprintf` — confira se `TBOX_UA_STYLE_CSS_BUFFER_SIZE` ainda é
+suficiente com mais uma linha e dois `%g`; se não for, aumente o
+`#define`, documentando por quê, não silenciosamente — mesma checagem
+que a v8 já fez quando adicionou as linhas de `ul`/`ol`/`li`).
 
 **Arquivos a editar:**
+- `include/tbox/context.h`:
+  - `tbox_ua_style_margin_config` ganha `double hr_px;` (margin vertical
+    de `<hr>`, mesmo padrão de `list_px`).
+  - `tbox_ua_style_config` ganha `double hr_height_px;` (campo direto na
+    struct, igual `list_padding_left_px` — não é margin).
+  - Atualize os comentários de doc das duas structs e de
+    `tbox_ua_style_config_default` pra descrever os campos novos e seus
+    valores default.
 - `src/context/tbox_context.c`:
-  1. `struct tbox_context` ganha `tbox_css_stylesheet *internal_stylesheet;`
-     (mesmo lugar dos outros campos de stylesheet, mesmo padrão de
-     comentário).
-  2. Nova função privada `static void
-     tbox_context_collect_style_elements(tbox_arena *arena, const
-     tbox_html_node *node, tbox_string_builder *builder)`: se `node ==
-     NULL`, retorna. Se `node->type == TBOX_HTML_NODE_ELEMENT` e
-     `tbox_string_view_equal_cstr(node->element.tag_name, "style")`,
-     chama `tbox_html_node_text_content(arena, node)` e
-     `tbox_string_builder_append_view(builder, ...)` com o resultado.
-     Depois, SEMPRE (independente de ter sido um `<style>` ou não),
-     recursa em `node->first_child`/`next_sibling` (mesmo padrão de
-     travessia em pré-ordem que já existe em outros lugares do projeto,
-     ex. `tbox_layout_collect_words`).
-  3. Em `tbox_context_open_with_config`: depois de `tbox_html_parse`
-     bem-sucedido e ANTES de `tbox_css_parse(css, ...)` (o CSS externo),
-     crie uma `tbox_arena scratch = tbox_arena_create(0)`, um
-     `tbox_string_builder` sobre ela, chame
-     `tbox_context_collect_style_elements(&scratch,
-     tbox_html_document_root(document), &builder)` (a raiz de VERDADE do
-     documento — `tbox_html_document_root`, não o primeiro elemento de
-     topo que `tbox_layout_build` isola por conta própria), pegue o
-     resultado via `tbox_string_builder_finish`. Se o tamanho for > 0,
-     `tbox_css_parse` nele vira `internal_stylesheet` (falha de alocação
-     aqui segue o mesmo padrão de toda falha nesta função: desfaz o que
-     já foi alocado — incluindo `document` — e retorna `NULL`); senão,
-     `internal_stylesheet = NULL`. Destrua `scratch` depois (o texto já
-     foi copiado pra dentro do stylesheet por `tbox_css_parse`, não
-     precisa sobreviver além dele).
-  4. `tbox_context_close`: adicione
-     `tbox_css_stylesheet_destroy(ctx->internal_stylesheet);` ao lado dos
-     outros `_destroy` (seguro com `NULL`).
-  5. `tbox_context_run_frame`: o array `sources` cresce de
-     `tbox_css_cascade_source sources[2]` pra `sources[3]`, com o
-     terceiro elemento `{ ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR }`
-     — MESMA origem que `ctx->stylesheet` já usa, não uma nova. Ordem no
-     array: UA, depois `stylesheet` (externo), depois
-     `internal_stylesheet` — nessa ordem exata, porque a ordem entre os
-     dois `AUTHOR` decide o empate (interno por último = interno vence,
-     ver ARCHITECTURE.md). Atualize o comentário acima dessa linha (hoje
-     diz "Order in this array does not affect cascade priority" sem
-     qualificação) pra explicar que isso deixou de ser totalmente verdade
-     entre os dois `AUTHOR` especificamente.
+  - `tbox_ua_style_config_default()`: `config.margin.hr_px = 8.0;`
+    (~0.5em num base_px de 16px) e `config.hr_height_px = 2.0;`.
+  - `tbox_ua_style_generate_css`: adiciona ao template
+    `"hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"`,
+    passando `config.hr_height_px` e `config.margin.hr_px` nessa ordem.
+    `"gray"` já é uma cor nomeada suportada (case-insensitive) — não
+    precisa mudar nada na Style layer/CSS Cascade pra isso funcionar.
 - `tests/context/test_context.c` — casos novos (grupo `context` já
-  registrado, mesmo padrão de testes existentes que montam HTML/CSS via
-  `tbox_context_open`/`tbox_context_open_with_config` e inspecionam a
-  árvore via `tbox_context_hit_test`/`tbox_style_table`/cor resolvida):
-  - um documento com `<style>.algo{color:blue;}</style>` embutido (HTML
-    puro, sem CSS externo nenhum — `css`/`css_path` vazio) e um elemento
-    `class="algo"` — a cor resolvida do elemento é azul;
-  - o mesmo documento, mas agora com CSS externo `.algo{color:green;}`
-    (mesma especificidade) — a cor resolvida é AZUL (interno vence
-    empate);
-  - regressão: um documento SEM `<style>` nenhum embutido continua
-    resolvendo o CSS externo exatamente como antes (nenhuma mudança de
-    comportamento pra documentos sem `<style>`);
-  - um documento com DOIS `<style>` separados (ex. um antes e um depois
-    de outro conteúdo) — confirme que as regras dos dois se aplicam
-    (prova de que a concatenação funciona, não só o primeiro `<style>`
-    encontrado).
+  registrado, mesmo padrão de `default_config.margin.list_px`/
+  `list_padding_left_px` que a v8 já usa como referência de asserção
+  geométrica):
+  - um documento com `<hr>` sozinho (sem CSS de autor) — a caixa do `<hr>`
+    tem `margin_box`/`content_box` refletindo `default_config.hr_height_px`
+    de altura e `default_config.margin.hr_px` de margem vertical (mesmo
+    tipo de asserção geométrica que os testes de `list_px`/`paragraph_px`
+    já fazem);
+  - a cor de fundo resolvida do `<hr>` é `Gray` (0x80, 0x80, 0x80) — pode
+    confirmar via `tbox_style_table`/estilo resolvido do nó, ou via
+    inspeção do `tbox_display_list` gerado (`TBOX_PAINT_FILL_RECT` com
+    essa cor) — use o padrão que os testes de `context` já usam pra
+    inspecionar cor de um elemento;
+  - regressão: um `<p>`/`<h1>` isolados continuam com a mesma margem de
+    antes (a mudança no buffer/template não pode ter afetado elementos
+    que já existiam).
 
 **Critério de pronto:** `ctest --test-dir build -R '^context$'` verde +
 suíte inteira sem regressão.
 
 ---
 
-## Tier 1 — fatia vertical v9
+## Tier 1 — depende de Tarefa 1
 
-### Tarefa 3 — Fatia vertical v9 completa (exemplo + validação)
-**Depende de:** Tarefa 1 e Tarefa 2 (ambas mergeadas).
+### Tarefa 3 — Layout Tree: `<br>`, `<pre>` e aplicação de `text-align`
+**Depende de:** Tarefa 1 (mergeada — precisa do campo `tbox_style.text_align`
+pra compilar). **Bloqueia:** Tarefa 4.
 
-**Leia primeiro:** `ARCHITECTURE.md`, seção "v9 — CSS de autor..." →
-"Fatia vertical v9 — critério de 'pronto'" inteira.
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v11 — `<hr>`, `<br>`,
+`<pre>` e `text-align`" → "Escopo" INTEIRO, e as três subseções "Layout
+Tree — `<br>` (quebra forçada)", "Layout Tree — `<pre>` (texto verbatim)"
+e "Layout Tree — aplicação de `text-align`", nessa ordem — têm as
+assinaturas exatas, o algoritmo completo de `tbox_layout_break_lines`
+(incluindo o caso de linha vazia entre duas quebras consecutivas e a
+guarda da linha final), e a fórmula exata do deslocamento de
+`text-align`. `src/layout/tbox_layout.c` inteiro — em especial
+`tbox_layout_word`/`tbox_layout_push_words`/`tbox_layout_collect_words`/
+`tbox_layout_break_lines`/`tbox_layout_build_line_runs`/
+`tbox_layout_build_text_runs`/`tbox_layout_is_text_tag`/
+`tbox_layout_push_list_marker` (o padrão mais próximo de "função nova
+chamada condicionalmente dentro de `tbox_layout_build_text_runs`, baseada
+em tag name" já existe pra `<li>`, é a referência de estilo).
+
+**Arquivos a editar:**
+- `src/layout/tbox_layout.c`:
+  1. `tbox_layout_is_text_tag`: `"pre"` entra na lista fixa
+     `text_tags[]`.
+  2. `tbox_layout_word` ganha `bool hard_break;`. TODO ponto que já
+     empurra uma palavra (`tbox_layout_push_words`, e qualquer outro que
+     a Tarefa 3 adicionar) passa a setar `entry->hard_break = false;`
+     explicitamente — não dependa de zero-init do `tbox_vector`.
+  3. Nova função `static void tbox_layout_push_hard_break(tbox_arena *arena, tbox_vector *words, const tbox_font_face *face)`
+     (o parâmetro `arena` pode não ser necessário dependendo de como você
+     implementar — confira se precisa antes de incluir; a versão mais
+     simples não aloca nada, só empurra uma entrada com `text = {NULL,
+     0}`, `width = 0`, `space_width = 0`, `hard_break = true`).
+  4. `tbox_layout_collect_words`: no loop de filhos diretos, ANTES do
+     `if (child->type == TBOX_HTML_NODE_TEXT)` existente, adicione um
+     `if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "br"))`
+     que empurra um hard break (face = `tbox_font_face_cache_get(fonts,
+     style->font_weight_bold, style->font_size)`) e faz `continue` — ANTES
+     do teste de `display == INLINE` que já existe (não depende dele).
+  5. `tbox_layout_break_lines` ganha um parâmetro novo, `bool no_wrap`,
+     como ÚLTIMO parâmetro antes de `tbox_vector *lines`. No topo do
+     corpo do `for`, ANTES do cálculo de `prospective` já existente, um
+     `if (words[i].hard_break) { ... }` que fecha a linha atual em
+     `[line_start, i)` (com o fallback de altura pra intervalo vazio, ver
+     ARCHITECTURE.md), avança `line_start = i + 1`, zera `line_width`, e
+     `continue`. A condição de quebra por largura já existente ganha
+     `!no_wrap &&` no início (`if (!no_wrap && i > line_start &&
+     prospective > available_width)`). O push da linha final (depois do
+     loop) ganha a guarda `if (line_start < word_count) { ... }` em volta
+     do que já existe ali.
+  6. Nova função `static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words)`
+     — algoritmo exato no ARCHITECTURE.md (usa
+     `tbox_html_node_text_content`, varre byte a byte procurando `\n`,
+     cada trecho vira uma palavra inteira via `tbox_font_measure_text`
+     direto, sem `tbox_layout_push_words`).
+  7. `tbox_layout_build_text_runs`: no topo, decide
+     `bool is_preformatted = tbox_string_view_equal_cstr(node->element.tag_name, "pre");`
+     — se `true`, chama `tbox_layout_collect_preformatted_words` no lugar
+     de `tbox_layout_push_list_marker` + `tbox_layout_collect_words`
+     (`<pre>` não tem marcador de lista, então nem faz sentido chamar
+     `tbox_layout_push_list_marker` pra ele — pule os dois). Passa
+     `is_preformatted` como o novo argumento `no_wrap` de
+     `tbox_layout_break_lines`. No loop que já chama
+     `tbox_layout_build_line_runs` por linha, adicione o pós-processamento
+     de `text-align` descrito no ARCHITECTURE.md (guarda o tamanho de
+     `runs` antes/depois da chamada daquela linha, calcula e aplica o
+     deslocamento quando `style->text_align != TBOX_STYLE_TEXT_ALIGN_LEFT`).
+- `tests/layout/test_layout.c` — casos novos (grupo `layout` já
+  registrado, mesmo padrão de navegação de `tbox_layout_box`/inspeção de
+  `text_run_count`/`text_runs[i].text`/`.rect` já usado no arquivo,
+  inclusive os testes de marcador de lista da v8 como referência de
+  estilo):
+  - `<p>um<br>dois</p>` → `text_run_count == 2`, os dois runs com texto
+    "um"/"dois" em `rect.y` DIFERENTES (linhas separadas), não um run só;
+  - `<p>um<br><br>tres</p>` → 3 linhas no total (confirme via `rect.y`
+    de cada run, ou inspecionando o número de "linhas" que o texto ocupa
+    — decida a asserção mais direta dado como `text_runs`/`rect`
+    realmente saem, sem assumir um índice de linha explícito que não
+    existe na struct);
+  - `<p>x<br></p>` (quebra no final, nada depois) → SEM linha em branco
+    fantasma depois de "x" — confirme que não sobra um run/linha extra
+    vazio (esse é o caso da guarda `line_start < word_count`);
+  - `<pre>a    b</pre>` (4 espaços internos) → o texto do run contém os 4
+    espaços literais, não colapsados pra 1 (`text_eq`/comparação de
+    string exata, não `strstr`);
+  - `<pre>linha um\nlinha dois</pre>` → 2 runs/linhas separadas,
+    `rect.y` diferentes, cada uma com o texto da respectiva linha física;
+  - `<pre>` com uma linha muito mais larga que `available_width` passado
+    ao `tbox_layout_build` → a palavra/linha NÃO quebra (`text_run_count`
+    pra aquela linha é 1, o texto inteiro num run só, mesmo que
+    `rect.width` ultrapasse `available_width`) — prova de `no_wrap`;
+  - `<div style="text-align: center;"><p>oi</p></div>` (herda o
+    `text-align` pro `<p>`) → o `rect.x` do run de "oi" fica deslocado
+    pra a direita de onde ficaria em `left` (calcule o valor esperado
+    a partir da largura medida da palavra "oi" e da largura do container
+    — não hardcode um número sem derivar);
+  - regressão: `<p>texto normal</p>` sem `<br>`/`text-align` continua
+    exatamente como antes (1 run, `rect.x == content_x`);
+  - regressão: `<ul><li>item</li></ul>` (marcador da v8) continua
+    funcionando sem mudança — confirme que `<li>` não caiu
+    acidentalmente no caminho de `<pre>`.
+
+**Critério de pronto:** `ctest --test-dir build -R '^layout$'` verde +
+suíte inteira sem regressão.
+
+---
+
+## Tier 2 — fatia vertical v11
+
+### Tarefa 4 — Fatia vertical v11 completa (exemplo + validação)
+**Depende de:** Tarefas 1, 2 e 3 (todas mergeadas).
+
+**Leia primeiro:** `ARCHITECTURE.md`, seção "v11 — `<hr>`, `<br>`,
+`<pre>` e `text-align`" → "Fatia vertical v11 — critério de 'pronto'"
+inteira.
 
 **Trabalho:**
 1. Estender `example/tbox_app_demo.html`/`.css` (fixtures acumulados de
-   v0-v8, sem remover nada):
-   - Adicione um bloco `<style>` embutido no HTML (não no arquivo `.css`
-     externo) com pelo menos uma regra que colidiria com uma regra do CSS
-     externo na MESMA especificidade, pra provar visualmente que o
-     `<style>` interno vence o empate (ex. uma classe nova, digamos
-     `.v9-internal-wins`, declarada com uma cor no `.css` externo E
-     redeclarada com OUTRA cor dentro do `<style>` embutido no HTML — a
-     cor que aparece na tela tem que ser a do `<style>` interno).
-   - Adicione um elemento com `style="..."` inline que sobrescreve uma
-     regra de alta especificidade (ex. um seletor `#id.classe` no CSS
-     externo ou interno) — a cor/propriedade que aparece na tela tem que
-     ser a do `style=""` inline, não a do seletor de alta especificidade.
-   - Adicione um elemento com um `style="...!important;"` inline que
-     sobrescreve uma regra `!important` de seletor forte no CSS externo
-     ou interno pra mesma propriedade — mostrando que inline `!important`
-     também vence.
-   - Use cores fortemente contrastantes e classes CSS novas (mesmo padrão
-     de toda demo anterior, ex. `.v9-*`) pra cada cenário ficar fácil de
-     achar/comparar no screenshot.
+   v0-v10, sem remover nada) com:
+   - Um `<hr>` entre dois blocos existentes (ex. logo antes ou depois de
+     algum fixture já presente) — sem CSS de autor nenhum, só pra provar
+     o default da UA stylesheet.
+   - Um parágrafo novo com `<br>`, incluindo um `<br><br>` consecutivo
+     pra provar a linha em branco (ex. `"linha um<br>linha dois<br><br>linha
+     quatro"`).
+   - Um `<pre>` novo com múltiplos espaços internos e pelo menos uma
+     quebra de linha literal no HTML fonte.
+   - Três elementos (ou um só com três `<p>` filhos) usando
+     `text-align: left`/`center`/`right` explícitos via `style=""` ou
+     classe CSS nova (`.v11-*`, mesmo padrão de toda demo anterior),
+     com largura/borda visível suficiente pra diferenciar visualmente o
+     alinhamento na screenshot.
 2. Nenhuma mudança de código deveria ser necessária em `example/tbox_app.c`
    além de possivelmente `TBOX_APP_DEMO_HEIGHT` (mesmo padrão de todo
    incremento anterior — confira visualmente via `--screenshot` antes de
    mudar o número).
-3. Validação: use `--screenshot` (ver ARCHITECTURE.md's "Ferramentas de
-   desenvolvimento — captura de tela headless") — `./tbox_app_demo
-   --screenshot <path>.png` renderiza offscreen, sem depender de
-   compositor/janela nenhuma. `cmake -S . -B build && cmake --build build
-   && ctest --test-dir build` tudo verde primeiro, depois confira
-   visualmente na imagem gerada: o cenário do `<style>` interno vencendo
-   empate, o cenário do `style=""` inline vencendo especificidade alta, e
-   o cenário do `style=""` inline `!important` vencendo um `!important`
-   de seletor forte — todos mostrando a cor/resultado ESPERADO (não o que
-   seria produzido se a prioridade estivesse errada).
+3. Validação: use `--screenshot` (`./tbox_app_demo --screenshot
+   <path>.png`, sem depender de compositor/janela). `cmake -S . -B build
+   && cmake --build build && ctest --test-dir build` tudo verde primeiro,
+   depois confira visualmente na imagem gerada: a barra horizontal do
+   `<hr>`, as quatro linhas do parágrafo com `<br>` (incluindo a linha em
+   branco), os espaços preservados e a quebra de linha do `<pre>`, e os
+   três alinhamentos de texto visivelmente diferentes.
+4. Opcional, mas recomendado dado que existe: rode `tests/tbox_cmp`
+   manualmente (`./build/tests/tbox_cmp tests/assets`, se
+   `TBOX_OPENCV_FOUND` estiver disponível no ambiente) e confira se
+   `010.html` (que já usa `text-align: center`) mudou de SSIM/contagem de
+   diferenças em relação à v10 — não precisa bater 100% (a fonte
+   continua diferente do browser que gerou o golden, e `font-family`
+   daquele mesmo arquivo ainda não tem efeito), só documente no relatório
+   se a métrica melhorou, sem tratar isso como critério de aprovação
+   (ver ARCHITECTURE.md's v10 "Escopo" — vereditos por asset não são
+   gate).
 
 **Critério de pronto:** build limpo (TODOS os alvos, incluindo o exemplo)
-+ suíte inteira passando + a validação visual acima confirma os três
-cenários sem erro — este é o "pronto" da v9 inteira, não só desta tarefa.
++ suíte inteira passando + a validação visual acima confirma os quatro
+itens (hr, br, pre, text-align) sem erro — este é o "pronto" da v11
+inteira, não só desta tarefa.

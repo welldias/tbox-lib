@@ -75,19 +75,25 @@ tbox_ua_style_config tbox_ua_style_config_default(void) {
     config.margin.paragraph_px  = 16.0;
     config.margin.body_px       = 8.0;
     config.margin.list_px       = 16.0; /* NOVO v8: same as paragraph_px -- 1em at the default 16px base_px */
+    config.margin.hr_px         = 8.0;  /* NOVO v11: ~0.5em at the default 16px base_px, approximating the `margin-block: 0.5em` real browsers use for <hr> */
 
     config.list_padding_left_px = 40.0; /* NOVO v8: classic list indentation used by every real browser */
+    config.hr_height_px         = 2.0;  /* NOVO v11: <hr>'s explicit height */
 
     return config;
 }
 
 /* Generous enough for the fixed template below with any finite double
  * formatted via "%g" (at most a couple dozen significant characters) in
- * every one of its 17 slots (NOVO v8: was 14/15 before the two ul/ol/li
+ * every one of its 19 slots (NOVO v8: was 14/15 before the two ul/ol/li
  * lines below added 2 more %g slots -- bumped from 1024 to 2048 so the
  * worst case, ~24 chars/slot times 17 slots plus the fixed template text,
  * still has real headroom instead of landing right at the old buffer's
- * edge) -- sized with headroom rather than computed exactly. */
+ * edge; NOVO v11: the hr line below added 2 more %g slots, 17 -> 19 --
+ * worst case is now ~24 chars/slot * 19 slots + ~804 chars of fixed
+ * template text = ~1260 chars, still well within 2048, so the buffer did
+ * NOT need to grow again this time -- checked, not assumed) -- sized with
+ * headroom rather than computed exactly. */
 #define TBOX_UA_STYLE_CSS_BUFFER_SIZE 2048
 
 /* NOVO v2: renders the UA stylesheet's CSS text from `config`. The
@@ -135,6 +141,7 @@ static bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer
         "p { display: block; margin: %gpx 0px; }\n"
         "ul, ol { display: block; margin: %gpx 0px; padding: 0px 0px 0px %gpx; }\n"
         "li { display: block; }\n"
+        "hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"
         "b, strong { display: inline; font-weight: bold; }\n"
         "i, em, span, a { display: inline; }\n",
         config.margin.body_px, config.font.base_px,
@@ -145,7 +152,8 @@ static bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer
         config.font.heading_em[4], config.margin.heading_px[4],
         config.font.heading_em[5], config.margin.heading_px[5],
         config.margin.paragraph_px,
-        config.margin.list_px, config.list_padding_left_px);
+        config.margin.list_px, config.list_padding_left_px,
+        config.hr_height_px, config.margin.hr_px);
 
     return written >= 0 && (size_t)written < buffer_size;
 }

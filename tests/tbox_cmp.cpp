@@ -153,8 +153,8 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(thresh, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-    cv::Mat result_image     = img2_processed.clone();
-    int difference_count     = 0;
+    cv::Mat result_image = img2_processed.clone();
+    int difference_count = 0;
 
     for (const auto &contour : contours) {
         double area = std::fabs(cv::contourArea(contour));
@@ -253,7 +253,7 @@ static bool run_directory(const char *assets_dir, double threshold, int *out_tot
     }
 
     int total                = 0;
-    int equal_count           = 0;
+    int equal_count          = 0;
     int operational_failures = 0;
 
     struct dirent *entry;
@@ -301,7 +301,7 @@ static bool run_directory(const char *assets_dir, double threshold, int *out_tot
 
 int main(int argc, char **argv) {
     const char *assets_dir = argc > 1 ? argv[1] : "tests/assets";
-    double threshold        = argc > 2 ? atof(argv[2]) : 0.98;
+    double threshold       = argc > 2 ? atof(argv[2]) : 0.98;
 
     int total, equal_count, operational_failures;
     if (!run_directory(assets_dir, threshold, &total, &equal_count, &operational_failures)) {
@@ -309,8 +309,7 @@ int main(int argc, char **argv) {
     }
 
     printf("==================================================\n");
-    printf("Summary: %d pairs | %d EQUAL | %d DIFFERENT | %d operational failures\n",
-           total, equal_count, total - equal_count - operational_failures, operational_failures);
+    printf("Summary: %d pairs | %d EQUAL | %d DIFFERENT | %d operational failures\n", total, equal_count, total - equal_count - operational_failures, operational_failures);
     printf("==================================================\n");
 
     /* Exit code reflects only OPERATIONAL failure (couldn't open the

@@ -77,12 +77,14 @@ typedef struct tbox_ua_style_margin_config {
     double paragraph_px;
     double body_px;
     double list_px; /* NOVO v8: margin (top/bottom) of <ul>/<ol> -- same unit/semantics as paragraph_px */
+    double hr_px; /* NOVO v11: margin (top/bottom) of <hr> -- same unit/semantics as list_px/paragraph_px */
 } tbox_ua_style_margin_config;
 
 typedef struct tbox_ua_style_config {
     tbox_ua_style_font_config font;
     tbox_ua_style_margin_config margin;
     double list_padding_left_px; /* NOVO v8: <ul>/<ol> indentation (padding-left) -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, because it is a padding value, not a margin one, and that sub-struct is specifically for margin fields */
+    double hr_height_px; /* NOVO v11: <hr>'s explicit height -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, same reasoning as list_padding_left_px above: it is a height value, not a margin one */
 } tbox_ua_style_config;
 
 /* The classic browser values ARCHITECTURE.md documents (heading em scale
@@ -90,7 +92,9 @@ typedef struct tbox_ua_style_config {
  * 21/19/18/21/22/25; paragraph margin 16px; body margin 8px; base_px 16;
  * NOVO v8: list margin (top/bottom of <ul>/<ol>) 16px, same as
  * paragraph_px; list padding-left (indentation of <ul>/<ol>) 40px, the
- * classic value used by every real browser).
+ * classic value used by every real browser; NOVO v11: <hr> margin
+ * (top/bottom) 8px, approximating the `margin-block: 0.5em` real browsers
+ * use for <hr> at the default 16px base_px; <hr> height 2px).
  * Never fails, never allocates -- plain field assignment. */
 tbox_ua_style_config tbox_ua_style_config_default(void);
 

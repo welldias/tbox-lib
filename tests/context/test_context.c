@@ -1104,6 +1104,90 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* 34: NOVO v11 -- a <hr> alone (no author CSS) gets an explicit height
+     * (UA: "hr { ... height: %gpx; ... }", config.hr_height_px) AND a
+     * vertical margin (UA: "hr { ... margin: %gpx 0px; }", config.margin.
+     * hr_px) by default -- same shape of assertion test 17 already makes
+     * for <p>'s UA margin, plus a content_box.height check since <hr>,
+     * unlike <p>, gets an explicit UA height rather than one derived from
+     * its content. Hit-testing at margin.hr_px + 1.0 deliberately stays
+     * WELL inside the 2px-tall content_box (1.0 < hr_height_px's default
+     * of 2.0), not just past the margin-top, so the point cannot
+     * accidentally land past the box entirely. */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+
+        TBOX_TEST_ASSERT_MSG(default_config.hr_height_px > 1.0, "test setup assumption: hit_y = margin.hr_px + 1.0 must fall inside the <hr>'s own content_box (height > 1.0)");
+
+        tbox_context *ctx = open_cstr("<hr>", "", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            const tbox_layout_box *hr_box = tbox_context_hit_test(ctx, 5.0, default_config.margin.hr_px + 1.0);
+            TBOX_TEST_ASSERT_MSG(hr_box != NULL, "hit-testing just past the UA margin-top, still inside the 2px content_box, must land inside the <hr>'s own border_box");
+            if (hr_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(hr_box->node != NULL && string_view_equal_cstr(hr_box->node->element.tag_name, "hr"), "test setup assumption: the point picked must hit the <hr> box itself");
+                TBOX_TEST_ASSERT_MSG(hr_box->content_box.height == default_config.hr_height_px, "the <hr>'s content_box height must equal the UA default hr_height_px -- proves the explicit `height` declaration reached layout");
+                TBOX_TEST_ASSERT_MSG(hr_box->content_box.y - hr_box->margin_box.y == default_config.margin.hr_px, "the <hr>'s content_box must sit exactly one UA hr margin-top below its margin_box's top edge");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 35: NOVO v11 -- a <hr> alone resolves a Gray (0x80, 0x80, 0x80)
+     * background-color by default (UA: "hr { ... background-color: gray;
+     * ... }"), proving the named color "gray" reaches the cascade with no
+     * changes to the Style layer/CSS Cascade -- same FILL_RECT inspection
+     * pattern as test 1 above. */
+    {
+        tbox_context *ctx = open_cstr("<hr>", "", fonts);
+        TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+
+            TBOX_TEST_ASSERT_MSG(list.count == 1, "the <hr> must paint exactly one FILL_RECT");
+            if (list.count == 1) {
+                TBOX_TEST_ASSERT_MSG(list.items[0].kind == TBOX_PAINT_FILL_RECT, "the <hr>'s paint op must be a FILL_RECT");
+                TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 0x80 && list.items[0].color.g == 0x80 && list.items[0].color.b == 0x80 && list.items[0].color.a == 0xFF, "the UA stylesheet's \"background-color: gray\" must resolve to Gray (0x80, 0x80, 0x80)");
+            }
+
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* 36: regression -- a <p>/<h1> in isolation (no <hr> anywhere) still
+     * resolve to exactly the same UA margin as before the v11 hr template
+     * line and TBOX_UA_STYLE_CSS_BUFFER_SIZE recheck were added -- same
+     * shape of check as test 29's v8 regression, tied to this task's
+     * template change instead. */
+    {
+        tbox_ua_style_config default_config = tbox_ua_style_config_default();
+
+        tbox_context *p_ctx  = open_cstr("<p>oi</p>", "", fonts);
+        tbox_context *h1_ctx = open_cstr("<h1>oi</h1>", "", fonts);
+        TBOX_TEST_ASSERT_MSG(p_ctx != NULL && h1_ctx != NULL, "tbox_context_open must succeed for both documents");
+        if (p_ctx != NULL && h1_ctx != NULL) {
+            tbox_display_list p_list, h1_list;
+            tbox_context_run_frame(p_ctx, 800.0, 600.0, &p_list);
+            tbox_context_run_frame(h1_ctx, 800.0, 600.0, &h1_list);
+
+            const tbox_layout_box *p_box  = tbox_context_hit_test(p_ctx, 5.0, default_config.margin.paragraph_px + 2.0);
+            const tbox_layout_box *h1_box = tbox_context_hit_test(h1_ctx, 5.0, default_config.margin.heading_px[0] + 2.0);
+            TBOX_TEST_ASSERT_MSG(p_box != NULL && h1_box != NULL, "hit-testing just past each box's own UA margin-top must land inside its border_box");
+            if (p_box != NULL && h1_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(p_box->content_box.y - p_box->margin_box.y == default_config.margin.paragraph_px, "the <p>'s UA margin-top must be unchanged by the v11 hr template/buffer change");
+                TBOX_TEST_ASSERT_MSG(h1_box->content_box.y - h1_box->margin_box.y == default_config.margin.heading_px[0], "the <h1>'s UA margin-top must be unchanged by the v11 hr template/buffer change");
+            }
+
+            tbox_context_close(p_ctx);
+            tbox_context_close(h1_ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

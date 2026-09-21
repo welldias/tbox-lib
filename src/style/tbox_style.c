@@ -170,6 +170,27 @@ static bool tbox_style_parse_display(tbox_string_view raw, tbox_style_display *o
     return false;
 }
 
+/* NOVO v11: parses `text-align`'s three supported keywords, case-insensitive
+ * -- same pattern as tbox_style_parse_display above. Returns false for any
+ * other value, including "justify" (out of scope, see ARCHITECTURE.md's v11
+ * Style section), so the caller falls back to inheritance/the initial value
+ * the same way an unrecognized `font-weight` already does. */
+static bool tbox_style_parse_text_align(tbox_string_view raw, tbox_style_text_align *out) {
+    if (tbox_string_view_equal_ascii_ci(raw, tbox_string_view_from_cstr("left"))) {
+        *out = TBOX_STYLE_TEXT_ALIGN_LEFT;
+        return true;
+    }
+    if (tbox_string_view_equal_ascii_ci(raw, tbox_string_view_from_cstr("center"))) {
+        *out = TBOX_STYLE_TEXT_ALIGN_CENTER;
+        return true;
+    }
+    if (tbox_string_view_equal_ascii_ci(raw, tbox_string_view_from_cstr("right"))) {
+        *out = TBOX_STYLE_TEXT_ALIGN_RIGHT;
+        return true;
+    }
+    return false;
+}
+
 /* Splits `text` on runs of ASCII whitespace into at most 4 tokens (the max
  * a margin/padding shorthand ever takes). Returns false -- meaning the
  * whole shorthand is invalid -- if there are no tokens at all, or more than
@@ -431,6 +452,20 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     style.offset[1] = tbox_style_resolve_length_property(computed, "right", style.font_size);
     style.offset[2] = tbox_style_resolve_length_property(computed, "bottom", style.font_size);
     style.offset[3] = tbox_style_resolve_length_property(computed, "left", style.font_size);
+
+    /* text-align: NOVO v11. Same inheritance mechanism as `font-weight`
+     * above -- a recognized declaration wins; otherwise inherits the
+     * parent's already-resolved value; otherwise falls back to the initial
+     * value LEFT with no parent. */
+    const tbox_css_resolved_declaration *text_align_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-align"));
+    tbox_style_text_align parsed_text_align;
+    if (text_align_decl != NULL && tbox_style_parse_text_align(text_align_decl->value, &parsed_text_align)) {
+        style.text_align = parsed_text_align;
+    } else if (parent_style != NULL) {
+        style.text_align = parent_style->text_align;
+    } else {
+        style.text_align = TBOX_STYLE_TEXT_ALIGN_LEFT;
+    }
 
     return style;
 }

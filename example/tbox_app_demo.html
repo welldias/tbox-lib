@@ -9,6 +9,26 @@
 </head>
 
 <body>
+  <!-- v11: text-align demo (Style Tarefa 1 + Layout Tree Tarefa 3). Three
+       identically-sized boxes (.v11-align-box: fixed width + solid
+       border, so the box edges are unambiguous in the screenshot), each
+       wrapping a single <p> that inherits text-align from its own
+       .v11-align-left/-center/-right parent div (same inheritance path
+       tests/layout/test_layout.c's own
+       "<div style="text-align: center;"><p>oi</p></div>" case exercises)
+       -- left must sit flush against the box's left inner edge, center
+       equidistant from both edges, right flush against the right inner
+       edge. -->
+  <div class="v11-align-box v11-align-left">
+    <p>Texto alinhado à esquerda.</p>
+  </div>
+  <div class="v11-align-box v11-align-center">
+    <p>Texto centralizado.</p>
+  </div>
+  <div class="v11-align-box v11-align-right">
+    <p>Texto alinhado à direita.</p>
+  </div>
+
   <p class="unbind-target">Click me once: unbinds my own handler via tbox_context_unbind_click (v3) -- a second click
     does nothing.</p>
 
@@ -21,6 +41,41 @@
   <h5>Heading 5</h5>
   <h6>Heading 6</h6>
   <p>Click the box above to toggle its color.</p>
+
+  <!-- v11: bare <hr>, no author CSS at all -- proves the UA stylesheet
+       default from tbox_ua_style_generate_css (Orchestration, Tarefa 2):
+       display: block, height: 2px, background-color: gray, margin: 8px
+       0px. Placed between two pre-existing v0/v2 blocks (the paragraph
+       above and the bold/italic paragraph below) so it's unmistakably a
+       standalone bar with vertical spacing on both sides, not something
+       that could be confused with either paragraph's own margin. -->
+  <hr>
+  <!-- v11: forced-break demo (Layout Tree, Tarefa 3). tbox_layout_break_lines
+         closes the current line as soon as it meets a hard_break word (from
+         tbox_layout_push_hard_break, pushed once per <br> by
+         tbox_layout_collect_words) -- this single <p> must render as FOUR
+         visible lines ("linha um" / "linha dois" / a BLANK third line / "linha
+         quatro"), never one run-together line and never three (the
+         <br><br> pair proves the empty-interval fallback that gives the blank
+         line its own height via tbox_font_face_line_height, not a
+         zero-height line that would collapse the third and fourth lines
+         together). -->
+  <p class="v11-br-demo">linha um<br>linha dois<br><br>linha quatro</p>
+
+  <!-- v11: <pre> verbatim-text demo (Layout Tree, Tarefa 3). Two physical
+         source lines, joined by a LITERAL newline in the HTML source below
+         (not a <br>) -- tbox_layout_collect_preformatted_words splits on
+         '\n' itself, each physical line becoming one un-split word, so the
+         first line's four internal spaces between "a" and "b" must render
+         exactly as four spaces (not collapsed to one, the way
+         tbox_string_collapse_whitespace would do for any other text tag),
+         and the second line must start on its own line without any <br> in
+         the markup. Still the same sans-serif face as everywhere else in
+         this document -- font-family (and real monospace) is deliberately
+         out of scope until v12. -->
+  <pre class="v11-pre-demo">a    b
+  segunda linha do pre, sem quebra automática nenhuma.</pre>
+
   <p>Este parágrafo tem texto normal, <b>uma parte em negrito</b>, e <em>uma parte em itálico</em> (que ainda renderiza
     igual ao texto normal -- Fonte/Texto só tem face regular/bold em v2, sem itálico de verdade), continuando até
     quebrar a linha sozinho dentro da largura da janela.</p>
@@ -219,5 +274,6 @@
        inline !important wins even against a strong-selector !important
        rule. -->
   <div id="v9-inline-important-id" style="background-color: gold !important;"></div>
+
 
 </body>

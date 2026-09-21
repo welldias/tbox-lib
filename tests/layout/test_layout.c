@@ -1279,6 +1279,286 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 38: NOVO v11 -- <p>um<br>dois</p>: the <br> forces a line break, so
+     * "um" and "dois" land in two SEPARATE text_runs on two different lines
+     * (different rect.y), not merged into one "um dois" run the way a plain
+     * space between them would. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>um<br>dois</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "<br> must force \"um\"/\"dois\" onto two separate runs, not merge them into one");
+            if (box->text_run_count == 2) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "um"), "the first run must be \"um\"");
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[1].text, "dois"), "the second run must be \"dois\"");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[1].rect.y > box->text_runs[0].rect.y, "the run after <br> must sit on a strictly lower line");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 39: NOVO v11 -- <p>um<br><br>tres</p>: two CONSECUTIVE <br>s must
+     * produce a genuine blank line between "um" and "tres" -- not just a
+     * single line break. Since a blank line produces no run of its own (the
+     * word range between the two hard breaks is empty), this is verified
+     * indirectly: the gap between "um"'s and "tres"'s runs must be exactly
+     * TWO line-heights (one line's worth for "um" itself, plus one full
+     * blank line's worth), not one -- a bug collapsing "<br><br>" into a
+     * single break would only advance by one line-height. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>um<br><br>tres</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "a blank line between two <br>s produces no run of its own -- only \"um\" and \"tres\" render");
+            if (box->text_run_count == 2) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "um"), "the first run must be \"um\"");
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[1].text, "tres"), "the second run must be \"tres\"");
+                double line_height = tbox_font_face_line_height(regular_16);
+                double gap         = box->text_runs[1].rect.y - box->text_runs[0].rect.y;
+                TBOX_TEST_ASSERT_MSG(gap == 2.0 * line_height, "\"<br><br>\" must occupy 3 lines total (um / blank / tres) -- a 2-line-height gap between \"um\" and \"tres\", not 1");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 40: NOVO v11 -- <p>x<br></p>: a <br> at the very END of the text, with
+     * nothing after it, must NOT create a phantom blank final line -- just
+     * one run, "x", and nothing else (the tbox_layout_break_lines
+     * `line_start < word_count` guard). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>x<br></p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "a trailing <br> with nothing after it must NOT create a phantom blank line/run");
+            if (box->text_run_count == 1) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "x"), "the only run must be \"x\"");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 41: NOVO v11 -- <pre>a    b</pre> (4 literal spaces between "a" and
+     * "b"): <pre> must preserve internal whitespace verbatim -- the run's
+     * text must contain all 4 spaces, not collapse them down to 1 the way
+     * <p>/h1-h6/<li> already do (tbox_string_collapse_whitespace). Exact
+     * string comparison, not a substring check. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<pre>a    b</pre>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "a single physical <pre> line with no '\\n' must produce exactly one run");
+            if (box->text_run_count == 1) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "a    b"), "<pre> must preserve all 4 internal spaces literally, not collapse them to 1");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 42: NOVO v11 -- <pre>linha um\nlinha dois</pre> (a literal '\n' in the
+     * HTML source): the '\n' must split the text into two separate
+     * runs/lines (different rect.y), each keeping its own internal space
+     * ("linha um"/"linha dois" each still has one un-collapsed space of
+     * their own) -- entirely without any <br>. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<pre>linha um\nlinha dois</pre>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "a literal '\\n' inside <pre> must split into two runs, without any <br>");
+            if (box->text_run_count == 2) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "linha um"), "the first line's run must be \"linha um\"");
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[1].text, "linha dois"), "the second line's run must be \"linha dois\"");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[1].rect.y > box->text_runs[0].rect.y, "the second physical line must sit strictly below the first");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 43: NOVO v11 -- a <pre> physical line far wider than the container's
+     * available_width must NOT wrap (CSS `white-space: pre`, not
+     * `pre-wrap`) -- exactly one run for that line, its rect.width
+     * exceeding content_box.width, even though the line has plenty of
+     * spaces a normal <p> would happily wrap on. Proof of the `no_wrap`
+     * flag threaded into tbox_layout_break_lines. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<pre>linha muito comprida dentro do pre nao deveria quebrar</pre>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("pre { width: 10px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "a <pre> line, however wide, must never wrap onto more than one run/line");
+            if (box->text_run_count == 1) {
+                TBOX_TEST_ASSERT_MSG(box->text_runs[0].rect.width > box->content_box.width, "the overlong <pre> line must overflow the 10px content box rather than wrap");
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "linha muito comprida dentro do pre nao deveria quebrar"), "the whole physical line must be kept intact, spaces and all");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 44: NOVO v11 -- <div style="text-align: center;"><p>oi</p></div>:
+     * `text-align` is inheritable (Tarefa 1), so the <p> (no `text-align` of
+     * its own) inherits CENTER from its parent <div>. The "oi" run's
+     * rect.x must land to the RIGHT of where it would sit for `left` (i.e.
+     * past the <p>'s own content_box.x), shifted by exactly
+     * (available_width - line_width) / 2 -- derived here from the actually
+     * measured word width and the <p>'s own resolved geometry, never a
+     * hardcoded pixel number. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div style=\"text-align: center;\"><p>oi</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *p_box = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(p_box != NULL, "<div> must have the <p> as its first child box");
+            if (p_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(p_box->text_run_count == 1, "\"oi\" must fit on a single run/line");
+                if (p_box->text_run_count == 1) {
+                    double word_width      = tbox_font_measure_text(regular_16, tbox_string_view_make("oi", 2));
+                    double available_width = p_box->content_box.width;
+                    double expected_offset = (available_width - word_width) / 2.0;
+                    TBOX_TEST_ASSERT_MSG(expected_offset > 0.0, "test setup: \"oi\" must be far narrower than the container for this to be a discriminating test");
+                    double expected_x = p_box->content_box.x + expected_offset;
+                    TBOX_TEST_ASSERT_MSG(p_box->text_runs[0].rect.x == expected_x, "inherited text-align: center must shift the run's rect.x by (available_width - line_width) / 2 past content_box.x");
+                    TBOX_TEST_ASSERT_MSG(p_box->text_runs[0].rect.x > p_box->content_box.x, "the centered run must sit strictly to the right of where a left-aligned run would start");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 45: NOVO v11 regression -- <p>texto normal</p>, no <br>/text-align at
+     * all: must render exactly as every prior version -- a single run,
+     * rect.x == content_box.x (no accidental offset from the new
+     * text-align post-processing step, since style->text_align defaults to
+     * the initial LEFT and that branch is skipped entirely). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>texto normal</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "\"texto normal\" must fit on a single run, unchanged from prior versions");
+            if (box->text_run_count == 1) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "texto normal"), "the run's text must be exactly \"texto normal\"");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[0].rect.x == box->content_box.x, "default (left) text-align must never offset rect.x");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 46: NOVO v11 regression -- <ul><li>item</li></ul>: the v8 list-marker
+     * pipeline must be entirely unaffected by <pre>/<br>/text-align -- <li>
+     * must not have accidentally fallen onto the <pre> (no-word-splitting)
+     * code path just because both are on the fixed text-tag list now. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<ul><li>item</li></ul>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(ul_box != NULL);
+        if (ul_box != NULL) {
+            tbox_layout_box *li_box = ul_box->first_child;
+            TBOX_TEST_ASSERT_MSG(li_box != NULL, "<ul> must have the <li> as its first child box");
+            if (li_box != NULL) {
+                TBOX_TEST_ASSERT_MSG(li_box->text_run_count == 1, "NOVO v11 regression: the v8 marker + text must still merge into a single run");
+                if (li_box->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(li_box->text_runs[0].text, "\xE2\x80\xA2 item"), "the <li>'s run must still be prefixed with the bullet marker, unaffected by the <pre>/<br>/text-align changes");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

@@ -51,7 +51,7 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
         return false;
     }
 
-    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li" };
+    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre" };
     tbox_string_view tag_name            = node->element.tag_name;
     for (size_t i = 0; i < sizeof(text_tags) / sizeof(text_tags[0]); i++) {
         if (tbox_string_view_equal_cstr(tag_name, text_tags[i])) {
@@ -73,6 +73,18 @@ typedef struct tbox_layout_word {
     const tbox_font_face *face;
     double width;       /* tbox_font_measure_text(face, text) */
     double space_width; /* tbox_font_measure_text(face, " ") -- the gap this word's face would render before it */
+
+    /* NOVO v11: true for an entry pushed by tbox_layout_push_hard_break --
+     * a forced line break (<br>, or the boundary between two physical
+     * lines inside <pre>), not a real word. `text`/`width`/`space_width`
+     * are all zeroed for such an entry (see tbox_layout_push_hard_break);
+     * `face` is still populated, kept only as a line-height fallback for a
+     * blank line between two consecutive hard breaks (see
+     * tbox_layout_break_lines). Every function that pushes a REAL word
+     * (tbox_layout_push_words, tbox_layout_collect_preformatted_words) sets
+     * this explicitly to false -- never left to tbox_vector's zero-init,
+     * per ARCHITECTURE.md's "v11" section. */
+    bool hard_break;
 } tbox_layout_word;
 
 /* A half-open range [start, end) into a tbox_layout_word array, one greedy
@@ -112,12 +124,33 @@ static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapse
             entry->face             = face;
             entry->width            = tbox_font_measure_text(face, word);
             entry->space_width      = tbox_font_measure_text(face, space);
+            entry->hard_break       = false;
         }
 
         while (i < collapsed.size && collapsed.data[i] == ' ') {
             i++;
         }
     }
+}
+
+/* NOVO v11: pushes one tbox_layout_word marking a FORCED end of line --
+ * `<br>` (see tbox_layout_collect_words below), or the boundary between two
+ * physical lines inside a `<pre>` (see tbox_layout_collect_preformatted_words
+ * below) -- reused unchanged by both callers, so the forced-break logic
+ * lives in exactly one place. Carries no text (`{NULL, 0}`) and no width
+ * (`width`/`space_width` both 0.0), so it never itself renders or advances a
+ * line's measured width; `face` is kept purely as tbox_layout_break_lines's
+ * line-height fallback for a blank line sandwiched between two consecutive
+ * hard breaks (e.g. `<br><br>`), where the normal "max line-height among the
+ * words in range" loop has nothing to iterate. See ARCHITECTURE.md's "v11 --
+ * Layout Tree -- <br> (quebra forçada)". */
+static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face *face) {
+    tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
+    entry->text             = tbox_string_view_make(NULL, 0);
+    entry->face             = face;
+    entry->width            = 0.0;
+    entry->space_width      = 0.0;
+    entry->hard_break       = true;
 }
 
 /* Walks `node`'s DIRECT children in document order (see ARCHITECTURE.md's
@@ -131,6 +164,19 @@ static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapse
  * tag list being the sole gate for "this element gets text content". */
 static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_vector *words) {
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+        /* NOVO v11: a <br> child forces a line break -- checked BEFORE the
+         * TEXT branch below and independently of the `display == INLINE`
+         * gate an ELEMENT child otherwise needs (see ARCHITECTURE.md): <br>
+         * does not need `display: inline` for this to work. Uses the
+         * text-bearing element's OWN face (`style`, not a child style --
+         * <br> has no style of its own worth resolving here), same call the
+         * TEXT branch below already makes. */
+        if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "br")) {
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
+            tbox_layout_push_hard_break(words, face);
+            continue;
+        }
+
         if (child->type == TBOX_HTML_NODE_TEXT) {
             tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, child->text.text);
             const tbox_font_face *face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
@@ -159,8 +205,32 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *n
  * split -- it simply overflows visually, same policy box width already has
  * for content that's too wide (see ARCHITECTURE.md's D4). Pushes one
  * tbox_layout_line per line onto `lines`, each carrying its own height
- * (the max line-height among the faces used by the words in its range). */
-static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, tbox_vector *lines) {
+ * (the max line-height among the faces used by the words in its range).
+ *
+ * NOVO v11: `no_wrap` (true for `<pre>`, see
+ * tbox_layout_collect_preformatted_words/tbox_layout_build_text_runs) turns
+ * off the width-based fit check entirely -- `<pre>` never wraps by width
+ * (CSS `white-space: pre`, not `pre-wrap`), only at an explicit hard break.
+ * Independently of `no_wrap`, any word with `hard_break == true` (see
+ * tbox_layout_push_hard_break above -- `<br>`, or a `<pre>` physical-line
+ * boundary) unconditionally closes the current line right there, checked at
+ * the TOP of the loop body, before the width fit check even runs: the
+ * current line's range is `[line_start, i)` (the hard break itself is never
+ * part of any line's word range, on either side); when that range is EMPTY
+ * (`i == line_start` -- this break immediately follows another break, e.g.
+ * `<br><br>`, or is the very first word), the normal "max line-height among
+ * the words in range" loop has nothing to iterate, so
+ * `tbox_font_face_line_height(words[i].face)` -- the face
+ * tbox_layout_push_hard_break stashed on the break itself purely for this
+ * purpose -- is used instead, so a blank line between two consecutive
+ * breaks still occupies roughly one line's height rather than 0. The push
+ * of the FINAL line, after the loop, is now guarded by
+ * `line_start < word_count`: without it, a hard break sitting at the very
+ * end of the words (`"texto<br>"`, nothing after) would unconditionally
+ * push one more, phantom, empty line that no real browser shows -- the
+ * guard means a final line is only pushed when real content actually
+ * follows the last break. */
+static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, bool no_wrap, tbox_vector *lines) {
     if (word_count == 0) {
         return;
     }
@@ -169,9 +239,31 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
     double line_width = 0.0;
 
     for (size_t i = 0; i < word_count; i++) {
+        if (words[i].hard_break) {
+            double height = 0.0;
+            for (size_t j = line_start; j < i; j++) {
+                double face_height = tbox_font_face_line_height(words[j].face);
+                if (face_height > height) {
+                    height = face_height;
+                }
+            }
+            if (i == line_start) {
+                height = tbox_font_face_line_height(words[i].face);
+            }
+
+            tbox_layout_line *line = (tbox_layout_line *)tbox_vector_push(lines);
+            line->start            = line_start;
+            line->end              = i;
+            line->height           = height;
+
+            line_start = i + 1;
+            line_width = 0.0;
+            continue;
+        }
+
         double prospective = (i == line_start) ? words[i].width : line_width + words[i].space_width + words[i].width;
 
-        if (i > line_start && prospective > available_width) {
+        if (!no_wrap && i > line_start && prospective > available_width) {
             double height = 0.0;
             for (size_t j = line_start; j < i; j++) {
                 double face_height = tbox_font_face_line_height(words[j].face);
@@ -192,17 +284,19 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
         }
     }
 
-    double height = 0.0;
-    for (size_t j = line_start; j < word_count; j++) {
-        double face_height = tbox_font_face_line_height(words[j].face);
-        if (face_height > height) {
-            height = face_height;
+    if (line_start < word_count) {
+        double height = 0.0;
+        for (size_t j = line_start; j < word_count; j++) {
+            double face_height = tbox_font_face_line_height(words[j].face);
+            if (face_height > height) {
+                height = face_height;
+            }
         }
+        tbox_layout_line *line = (tbox_layout_line *)tbox_vector_push(lines);
+        line->start            = line_start;
+        line->end              = word_count;
+        line->height           = height;
     }
-    tbox_layout_line *line = (tbox_layout_line *)tbox_vector_push(lines);
-    line->start            = line_start;
-    line->end              = word_count;
-    line->height           = height;
 }
 
 /* Places and merges one line's words into runs, appending them to `runs`.
@@ -340,18 +434,100 @@ static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node
     tbox_layout_push_words(words, number, face);
 }
 
+/* NOVO v11: `<pre>`'s own word-collection function, called by
+ * tbox_layout_build_text_runs INSTEAD of tbox_layout_collect_words (never
+ * both -- <pre> has no list marker and no normal word-splitting; see
+ * ARCHITECTURE.md "v11 -- Layout Tree -- <pre> (texto verbatim)"). Pulls
+ * `node`'s ENTIRE flattened text via tbox_html_node_text_content (same
+ * function any nested-inline text tag already uses -- entities still
+ * decode, only structure/nested faces are lost, an accepted simplification,
+ * see ARCHITECTURE.md's "Escopo") WITHOUT tbox_string_collapse_whitespace:
+ * internal whitespace (runs of spaces, tabs) is preserved byte-for-byte.
+ * Scans that text byte by byte for '\n': each physical line (the bytes
+ * between two consecutive '\n's, or between the start/end and the nearest
+ * '\n') becomes exactly ONE tbox_layout_word -- deliberately NOT split on
+ * ' ' via tbox_layout_push_words, which is the whole point of `<pre>`: a run
+ * of spaces inside one physical line must stay literal within that one
+ * word's own text, never treated as separate word boundaries. Between two
+ * physical lines, pushes a hard break (tbox_layout_push_hard_break, the
+ * exact same function `<br>` uses -- no separate forced-break logic here).
+ * A NULL `face` (unloadable font, same guard tbox_layout_push_words already
+ * has) contributes no words at all rather than crashing on
+ * tbox_font_measure_text(NULL, ...). */
+static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words) {
+    const tbox_font_face *face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
+    if (face == NULL) {
+        return;
+    }
+
+    static const tbox_string_view space = { " ", 1 };
+    double space_width                  = tbox_font_measure_text(face, space);
+
+    tbox_string_view text = tbox_html_node_text_content(arena, node);
+
+    size_t line_start = 0;
+    for (size_t i = 0; i <= text.size; i++) {
+        bool at_break = (i == text.size) || (text.data[i] == '\n');
+        if (!at_break) {
+            continue;
+        }
+
+        tbox_string_view line = tbox_string_view_make(text.data + line_start, i - line_start);
+
+        tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
+        entry->text             = line;
+        entry->face             = face;
+        entry->width            = tbox_font_measure_text(face, line);
+        entry->space_width      = space_width;
+        entry->hard_break       = false;
+
+        if (i < text.size) {
+            /* A real '\n' (not the end-of-text sentinel iteration) -- more
+             * physical lines follow, so close this one with a hard break. */
+            tbox_layout_push_hard_break(words, face);
+        }
+
+        line_start = i + 1;
+    }
+}
+
 /* Builds `box`'s text_runs/text_run_count (a leaf box, one of the fixed
  * text tags) and returns its content-box height: the sum of every line's
  * height (NOVO v2 -- replaces v0/v1's single fixed line height), or, for a
  * box whose collected words come out empty (no words at all -- an empty tag
  * after whitespace-collapsing, or every child skipped), the box's OWN
  * face's line-height alone, matching v0/v1's choice to never collapse an
- * empty text box's height to 0. */
+ * empty text box's height to 0.
+ *
+ * NOVO v11: `<pre>` (`is_preformatted`) takes a whole separate word-
+ * collection path (tbox_layout_collect_preformatted_words, never
+ * tbox_layout_push_list_marker + tbox_layout_collect_words -- <pre> has no
+ * list marker and no normal word/whitespace collapsing to speak of) and is
+ * passed to tbox_layout_break_lines as `no_wrap` (only `<pre>` disables
+ * width-based wrapping; every other text tag keeps wrapping exactly as
+ * before). Also NOVO v11: once a line's runs are built, when
+ * `style->text_align` isn't the initial LEFT, that line's just-pushed runs
+ * (the `[runs_before, runs_after)` range -- tbox_layout_build_line_runs
+ * itself never shifts anything, see ARCHITECTURE.md "v11 -- Layout Tree --
+ * aplicação de text-align") are shifted right by the line's leftover
+ * width, split evenly for CENTER or given wholly to the left gap for RIGHT
+ * -- computed straight from the LAST run just pushed (`rect.x + rect.width`
+ * minus `content_x` is exactly this line's rendered width, since runs on
+ * one line are laid out left-to-right with no gaps between them and
+ * `content_x`). A negative/zero offset (an overflowing line, wider than
+ * `available_width`) is left alone -- same "never shift left" policy D4
+ * already has for overflow. */
 static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, double content_x, double content_y, double available_width, tbox_layout_box *box) {
+    bool is_preformatted = tbox_string_view_equal_cstr(node->element.tag_name, "pre");
+
     tbox_vector words;
     tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
-    tbox_layout_push_list_marker(arena, node, style, fonts, &words);
-    tbox_layout_collect_words(arena, node, style, styles, fonts, &words);
+    if (is_preformatted) {
+        tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
+    } else {
+        tbox_layout_push_list_marker(arena, node, style, fonts, &words);
+        tbox_layout_collect_words(arena, node, style, styles, fonts, &words);
+    }
 
     size_t word_count = tbox_vector_length(&words);
     if (word_count == 0) {
@@ -366,7 +542,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
 
     tbox_vector lines;
     tbox_vector_init(&lines, arena, sizeof(tbox_layout_line), 0);
-    tbox_layout_break_lines(word_items, word_count, available_width, &lines);
+    tbox_layout_break_lines(word_items, word_count, available_width, is_preformatted, &lines);
 
     tbox_vector runs;
     tbox_vector_init(&runs, arena, sizeof(tbox_layout_text_run), 0);
@@ -378,7 +554,25 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
     double total_height = 0.0;
     for (size_t li = 0; li < line_count; li++) {
         const tbox_layout_line *line = &line_items[li];
+
+        size_t runs_before = tbox_vector_length(&runs);
         tbox_layout_build_line_runs(arena, word_items, line, cumulative_y, content_x, &runs);
+        size_t runs_after = tbox_vector_length(&runs);
+
+        if (style->text_align != TBOX_STYLE_TEXT_ALIGN_LEFT && runs_after > runs_before) {
+            tbox_layout_text_run *run_items = (tbox_layout_text_run *)runs.data;
+            const tbox_layout_text_run *last_run = &run_items[runs_after - 1];
+            double line_width = (last_run->rect.x + last_run->rect.width) - content_x;
+
+            double offset = (style->text_align == TBOX_STYLE_TEXT_ALIGN_CENTER) ? (available_width - line_width) / 2.0 : (available_width - line_width);
+
+            if (offset > 0.0) {
+                for (size_t ri = runs_before; ri < runs_after; ri++) {
+                    run_items[ri].rect.x += offset;
+                }
+            }
+        }
+
         cumulative_y += line->height;
         total_height += line->height;
     }

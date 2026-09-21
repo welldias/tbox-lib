@@ -132,8 +132,13 @@
  * screenshot at 2100px again showed the bottom of the document (the
  * .bubble-/.stop- pairs and the bottom-right-pinned `position: fixed` box)
  * silently cropped off, so this is bumped to 2500px, same reasoning as
- * every prior bump. */
-#define TBOX_APP_DEMO_HEIGHT 2500
+ * every prior bump. v11 appends a bare <hr>, a <br>-broken paragraph, a
+ * <pre> block and three text-align boxes after the v9 fixtures -- a
+ * screenshot at 2500px showed the second physical line of the new <pre>
+ * and all three text-align boxes silently cropped off the bottom, so this
+ * is bumped to 2900px, same reasoning and same purely-cosmetic
+ * window-size-constant nature as every prior bump. */
+#define TBOX_APP_DEMO_HEIGHT 2900
 
 #ifndef TBOX_APP_DEMO_HTML_PATH
 #error "TBOX_APP_DEMO_HTML_PATH must be defined by the build (see example/CMakeLists.txt)"

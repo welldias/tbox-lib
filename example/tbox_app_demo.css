@@ -483,3 +483,45 @@ body {
     height: 60px;
     background-color: purple !important;
 }
+
+/* v11: <br>/<pre>/text-align demo styles (see the matching HTML comments
+ * above <p class="v11-br-demo">, <pre class="v11-pre-demo"> and the three
+ * .v11-align-box divs in tbox_app_demo.html). No author CSS at all for
+ * the bare <hr> right after "Click the box above..." -- its visible bar
+ * comes entirely from the UA stylesheet default (Orchestration Tarefa 2),
+ * proven precisely by the ABSENCE of any hr rule in this file. */
+
+/* Light background only, purely to make the four-line paragraph easy to
+ * find in the screenshot -- no layout-relevant property here. */
+.v11-br-demo {
+    background-color: mistyrose;
+}
+
+/* Light background only, same rationale as .v11-br-demo -- the wide
+ * internal spaces and the two-physical-line layout are the actual proof,
+ * not this color. */
+.v11-pre-demo {
+    background-color: aliceblue;
+}
+
+/* Fixed width + solid border on all three boxes below, so the box edges
+ * are unambiguous in the screenshot regardless of which way the text
+ * inside is aligned -- text-align itself is declared per-box right below
+ * (inherited down to the <p> inside, see the HTML comment). */
+.v11-align-box {
+    width: 300px;
+    border: 2px solid black;
+    margin: 8px 0px;
+}
+
+.v11-align-left {
+    text-align: left;
+}
+
+.v11-align-center {
+    text-align: center;
+}
+
+.v11-align-right {
+    text-align: right;
+}

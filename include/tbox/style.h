@@ -68,6 +68,15 @@ typedef enum tbox_style_position {
     TBOX_STYLE_POSITION_STICKY,   /* NOVO v5 -- treated as RELATIVE outside the Style layer, see above */
 } tbox_style_position;
 
+/* NOVO v11: `text-align`'s three supported values -- `justify` is out of
+ * scope (see ARCHITECTURE.md's v11 Style section). `LEFT` is the initial
+ * value and, not coincidentally, the enum's first/zero member. */
+typedef enum tbox_style_text_align {
+    TBOX_STYLE_TEXT_ALIGN_LEFT, /* initial */
+    TBOX_STYLE_TEXT_ALIGN_CENTER,
+    TBOX_STYLE_TEXT_ALIGN_RIGHT,
+} tbox_style_text_align;
+
 typedef struct tbox_style {
     /* Initial value in v0 is TBOX_STYLE_DISPLAY_BLOCK, NOT CSS2.1's
      * spec-correct `inline` -- a deliberate v0 simplification, since there
@@ -104,6 +113,10 @@ typedef struct tbox_style {
     /* NOVO v4: `position: relative` + offsets. Not inheritable. */
     tbox_style_position position; /* initial STATIC */
     tbox_style_length offset[4];  /* top right bottom left; initial: AUTO, same type as margin/padding */
+    /* NOVO v11: `text-align`. Inheritable, same mechanism as `color`/
+     * `font_weight_bold` above (herda do pai já resolvido se não
+     * declarado/reconhecido; `LEFT` -- o valor inicial -- sem pai). */
+    tbox_style_text_align text_align;
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
@@ -144,9 +157,13 @@ typedef struct tbox_style {
  * `STATIC`, same posture as `display` since v0), `top`, `right`, `bottom`,
  * `left` (NOVO v4: same length parser as `width`/`margin` -- `auto`, px, or
  * `%` -- only meaningful when `position` is non-`static`, but always
- * resolved regardless of `position`). Out of scope: `float`, flex/grid,
- * `z-index`, `white-space` (v0 always behaves as `white-space: normal`),
- * `font-style` (italic). */
+ * resolved regardless of `position`), `text-align` (NOVO v11: `left`/
+ * `center`/`right`, case-insensitive; any other value -- including
+ * `justify`, out of scope -- falls back to the same "not recognized =
+ * inherits" treatment `font-weight` already gets, or the initial value
+ * `LEFT` with no parent). Out of scope: `float`, flex/grid, `z-index`,
+ * `white-space` (v0 always behaves as `white-space: normal`), `font-style`
+ * (italic). */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 
 typedef struct tbox_style_entry {

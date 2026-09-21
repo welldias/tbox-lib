@@ -609,5 +609,79 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 28: NOVO v11 -- text-align: center resolves to TEXT_ALIGN_CENTER. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { text-align: center; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.text_align == TBOX_STYLE_TEXT_ALIGN_CENTER);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 29: NOVO v11 -- text-align matching is case-insensitive -- "RIGHT"
+     * still resolves to TEXT_ALIGN_RIGHT. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { text-align: RIGHT; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.text_align == TBOX_STYLE_TEXT_ALIGN_RIGHT, "text-align matching should be case-insensitive");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 30: NOVO v11 -- text-align inherits from the parent when undeclared,
+     * same inheritance mechanism as color/font-weight. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { text-align: center; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.text_align == TBOX_STYLE_TEXT_ALIGN_CENTER);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.text_align == TBOX_STYLE_TEXT_ALIGN_CENTER, "text-align should inherit when undeclared");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 31: NOVO v11 -- text-align: justify is out of scope (no `justify`
+     * support) -- falls back to the inherited/initial value LEFT, since
+     * there is no parent here. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { text-align: justify; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.text_align == TBOX_STYLE_TEXT_ALIGN_LEFT, "justify is unrecognized, should fall back to the initial value LEFT");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 32: regression -- a div with no text-align declared and no parent
+     * resolves to the initial value LEFT. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.text_align == TBOX_STYLE_TEXT_ALIGN_LEFT, "no text-align declared, no parent, should be the initial value LEFT");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }
