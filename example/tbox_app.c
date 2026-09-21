@@ -76,6 +76,18 @@
  * confirming the window opened, laid out and rendered without crashing and
  * closed cleanly, all without manual intervention.
  *
+ * `--screenshot <path>` (see tbox_app_demo_run_screenshot below) goes one
+ * step further for VISUAL verification specifically: renders this same
+ * document offscreen via tbox_app_screenshot_from_files and writes a PNG,
+ * with no Wayland window opened at all -- no compositor needed, no
+ * screenshot tool, no window-manager coordination to locate/float/position
+ * the right window (all of which real compositors, especially tiling ones,
+ * make unreliable to script). Every prior version's vertical-slice
+ * validation captured a screenshot by opening the real interactive window
+ * (this file's normal path below) and driving an external tool like `grim`
+ * against whatever the compositor decided to show; `--screenshot` is the
+ * more robust alternative going forward.
+ *
  * What this file does NOT do, on purpose: it never simulates a click or
  * mouse movement itself (no input-injection tooling such as `ydotool`/
  * `wtype` is a dependency of this library or its examples), and it makes
@@ -321,7 +333,39 @@ static bool tbox_app_demo_register(tbox_app *app, const char *selector, tbox_con
     return true;
 }
 
-int main(void) {
+/* --screenshot <path>: renders this exact demo document into `path` via
+ * tbox_app_screenshot_from_files (<tbox/app.h>) and exits, WITHOUT ever
+ * opening a Wayland window -- see that function's doc comment for why: no
+ * compositor, no screenshot tool (grim/similar), no window-manager
+ * coordination to get right, just a deterministic offscreen render of this
+ * demo's first (and only, in this mode) frame. Replaces the interactive
+ * loop entirely when passed; every other flag/env var below (TBOX_WAYLAND_DEBUG,
+ * TBOX_WAYLAND_CLOSE_DELAY_MS, click handlers) is meaningless in this mode
+ * and simply not reached. Prints a one-line result to stderr and returns 0
+ * on success, 1 on failure (bad HTML/CSS, font resolution failure, or the
+ * PNG couldn't be written -- tbox_app_screenshot_from_files doesn't
+ * distinguish which, so neither does this message). */
+static int tbox_app_demo_run_screenshot(const char *png_path) {
+    bool ok = tbox_app_screenshot_from_files(TBOX_APP_DEMO_HTML_PATH, TBOX_APP_DEMO_CSS_PATH, TBOX_APP_DEMO_WIDTH, TBOX_APP_DEMO_HEIGHT, png_path);
+    if (!ok) {
+        fprintf(stderr, "tbox_app_screenshot_from_files failed to write \"%s\"\n", png_path);
+        return 1;
+    }
+    fprintf(stderr, "wrote %dx%d screenshot to \"%s\"\n", TBOX_APP_DEMO_WIDTH, TBOX_APP_DEMO_HEIGHT, png_path);
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--screenshot") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--screenshot requires a <path> argument\n");
+                return 1;
+            }
+            return tbox_app_demo_run_screenshot(argv[i + 1]);
+        }
+    }
+
     tbox_log_init("tbox_app_demo", tbox_env_bool("TBOX_WAYLAND_DEBUG"));
     long close_delay_ms = tbox_env_long("TBOX_WAYLAND_CLOSE_DELAY_MS", 0);
 

@@ -1,6 +1,9 @@
 #include <tbox/output.h>
 
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "utf8.h"
 
@@ -143,4 +146,192 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
             break;
         }
     }
+}
+
+/* -- tbox_raster_write_png -------------------------------------------------
+ * Self-contained PNG encoder: no zlib/libpng dependency (this is a
+ * development/testing tool, not part of tbox's core rendering path -- not
+ * worth a new build dependency). The IDAT stream is a valid zlib stream
+ * whose DEFLATE data uses only uncompressed ("stored") blocks (RFC 1951
+ * §3.2.4) -- larger than a real compressor would produce, but every
+ * conforming PNG decoder accepts it, since "stored" is a first-class DEFLATE
+ * block type, not a hack. */
+
+/* IEEE 802.3 CRC-32 (the variant PNG's chunk footers and zlib do NOT use --
+ * PNG chunks use this one; zlib's checksum is Adler-32, see below), computed
+ * bit-by-bit rather than via a lookup table: a table would have to be either
+ * a `static` mutual initialized at runtime (a new mutable global, against
+ * this project's stated policy) or a giant literal (256 entries) that adds
+ * nothing readers need -- this function runs once per screenshot, not a hot
+ * path, so the extra per-byte work is irrelevant. `crc` is the running value
+ * (start at 0xFFFFFFFF for a fresh chunk; the caller XORs the final result
+ * with 0xFFFFFFFF once, standard CRC-32 framing). */
+static uint32_t tbox_png_crc32_update(uint32_t crc, const uint8_t *data, size_t length) {
+    for (size_t i = 0; i < length; i++) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; bit++) {
+            uint32_t mask = (crc & 1u) ? 0xFFFFFFFFu : 0u;
+            crc            = (crc >> 1) ^ (0xEDB88320u & mask);
+        }
+    }
+    return crc;
+}
+
+/* zlib's own stream checksum (RFC 1950), unrelated to the CRC-32 above --
+ * PNG's IDAT payload is a zlib stream, and zlib streams always end in one of
+ * these over the *uncompressed* data, regardless of which DEFLATE block type
+ * carried it. `adler` is the running value (start at 1, per RFC 1950). */
+static uint32_t tbox_png_adler32_update(uint32_t adler, const uint8_t *data, size_t length) {
+    uint32_t a = adler & 0xFFFFu;
+    uint32_t b = (adler >> 16) & 0xFFFFu;
+    for (size_t i = 0; i < length; i++) {
+        a = (a + data[i]) % 65521u;
+        b = (b + a) % 65521u;
+    }
+    return (b << 16) | a;
+}
+
+static void tbox_png_write_u32_be(uint8_t out[4], uint32_t value) {
+    out[0] = (uint8_t)((value >> 24) & 0xFFu);
+    out[1] = (uint8_t)((value >> 16) & 0xFFu);
+    out[2] = (uint8_t)((value >> 8) & 0xFFu);
+    out[3] = (uint8_t)(value & 0xFFu);
+}
+
+/* Writes one PNG chunk (length + 4-byte type + data + CRC-32 of type+data)
+ * to `file`. `data`/`length` may be NULL/0 (IEND has no data). Returns false
+ * on any short write, leaving `file`'s position wherever the failed write
+ * left it -- the caller treats any false here as fatal for the whole file. */
+static bool tbox_png_write_chunk(FILE *file, const char type[4], const uint8_t *data, size_t length) {
+    uint8_t length_be[4];
+    tbox_png_write_u32_be(length_be, (uint32_t)length);
+    if (fwrite(length_be, 1, 4, file) != 4) {
+        return false;
+    }
+    if (fwrite(type, 1, 4, file) != 4) {
+        return false;
+    }
+    if (length > 0 && fwrite(data, 1, length, file) != length) {
+        return false;
+    }
+
+    uint32_t crc = tbox_png_crc32_update(0xFFFFFFFFu, (const uint8_t *)type, 4);
+    if (length > 0) {
+        crc = tbox_png_crc32_update(crc, data, length);
+    }
+    crc ^= 0xFFFFFFFFu;
+
+    uint8_t crc_be[4];
+    tbox_png_write_u32_be(crc_be, crc);
+    return fwrite(crc_be, 1, 4, file) == 4;
+}
+
+bool tbox_raster_write_png(const char *path, const uint32_t *pixels, int32_t buffer_width, int32_t buffer_height) {
+    if (path == NULL || pixels == NULL || buffer_width <= 0 || buffer_height <= 0) {
+        return false;
+    }
+
+    size_t width  = (size_t)buffer_width;
+    size_t height = (size_t)buffer_height;
+
+    /* Raw scanline data PNG's filter step expects: one filter-type byte (0 =
+     * "None", the only filter this encoder ever emits) followed by 3 bytes
+     * per pixel (R, G, B -- color type 2, truecolor, no alpha: every pixel
+     * tbox_raster_* ever produces is fully opaque, see tbox_raster_blend_pixel
+     * above and tbox_backend_wayland_present's doc comment, so the XRGB
+     * buffer's top byte carries no information worth keeping). */
+    size_t row_bytes = 1 + width * 3;
+    size_t raw_size  = row_bytes * height;
+    uint8_t *raw     = (uint8_t *)malloc(raw_size);
+    if (raw == NULL) {
+        return false;
+    }
+    for (size_t y = 0; y < height; y++) {
+        uint8_t *row = raw + y * row_bytes;
+        row[0]       = 0; /* filter: None */
+        for (size_t x = 0; x < width; x++) {
+            uint32_t pixel        = pixels[y * width + x];
+            row[1 + x * 3 + 0]    = (uint8_t)((pixel >> 16) & 0xFFu);
+            row[1 + x * 3 + 1]    = (uint8_t)((pixel >> 8) & 0xFFu);
+            row[1 + x * 3 + 2]    = (uint8_t)(pixel & 0xFFu);
+        }
+    }
+
+    /* Wrap `raw` in a minimal zlib stream: 2-byte header, then `raw` split
+     * into "stored" DEFLATE blocks (max 65535 bytes each -- the block
+     * format's LEN field is 16-bit), then the 4-byte Adler-32 trailer. Each
+     * stored block costs 5 bytes of framing (1 header byte + LEN + NLEN)
+     * -- computed upfront so the whole stream can be a single malloc. */
+    size_t max_stored_block = 65535;
+    size_t block_count      = (raw_size + max_stored_block - 1) / max_stored_block;
+    if (block_count == 0) {
+        block_count = 1; /* an empty image still needs one (empty) final block */
+    }
+    size_t zlib_size  = 2 + block_count * 5 + raw_size + 4;
+    uint8_t *zlib_data = (uint8_t *)malloc(zlib_size);
+    if (zlib_data == NULL) {
+        free(raw);
+        return false;
+    }
+
+    size_t pos          = 0;
+    zlib_data[pos++]    = 0x78; /* CMF: DEFLATE, 32K window */
+    zlib_data[pos++]    = 0x01; /* FLG: fastest, no preset dictionary (valid check bits for 0x78) */
+
+    size_t remaining = raw_size;
+    size_t raw_pos   = 0;
+    for (size_t block = 0; block < block_count; block++) {
+        size_t chunk = remaining < max_stored_block ? remaining : max_stored_block;
+        bool final   = (block == block_count - 1);
+
+        zlib_data[pos++] = final ? 0x01 : 0x00; /* BFINAL | BTYPE=00 (stored), byte-aligned */
+        zlib_data[pos++] = (uint8_t)(chunk & 0xFFu);
+        zlib_data[pos++] = (uint8_t)((chunk >> 8) & 0xFFu);
+        uint16_t nlen     = (uint16_t)(~(uint16_t)chunk);
+        zlib_data[pos++] = (uint8_t)(nlen & 0xFFu);
+        zlib_data[pos++] = (uint8_t)((nlen >> 8) & 0xFFu);
+
+        memcpy(zlib_data + pos, raw + raw_pos, chunk);
+        pos += chunk;
+        raw_pos += chunk;
+        remaining -= chunk;
+    }
+
+    uint32_t adler    = tbox_png_adler32_update(1u, raw, raw_size);
+    zlib_data[pos++] = (uint8_t)((adler >> 24) & 0xFFu);
+    zlib_data[pos++] = (uint8_t)((adler >> 16) & 0xFFu);
+    zlib_data[pos++] = (uint8_t)((adler >> 8) & 0xFFu);
+    zlib_data[pos++] = (uint8_t)(adler & 0xFFu);
+
+    free(raw);
+
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        free(zlib_data);
+        return false;
+    }
+
+    static const uint8_t signature[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    bool ok                           = fwrite(signature, 1, sizeof(signature), file) == sizeof(signature);
+
+    uint8_t ihdr[13];
+    tbox_png_write_u32_be(ihdr + 0, (uint32_t)width);
+    tbox_png_write_u32_be(ihdr + 4, (uint32_t)height);
+    ihdr[8]  = 8; /* bit depth */
+    ihdr[9]  = 2; /* color type: truecolor (no alpha) */
+    ihdr[10] = 0; /* compression method: always 0 */
+    ihdr[11] = 0; /* filter method: always 0 */
+    ihdr[12] = 0; /* interlace method: 0 = no interlacing */
+
+    ok = ok && tbox_png_write_chunk(file, "IHDR", ihdr, sizeof(ihdr));
+    ok = ok && tbox_png_write_chunk(file, "IDAT", zlib_data, zlib_size);
+    ok = ok && tbox_png_write_chunk(file, "IEND", NULL, 0);
+
+    free(zlib_data);
+    fclose(file);
+
+    if (!ok) {
+        remove(path); /* don't leave a truncated/corrupt file behind */
+    }
+    return ok;
 }

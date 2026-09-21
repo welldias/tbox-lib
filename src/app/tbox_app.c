@@ -259,6 +259,82 @@ tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const ch
     return tbox_app_create_from_files_impl(html_path, css_path, width, height, true, config);
 }
 
+/* See <tbox/app.h>'s doc comment. Shares tbox_app_read_file/
+ * tbox_app_resolve_font_source with the tbox_app_create* family above --
+ * the only real difference is what happens after tbox_context_open
+ * succeeds: no tbox_backend_wayland_open, no tbox_app struct, just one
+ * tbox_context_run_frame + tbox_raster_display_list into a locally-owned
+ * pixel buffer, written out via tbox_raster_write_png. Everything opened
+ * along the way (font sources, font cache, context, pixel buffer) is torn
+ * down before returning, success or failure alike -- there is no handle for
+ * a caller to hold onto afterward, unlike tbox_app_create*. */
+bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path) {
+    if (html_path == NULL || png_path == NULL || width <= 0 || height <= 0) {
+        return false;
+    }
+
+    char *html = tbox_app_read_file(html_path);
+    if (html == NULL) {
+        return false;
+    }
+
+    char *css = NULL;
+    if (css_path != NULL) {
+        css = tbox_app_read_file(css_path);
+        if (css == NULL) {
+            free(html);
+            return false;
+        }
+    }
+
+    bool ok = false;
+
+    const void *regular_data         = NULL;
+    size_t regular_size              = 0;
+    tbox_font_source *regular_source = tbox_app_resolve_font_source(false, &regular_data, &regular_size);
+    if (regular_source != NULL) {
+        const void *bold_data         = NULL;
+        size_t bold_size              = 0;
+        tbox_font_source *bold_source = tbox_app_resolve_font_source(true, &bold_data, &bold_size);
+        if (bold_source != NULL) {
+            tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size);
+            tbox_font_source_destroy(bold_source);
+            tbox_font_source_destroy(regular_source);
+
+            if (fonts != NULL) {
+                tbox_context *ctx = tbox_context_open(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts);
+                if (ctx != NULL) {
+                    tbox_display_list list;
+                    tbox_context_run_frame(ctx, (double)width, (double)height, &list);
+
+                    uint32_t *pixels = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)width * (size_t)height);
+                    if (pixels != NULL) {
+                        /* Same "clear to opaque white first" v0's tbox_backend_wayland_present
+                         * uses -- see its doc comment in <tbox/output.h> for why (no UA
+                         * background-color default yet, white matches every real browser's
+                         * canvas default more closely than showing nothing/black would). */
+                        for (size_t i = 0; i < (size_t)width * (size_t)height; i++) {
+                            pixels[i] = 0xFFFFFFFFu;
+                        }
+                        tbox_raster_display_list(pixels, width, height, &list);
+                        ok = tbox_raster_write_png(png_path, pixels, width, height);
+                        free(pixels);
+                    }
+
+                    tbox_context_close(ctx);
+                }
+                tbox_font_face_cache_destroy(fonts);
+            }
+        } else {
+            tbox_font_source_destroy(regular_source);
+        }
+    }
+
+    free(css);
+    free(html);
+    return ok;
+}
+
 tbox_context *tbox_app_context(tbox_app *app) {
     if (app == NULL) {
         return NULL;

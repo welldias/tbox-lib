@@ -2946,9 +2946,108 @@ Um app tbox que:
   mudança do Layout Tree é literalmente uma entrada a mais num array
   `static const` já existente.
 
+## Ferramentas de desenvolvimento — captura de tela headless (`--screenshot`)
+
+Não é uma versão da escada v0-v7 (nenhuma mudança de fidelidade de
+renderização) — é uma ferramenta de validação visual, motivada por um
+problema real encontrado ao verificar a v7: capturar a janela Wayland de
+`tbox_app_demo` via `grim` exige antes achar/isolar essa janela específica
+no compositor (`swaymsg` num compositor tiling, por exemplo), o que é frágil
+de automatizar e, quando falha silenciosamente (comando errado, timing, app
+id inesperado), pode acabar capturando a tela inteira em vez da janela —
+inclusive conteúdo sensível do usuário que não tem nada a ver com o app.
+
+Resolvido evitando o compositor inteiramente: `tbox_context_run_frame` +
+`tbox_raster_display_list` (Output Display, sempre compilado, zero
+dependência de Wayland — ver o topo da seção "Output Display" do v0) já
+produzem exatamente os mesmos pixels que `tbox_backend_wayland_present`
+mandaria pro compositor, só que num buffer qualquer, não necessariamente o
+`wl_shm` de uma janela real. Bastava um jeito de escrever esse buffer em
+disco.
+
+### Output Display — `tbox_raster_write_png`
+
+```c
+bool tbox_raster_write_png(const char *path, const uint32_t *pixels, int32_t buffer_width, int32_t buffer_height);
+```
+Escritor de PNG autocontido em `src/output/tbox_raster.c` — **sem
+dependência nova** (sem libpng/zlib): o stream IDAT usa blocos DEFLATE
+"stored" (não comprimidos, RFC 1951 §3.2.4), uma codificação válida que
+qualquer decodificador PNG aceita, só maior que a de um compressor de
+verdade — irrelevante pra uma screenshot de debug. CRC-32 (chunks PNG) e
+Adler-32 (trailer do stream zlib) implementados na mão, bit a bit, sem
+tabela de lookup — uma tabela pré-computada precisaria ser um `static`
+mutável inicializado em runtime (violaria a regra de global/estático) ou um
+literal de 256 entradas sem valor de leitura; roda uma vez por screenshot,
+não é caminho quente. Cor: tipo 2 (truecolor, sem alfa) — todo pixel que o
+rasterizador produz já é opaco (ver `tbox_raster_blend_pixel`), então o byte
+alto do XRGB8888 é descartado sem perda.
+
+### Application — `tbox_app_screenshot_from_files`
+
+```c
+bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path);
+```
+Em `src/app/tbox_app.c`, reaproveitando os helpers estáticos que
+`tbox_app_create_from_files` já usa (`tbox_app_read_file`,
+`tbox_app_resolve_font_source`) — a única diferença real é o que acontece
+depois de `tbox_context_open` ter sucesso: nenhum
+`tbox_backend_wayland_open`, nenhum `tbox_app` alocado; só um
+`tbox_context_run_frame` + `tbox_raster_display_list` (num buffer alocado
+localmente, limpo pra branco opaco primeiro — mesma convenção de
+`tbox_backend_wayland_present`) + `tbox_raster_write_png`, e tudo é liberado
+antes de retornar. Não existe handle pro chamador guardar depois — é uma
+função de efeito único (lê arquivos, escreve um PNG, retorna sucesso/falha),
+não uma abertura de recurso como `tbox_app_create*`.
+
+**Acoplamento de build conhecido, não resolvido aqui:** apesar de nunca
+tocar Wayland em runtime, essa função só é COMPILADA quando
+`TBOX_WAYLAND_FOUND` está disponível, porque `src/CMakeLists.txt` exclui o
+arquivo `tbox_app.c` inteiro do build sem esse flag (mesmo gate que sempre
+existiu pro resto do arquivo) — um acoplamento de nível de arquivo, não de
+função, que essa função herdou sem precisar dele de verdade. Separar isso
+num arquivo próprio, sempre compilado, é trabalho futuro possível,
+registrado aqui só pra não se perder — não é débito urgente (o ambiente de
+desenvolvimento deste projeto sempre tem Wayland disponível).
+
+### Example — flag `--screenshot <path>`
+
+Em `example/tbox_app.c`: se `--screenshot <path>` aparece em `argv`,
+`main` chama `tbox_app_screenshot_from_files` com as mesmas constantes
+`TBOX_APP_DEMO_WIDTH`/`_HEIGHT`/`_HTML_PATH`/`_CSS_PATH` já usadas pelo modo
+interativo, imprime o resultado em stderr, e retorna sem NUNCA abrir uma
+janela Wayland — nenhuma outra flag/env var (`TBOX_WAYLAND_DEBUG`,
+`TBOX_WAYLAND_CLOSE_DELAY_MS`, handlers de clique) é alcançada nesse modo.
+Substitui `grim`/`swaymsg` como forma de validar visualmente cada fatia
+vertical daqui pra frente — mais determinístico (mesmo frame que a janela
+mostraria, sem depender de compositor/timing/foco de janela) e sem risco de
+capturar a tela inteira por engano.
+
+**Fora de escopo:** simular clique/hover (a screenshot sempre mostra o
+primeiro frame, sem nenhuma interação — mesma limitação que o modo
+interativo já tinha pra validação automatizada, ver o comentário de topo de
+`example/tbox_app.c` sobre não haver `ydotool`/`wtype` como dependência);
+`_with_config` (variante com `tbox_ua_style_config` explícito) — não existe
+consumidor ainda, adicionar quando houver.
+
+## Decisões já tomadas — captura de tela headless
+
+- **Sem dependência nova (libpng/zlib)** — blocos DEFLATE "stored" bastam
+  pra um PNG válido; um compressor de verdade não agrega nada pra uma
+  ferramenta de debug.
+- **Função pública na Application layer**, não código isolado dentro do
+  demo — reutilizável por qualquer consumidor futuro (inclusive testes de
+  regressão visual automatizados), mesmo padrão de toda outra capacidade já
+  adicionada ao projeto.
+- **Sem novo estado global/estático mutável** — CRC-32/Adler-32 calculados
+  bit a bit dentro da própria chamada, sem tabela pré-computada guardada
+  entre chamadas.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
 fechada para v0, v1, v2, v3, v4, v5, v6 e v7 (registrada nas seções de
-cada camada) ou consolidada como débito de design conhecido acima, com
-gatilho explícito de quando revisitar.
+cada camada), pra "Ferramentas de desenvolvimento — captura de tela
+headless" acima (não uma versão da escada, mas com o mesmo nível de
+decisão documentada), ou consolidada como débito de design conhecido
+acima, com gatilho explícito de quando revisitar.

@@ -234,6 +234,207 @@ static void tbox_test_raster_fill_rect_fully_transparent_noop(int *failures_ptr)
     *failures_ptr = failures;
 }
 
+/* Reads a big-endian uint32 from `data` (must have >= 4 bytes available). */
+static uint32_t tbox_test_raster_read_u32_be(const unsigned char *data) {
+    return ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) | ((uint32_t)data[2] << 8) | (uint32_t)data[3];
+}
+
+/* Independent (separately transcribed, not reused from src/output/tbox_raster.c)
+ * IEEE 802.3 CRC-32, so the round-trip test below cross-checks
+ * tbox_raster_write_png's own CRC against a second implementation rather
+ * than trivially agreeing with itself. */
+static uint32_t tbox_test_raster_crc32(uint32_t crc, const unsigned char *data, size_t length) {
+    for (size_t i = 0; i < length; i++) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; bit++) {
+            crc = (crc & 1u) ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+        }
+    }
+    return crc;
+}
+
+/* Minimal validating PNG reader, deliberately only as capable as the writer
+ * under test needs it to be: tbox_raster_write_png only ever emits IHDR then
+ * exactly one IDAT then IEND, and its zlib stream only ever uses
+ * uncompressed ("stored") DEFLATE blocks -- so "decoding" the pixel data
+ * back out is just concatenating each stored block's literal bytes, no real
+ * INFLATE needed. Asserts every chunk's CRC-32 along the way (via
+ * tbox_test_raster_crc32 above) and the zlib stream's Adler-32 trailer (via
+ * a second, equally independent implementation below), then writes the
+ * decoded RGB scanlines (filter byte stripped, assumed 0/"None" -- the only
+ * filter this writer ever emits) into `out_rgb` (caller-allocated,
+ * width*height*3 bytes). Returns false on any structural mismatch (bad
+ * signature, wrong IHDR fields, bad CRC/Adler-32, malformed block framing),
+ * without necessarily filling `out_rgb`. */
+static bool tbox_test_raster_read_png(const char *path, int32_t expected_width, int32_t expected_height, unsigned char *out_rgb) {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return false;
+    }
+
+    unsigned char signature[8];
+    static const unsigned char expected_signature[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    bool ok                                           = fread(signature, 1, 8, file) == 8 && memcmp(signature, expected_signature, 8) == 0;
+
+    unsigned char *idat   = NULL;
+    size_t idat_size      = 0;
+    bool saw_ihdr         = false;
+    bool saw_iend         = false;
+
+    while (ok && !saw_iend) {
+        unsigned char header[8];
+        if (fread(header, 1, 8, file) != 8) {
+            ok = false;
+            break;
+        }
+        uint32_t length = tbox_test_raster_read_u32_be(header);
+        char type[5]    = { (char)header[4], (char)header[5], (char)header[6], (char)header[7], '\0' };
+
+        unsigned char *data = length > 0 ? (unsigned char *)malloc(length) : NULL;
+        if (length > 0 && (data == NULL || fread(data, 1, length, file) != length)) {
+            free(data);
+            ok = false;
+            break;
+        }
+
+        unsigned char crc_bytes[4];
+        uint32_t stored_crc;
+        if (fread(crc_bytes, 1, 4, file) != 4) {
+            free(data);
+            ok = false;
+            break;
+        }
+        stored_crc = tbox_test_raster_read_u32_be(crc_bytes);
+
+        uint32_t computed_crc = tbox_test_raster_crc32(0xFFFFFFFFu, (const unsigned char *)header + 4, 4);
+        if (length > 0) {
+            computed_crc = tbox_test_raster_crc32(computed_crc, data, length);
+        }
+        computed_crc ^= 0xFFFFFFFFu;
+        if (computed_crc != stored_crc) {
+            free(data);
+            ok = false;
+            break;
+        }
+
+        if (strcmp(type, "IHDR") == 0) {
+            saw_ihdr = length == 13 && (int32_t)tbox_test_raster_read_u32_be(data) == expected_width && (int32_t)tbox_test_raster_read_u32_be(data + 4) == expected_height && data[8] == 8 /* bit depth */ && data[9] == 2 /* color type: truecolor */;
+            free(data);
+        } else if (strcmp(type, "IDAT") == 0) {
+            idat      = data; /* ownership transferred */
+            idat_size = length;
+        } else if (strcmp(type, "IEND") == 0) {
+            saw_iend = true;
+            free(data);
+        } else {
+            free(data);
+        }
+    }
+    fclose(file);
+
+    if (!ok || !saw_ihdr || !saw_iend || idat == NULL || idat_size < 6 /* 2-byte zlib header + 4-byte Adler-32 trailer, minimum */) {
+        free(idat);
+        return false;
+    }
+
+    /* zlib stream: skip the 2-byte header, walk stored DEFLATE blocks until
+     * BFINAL, then verify the 4-byte Adler-32 trailer. */
+    size_t row_bytes = 1 + (size_t)expected_width * 3;
+    size_t raw_size  = row_bytes * (size_t)expected_height;
+    unsigned char *raw = (unsigned char *)malloc(raw_size);
+    if (raw == NULL) {
+        free(idat);
+        return false;
+    }
+
+    size_t pos       = 2;
+    size_t raw_pos   = 0;
+    bool final       = false;
+    while (ok && !final && pos < idat_size) {
+        if (pos + 5 > idat_size) {
+            ok = false;
+            break;
+        }
+        final              = (idat[pos] & 1u) != 0;
+        uint16_t block_len = (uint16_t)(idat[pos + 1] | (idat[pos + 2] << 8));
+        pos += 5; /* header byte + LEN + NLEN */
+        if (pos + block_len > idat_size || raw_pos + block_len > raw_size) {
+            ok = false;
+            break;
+        }
+        memcpy(raw + raw_pos, idat + pos, block_len);
+        raw_pos += block_len;
+        pos += block_len;
+    }
+    ok = ok && raw_pos == raw_size && pos + 4 <= idat_size;
+
+    if (ok) {
+        uint32_t stored_adler = tbox_test_raster_read_u32_be(idat + pos);
+        uint32_t a = 1, b = 0;
+        for (size_t i = 0; i < raw_size; i++) {
+            a = (a + raw[i]) % 65521u;
+            b = (b + a) % 65521u;
+        }
+        ok = ((b << 16) | a) == stored_adler;
+    }
+
+    if (ok) {
+        for (int32_t y = 0; y < expected_height; y++) {
+            const unsigned char *row = raw + (size_t)y * row_bytes;
+            ok                       = ok && row[0] == 0; /* filter: None */
+            memcpy(out_rgb + (size_t)y * (size_t)expected_width * 3, row + 1, (size_t)expected_width * 3);
+        }
+    }
+
+    free(raw);
+    free(idat);
+    return ok;
+}
+
+static void tbox_test_raster_write_png_round_trip(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 3, height = 2;
+    uint32_t pixels[6] = {
+        tbox_test_raster_xrgb(255, 0, 0), tbox_test_raster_xrgb(0, 255, 0), tbox_test_raster_xrgb(0, 0, 255),
+        tbox_test_raster_xrgb(255, 255, 0), tbox_test_raster_xrgb(0, 255, 255), tbox_test_raster_xrgb(17, 34, 51),
+    };
+
+    const char *path = "tbox_test_raster_write_png_round_trip.png";
+    TBOX_TEST_ASSERT_MSG(tbox_raster_write_png(path, pixels, width, height), "tbox_raster_write_png must succeed for a small valid buffer");
+
+    unsigned char decoded[6 * 3];
+    bool decoded_ok = tbox_test_raster_read_png(path, width, height, decoded);
+    TBOX_TEST_ASSERT_MSG(decoded_ok, "the written PNG must be structurally valid (signature, IHDR, CRC-32s, Adler-32) and decode back via stored DEFLATE blocks");
+
+    if (decoded_ok) {
+        for (int32_t i = 0; i < width * height; i++) {
+            unsigned char expected_r = (unsigned char)((pixels[i] >> 16) & 0xFFu);
+            unsigned char expected_g = (unsigned char)((pixels[i] >> 8) & 0xFFu);
+            unsigned char expected_b = (unsigned char)(pixels[i] & 0xFFu);
+            TBOX_TEST_ASSERT(decoded[i * 3 + 0] == expected_r);
+            TBOX_TEST_ASSERT(decoded[i * 3 + 1] == expected_g);
+            TBOX_TEST_ASSERT(decoded[i * 3 + 2] == expected_b);
+        }
+    }
+
+    remove(path);
+
+    *failures_ptr = failures;
+}
+
+static void tbox_test_raster_write_png_invalid_args(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    uint32_t pixel = tbox_test_raster_xrgb(1, 2, 3);
+    TBOX_TEST_ASSERT(!tbox_raster_write_png(NULL, &pixel, 1, 1));
+    TBOX_TEST_ASSERT(!tbox_raster_write_png("tbox_test_raster_write_png_invalid.png", NULL, 1, 1));
+    TBOX_TEST_ASSERT(!tbox_raster_write_png("tbox_test_raster_write_png_invalid.png", &pixel, 0, 1));
+    TBOX_TEST_ASSERT(!tbox_raster_write_png("tbox_test_raster_write_png_invalid.png", &pixel, 1, -1));
+
+    *failures_ptr = failures;
+}
+
 static void tbox_test_raster_text_run_basic(int *failures_ptr, const void *font_data, size_t font_size) {
     int failures = *failures_ptr;
 
@@ -352,6 +553,8 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_fill_rect_paint_order(&failures);
     tbox_test_raster_fill_rect_alpha_blend(&failures);
     tbox_test_raster_fill_rect_fully_transparent_noop(&failures);
+    tbox_test_raster_write_png_round_trip(&failures);
+    tbox_test_raster_write_png_invalid_args(&failures);
 
     size_t font_size = 0;
     char *font_data  = read_file(TBOX_TEST_LIBERATION_SANS_PATH, &font_size);

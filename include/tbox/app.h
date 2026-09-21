@@ -93,6 +93,32 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
  * under the same conditions as tbox_app_create_from_files. */
 tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config);
 
+/* Development/testing tool: renders html_path/css_path into an offscreen
+ * width x height buffer and writes it to png_path -- WITHOUT ever opening a
+ * Wayland window/backend (no tbox_backend_wayland_* call anywhere in this
+ * function). Same file-loading (html_path required, css_path == NULL means
+ * "no author stylesheet") and font resolution as tbox_app_create_from_files,
+ * but tbox_context_run_frame + tbox_raster_display_list + tbox_raster_write_png
+ * (see <tbox/output.h>) stand in for "open a window and present frames" --
+ * one deterministic frame, rendered exactly like the interactive app would
+ * render its first frame at this viewport size, with no compositor, no
+ * screenshot tool (grim/similar), and no window-manager coordination
+ * (floating/moving/finding the right window) involved at any point. Useful
+ * for automated visual verification in headless/CI environments, or any
+ * environment where driving a real compositor is inconvenient or unreliable.
+ * Returns false if html_path fails to load, css_path is non-NULL and fails
+ * to load, font resolution fails, or png_path can't be written; true on
+ * success. Needs no Wayland connection/compositor at RUNTIME (unlike every
+ * tbox_app_create* function, it never calls tbox_backend_wayland_open) --
+ * but it is still only COMPILED when TBOX_WAYLAND_FOUND (alongside
+ * TBOX_FONTCONFIG_FOUND), same as the rest of this file: src/CMakeLists.txt
+ * excludes src/app/tbox_app.c from the build entirely without both, a
+ * file-level (not function-level) gate this function inherited rather than
+ * one it actually needs. Splitting screenshot support into its own
+ * always-compiled file to lift that build-time requirement is possible
+ * future work, not done here. */
+bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path);
+
 /* Access to the internal tbox_context -- for registering click handlers via
  * tbox_context_on_click, at any point before or after the first
  * tbox_app_step. Returns NULL if app == NULL. */

@@ -62,6 +62,21 @@ void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer
  * no-op. */
 void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list);
 
+/* Writes `pixels` (buffer_width x buffer_height, XRGB8888 -- same layout
+ * every tbox_raster_* function above reads/writes) to a PNG file at `path`:
+ * color type 2 (truecolor, no alpha channel -- every pixel this rasterizer
+ * ever produces is fully opaque, so the buffer's unused top byte is
+ * dropped), 8 bits per channel. Self-contained: no libpng/zlib dependency
+ * -- the IDAT stream uses uncompressed ("stored") DEFLATE blocks, a valid
+ * (if larger than a real compressor's output) encoding every PNG decoder
+ * accepts, avoiding a new build dependency for what is a development/
+ * testing tool, not part of tbox's core rendering path (see
+ * tbox_app_screenshot_from_files in <tbox/app.h>, its main caller). Returns
+ * false, leaving no partial file behind, if `pixels` is NULL,
+ * buffer_width/buffer_height is non-positive, or the file can't be created/
+ * written (bad path, no permission, disk full, ...); true on success. */
+bool tbox_raster_write_png(const char *path, const uint32_t *pixels, int32_t buffer_width, int32_t buffer_height);
+
 /* Opaque: one open Wayland window (registry/compositor/shm/seat/keyboard/
  * xdg_wm_base/xdg_surface/xdg_toplevel, plus the current frame's wl_shm
  * buffer), evolved from example/tbox_wayland.c's tbox_wayland_app. Linux
