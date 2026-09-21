@@ -159,6 +159,48 @@ else()
     )
 endif()
 
+# OpenCV backs tests/tbox_cmp.c (v10, see ARCHITECTURE.md's "v10 --
+# tbox_cmp"), a visual-regression tool that renders each tests/assets/*.html
+# fixture and compares it against its paired *.png reference via SSIM.
+# Entirely optional, same graceful-skip pattern as Wayland/Fontconfig above:
+# absence must never fail configure -- the main test suite (tbox_tests, the
+# 21 groups in tests/CMakeLists.txt) never depends on it, only tbox_cmp
+# itself (excluded from the build when this is false, see
+# tests/CMakeLists.txt).
+# Restricted to the three modules tbox_cmp.cpp actually uses (core is
+# pulled in transitively by both) -- the full, unrestricted find_package(OpenCV)
+# pulls in every module the local install has, including GUI/visualization
+# ones (highgui, viz, cvv, hdf) whose own Qt6/VTK/HDF5 dependencies can be
+# broken or absent on a given machine without OpenCV itself being unusable
+# for what this project needs -- discovered empirically: linking against
+# the unrestricted ${OpenCV_LIBS} failed with unresolved Qt6/VTK/HDF5
+# symbols from modules tbox_cmp.cpp never calls into.
+find_package(OpenCV QUIET COMPONENTS core imgproc imgcodecs)
+set(TBOX_OPENCV_FOUND ${OpenCV_FOUND})
+
+if(NOT TBOX_OPENCV_FOUND)
+    message(WARNING
+        "OpenCV not found: tests/tbox_cmp.cpp (visual regression tool) is "
+        "excluded from this build -- libtbox and its test suite still "
+        "build fine without it.\n"
+        "  Arch Linux:    sudo pacman -S opencv\n"
+        "  Debian/Ubuntu: sudo apt install libopencv-dev"
+    )
+else()
+    # tests/tbox_cmp.cpp is the one C++ translation unit in this otherwise
+    # pure-C project -- OpenCV's C API (IplImage/cvLoadImage/...) no longer
+    # exists as of the OpenCV version this project actually builds against
+    # (removed upstream well before OpenCV 5), so tbox_cmp.cpp uses OpenCV's
+    # modern C++ API (cv::Mat and friends) instead. C++ is only enabled when
+    # OpenCV itself is found -- a build with OpenCV absent needs no C++
+    # toolchain at all, same graceful-skip spirit as every other optional
+    # dependency here.
+    enable_language(CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+endif()
+
 add_subdirectory(src)
 
 if(TBOX_BUILD_EXAMPLES)

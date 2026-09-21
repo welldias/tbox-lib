@@ -1,4 +1,10 @@
+# tbox_cmp.cpp (v10, see ARCHITECTURE.md's "v10 -- tbox_cmp") is a separate
+# executable with its own main() -- a *.cpp file, so this *.c-only glob
+# never picks it up in the first place (no exclusion needed, unlike when it
+# was still tbox_cmp.c). Built on its own, conditionally, further down this
+# file.
 file(GLOB_RECURSE TBOX_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
+
 add_executable(tbox_tests ${TBOX_TEST_SOURCES})
 
 # The parser/tree-builder test groups exercise internals that aren't part of
@@ -24,3 +30,50 @@ endif()
 foreach(tbox_test_group arena list vector string debug html_parser_tokenizer html_parser_tree html_xpath css_parser_tokenizer css_parser_parser css_selector css_cascade css_cascade_named_color css_cascade_color_convert css_cascade_color_parse style font layout render output_raster context)
     add_test(NAME ${tbox_test_group} COMMAND tbox_tests ${tbox_test_group})
 endforeach()
+
+# tbox_cmp (v10, see ARCHITECTURE.md's "v10 -- tbox_cmp") renders each
+# tests/assets/*.html fixture via tbox_app_screenshot_from_files (v7) and
+# compares it against its paired *.png reference via OpenCV/SSIM -- needs
+# OpenCV itself, plus the same two dependencies tbox_app_demo already needs
+# (Wayland + Fontconfig, see example/CMakeLists.txt), since
+# tbox_app_screenshot_from_files only exists in the build when both of those
+# are present (src/app/tbox_app.c's own gate). Entirely optional: absent any
+# of the three, this whole block is skipped and the rest of the test suite
+# is unaffected.
+if(TBOX_OPENCV_FOUND AND TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
+    add_executable(tbox_cmp tbox_cmp.cpp)
+
+    if(TBOX_BUILD_STATIC)
+        target_link_libraries(tbox_cmp PRIVATE tbox_static tbox_warnings tbox_sanitizers)
+    else()
+        target_link_libraries(tbox_cmp PRIVATE tbox tbox_warnings tbox_sanitizers)
+    endif()
+
+    target_link_libraries(tbox_cmp PRIVATE
+        freetype
+        ${WAYLAND_CLIENT_LIBRARIES}
+        ${XKBCOMMON_LIBRARIES}
+        ${FONTCONFIG_LIBRARIES}
+        ${OpenCV_LIBS}
+    )
+    target_include_directories(tbox_cmp PRIVATE
+        ${WAYLAND_CLIENT_INCLUDE_DIRS}
+        ${XKBCOMMON_INCLUDE_DIRS}
+        ${FONTCONFIG_INCLUDE_DIRS}
+        ${OpenCV_INCLUDE_DIRS}
+    )
+    target_link_directories(tbox_cmp PRIVATE
+        ${WAYLAND_CLIENT_LIBRARY_DIRS}
+        ${XKBCOMMON_LIBRARY_DIRS}
+        ${FONTCONFIG_LIBRARY_DIRS}
+    )
+
+    set_target_properties(tbox_cmp PROPERTIES OUTPUT_NAME tbox_cmp)
+
+    # Deliberately NOT registered via add_test()/ctest -- the maintainer
+    # wants this run manually, on demand (`./tbox_cmp [assets_dir]`), not
+    # as part of the automated `ctest` run. Several assets deliberately
+    # exercise HTML/CSS tbox doesn't implement yet (see ARCHITECTURE.md's
+    # v10 "Escopo") and are expected to report DIFERENTE today, which is
+    # exactly the kind of result that shouldn't silently gate CI.
+endif()

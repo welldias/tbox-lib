@@ -3483,11 +3483,222 @@ Um app tbox que:
   inline é local à chamada de `tbox_css_cascade_resolve`, destruído antes
   dela retornar — nunca compartilhado entre nós nem frames.
 
+## v10 — `tbox_cmp`: teste de regressão visual contra fixtures reais
+
+Não é uma mudança na biblioteca (`src/`/`include/`) — é uma ferramenta de
+teste, `tests/tbox_cmp.cpp` (a lógica de SSIM/diff de cor foi escrita pelo
+usuário fora desta sessão; o trabalho desta versão foi a integração:
+CLI, iteração de diretório, renderização via tbox, porte pra API C++ do
+OpenCV — ver "Descoberta durante a implementação" abaixo), mais o
+`tests/assets/` que a acompanha: pares `NNN.html`/`NNN.png`, onde o `.png`
+é a referência ("golden") de como aquele HTML deveria aparecer — capturas
+de um browser real, não geradas por tbox. Vários desses HTMLs usam
+elementos/propriedades que tbox ainda não implementa (`font-family`,
+`text-align`, `<blockquote>`/`<q>`/`<abbr>`/`<address>`/`<cite>`/`<bdo>`
+com semântica própria, etc.), e mesmo os que usa tudo implementado nunca
+vão bater pixel-a-pixel contra um browser real (fonte diferente —
+Liberation Sans vs. o que quer que o browser real tenha usado —, sem
+anti-aliasing/hinting idêntico) — isso é esperado, não um bug: a
+ferramenta existe pra tornar essas lacunas visíveis e MENSURÁVEIS (SSIM
+numérico, não só "igual"/"diferente") ao longo do tempo, não pra bloquear
+o build até tudo bater 100%.
+
+**Build quebrado, corrigido nesta versão.** `tests/tbox_cmp.c` (nome
+original) foi adicionado dentro de `tests/`, que `tests/CMakeLists.txt` já
+varre por completo via `file(GLOB_RECURSE ...)` pra montar o binário
+`tbox_tests` — como esse arquivo incluía headers do OpenCV e definia seu
+próprio `main()` (colidindo com `tests/main.c`), o build inteiro parou de
+compilar assim que o arquivo apareceu. Confirmado por reprodução nesta
+sessão.
+
+**Descoberta durante a implementação: a API em C do OpenCV não existe
+mais.** O plano inicial desta versão era só "OpenCV como dependência
+opcional" (`tests/tbox_cmp.c` continuaria em C, só teria um jeito de pular
+o build quando OpenCV estivesse ausente). Ao tentar compilar de verdade
+contra o OpenCV instalado neste ambiente (5.0.0), ficou claro que
+`opencv2/core/core_c.h`/`IplImage`/`cvLoadImage`/etc. (a API legada em C
+que o código original usava) foi removida do OpenCV há várias versões —
+não existe mais desde a v4. Duas opções foram discutidas com o
+mantenedor: reescrever com a API moderna (C++, `cv::Mat`) ou abandonar o
+OpenCV e implementar SSIM + decodificação de PNG à mão em C puro
+(reaproveitando libpng, já dependência transitiva via FreeType). Decisão:
+**manter OpenCV, portar pra C++** — é o que o mantenedor pediu
+originalmente, e o algoritmo de SSIM/diff já estava escrito e testado.
+
+Escopo desta versão, decidido nesta sessão:
+- **`tests/tbox_cmp.cpp`, não `.c`** — o único arquivo `.cpp` do projeto,
+  isolado: C++ só é habilitado (`enable_language(CXX)`) quando OpenCV é
+  encontrado, então um build sem OpenCV não precisa de toolchain C++
+  nenhum. O algoritmo (SSIM, diff de cor, contornos) é o mesmo de antes,
+  só reexpresso com `cv::Mat` em vez de `IplImage*` — sem mudança de
+  comportamento numérico.
+- **OpenCV restrito a `core`+`imgproc`+`imgcodecs`** — descoberto também
+  durante a implementação: um `find_package(OpenCV)` sem restrição de
+  componentes linka contra TODOS os módulos que a instalação local tem,
+  incluindo `highgui`/`viz`/`cvv`/`hdf` (GUI/visualização/HDF5) — nenhum
+  dos quais `tbox_cmp.cpp` usa — e cujas próprias dependências (Qt6, VTK,
+  HDF5) podem estar quebradas/incompletas numa instalação sem que isso
+  afete em nada o que este projeto precisa. Falhou a LINKAGEM (não a
+  compilação) neste ambiente por exatamente esse motivo antes de restringir
+  os componentes.
+- **OpenCV é dependência OPCIONAL do build**, mesmo padrão de
+  graceful-skip já usado pra Wayland/Fontconfig — configure nunca falha
+  por causa dela; ausente, `tbox_cmp` simplesmente não é buildado (e o
+  resto do projeto builda normal, sem precisar de C++ nenhum).
+- **`tbox_cmp` sai do glob de `tbox_tests`, vira executável próprio** —
+  não é mais um arquivo misturado no binário de 21 grupos já existente
+  (e, sendo `.cpp`, o glob `*.c` de `tests/CMakeLists.txt` nunca o pegaria
+  de qualquer forma); construído só quando `TBOX_OPENCV_FOUND` (e as
+  mesmas duas dependências que `tbox_app_demo` já precisa — Wayland +
+  Fontconfig, porque `tbox_cmp` usa `tbox_app_screenshot_from_files`, da
+  v7, que só existe no build quando as duas estão presentes).
+- **`tbox_cmp` recebe um DIRETÓRIO** (default `tests/assets`) e itera
+  todo `*.html` nele, achando o `*.png` irmão (mesmo nome, extensão
+  diferente) — não uma ferramenta de comparar só um par por vez (o par
+  único continua existindo como função interna, só não é mais o que
+  `main` expõe).
+- **A imagem renderizada usa exatamente a largura/altura do PNG golden**
+  — lidas do próprio PNG antes de renderizar (via `cv::imread`, que já
+  carrega a imagem de qualquer forma pra comparar). Evita a lógica de
+  crop/resize que já existia no código original ter que entrar em ação
+  no caso comum (ela continua existindo como salvaguarda, não foi
+  removida).
+- **`tbox_cmp` NÃO é registrado no `ctest`** — decisão explícita do
+  mantenedor: é uma ferramenta pra rodar manualmente sob demanda
+  (`./tbox_cmp [assets_dir]`), não parte do `ctest --test-dir build`
+  automático. `cmake --build build` continua construindo o executável
+  (quando OpenCV/Wayland/Fontconfig estão presentes), só não existe
+  `add_test()` pra ele — `ctest` nunca o invoca sozinho.
+- **Veredito por asset não é o código de saída do processo** — vários
+  assets vão genuinamente ficar "DIFERENTE" até features futuras
+  entrarem, ou mesmo indefinidamente (fonte diferente do browser que
+  gerou o golden). `tbox_cmp` imprime o resultado de CADA par (SSIM,
+  percentual, IGUAL/DIFERENTE) e um resumo no final, mas só retorna
+  código de saída != 0 se algo der errado OPERACIONALMENTE (não conseguiu
+  abrir o diretório, não conseguiu renderizar, não conseguiu carregar uma
+  imagem) — não por causa de um SSIM baixo. Mantido mesmo sem registro no
+  `ctest`, porque continua sendo o sinal certo de "a ferramenta rodou" pra
+  quem a invoca manualmente (scripts, CI opcional, etc.).
+- **Imagem de diferença por asset, não mais um nome fixo** — o código
+  original salvava sempre em `resultado_diferencas_c.png` (mesmo nome
+  toda vez), o que faria cada asset sobrescrever o anterior ao iterar um
+  diretório inteiro. Corrigido: cada asset grava sua própria imagem de
+  diferença (`/tmp/tbox_cmp_NNN_diff.png`), nomeada a partir do próprio
+  asset.
+
+### `tests/tbox_cmp.cpp` — assinatura pública do arquivo
+
+```cpp
+/* Compara golden_path (referência) contra um render feito a partir de
+ * html_path, escrito num caminho temporário nas dimensões exatas de
+ * golden_path -- SSIM + diff de cor, mesmo algoritmo que já existia,
+ * agora com o caminho de saída da imagem de diferença como parâmetro em
+ * vez de fixo. limiar é o corte de SSIM pra "igual" (mesmo default 0.98
+ * já usado antes). Imprime o resultado desse par; retorna true se
+ * conseguiu concluir a comparação (independente do veredito IGUAL/
+ * DIFERENTE), false só em falha operacional (não achou/carregou algum
+ * arquivo, renderização falhou). */
+static bool process_pair(const std::string &html_path, const std::string &golden_path, const std::string &render_path, const std::string &diff_path, double threshold, bool *out_is_equal);
+
+/* main(argc, argv): argv[1] (opcional, default "tests/assets") é o
+ * diretório a percorrer; argv[2] (opcional, default 0.98) é o limiar de
+ * SSIM. Itera todo *.html do diretório, pulando (com aviso, não erro)
+ * qualquer um sem *.png irmão -- alguns HTMLs podem ainda não ter golden
+ * capturado. Imprime um resumo no final (total, quantos IGUAIS, quantos
+ * DIFERENTES, quantas falhas operacionais). Código de saída: 0 se todo
+ * par foi processado sem falha operacional (mesmo com vereditos
+ * DIFERENTE); != 0 só em falha operacional. */
+int main(int argc, char **argv);
+```
+`compare_images` (a versão em inglês, com nome próprio, do
+`comparar_imagens_regra_original` original — algoritmo inalterado) ganha
+um parâmetro a mais, `const std::string &diff_output_path` (vazio = não
+salva a imagem de diferença) — no lugar do nome fixo
+`"resultado_diferencas_c.png"` que tinha antes. `compute_ssim` (era
+`calcular_ssim_c` no original) não muda de algoritmo, só de API
+(`cv::Mat`/`cv::GaussianBlur`/etc. em vez de `IplImage*`/`cvSmooth`/etc.).
+Todo identificador/comentário/mensagem do arquivo foi traduzido do
+português original pro inglês, a pedido do mantenedor, já que o arquivo
+inteiro precisou ser reescrito de qualquer forma (porte pra C++).
+
+### Build — OpenCV opcional (C++ isolado) + `tbox_cmp` como executável próprio
+
+`CMakeLists.txt` (raiz), no mesmo bloco onde `TBOX_WAYLAND_FOUND` já é
+detectado, antes de `add_subdirectory(tests)`:
+```cmake
+find_package(OpenCV QUIET COMPONENTS core imgproc imgcodecs)
+set(TBOX_OPENCV_FOUND ${OpenCV_FOUND})
+if(NOT TBOX_OPENCV_FOUND)
+    message(WARNING "OpenCV not found: tests/tbox_cmp.cpp ...")
+else()
+    enable_language(CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+endif()
+```
+`COMPONENTS core imgproc imgcodecs` restringe a `OpenCV_LIBS` aos três
+módulos que `tbox_cmp.cpp` realmente usa (ver "Escopo" acima pro porquê).
+`enable_language(CXX)` só roda dentro do `else()` (OpenCV encontrado) —
+um build sem OpenCV nunca precisa de compilador C++.
+
+`tests/CMakeLists.txt`:
+1. O `file(GLOB_RECURSE ... *.c)` que monta `tbox_tests` nunca pega
+   `tbox_cmp.cpp` (extensão diferente) — nenhuma exclusão explícita
+   necessária, diferente de quando o arquivo ainda era `.c`.
+2. Bloco novo, condicionado a `TBOX_OPENCV_FOUND AND TBOX_WAYLAND_FOUND
+   AND TBOX_FONTCONFIG_FOUND` (mesmo gate que `tbox_app_demo` já usa em
+   `example/CMakeLists.txt`, mais OpenCV): `add_executable(tbox_cmp
+   tbox_cmp.cpp)`, linkando `tbox`/`tbox_static` (mesma escolha
+   condicional de `TBOX_BUILD_STATIC` que `tbox_tests` já faz) +
+   `freetype` + `WAYLAND_CLIENT_LIBRARIES`/`XKBCOMMON_LIBRARIES`/
+   `FONTCONFIG_LIBRARIES` (mesmos três de `tbox_app_demo`) +
+   `${OpenCV_LIBS}` (já restrito aos três componentes), com
+   `target_include_directories` cobrindo os mesmos mais
+   `${OpenCV_INCLUDE_DIRS}`. **Sem `add_test()`** — o mantenedor quer
+   `tbox_cmp` invocado manualmente, não como parte do `ctest --test-dir
+   build` automático (ver "Escopo" acima). O executável ainda é
+   construído por `cmake --build build` normalmente, só não aparece na
+   lista de testes do `ctest`.
+
+### Fora de escopo
+
+Registrar `tbox_cmp` no `ctest` (decisão explícita do mantenedor: fica de
+fora do roteiro de testes automático, só invocação manual — ver "Escopo"
+acima). Marcar asset individual como "esperado falhar" (`WILL_FAIL`/regex
+de output) — sem sentido enquanto não estiver no `ctest` de qualquer
+forma. Paralelizar a renderização dos assets (hoje
+sequencial, um de cada vez — o conjunto é pequeno, 13 pares hoje, tempo
+de execução total ~0.7s, não é um problema real ainda). Qualquer novo
+asset além dos 13 já existentes (adicionar cobertura é trabalho contínuo,
+não desta versão especificamente). Golden images geradas pelo próprio
+tbox (em vez de capturadas de um browser real) — os 13 goldens atuais
+nunca vão bater 100% mesmo com toda feature implementada, por causa de
+diferença de fonte; útil como registro histórico de intenção, não como
+gate binário de CI.
+
+### Critério de "pronto" — v10
+
+Verificado de ponta a ponta nesta sessão: `cmake -S . -B build && cmake
+--build build && ctest --test-dir build` — 21/21 grupos de sempre, limpo,
+sem warning algum, com `-Wall -Wextra -Wpedantic -Werror` valendo pro
+`.cpp` também (compilado por `cmake --build build`, mas fora do `ctest`
+por decisão do mantenedor — ver "Escopo"). `tbox_cmp tests/assets` rodado
+diretamente confirma: 13 pares processados, 0 falhas
+operacionais (exit 0), 13 "DIFERENTES" (esperado — fonte diferente do
+browser que gerou os goldens, e algumas features realmente não
+implementadas ainda), cada um com sua própria imagem de diferença
+(`/tmp/tbox_cmp_NNN_diff.png`) mostrando exatamente onde — inspecionada
+visualmente pra `001.html` (só headings): as caixas vermelhas cercam
+cada palavra, consistente com "mesmo texto, fonte diferente", não um bug
+de comparação.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8 e v9 (registrada nas
+fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 e v10 (registrada nas
 seções de cada camada), pra "Ferramentas de desenvolvimento — captura de
 tela headless" acima (não uma versão da escada, mas com o mesmo nível de
 decisão documentada), ou consolidada como débito de design conhecido
-acima, com gatilho explícito de quando revisitar.
+acima, com gatilho explícito de quando
+revisitar.
