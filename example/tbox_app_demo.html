@@ -9,6 +9,45 @@
 </head>
 
 <body>
+  <!-- v12: `font-family` demo (Style Tarefa 2 + Layout Tree Tarefa 5).
+       .v12-serif-font declares font-family: "DejaVu Serif" (quoted, single
+       name -- tbox_style_parse_font_family's quoted-name path) in
+       tbox_app_demo.css, confirmed installed via `fc-list` in this
+       environment and visually distinct (serifed) from the sans-serif face
+       used everywhere else in this document. Enough running text below for
+       the serif shapes (the little "feet" on strokes) to be unmistakable
+       against the sans-serif default. The <em> child carries NO font-family
+       of its own -- per ARCHITECTURE.md's v12 Style section, font-family
+       inherits down the tree exactly like text-align, so "itálico herdado"
+       below must render in the SAME serifed DejaVu Serif face as the rest of
+       this paragraph, never falling back to the sans-serif default -- the
+       visual proof of inheritance for a value declared only on the parent.
+       Deliberately NOT using a nested <b> here (unlike the v2 paragraph
+       above, which does): a <b> inside a `font-family`-carrying element
+       forces this cache to resolve a SECOND (family, bold) pair through
+       tbox_font_face_cache's on-demand resolver in the same document --
+       this was tried and traced to a real use-after-free in
+       src/app/tbox_app.c's tbox_app_font_resolver (Tarefa 4): it calls
+       tbox_font_source_destroy(source) BEFORE tbox_font_face_cache_get
+       copies out_data/out_size, which alias the just-freed
+       tbox_font_source_fontconfig buffer (fc->data) -- harmless when nothing
+       reallocates that memory before the copy, but in this full document
+       (enough allocation traffic between the free and the copy) it reliably
+       corrupts the bold DejaVu Serif face's glyph tables: FT_Load_Char still
+       "succeeds" but every glyph's advance measures 0.0, so
+       tbox_layout_push_words silently drops all three bold words. `<em>`
+       never hits this: this engine has no real italics (see the v2 paragraph
+       comment on tbox_layout.c), so `<em>` always resolves to bold=false --
+       the SAME (family, bold) pair already safely cached by this
+       paragraph's own regular text, never a second resolver call. Confirmed
+       out of scope for this task (only example/ files are touchable here);
+       flagged for the maintainer to fix in src/app/tbox_app.c separately. -->
+  <p class="v12-serif-font">v12: este parágrafo inteiro usa font-family: "DejaVu Serif", incluindo um trecho em
+    <em>itálico herdado</em> -- o filho não declara font-family própria, então deve herdar a mesma face serifada
+    do pai, nunca cair de volta pro sans-serif default.
+  </p>
+
+
   <!-- v11: text-align demo (Style Tarefa 1 + Layout Tree Tarefa 3). Three
        identically-sized boxes (.v11-align-box: fixed width + solid
        border, so the box edges are unambiguous in the screenshot), each
@@ -70,9 +109,14 @@
          exactly as four spaces (not collapsed to one, the way
          tbox_string_collapse_whitespace would do for any other text tag),
          and the second line must start on its own line without any <br> in
-         the markup. Still the same sans-serif face as everywhere else in
-         this document -- font-family (and real monospace) is deliberately
-         out of scope until v12. -->
+         the markup.
+         v12: this <pre> declares NO font-family anywhere -- neither inline
+         nor in tbox_app_demo.css -- so it now also doubles as the UA
+         stylesheet default proof (Tarefa 3's `pre { font-family: monospace;
+         }` rule in tbox_ua_style_generate_css): it must render in a
+         monospaced face, visibly different (fixed-width strokes, no serifs)
+         from both the sans-serif default used everywhere else and the
+         DejaVu Serif face of .v12-serif-font below. -->
   <pre class="v11-pre-demo">a    b
   segunda linha do pre, sem quebra automática nenhuma.</pre>
 

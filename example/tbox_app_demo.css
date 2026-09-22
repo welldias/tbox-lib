@@ -525,3 +525,17 @@ body {
 .v11-align-right {
     text-align: right;
 }
+
+/* v12: `font-family` demo (see the HTML comment above
+ * <p class="v12-serif-font"> in tbox_app_demo.html). "DejaVu Serif" is
+ * quoted (tbox_style_parse_font_family's quoted-name path, exercising the
+ * branch bare `verdana`/`courier` elsewhere in this project's fixtures does
+ * not) and confirmed installed in this environment via `fc-list` -- picked
+ * specifically for being visually distinct (real serifs) from the
+ * sans-serif default used by every other text element in this document. A
+ * light background only, to make the paragraph easy to find in the
+ * screenshot -- the font itself, not the color, is the proof here. */
+.v12-serif-font {
+    font-family: "DejaVu Serif";
+    background-color: lavenderblush;
+}

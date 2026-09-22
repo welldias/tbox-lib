@@ -73,30 +73,67 @@ static tbox_font_source *tbox_app_resolve_font_source(bool bold, const void **ou
     return source;
 }
 
-/* Shared by tbox_app_create/tbox_app_create_with_config (the same "thin
- * public wrapper over one real implementation" shape as
- * tbox_context_open/tbox_context_open_with_config): resolves a real bold
- * face alongside the regular one, builds the font cache, opens the
- * tbox_context (with or without an explicit tbox_ua_style_config, per
- * `use_config`) and the Wayland window, and allocates the tbox_app struct.
+/* NOVO v12: on-demand resolver handed to tbox_font_face_cache_create so the
+ * cache can resolve any (family, bold) pair it hasn't seen yet, the first
+ * time tbox_font_face_cache_get is asked for it -- see ARCHITECTURE.md's
+ * "Application -- resolução sob demanda + limpeza de duplicação". `userdata`
+ * is deliberately ignored (every call site below passes NULL for
+ * resolver_userdata; this function carries no state of its own -- no new
+ * global/static mutable is introduced by this file).
  *
- * Why TWO tbox_font_source_fontconfig instances (one per bold/non-bold
- * query) rather than one source resolved twice: tbox_font_source_resolve's
- * documented contract (<tbox/font.h>) invalidates the previous resolve's
- * returned pointer the moment the SAME source resolves again -- resolving
- * {bold:false} then {bold:true} on one source would invalidate the first
- * result before both could be handed to tbox_font_face_cache_create. Two
- * independent sources sidestep that entirely, at the cost of one extra
- * FcFontMatch call, which is irrelevant. Both sources are destroyed right
- * after tbox_font_face_cache_create returns -- it already copies both byte
- * blobs defensively (same defense tbox_font_face_load itself already makes
- * for a single face, see <tbox/font.h>), so neither source needs to outlive
- * that call, let alone tbox_app's whole lifetime; tbox_app therefore has no
- * tbox_font_source field of its own.
- *
- * Returns NULL on any failure, cleaning up whatever had already been
- * allocated first; never crashes either way. */
-static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
+ * Does exactly what tbox_app_resolve_font_source does per call -- create a
+ * fresh tbox_font_source_fontconfig, resolve one query, destroy the source
+ * again regardless of outcome -- except it takes a full tbox_font_query
+ * (including family) instead of just a bold flag, and is invoked by the
+ * cache on demand rather than eagerly at startup. Returns false (without
+ * touching out_data/out_size) if the source itself fails to create;
+ * otherwise returns whatever tbox_font_source_resolve returns, having
+ * already destroyed the source either way. */
+static bool tbox_app_font_resolver(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size) {
+    (void)userdata;
+
+    tbox_font_source *source = tbox_font_source_fontconfig_create();
+    if (source == NULL) {
+        return false;
+    }
+
+    if (!tbox_font_source_resolve(source, query, out_data, out_size)) {
+        tbox_font_source_destroy(source);
+        return false;
+    }
+
+    /* Deliberately NOT destroyed on success: tbox_font_source_fontconfig_resolve
+     * (src/font/tbox_font_source_fontconfig.c) writes *out_data as an ALIAS
+     * into the source's own internal buffer (fc->data), not a copy --
+     * destroying `source` here would free that buffer before
+     * tbox_font_face_cache_get (the caller, in src/font/tbox_font_face_cache.c)
+     * gets to copy it into its own arena right after this function returns,
+     * a genuine use-after-free that corrupted rendered glyphs
+     * non-deterministically (missing/zero-width words) once a real document
+     * put enough allocation traffic between the free and the copy. The cache
+     * resolves each distinct (family, bold) pair at most once per process
+     * (see family_blobs in tbox_font_face_cache.c) -- this leaks at most one
+     * small tbox_font_source per distinct font family actually used by the
+     * document, bounded and tiny, same accepted-debt shape as the font face
+     * cache itself never evicting entries (ARCHITECTURE.md's "Fora de
+     * escopo: limite/eviction do cache de fontes"). */
+    return true;
+}
+
+/* NOVO v12: shared by tbox_app_create_impl and tbox_app_screenshot_from_files
+ * -- both used to duplicate this exact "resolve regular, resolve bold,
+ * tbox_font_face_cache_create" sequence independently (see
+ * ARCHITECTURE.md's "Limpeza recomendada, junto"); now there is one copy.
+ * Resolves a real bold face alongside the regular one exactly like before
+ * (see the retained comment on tbox_app_resolve_font_source above for why
+ * TWO tbox_font_source_fontconfig instances are used, one per bold/non-bold
+ * query), builds the font cache with tbox_app_font_resolver wired in as its
+ * on-demand resolver (resolver_userdata is NULL -- the resolver needs no
+ * state), and destroys both sources before returning -- tbox_font_face_cache_create
+ * already copies both byte blobs defensively, so neither source needs to
+ * outlive that call. Returns NULL on any failure, cleaning up whatever had
+ * already been allocated first; never crashes either way. */
+static tbox_font_face_cache *tbox_app_build_font_cache(void) {
     const void *regular_data         = NULL;
     size_t regular_size              = 0;
     tbox_font_source *regular_source = tbox_app_resolve_font_source(false, &regular_data, &regular_size);
@@ -112,12 +149,26 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t
         return NULL;
     }
 
-    tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size);
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size, tbox_app_font_resolver, NULL);
     /* Both sources' bytes are already copied into `fonts` above (or the
      * call failed and there is nothing left to copy from) -- neither source
      * is needed past this point, success or failure alike. */
     tbox_font_source_destroy(bold_source);
     tbox_font_source_destroy(regular_source);
+    return fonts;
+}
+
+/* Shared by tbox_app_create/tbox_app_create_with_config (the same "thin
+ * public wrapper over one real implementation" shape as
+ * tbox_context_open/tbox_context_open_with_config): builds the font cache
+ * (see tbox_app_build_font_cache above), opens the tbox_context (with or
+ * without an explicit tbox_ua_style_config, per `use_config`) and the
+ * Wayland window, and allocates the tbox_app struct.
+ *
+ * Returns NULL on any failure, cleaning up whatever had already been
+ * allocated first; never crashes either way. */
+static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
+    tbox_font_face_cache *fonts = tbox_app_build_font_cache();
     if (fonts == NULL) {
         return NULL;
     }
@@ -260,14 +311,14 @@ tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const ch
 }
 
 /* See <tbox/app.h>'s doc comment. Shares tbox_app_read_file/
- * tbox_app_resolve_font_source with the tbox_app_create* family above --
- * the only real difference is what happens after tbox_context_open
- * succeeds: no tbox_backend_wayland_open, no tbox_app struct, just one
+ * tbox_app_build_font_cache with the tbox_app_create* family above -- the
+ * only real difference is what happens after tbox_context_open succeeds: no
+ * tbox_backend_wayland_open, no tbox_app struct, just one
  * tbox_context_run_frame + tbox_raster_display_list into a locally-owned
  * pixel buffer, written out via tbox_raster_write_png. Everything opened
- * along the way (font sources, font cache, context, pixel buffer) is torn
- * down before returning, success or failure alike -- there is no handle for
- * a caller to hold onto afterward, unlike tbox_app_create*. */
+ * along the way (font cache, context, pixel buffer) is torn down before
+ * returning, success or failure alike -- there is no handle for a caller to
+ * hold onto afterward, unlike tbox_app_create*. */
 bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path) {
     if (html_path == NULL || png_path == NULL || width <= 0 || height <= 0) {
         return false;
@@ -289,45 +340,30 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
 
     bool ok = false;
 
-    const void *regular_data         = NULL;
-    size_t regular_size              = 0;
-    tbox_font_source *regular_source = tbox_app_resolve_font_source(false, &regular_data, &regular_size);
-    if (regular_source != NULL) {
-        const void *bold_data         = NULL;
-        size_t bold_size              = 0;
-        tbox_font_source *bold_source = tbox_app_resolve_font_source(true, &bold_data, &bold_size);
-        if (bold_source != NULL) {
-            tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size);
-            tbox_font_source_destroy(bold_source);
-            tbox_font_source_destroy(regular_source);
+    tbox_font_face_cache *fonts = tbox_app_build_font_cache();
+    if (fonts != NULL) {
+        tbox_context *ctx = tbox_context_open(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, (double)width, (double)height, &list);
 
-            if (fonts != NULL) {
-                tbox_context *ctx = tbox_context_open(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts);
-                if (ctx != NULL) {
-                    tbox_display_list list;
-                    tbox_context_run_frame(ctx, (double)width, (double)height, &list);
-
-                    uint32_t *pixels = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)width * (size_t)height);
-                    if (pixels != NULL) {
-                        /* Same "clear to opaque white first" v0's tbox_backend_wayland_present
-                         * uses -- see its doc comment in <tbox/output.h> for why (no UA
-                         * background-color default yet, white matches every real browser's
-                         * canvas default more closely than showing nothing/black would). */
-                        for (size_t i = 0; i < (size_t)width * (size_t)height; i++) {
-                            pixels[i] = 0xFFFFFFFFu;
-                        }
-                        tbox_raster_display_list(pixels, width, height, &list);
-                        ok = tbox_raster_write_png(png_path, pixels, width, height);
-                        free(pixels);
-                    }
-
-                    tbox_context_close(ctx);
+            uint32_t *pixels = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)width * (size_t)height);
+            if (pixels != NULL) {
+                /* Same "clear to opaque white first" v0's tbox_backend_wayland_present
+                 * uses -- see its doc comment in <tbox/output.h> for why (no UA
+                 * background-color default yet, white matches every real browser's
+                 * canvas default more closely than showing nothing/black would). */
+                for (size_t i = 0; i < (size_t)width * (size_t)height; i++) {
+                    pixels[i] = 0xFFFFFFFFu;
                 }
-                tbox_font_face_cache_destroy(fonts);
+                tbox_raster_display_list(pixels, width, height, &list);
+                ok = tbox_raster_write_png(png_path, pixels, width, height);
+                free(pixels);
             }
-        } else {
-            tbox_font_source_destroy(regular_source);
+
+            tbox_context_close(ctx);
         }
+        tbox_font_face_cache_destroy(fonts);
     }
 
     free(css);

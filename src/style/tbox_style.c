@@ -191,6 +191,68 @@ static bool tbox_style_parse_text_align(tbox_string_view raw, tbox_style_text_al
     return false;
 }
 
+/* NOVO v12: parses `font-family` per ARCHITECTURE.md's v12 Style section --
+ * only the FIRST name of a comma-separated list is ever used (the rest,
+ * meant for fallback, is discarded -- decision confirmed with the
+ * maintainer, see ARCHITECTURE.md's v12 "Escopo"). If the (trimmed) value
+ * starts with `"` or `'`, the first name is the text between that quote and
+ * its matching close (an unterminated quote fails the whole parse, since a
+ * comma inside a quoted name must never be treated as the list separator);
+ * otherwise, the first name is the text before the first top-level `,` (or
+ * the whole value, if there is none). The extracted name is trimmed again
+ * (its edges can carry stray whitespace, e.g. the leading space in the
+ * second name of "Verdana, Arial") and, if still non-empty, copied into
+ * `out`, truncated to `out_capacity - 1` bytes and always NUL-terminated --
+ * same truncate-don't-reject posture as
+ * tbox_font_source_fontconfig_family_cstr (src/font/tbox_font_source_fontconfig.c).
+ * Returns false (leaving `out` untouched) when `raw` is empty/all
+ * whitespace, an opening quote has no matching close, or the extracted name
+ * is empty after trimming. */
+static bool tbox_style_parse_font_family(tbox_string_view raw, char *out, size_t out_capacity) {
+    tbox_string_view text = tbox_style_trim(raw);
+    if (text.size == 0) {
+        return false;
+    }
+
+    tbox_string_view first_name;
+
+    char quote = text.data[0];
+    if (quote == '"' || quote == '\'') {
+        size_t close = 0;
+        bool found   = false;
+        for (size_t i = 1; i < text.size; i++) {
+            if (text.data[i] == quote) {
+                close = i;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+        first_name = tbox_string_view_make(text.data + 1, close - 1);
+    } else {
+        size_t comma = text.size;
+        for (size_t i = 0; i < text.size; i++) {
+            if (text.data[i] == ',') {
+                comma = i;
+                break;
+            }
+        }
+        first_name = tbox_string_view_make(text.data, comma);
+    }
+
+    first_name = tbox_style_trim(first_name);
+    if (first_name.size == 0) {
+        return false;
+    }
+
+    size_t n = first_name.size < out_capacity - 1 ? first_name.size : out_capacity - 1;
+    memcpy(out, first_name.data, n);
+    out[n] = '\0';
+    return true;
+}
+
 /* Splits `text` on runs of ASCII whitespace into at most 4 tokens (the max
  * a margin/padding shorthand ever takes). Returns false -- meaning the
  * whole shorthand is invalid -- if there are no tokens at all, or more than
@@ -465,6 +527,22 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.text_align = parent_style->text_align;
     } else {
         style.text_align = TBOX_STYLE_TEXT_ALIGN_LEFT;
+    }
+
+    /* font-family: NOVO v12. Same inheritance mechanism as `text-align`/
+     * `font-weight` above -- a recognized declaration wins (only its first
+     * comma-separated name, quotes stripped -- see
+     * tbox_style_parse_font_family); otherwise inherits the parent's
+     * already-resolved value; otherwise falls back to the initial value ""
+     * (no override) with no parent. */
+    const tbox_css_resolved_declaration *font_family_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-family"));
+    char parsed_font_family[sizeof(style.font_family)];
+    if (font_family_decl != NULL && tbox_style_parse_font_family(font_family_decl->value, parsed_font_family, sizeof(parsed_font_family))) {
+        memcpy(style.font_family, parsed_font_family, sizeof(style.font_family));
+    } else if (parent_style != NULL) {
+        memcpy(style.font_family, parent_style->font_family, sizeof(style.font_family));
+    } else {
+        style.font_family[0] = '\0';
     }
 
     return style;

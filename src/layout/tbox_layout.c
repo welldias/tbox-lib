@@ -172,21 +172,21 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *n
          * <br> has no style of its own worth resolving here), same call the
          * TEXT branch below already makes. */
         if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "br")) {
-            const tbox_font_face *face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
             tbox_layout_push_hard_break(words, face);
             continue;
         }
 
         if (child->type == TBOX_HTML_NODE_TEXT) {
             tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, child->text.text);
-            const tbox_font_face *face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
             tbox_layout_push_words(words, collapsed, face);
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
             if (child_style->display == TBOX_STYLE_DISPLAY_INLINE) {
                 tbox_string_view raw       = tbox_html_node_text_content(arena, child);
                 tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, raw);
-                const tbox_font_face *face = tbox_font_face_cache_get(fonts, child_style->font_weight_bold, child_style->font_size);
+                const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_size);
                 tbox_layout_push_words(words, collapsed, face);
             }
         }
@@ -393,7 +393,7 @@ static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node
     /* The marker always uses the <li>'s OWN face -- never a nested <b>/<em>'s
      * -- same call tbox_layout_collect_words already makes for the <li>'s
      * direct TEXT children. */
-    const tbox_font_face *face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
+    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
     if (face == NULL) {
         return;
     }
@@ -455,7 +455,7 @@ static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node
  * has) contributes no words at all rather than crashing on
  * tbox_font_measure_text(NULL, ...). */
 static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words) {
-    const tbox_font_face *face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
+    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
     if (face == NULL) {
         return;
     }
@@ -534,7 +534,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         box->text_runs      = NULL;
         box->text_run_count = 0;
 
-        const tbox_font_face *own_face = tbox_font_face_cache_get(fonts, style->font_weight_bold, style->font_size);
+        const tbox_font_face *own_face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
         return own_face != NULL ? tbox_font_face_line_height(own_face) : 0.0;
     }
 

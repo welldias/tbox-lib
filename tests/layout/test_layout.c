@@ -62,6 +62,32 @@ static bool string_view_equal_cstr(tbox_string_view view, const char *cstr) {
     return view.size == len && (len == 0 || memcmp(view.data, cstr, len) == 0);
 }
 
+/* NOVO v12 (Tarefa 5): test-only resolver state/callback, same pattern as
+ * tests/font/test_font.c's tbox_test_font_resolver_state/
+ * tbox_test_font_resolver -- a plain local (stack) variable passed as
+ * resolver_userdata, never a global/static mutable, per the project's "no
+ * new global/static mutable state" rule. Always resolves to the same
+ * vendored bytes already used by the rest of this file, no matter which
+ * family/bold/italic is requested, and counts how many times it was
+ * called -- used to prove (a) a declared `font-family` reaches
+ * tbox_font_face_cache_get from the Layout Tree, and (b) a <p> with no
+ * font-family at all never invokes the resolver (default/empty-family
+ * fast path, untouched by v12). */
+typedef struct tbox_test_layout_resolver_state {
+    const void *font_data;
+    size_t font_size;
+    int calls;
+} tbox_test_layout_resolver_state;
+
+static bool tbox_test_layout_resolver(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size) {
+    (void)query;
+    tbox_test_layout_resolver_state *state = userdata;
+    state->calls++;
+    *out_data = state->font_data;
+    *out_size = state->font_size;
+    return true;
+}
+
 int tbox_test_layout_run(void) {
     int failures = 0;
 
@@ -79,14 +105,14 @@ int tbox_test_layout_run(void) {
      * pointer than regular -- which the cache guarantees regardless of
      * whether the underlying bytes happen to be identical, since (bold,
      * size_px) is the cache key). */
-    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size);
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL);
     TBOX_TEST_ASSERT_MSG(fonts != NULL, "failed to create font face cache");
     if (fonts == NULL) {
         free(font_data);
         return failures + 1;
     }
 
-    const tbox_font_face *regular_16 = tbox_font_face_cache_get(fonts, false, 16.0);
+    const tbox_font_face *regular_16 = tbox_font_face_cache_get(fonts, tbox_string_view_make(NULL, 0), false, 16.0);
     TBOX_TEST_ASSERT_MSG(regular_16 != NULL, "failed to resolve the regular 16px face");
 
     /* 1: an explicit width/height in px is used as-is. */
@@ -434,7 +460,7 @@ int tbox_test_layout_run(void) {
                 TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[1].text, "bold"), "the second run must be the bold word");
                 TBOX_TEST_ASSERT_MSG(box->text_runs[0].font != box->text_runs[1].font, "the bold run must resolve to a DIFFERENT face pointer than the plain run");
                 TBOX_TEST_ASSERT(box->text_runs[0].font == regular_16);
-                TBOX_TEST_ASSERT(box->text_runs[1].font == tbox_font_face_cache_get(fonts, true, 16.0));
+                TBOX_TEST_ASSERT(box->text_runs[1].font == tbox_font_face_cache_get(fonts, tbox_string_view_make(NULL, 0), true, 16.0));
             }
         }
 
@@ -1557,6 +1583,86 @@ int tbox_test_layout_run(void) {
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
+    }
+
+    /* 47: NOVO v12 (Tarefa 5) -- <p style="font-family: Verdana;">x</p>: the
+     * style="" declared font-family must flow all the way through the
+     * Layout Tree's tbox_font_face_cache_get calls (Tarefa 2's
+     * style->font_family, threaded by this task) to the face actually
+     * chosen for the run -- proven by identity against a direct
+     * tbox_font_face_cache_get(fonts, "Verdana", false, 16.0) call using
+     * the SAME cache. Needs its own cache (built with a test resolver, same
+     * pattern as tests/font/test_font.c) since the shared `fonts` cache
+     * above has resolver == NULL and would fail to resolve any non-empty
+     * family. */
+    {
+        tbox_test_layout_resolver_state resolver_state = {
+            .font_data = font_data,
+            .font_size = font_size,
+            .calls     = 0,
+        };
+        tbox_font_face_cache *family_fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, tbox_test_layout_resolver, &resolver_state);
+        TBOX_TEST_ASSERT_MSG(family_fonts != NULL, "failed to create font face cache with test resolver");
+
+        if (family_fonts != NULL) {
+            tbox_html_document *doc    = parse_html_cstr("<p style=\"font-family: Verdana;\">x</p>");
+            const tbox_html_node *root = tbox_html_document_root(doc);
+            tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+            tbox_arena arena               = tbox_arena_create(0);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, family_fonts, 800.0, 600.0);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "\"x\" must fit on a single run");
+                if (box->text_run_count == 1) {
+                    const tbox_font_face *expected = tbox_font_face_cache_get(family_fonts, tbox_string_view_make("Verdana", strlen("Verdana")), false, 16.0);
+                    TBOX_TEST_ASSERT_MSG(box->text_runs[0].font == expected, "the declared style=\"font-family: Verdana;\" must reach the face chosen by the Layout Tree");
+                }
+            }
+
+            tbox_arena_destroy(&arena);
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+
+            /* 48: NOVO v12 (Tarefa 5) regression -- a plain <p> with NO
+             * font-family declared anywhere resolves style->font_family ==
+             * "" (Tarefa 2), so tbox_font_face_cache_get must take the
+             * default/empty-family fast path and never call the resolver at
+             * all -- even on a cache that HAS a resolver configured (this
+             * same family_fonts cache, used by test 47 above). Uses the
+             * SAME resolver_state so the call count is directly comparable
+             * -- it must still read exactly 1 (from test 47's single
+             * resolve), not 2. */
+            tbox_html_document *doc_plain    = parse_html_cstr("<p>x</p>");
+            const tbox_html_node *root_plain = tbox_html_document_root(doc_plain);
+            tbox_css_stylesheet *sheet_plain = parse_css_cstr("");
+
+            tbox_arena arena_plain               = tbox_arena_create(0);
+            tbox_css_cascade_source source_plain = { sheet_plain, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table_plain         = tbox_style_resolve_tree(&arena_plain, root_plain, &source_plain, 1);
+
+            int calls_before = resolver_state.calls;
+
+            tbox_layout_box *box_plain = tbox_layout_build(&arena_plain, root_plain, &table_plain, family_fonts, 800.0, 600.0);
+            TBOX_TEST_ASSERT(box_plain != NULL);
+            if (box_plain != NULL) {
+                TBOX_TEST_ASSERT_MSG(box_plain->text_run_count == 1, "\"x\" must fit on a single run");
+                if (box_plain->text_run_count == 1) {
+                    const tbox_font_face *default_regular_16 = tbox_font_face_cache_get(family_fonts, tbox_string_view_make(NULL, 0), false, 16.0);
+                    TBOX_TEST_ASSERT_MSG(box_plain->text_runs[0].font == default_regular_16, "a <p> with no font-family declared must keep resolving the same default (empty-family) face");
+                }
+            }
+            TBOX_TEST_ASSERT_MSG(resolver_state.calls == calls_before, "a <p> with no font-family declared must never invoke the resolver (default/empty-family fast path)");
+
+            tbox_arena_destroy(&arena_plain);
+            tbox_css_stylesheet_destroy(sheet_plain);
+            tbox_html_document_destroy(doc_plain);
+
+            tbox_font_face_cache_destroy(family_fonts);
+        }
     }
 
     tbox_font_face_cache_destroy(fonts);

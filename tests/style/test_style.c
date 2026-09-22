@@ -683,5 +683,82 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 33: NOVO v12 -- font-family: Verdana resolves style.font_family to
+     * "Verdana". */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-family: Verdana; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(strcmp(style.font_family, "Verdana") == 0);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 34: NOVO v12 -- font-family: "Courier New", monospace; resolves to
+     * "Courier New" -- quotes stripped, and the comma INSIDE the quotes
+     * must not be mistaken for the list separator. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-family: \"Courier New\", monospace; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "Courier New") == 0, "quoted font-family should have quotes stripped and not split on the comma inside the quotes");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 35: NOVO v12 -- font-family: Verdana, Arial, sans-serif; (unquoted,
+     * multiple names) resolves only the FIRST name, "Verdana" -- no
+     * fallback list is kept. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-family: Verdana, Arial, sans-serif; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "Verdana") == 0, "only the first name of a comma-separated font-family list should be used");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 36: NOVO v12 -- font-family inherits from the parent when undeclared,
+     * same inheritance mechanism as color/text-align. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-family: Verdana; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(strcmp(parent_style.font_family, "Verdana") == 0);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(strcmp(child_style.font_family, "Verdana") == 0, "font-family should inherit when undeclared");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 37: regression -- a div with no font-family declared and no parent
+     * resolves to the initial value "" (no override). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.font_family[0] == '\0', "no font-family declared, no parent, should be the initial value \"\"");
+        TBOX_TEST_ASSERT(strcmp(style.font_family, "") == 0);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

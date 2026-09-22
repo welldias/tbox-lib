@@ -20,9 +20,13 @@ extern "C" {
  * matching ARCHITECTURE.md's "Convenções" first ownership pattern, not its
  * second one. */
 
-/* An abstract request for a font: a generic family (v0 only understands
- * generics such as "sans-serif", never a specific font name) plus
- * bold/italic flags. What a tbox_font_source backend resolves against. */
+/* An abstract request for a font: a family (a generic alias such as
+ * "sans-serif"/"serif"/"monospace", or a specific font name such as
+ * "Verdana" -- both are arbitrary strings as far as this struct and
+ * tbox_font_source are concerned; which ones actually resolve to something
+ * is entirely up to the backend, e.g. Fontconfig's own alias/substitution
+ * rules) plus bold/italic flags. What a tbox_font_source backend resolves
+ * against. */
 typedef struct tbox_font_query {
     tbox_string_view family;
     bool bold;
@@ -150,17 +154,40 @@ tbox_font_glyph_bitmap tbox_font_rasterize_glyph(tbox_font_face *face, uint32_t 
 
 /* Opaque: owns two copies of font bytes (regular and bold -- see "why two
  * font sources" below, in tbox_font_face_cache_create's doc comment) plus a
- * vector of already-loaded tbox_font_face instances, keyed by (bold,
+ * vector of already-loaded tbox_font_face instances, keyed by (family, bold,
  * size_px), populated on demand. Why a cache and not just a second face:
  * tbox_font_face_load already bakes the pixel size into the load
  * (FT_Set_Pixel_Sizes) -- a loaded face can't be rescaled. Once font-size
  * varies per element (headings vs. body text, and whatever an author
- * declares), loading one face per (weight, size) combination on demand,
- * with a cache, is the only way to support that without re-parsing the font
- * file for every text box on every frame. Own lifetime (real _destroy, no
- * caller arena) -- same pattern as tbox_font_face itself: loaded once,
- * persists across many frames, NOT reset by tbox_context's frame arena. */
+ * declares), loading one face per (family, weight, size) combination on
+ * demand, with a cache, is the only way to support that without re-parsing
+ * the font file for every text box on every frame. Families other than the
+ * default (empty) one are resolved on demand via the resolver callback
+ * passed to tbox_font_face_cache_create -- see that function's doc comment.
+ * Own lifetime (real _destroy, no caller arena) -- same pattern as
+ * tbox_font_face itself: loaded once, persists across many frames, NOT
+ * reset by tbox_context's frame arena. */
 typedef struct tbox_font_face_cache tbox_font_face_cache;
+
+/* Resolves an arbitrary font family (plus bold/italic) to the bytes of a
+ * usable font file, on demand, for tbox_font_face_cache_get -- same success/
+ * failure contract as tbox_font_source_resolve: on success, writes the font
+ * data's address and size to *out_data / *out_size (both non-NULL) and
+ * returns true; on failure, returns false and leaves *out_data / *out_size
+ * untouched. `userdata` is whatever opaque pointer was passed alongside this
+ * function to tbox_font_face_cache_create, unused by the cache itself.
+ * Deliberately a callback rather than this header (or tbox_font_face_cache.c)
+ * calling a specific backend such as tbox_font_source_fontconfig_* directly:
+ * it keeps src/font/tbox_font_face_cache.c free of any dependency on a
+ * specific backend, same as it is today -- the Application layer is the one
+ * that knows Fontconfig exists and supplies a resolver built on top of it
+ * (see ARCHITECTURE.md's "v12 -- CSS font-family" -> "Escopo"). The returned
+ * pointer's lifetime follows whatever the backing tbox_font_source behind
+ * this callback documents (e.g. tbox_font_source_resolve's own aliasing
+ * rules) -- tbox_font_face_cache_get copies the bytes into its own arena
+ * immediately, so the caller of this typedef's implementation need not keep
+ * them valid past the call. */
+typedef bool (*tbox_font_resolver_fn)(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size);
 
 /* Copies regular_data/bold_data into memory the cache owns -- the caller's
  * buffers need not outlive this call (same defensive copy
@@ -175,27 +202,44 @@ typedef struct tbox_font_face_cache tbox_font_face_cache;
  * the caller's job (the Application layer): create two
  * tbox_font_source_fontconfig instances, one per query, resolve each exactly
  * once, and pass both (data, size) pairs here -- this cache only receives
- * bytes already in hand, it never touches tbox_font_source itself. Returns
- * NULL only on allocation failure. */
-tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size);
+ * bytes already in hand, it never touches tbox_font_source itself.
+ * `resolver`/`resolver_userdata` are stored on the cache and used by
+ * tbox_font_face_cache_get to resolve any family OTHER than the default
+ * (empty) one, the first time that (family, bold) combination is requested
+ * -- see tbox_font_face_cache_get's doc comment. `resolver` may be NULL
+ * (e.g. a test build with no backend available): any non-default family
+ * then always fails to resolve, same failure contract
+ * tbox_font_face_cache_get already has for a load failure. Returns NULL
+ * only on allocation failure. */
+tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size, tbox_font_resolver_fn resolver, void *resolver_userdata);
 
 /* Frees every tbox_font_face this cache loaded, plus the cache's own copied
  * byte buffers and the cache struct itself. A no-op if cache == NULL. */
 void tbox_font_face_cache_destroy(tbox_font_face_cache *cache);
 
-/* Looks up (bold, size_px) in the cache; on a miss, calls tbox_font_face_load
- * internally (from the byte copy already held for that weight) and stores
- * the result before returning it -- same arena/malloc-backed
- * vector-plus-linear-scan idiom already used by tbox_style_table and v1's
- * click-handler table, just with lazy loading instead of everything
- * pre-populated up front. Returns NULL if cache == NULL or the underlying
- * tbox_font_face_load fails for that (bold, size_px) -- in that case nothing
- * is cached, so a later retry with the same parameters tries loading again
- * rather than being permanently stuck. The returned pointer stays valid for
- * `cache`'s whole lifetime (never invalidated by later calls to this
- * function, unlike the aliasing warning on tbox_font_rasterize_glyph's
- * return value). */
-const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, bool bold, double size_px);
+/* Looks up (family, bold, size_px) in the cache; on a miss, calls
+ * tbox_font_face_load internally and stores the result before returning it
+ * -- same arena/malloc-backed vector-plus-linear-scan idiom already used by
+ * tbox_style_table and v1's click-handler table, just with lazy loading
+ * instead of everything pre-populated up front.
+ *
+ * `family.size == 0` (the empty/default family) always uses the bytes given
+ * to tbox_font_face_cache_create (regular_data/bold_data) -- the same fast
+ * path this function has always had, no resolver call. Any other family is
+ * resolved on demand, once per (family, bold) pair no matter how many
+ * distinct size_px values are later requested for it: the first time
+ * (family, bold) is seen, this function checks its internal family_blobs
+ * cache first, and only calls `cache`'s resolver (see
+ * tbox_font_resolver_fn/tbox_font_face_cache_create) if that pair hasn't
+ * been resolved before. A resolver's successful result is copied into the
+ * cache's own memory and kept in family_blobs, reused by any later size_px
+ * for that same (family, bold) without calling the resolver again. If the
+ * resolver is NULL, or it (or tbox_font_face_load) fails, nothing is
+ * cached, so a later retry with the same parameters tries again rather than
+ * being permanently stuck. The returned pointer stays valid for `cache`'s
+ * whole lifetime (never invalidated by later calls to this function, unlike
+ * the aliasing warning on tbox_font_rasterize_glyph's return value). */
+const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox_string_view family, bool bold, double size_px);
 
 #ifdef __cplusplus
 }

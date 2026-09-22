@@ -117,6 +117,14 @@ typedef struct tbox_style {
      * `font_weight_bold` above (herda do pai já resolvido se não
      * declarado/reconhecido; `LEFT` -- o valor inicial -- sem pai). */
     tbox_style_text_align text_align;
+    /* NOVO v12: `font-family`. Fixed buffer, NOT a tbox_string_view -- every
+     * field of tbox_style is copied by value, pointing at no external memory;
+     * a view would dangle for the synthetic `style=""` stylesheet (v9),
+     * created and destroyed entirely inside tbox_css_cascade_resolve (see
+     * ARCHITECTURE.md's v12 Style section). Inheritable, same mechanism as
+     * `color` above. `""` = no override anywhere in the inheritance chain --
+     * the initial value. */
+    char font_family[64];
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
@@ -161,7 +169,11 @@ typedef struct tbox_style {
  * `center`/`right`, case-insensitive; any other value -- including
  * `justify`, out of scope -- falls back to the same "not recognized =
  * inherits" treatment `font-weight` already gets, or the initial value
- * `LEFT` with no parent). Out of scope: `float`, flex/grid, `z-index`,
+ * `LEFT` with no parent), `font-family` (NOVO v12: only the FIRST name of a
+ * comma-separated list is used -- a full list is never kept for fallback --
+ * a name in quotes (`"Courier New"`) is recognized with the quotes stripped;
+ * inheritable, same mechanism as `color`, falling back to `""` -- no
+ * override -- with no parent). Out of scope: `float`, flex/grid, `z-index`,
  * `white-space` (v0 always behaves as `white-space: normal`), `font-style`
  * (italic). */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);

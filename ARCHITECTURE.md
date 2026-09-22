@@ -3932,13 +3932,240 @@ Um app tbox que:
   `tbox_style` (por nó, não global), os dois campos novos de
   `tbox_ua_style_config` são configuração passada por valor.
 
+## v12 — CSS `font-family`
+
+Adiado deliberadamente da v11 (ver "Decisões já tomadas (v11)") porque a
+camada de Fonte/Texto hoje só resolve **uma família fixa** ("sans-serif",
+hardcoded em `tbox_app_resolve_font_source`), uma vez, na abertura do app
+— `tbox_font_face_cache_get(cache, bold, size_px)` nem recebe família
+como parâmetro. Fecha também o débito registrado na v11: `<pre>` ganhou
+preservação de espaço/quebra de linha, mas continuava na mesma fonte
+sans-serif de sempre — sem monoespaçado de verdade até `font-family`
+existir. Investigação de código desta sessão (planejada em modo de plano,
+com um agente de pesquisa e um agente de design dedicados) confirmou que
+`tbox_font_source_fontconfig_resolve` (`src/font/tbox_font_source_fontconfig.c`)
+**já aceita nomes de família arbitrários** — já constrói `FC_FAMILY` a
+partir de `query.family`, não só "sans-serif" — e que o fontconfig faz
+sua própria substituição/fallback quando o nome pedido não existe no
+sistema (quase nunca "falha" de verdade). Essa camada não precisa mudar
+nada; o trabalho real é fazer a Style layer guardar qual família cada
+elemento pede, o cache de fontes crescer sob demanda pra atender qualquer
+família, e a Application layer alimentar esse crescimento sob demanda com
+uma chamada ao fontconfig em vez de resolver tudo de uma vez no início.
+
+Escopo desta versão, decidido nesta sessão:
+- **`font-family` herdável**, mesmo mecanismo de `color`/`text-align`,
+  aceitando qualquer nome — específico (`"Verdana"`) ou genérico
+  (`sans-serif`/`serif`/`monospace`/etc., que o fontconfig já entende
+  nativamente como alias, sem mapeamento nenhum do lado do tbox).
+- **Só o PRIMEIRO nome da lista separada por vírgula** (`"Verdana, Arial,
+  sans-serif"` usa só `"Verdana"`) — decisão confirmada com o
+  mantenedor: o fontconfig já cobre a maior parte do valor prático de uma
+  lista de fallback (substituição automática quando o nome pedido não
+  existe), então percorrer a lista inteira tentando cada nome agregaria
+  pouco pelo custo de mais código. Nomes entre aspas (`"Courier New"`)
+  são reconhecidos e as aspas removidas.
+- **Cache de fontes resolve família sob demanda**, reaproveitando o
+  fontconfig já existente — resolve uma vez por `(família, peso)`, reusa
+  pra qualquer `size_px` depois (evita repetir `FcFontMatch` + leitura de
+  arquivo por tamanho de fonte).
+- **`<pre>` ganha `font-family: monospace` via UA stylesheet** — fecha o
+  débito da v11 de graça, sem nenhuma mudança na Layout Tree (a
+  propriedade já flui pela cascata/herança normal, igual qualquer outra).
+- **Buffer fixo em `tbox_style`, não um `tbox_string_view`** — todo campo
+  de `tbox_style` hoje é copiado por valor, sem apontar pra memória
+  externa. Um `tbox_string_view` não funcionaria pra `style="..."`
+  inline: essa declaração vem de um stylesheet SINTÉTICO, criado e
+  destruído inteiramente DENTRO de `tbox_css_cascade_resolve` (v9) — o
+  ponteiro ficaria pendurado assim que a função retornasse. Um `char
+  font_family[64]` copiado por valor evita isso por completo, e não muda
+  a assinatura de `tbox_style_resolve`/`tbox_style_resolve_tree` (que
+  várias suítes de teste chamam direto) — mesmo padrão
+  truncar-não-rejeitar que `tbox_font_source_fontconfig.c` já usa no seu
+  próprio buffer de 128 bytes.
+- **Callback de resolução no cache, não fontconfig direto** —
+  `src/font/tbox_font_face_cache.c` hoje não depende de nenhum backend
+  específico, só recebe bytes já resolvidos. Acoplar esse arquivo
+  diretamente a `tbox_font_source_fontconfig_*` exigiria um `#ifdef
+  TBOX_FONTCONFIG_FOUND` PARCIAL dentro dele — um padrão que o projeto
+  nunca precisou até hoje (toda dependência opcional até agora exclui o
+  ARQUIVO INTEIRO do build, nunca parte de um). Um parâmetro de callback
+  mantém o cache tão desacoplado quanto já é, com `resolver == NULL`
+  degradando graciosamente (qualquer família não-default retorna `NULL`,
+  mesmo contrato de falha que a função já tem hoje) — importante pra
+  `tests/font/test_font.c` continuar buildável sem fontconfig instalado.
+
+### CSS Cascade / Font — assinaturas exatas
+
+`include/tbox/font.h`:
+```c
+typedef bool (*tbox_font_resolver_fn)(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size);
+
+tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size,
+                                                   const void *bold_data, size_t bold_size,
+                                                   tbox_font_resolver_fn resolver, void *resolver_userdata);
+
+const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox_string_view family, bool bold, double size_px);
+```
+`family.size == 0` = usa os bytes pré-carregados de sempre (`regular_data`/
+`bold_data`, caminho rápido idêntico ao de hoje — zero chamada ao
+resolver). `tbox_font_query`, `tbox_font_source_*`, `tbox_font_face_*`
+não mudam — já suportavam família arbitrária. Doc comments que hoje dizem
+"v0 only understands generics" (`tbox_font_query`) e "keyed by (bold,
+size_px)" (`tbox_font_face_cache`) precisam ser corrigidas, ficam
+desatualizadas com essa mudança.
+
+`include/tbox/style.h`: `tbox_style` ganha
+```c
+char font_family[64]; /* NOVO v12: "" = sem override em toda a cadeia de herança */
+```
+`tbox_style_resolve`/`tbox_style_resolve_tree` **não mudam de
+assinatura**.
+
+### Font — cache com resolução sob demanda
+
+`struct tbox_font_face_cache` (`src/font/tbox_font_face_cache.c`) ganha
+`resolver`/`resolver_userdata` (guardados na criação) mais um vetor novo,
+`family_blobs` — `{ char family[64]; bool bold; const void *data; size_t
+size; }`, resolvido uma vez por `(família, peso)` na primeira vez que
+QUALQUER tamanho daquela combinação é pedido, reusado por todo `size_px`
+seguinte (sem isso, `h1` a 32px e `body` a 16px usando a mesma família
+repetiriam `FcFontMatch` + leitura de arquivo por tamanho, coisa que o
+caminho default já evita hoje). O `tbox_font_face_cache_entry` existente
+ganha `char family[64]` (`""` = default) na comparação de cache hit —
+mesmo `tbox_vector` linear-scanned de sempre, só com mais um campo na
+comparação. Continua sem `#include` de nenhum header de backend
+específico — nunca sabe que "fontconfig" existe, só chama o `resolver`
+que recebeu.
+
+### Style — `font-family`
+
+Nova função em `src/style/tbox_style.c`, mesmo padrão de
+`tbox_style_parse_text_align` (função pequena, sem alocar): acha o
+primeiro `,` OU, se o valor começa com aspas (`"`/`'`), acha o fechamento
+correspondente primeiro (pra não cortar no meio de um nome tipo `"Foo,
+Bar"`); `tbox_style_trim` no resultado; copia truncando em 63 bytes (mesma
+postura truncar-não-rejeitar de `tbox_font_source_fontconfig_family_cstr`).
+Resolução em `tbox_style_resolve` com o mesmo formato de três ramos que
+`font-weight`/`text-align` já usam: declaração reconhecida → usa o valor
+parseado; senão, se há `parent_style`, herda `parent_style->font_family`;
+senão, `""` (o valor inicial — "sem override", preserva 100% do
+comportamento de hoje pra qualquer elemento que não declare
+`font-family` em lugar nenhum da cadeia).
+
+### Application — resolução sob demanda + limpeza de duplicação
+
+Nova função `static bool tbox_app_font_resolver(void *userdata,
+tbox_font_query query, const void **out_data, size_t *out_size)` em
+`src/app/tbox_app.c` — wrapper fino sobre
+`tbox_font_source_fontconfig_create`/`_resolve`/`_destroy`, fazendo
+exatamente o que `tbox_app_resolve_font_source` já faz por chamada, só
+que invocada SOB DEMANDA pelo cache (dentro de
+`tbox_font_face_cache_get`, na primeira vez que uma família nova aparece)
+em vez de eager, duas vezes, no início.
+
+**Limpeza recomendada, junto**: hoje existem DOIS pontos que duplicam
+inteiramente a sequência "resolve regular, resolve bold,
+`tbox_font_face_cache_create`" — `tbox_app_create_impl` e
+`tbox_app_screenshot_from_files` (a função headless da v7, que não passa
+por `tbox_app_create_impl`, tem sua própria cópia independente). Como os
+dois precisam mudar de qualquer forma (a assinatura de
+`tbox_font_face_cache_create` cresce), viram uma função só, `static
+tbox_font_face_cache *tbox_app_build_font_cache(void)`, compartilhada
+pelos dois — débito pré-existente, não causado por `font-family`, mas
+natural de resolver agora que ambos os pontos precisam mexer de qualquer
+forma.
+
+### Layout Tree — os 6 pontos de chamada
+
+`src/layout/tbox_layout.c` tem 6 chamadas a `tbox_font_face_cache_get`
+hoje, todas passando só `(fonts, bold, size)`: 3 dentro de
+`tbox_layout_collect_words` (o texto TEXT direto do elemento, a face do
+`<br>`, e um filho inline como `<b>`/`<em>`/`<span>` com seu PRÓPRIO
+style), 1 em `tbox_layout_push_list_marker` (a face do próprio `<li>`), 1
+em `tbox_layout_collect_preformatted_words` (a face única do `<pre>`), 1
+no fallback de caixa vazia de `tbox_layout_build_text_runs`. Todas ganham
+`tbox_string_view_from_cstr(style->font_family)` (ou `child_style-
+>font_family` no caso do filho inline) — sempre o MESMO `style` que já
+fornece `font_weight_bold`/`font_size` pra aquela chamada específica,
+nenhuma lógica nova de "qual estilo usar", só mais um argumento
+repassado.
+
+### Orchestration — `<pre>` monoespaçado via UA stylesheet
+
+Uma linha nova no template de `tbox_ua_style_generate_css`
+(`src/context/tbox_context.c`), mesmo estilo das regras de `hr`/`li` já
+existentes:
+```c
+"pre { display: block; font-family: monospace; }\n"
+```
+Sem `%g` — é texto literal, não precisa de nenhum campo novo em
+`tbox_ua_style_config`. `"monospace"` resolve pelo fontconfig exatamente
+como `"sans-serif"` já resolve hoje (ambos são um dos três aliases
+genéricos padrão do fontconfig) — nenhuma mudança na camada de Fonte
+pra isso funcionar.
+
+### Fora de escopo
+
+Lista de fallback completa (só o primeiro nome, ver "Escopo"). `@font-face`
+(fontes customizadas via URL — sem infraestrutura de rede no projeto).
+`italic`/`font-style` e peso numérico (100-900) — débitos existentes, não
+tocados aqui; toda resolução continua com `italic = false`. Fallback por
+glifo dentro de um mesmo texto (uma fonte só por run, mesmo modelo de
+hoje, só que agora também por família). Limite/eviction do cache de
+fontes (mesmo racional já registrado desde a v2). `font-family: inherit`
+como palavra-chave especial (cai como um nome de família literal
+"inherit", mesmo comportamento — ou falta dele — que `font-weight`/
+`text-align` já têm pra essa palavra-chave, débito pré-existente do
+projeto inteiro, não introduzido aqui).
+
+### Fatia vertical v12 — critério de "pronto"
+
+Um app tbox que:
+- exibe um elemento com `font-family: verdana;` (ou outra família real
+  instalada no ambiente de build) e a fonte renderizada visivelmente
+  muda em relação ao sans-serif default — glifos com formato diferente,
+  não só um efeito de peso/tamanho;
+- exibe um `<pre>` (sem `font-family` declarado no HTML) mostrando fonte
+  monoespaçada — confirma o UA default fechando o débito da v11;
+- um filho `<b>`/`<em>` dentro de um elemento com `font-family` próprio
+  herda a família do pai corretamente;
+- continua sem regredir nada de v0-v11 (inclusive `tests/assets/010.html`,
+  que já usa `font-family:verdana;`/`courier;` — deve mostrar SSIM melhor
+  que a v11, mesmo sem bater 100% contra o golden real).
+
+## Decisões já tomadas (v12)
+
+- **Só o primeiro nome da lista de `font-family`** — confirmado com o
+  mantenedor; o fontconfig já cobre a maior parte do valor de uma lista
+  de fallback sozinho.
+- **Buffer fixo (`char font_family[64]`) em `tbox_style`**, não um
+  `tbox_string_view` — evita o problema de lifetime do stylesheet
+  sintético de `style=""` inline (v9), e não quebra a assinatura de
+  `tbox_style_resolve`/`tbox_style_resolve_tree`.
+- **Cache de fontes resolve via callback (`tbox_font_resolver_fn`)**, não
+  linkando `tbox_font_source_fontconfig_*` diretamente — mantém
+  `tbox_font_face_cache.c` desacoplado de qualquer backend específico,
+  evita introduzir o primeiro `#ifdef` parcial-de-arquivo do projeto.
+- **Resolução por `(família, peso)`, reusada por qualquer `size_px`** —
+  evita round-trip repetido ao fontconfig por tamanho de fonte.
+- **`<pre>` ganha monospace só via UA stylesheet**, sem nenhum código
+  especial na Layout Tree — a propriedade já flui pela cascata normal.
+- **De-duplicação de `tbox_app_create_impl`/`tbox_app_screenshot_from_files`**
+  numa função `tbox_app_build_font_cache` só — débito pré-existente,
+  resolvido de graça já que os dois pontos precisavam mudar de qualquer
+  forma.
+- **Sem novo estado global/estático** — `resolver`/`resolver_userdata`
+  são campos de instância de `tbox_font_face_cache` (por cache, não
+  global); `font_family` é campo de `tbox_style` (por nó); nenhum dos
+  dois é compartilhado entre chamadas/frames além do que já é esperado
+  desses objetos com ciclo de vida próprio.
+
 ## Perguntas em aberto (consolidado)
 
-**`font-family` está deliberadamente em aberto pra v12** — adiado nesta
-sessão a pedido do mantenedor, sem desenho ainda (ver seção "v11" acima).
-Fora isso, nenhuma pendência de curto prazo restante. Toda lacuna
-identificada foi fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
-e v11 (registrada nas seções de cada camada), pra "Ferramentas de
+Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
+fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 e v12
+(registrada nas seções de cada camada), pra "Ferramentas de
 desenvolvimento — captura de tela headless" acima (não uma versão da
 escada, mas com o mesmo nível de decisão documentada), ou consolidada
 como débito de design conhecido acima, com gatilho explícito de quando

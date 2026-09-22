@@ -7,6 +7,16 @@
 #include "context/tbox_context_hit_test.h"
 #include "test_support.h"
 
+/* NOVO v12 (Tarefa 3): forward declaration for tbox_ua_style_generate_css,
+ * deliberately given external linkage in tbox_context.c (see that
+ * function's doc comment) so this file can drive it directly with the
+ * REAL production tbox_ua_style_config -- not declared in <tbox/context.h>
+ * (it stays an implementation detail, same reasoning
+ * tbox_context_hit_test.h documents for tbox_context_hit_test_box, just
+ * without a shared header since this task's file scope is only
+ * tbox_context.c + this file). */
+bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_t buffer_size);
+
 /* This is the first true end-to-end integration test in the codebase: it
  * drives the whole compute pipeline (parse -> cascade+style -> layout ->
  * render) through the one public tbox_context API, so it leans toward a
@@ -166,7 +176,7 @@ int tbox_test_context_run(void) {
      * single tbox_font_face -- same regular-bytes-for-both-slots
      * placeholder tbox_app_create uses (see src/app/tbox_app.c), fine here
      * since none of these tests exercise bold text specifically. */
-    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size);
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL);
     TBOX_TEST_ASSERT_MSG(fonts != NULL, "failed to create font face cache");
     if (fonts == NULL) {
         free(font_data);
@@ -1185,6 +1195,50 @@ int tbox_test_context_run(void) {
 
             tbox_context_close(p_ctx);
             tbox_context_close(h1_ctx);
+        }
+    }
+
+    /* 37: NOVO v12 (Tarefa 3) -- a <pre> with NO author CSS at all resolves
+     * font-family "monospace" purely from the UA stylesheet ("pre {
+     * display: block; font-family: monospace; }", added to
+     * tbox_ua_style_generate_css's template this task). Deliberately does
+     * NOT go through tbox_context_open/run_frame -- tbox_context is opaque
+     * (no public accessor for its internal tbox_style_table) and the
+     * font-family CHOSEN never affects layout geometry, so there is no
+     * black-box way to observe it through the display list/hit-test
+     * surface every other UA-stylesheet test above uses. Instead, this
+     * calls the REAL tbox_ua_style_generate_css directly (see the forward
+     * declaration above) to get the actual production UA CSS text, parses
+     * it, and resolves the <pre> node's tbox_style against it the same
+     * two-call way tests/style/test_style.c's resolve_node() does -- this
+     * is what actually proves the orchestration wiring (not a hand-copied
+     * "pre { font-family: monospace; }" string, which would test nothing
+     * about tbox_context.c). */
+    {
+        char ua_css_text[4096];
+        bool generated = tbox_ua_style_generate_css(tbox_ua_style_config_default(), ua_css_text, sizeof(ua_css_text));
+        TBOX_TEST_ASSERT_MSG(generated, "tbox_ua_style_generate_css must succeed with the default config");
+        if (generated) {
+            tbox_html_document *doc = tbox_html_parse("<pre>x</pre>", strlen("<pre>x</pre>"));
+            TBOX_TEST_ASSERT_MSG(doc != NULL, "tbox_html_parse must succeed for <pre>x</pre>");
+            if (doc != NULL) {
+                const tbox_html_node *pre = tbox_html_document_root(doc)->first_child;
+                TBOX_TEST_ASSERT_MSG(pre != NULL && string_view_equal_cstr(pre->element.tag_name, "pre"), "test setup assumption: the document root's first child is the <pre> element");
+                if (pre != NULL) {
+                    tbox_css_stylesheet *ua_sheet = tbox_css_parse(ua_css_text, strlen(ua_css_text));
+                    TBOX_TEST_ASSERT_MSG(ua_sheet != NULL, "tbox_css_parse must succeed for the generated UA CSS text");
+                    if (ua_sheet != NULL) {
+                        tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(ua_sheet, pre);
+                        tbox_style style                 = tbox_style_resolve(pre, NULL, &computed);
+                        TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "monospace") == 0, "a <pre> with no author CSS must resolve font-family \"monospace\" from the UA stylesheet alone");
+
+                        tbox_css_computed_style_destroy(&computed);
+                        tbox_css_stylesheet_destroy(ua_sheet);
+                    }
+                }
+
+                tbox_html_document_destroy(doc);
+            }
         }
     }
 

@@ -6,13 +6,28 @@
 #include "base/tbox_arena.h"
 #include "base/tbox_vector.h"
 
-/* One already-loaded face, keyed by (bold, size_px) -- see
- * tbox_font_face_cache_get in <tbox/font.h>. */
+/* One already-loaded face, keyed by (family, bold, size_px) -- see
+ * tbox_font_face_cache_get in <tbox/font.h>. family[0] == '\0' means the
+ * default (empty) family -- the entries populated from regular_data/
+ * bold_data, same as before this cache understood any other family. */
 typedef struct tbox_font_face_cache_entry {
+    char family[64];
     bool bold;
     double size_px;
     tbox_font_face *face;
 } tbox_font_face_cache_entry;
+
+/* One family's resolved font bytes, keyed by (family, bold) -- resolved at
+ * most once per pair via `resolver`, no matter how many distinct size_px
+ * values tbox_font_face_cache_get later loads a tbox_font_face for. `data`/
+ * `size` are copied into the cache's arena (tbox_font_face_cache_copy_bytes),
+ * same as regular_data/bold_data. */
+typedef struct tbox_font_face_cache_family_blob {
+    char family[64];
+    bool bold;
+    const void *data;
+    size_t size;
+} tbox_font_face_cache_family_blob;
 
 /* Own lifetime (real _destroy, no caller arena), same as tbox_css_stylesheet
  * (see src/css_parser/tbox_css_stylesheet.c) -- the internal tbox_arena
@@ -26,7 +41,10 @@ struct tbox_font_face_cache {
     size_t regular_size;
     const void *bold_data;
     size_t bold_size;
-    tbox_vector entries; /* tbox_font_face_cache_entry, linear-scanned by _get. */
+    tbox_font_resolver_fn resolver;
+    void *resolver_userdata;
+    tbox_vector entries;      /* tbox_font_face_cache_entry, linear-scanned by _get. */
+    tbox_vector family_blobs; /* tbox_font_face_cache_family_blob, linear-scanned by _get. */
 };
 
 static void *tbox_font_face_cache_copy_bytes(tbox_arena *arena, const void *data, size_t size) {
@@ -41,7 +59,7 @@ static void *tbox_font_face_cache_copy_bytes(tbox_arena *arena, const void *data
     return copy;
 }
 
-tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size) {
+tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size, tbox_font_resolver_fn resolver, void *resolver_userdata) {
     tbox_font_face_cache *cache = malloc(sizeof(*cache));
     if (cache == NULL) {
         return NULL;
@@ -63,7 +81,11 @@ tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size
     cache->regular_size = regular_size;
     cache->bold_size    = bold_size;
 
+    cache->resolver          = resolver;
+    cache->resolver_userdata = resolver_userdata;
+
     tbox_vector_init(&cache->entries, &cache->arena, sizeof(tbox_font_face_cache_entry), 0);
+    tbox_vector_init(&cache->family_blobs, &cache->arena, sizeof(tbox_font_face_cache_family_blob), 0);
 
     return cache;
 }
@@ -85,21 +107,84 @@ void tbox_font_face_cache_destroy(tbox_font_face_cache *cache) {
     free(cache);
 }
 
-const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, bool bold, double size_px) {
+const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox_string_view family, bool bold, double size_px) {
     if (cache == NULL) {
         return NULL;
     }
 
-    size_t count = tbox_vector_length(&cache->entries);
-    for (size_t i = 0; i < count; i++) {
+    /* Truncate-not-reject, same posture as
+     * tbox_font_source_fontconfig_family_cstr (src/font/tbox_font_source_fontconfig.c)
+     * -- always NUL-terminated. */
+    char family_buf[64];
+    size_t family_len = family.size < sizeof(family_buf) - 1 ? family.size : sizeof(family_buf) - 1;
+    if (family_len > 0) {
+        memcpy(family_buf, family.data, family_len);
+    }
+    family_buf[family_len] = '\0';
+
+    size_t entry_count = tbox_vector_length(&cache->entries);
+    for (size_t i = 0; i < entry_count; i++) {
         tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
-        if (entry->bold == bold && entry->size_px == size_px) {
+        if (entry->bold == bold && entry->size_px == size_px && strcmp(entry->family, family_buf) == 0) {
             return entry->face;
         }
     }
 
-    const void *data = bold ? cache->bold_data : cache->regular_data;
-    size_t size      = bold ? cache->bold_size : cache->regular_size;
+    const void *data = NULL;
+    size_t size      = 0;
+
+    if (family_buf[0] == '\0') {
+        /* Default family -- exactly today's behavior, no resolver call. */
+        data = bold ? cache->bold_data : cache->regular_data;
+        size = bold ? cache->bold_size : cache->regular_size;
+    } else {
+        /* Non-default family: reuse an already-resolved (family, bold) blob
+         * if one exists, otherwise resolve it once via `resolver` and cache
+         * the bytes so later size_px values for this same (family, bold)
+         * never call the resolver again. */
+        tbox_font_face_cache_family_blob *blob = NULL;
+        size_t blob_count                      = tbox_vector_length(&cache->family_blobs);
+        for (size_t i = 0; i < blob_count; i++) {
+            tbox_font_face_cache_family_blob *candidate = tbox_vector_at(&cache->family_blobs, i);
+            if (candidate->bold == bold && strcmp(candidate->family, family_buf) == 0) {
+                blob = candidate;
+                break;
+            }
+        }
+
+        if (blob == NULL) {
+            if (cache->resolver == NULL) {
+                return NULL;
+            }
+
+            tbox_font_query query = {
+                .family = family,
+                .bold   = bold,
+                .italic = false, /* Out of scope for this version -- always false. */
+            };
+
+            const void *resolved_data = NULL;
+            size_t resolved_size      = 0;
+            if (!cache->resolver(cache->resolver_userdata, query, &resolved_data, &resolved_size)) {
+                return NULL;
+            }
+
+            const void *copied_data = tbox_font_face_cache_copy_bytes(&cache->arena, resolved_data, resolved_size);
+            if (copied_data == NULL) {
+                return NULL;
+            }
+
+            tbox_font_face_cache_family_blob *new_blob = tbox_vector_push(&cache->family_blobs);
+            memcpy(new_blob->family, family_buf, sizeof(family_buf));
+            new_blob->bold = bold;
+            new_blob->data = copied_data;
+            new_blob->size = resolved_size;
+            blob           = new_blob;
+        }
+
+        data = blob->data;
+        size = blob->size;
+    }
 
     tbox_font_face *face = tbox_font_face_load(data, size, size_px);
     if (face == NULL) {
@@ -109,8 +194,9 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, bool
     }
 
     tbox_font_face_cache_entry *entry = tbox_vector_push(&cache->entries);
-    entry->bold                       = bold;
-    entry->size_px                    = size_px;
-    entry->face                       = face;
+    memcpy(entry->family, family_buf, sizeof(family_buf));
+    entry->bold    = bold;
+    entry->size_px = size_px;
+    entry->face    = face;
     return face;
 }

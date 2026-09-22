@@ -92,8 +92,11 @@ tbox_ua_style_config tbox_ua_style_config_default(void) {
  * edge; NOVO v11: the hr line below added 2 more %g slots, 17 -> 19 --
  * worst case is now ~24 chars/slot * 19 slots + ~804 chars of fixed
  * template text = ~1260 chars, still well within 2048, so the buffer did
- * NOT need to grow again this time -- checked, not assumed) -- sized with
- * headroom rather than computed exactly. */
+ * NOT need to grow again this time -- checked, not assumed; NOVO v12: the
+ * pre line below adds ~51 chars of literal template text and zero new %g
+ * slots (no numeric value in it), so the worst case barely moves --
+ * ~1260 -> ~1311 chars, nowhere near 2048 -- checked, buffer size left
+ * unchanged) -- sized with headroom rather than computed exactly. */
 #define TBOX_UA_STYLE_CSS_BUFFER_SIZE 2048
 
 /* NOVO v2: renders the UA stylesheet's CSS text from `config`. The
@@ -127,8 +130,21 @@ tbox_ua_style_config tbox_ua_style_config_default(void) {
  * unit suffix differs from the doc's illustrative text. Flagged in this
  * task's final report as a documentation gap worth fixing (either teach
  * tbox_style_parse_length unitless zero, matching real CSS2.1, or amend
- * ARCHITECTURE.md's illustrative block to say "0px"). */
-static bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_t buffer_size) {
+ * ARCHITECTURE.md's illustrative block to say "0px").
+ *
+ * NOVO v12 (Tarefa 3): deliberately NOT `static` (unlike every other
+ * helper in this file) -- tests/context/test_context.c's `<pre>`
+ * font-family test needs to resolve a node's REAL tbox_style against the
+ * actual production UA CSS text this function emits, not a hand-copied
+ * reimplementation of the template that could silently drift from it and
+ * test nothing about tbox_context.c itself. Same "give an internal
+ * function external linkage so a test can call it directly" precedent
+ * tbox_context_hit_test_box already established (see
+ * tbox_context_hit_test.h) -- declared with a plain forward declaration
+ * directly in test_context.c instead of a shared header, since this
+ * task's file scope is only tbox_context.c + test_context.c. No behavior
+ * change: still a pure function of `config`/`buffer`/`buffer_size`. */
+bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_t buffer_size) {
     int written = snprintf(buffer, buffer_size,
         "body { display: block; margin: %gpx; font-size: %gpx; }\n"
         "div { display: block; }\n"
@@ -142,6 +158,7 @@ static bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer
         "ul, ol { display: block; margin: %gpx 0px; padding: 0px 0px 0px %gpx; }\n"
         "li { display: block; }\n"
         "hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"
+        "pre { display: block; font-family: monospace; }\n"
         "b, strong { display: inline; font-weight: bold; }\n"
         "i, em, span, a { display: inline; }\n",
         config.margin.body_px, config.font.base_px,
