@@ -7,7 +7,9 @@
 
 /* Pushes one FILL_RECT of `color` covering `rect` onto `items` -- shared by
  * the background fill and the (NOVO v4) 4 border strips below, since none
- * of them carry text. */
+ * of them carry text. `radius` always 0.0 here -- every caller of THIS
+ * helper wants a plain rectangle; see tbox_render_push_fill_rect_rounded
+ * below for the border-radius/box-shadow paths. */
 static void tbox_render_push_fill_rect(tbox_vector *items, tbox_rect rect, tbox_css_rgba color) {
     tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
     op->kind          = TBOX_PAINT_FILL_RECT;
@@ -16,6 +18,73 @@ static void tbox_render_push_fill_rect(tbox_vector *items, tbox_rect rect, tbox_
     op->text          = tbox_string_view_make(NULL, 0);
     op->face          = NULL;
     op->image         = NULL;
+    op->radius        = 0.0;
+}
+
+/* NOVO (visual fidelity): same as tbox_render_push_fill_rect above, but
+ * with a corner radius -- used only by the border-radius/box-shadow paths
+ * below, never by the pre-existing background/border-strip/mark-highlight/
+ * text-decoration call sites (which stay exactly as they were, unchanged,
+ * at radius 0.0 via tbox_render_push_fill_rect). `radius` is clamped here
+ * to at most half of `min(rect.width, rect.height)`, standard CSS
+ * border-radius behavior -- callers never need to clamp it themselves. */
+static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rect, double radius, tbox_css_rgba color) {
+    double max_radius = (rect.width < rect.height ? rect.width : rect.height) / 2.0;
+    if (radius > max_radius) {
+        radius = max_radius;
+    }
+    if (radius < 0.0) {
+        radius = 0.0;
+    }
+
+    tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
+    op->kind          = TBOX_PAINT_FILL_RECT;
+    op->rect          = rect;
+    op->color         = color;
+    op->text          = tbox_string_view_make(NULL, 0);
+    op->face          = NULL;
+    op->image         = NULL;
+    op->radius        = radius;
+}
+
+/* NOVO (visual fidelity): approximates `box-shadow`'s blur with a handful
+ * of concentric rounded-rect fills instead of a real Gaussian/box blur --
+ * this rasterizer has no blur infrastructure, and a real one is a
+ * meaningfully bigger addition than this pair of properties otherwise
+ * needs (same class of simplification as v13's sub/sup fixed-fraction
+ * offsets, or v11's flat-gray <hr>). Paints TBOX_RENDER_BOX_SHADOW_STEPS
+ * layers, largest/faintest FIRST shrinking down to the exact
+ * (offset, un-grown) shadow rect LAST: since every layer is painted with
+ * the standard "over" operator, the area under the base rect accumulates
+ * contributions from ALL layers (converging close to the declared
+ * `color`'s own alpha), while the area only reached by the larger outer
+ * layers gets progressively fainter -- a soft-looking falloff from cheap,
+ * repeated flat fills, not a real convolution. `blur <= 0.0` (the common,
+ * simple-shadow case) skips all of this and pushes exactly one hard-edged
+ * rect, no loop overhead. `corner_radius` is the box's OWN border-radius
+ * (a shadow of a rounded box is itself rounded), grown along with each
+ * step so the corners stay proportionally rounded as the shadow expands. */
+#define TBOX_RENDER_BOX_SHADOW_STEPS 6
+
+static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box, double corner_radius, double offset_x, double offset_y, double blur, tbox_css_rgba color) {
+    tbox_rect base = { border_box.x + offset_x, border_box.y + offset_y, border_box.width, border_box.height };
+
+    if (blur <= 0.0) {
+        tbox_render_push_fill_rect_rounded(items, base, corner_radius, color);
+        return;
+    }
+
+    tbox_css_rgba step_color = color;
+    step_color.a             = (unsigned char)((double)color.a / (double)TBOX_RENDER_BOX_SHADOW_STEPS + 0.5);
+    if (step_color.a == 0) {
+        step_color.a = 1; /* never let rounding vanish a declared shadow entirely */
+    }
+
+    for (int step = TBOX_RENDER_BOX_SHADOW_STEPS; step >= 1; step--) {
+        double grow         = blur * (double)(step - 1) / (double)(TBOX_RENDER_BOX_SHADOW_STEPS - 1);
+        tbox_rect expanded  = { base.x - grow, base.y - grow, base.width + 2.0 * grow, base.height + 2.0 * grow };
+        tbox_render_push_fill_rect_rounded(items, expanded, corner_radius + grow, step_color);
+    }
 }
 
 /* Pre-order walk over `box` and its first_child/next_sibling chain, pushing
@@ -29,8 +98,13 @@ static void tbox_render_push_fill_rect(tbox_vector *items, tbox_rect rect, tbox_
  * section. */
 static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
-        if (box->style != NULL && box->style->background_color.a != 0) {
-            tbox_render_push_fill_rect(items, box->border_box, box->style->background_color);
+        /* NOVO (visual fidelity): box-shadow, painted BEFORE the box's own
+         * background/border so paint order alone makes them correctly cover
+         * the shadow wherever the two overlap -- no explicit clipping
+         * needed, same reasoning as any other paint-order z-stack in this
+         * pipeline. */
+        if (box->style != NULL && box->style->box_shadow_color.a != 0) {
+            tbox_render_push_box_shadow(items, box->border_box, box->style->border_radius, box->style->box_shadow_offset_x, box->style->box_shadow_offset_y, box->style->box_shadow_blur, box->style->box_shadow_color);
         }
 
         /* NOVO v4: border painting. Render Pipeline isn't handed the
@@ -38,18 +112,58 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
          * from `style` alone -- same formula as tbox_layout_build_element
          * (Tarefa 2): only `solid` ever paints. */
         double effective_border = (box->style != NULL && box->style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID) ? box->style->border_width : 0.0;
-        if (effective_border > 0.0) {
-            tbox_css_rgba border_color = box->style->border_color;
-            tbox_rect border_box       = box->border_box;
-            tbox_rect padding_box      = box->padding_box;
+        double radius            = box->style != NULL ? box->style->border_radius : 0.0;
 
-            /* Top and bottom span the full border_box width (including
-             * corners); left and right span only the padding_box height, so
-             * the 4 corners are each covered exactly once. */
-            tbox_render_push_fill_rect(items, (tbox_rect){ border_box.x, border_box.y, border_box.width, padding_box.y - border_box.y }, border_color);
-            tbox_render_push_fill_rect(items, (tbox_rect){ border_box.x, padding_box.y + padding_box.height, border_box.width, (border_box.y + border_box.height) - (padding_box.y + padding_box.height) }, border_color);
-            tbox_render_push_fill_rect(items, (tbox_rect){ border_box.x, padding_box.y, padding_box.x - border_box.x, padding_box.height }, border_color);
-            tbox_render_push_fill_rect(items, (tbox_rect){ padding_box.x + padding_box.width, padding_box.y, (border_box.x + border_box.width) - (padding_box.x + padding_box.width), padding_box.height }, border_color);
+        if (radius > 0.0) {
+            /* NOVO (visual fidelity): border-radius. The 4-strip technique
+             * below is geometrically incompatible with curved corners (its
+             * strips meet at sharp 90-degree joins), so a box with a radius
+             * uses a DIFFERENT technique instead -- one or two nested
+             * rounded-rect fills:
+             * - no border: one rounded rect at border_box, in
+             *   background_color (nothing to paint if that's transparent).
+             * - with border: one rounded rect at border_box in
+             *   border_color (the outer edge), THEN one rounded rect at
+             *   padding_box in background_color (the inner edge, radius
+             *   shrunk by the border's own width, standard CSS inner-radius
+             *   formula) painted on top, producing the visible "ring".
+             *   KNOWN LIMITATION: with a fully transparent background_color,
+             *   the inner rounded-rect paint is a no-op (this rasterizer
+             *   has no real alpha-hole/clip-path capability -- same
+             *   limitation every other simplification here already lives
+             *   with), so the shape reads as a solid border-colored disc
+             *   rather than a true see-through ring; a realistic bordered
+             *   box (card/button) almost always has an actual background
+             *   too, where this renders correctly. */
+            if (effective_border > 0.0) {
+                tbox_render_push_fill_rect_rounded(items, box->border_box, radius, box->style->border_color);
+
+                double inner_radius = radius - effective_border;
+                if (inner_radius < 0.0) {
+                    inner_radius = 0.0;
+                }
+                tbox_render_push_fill_rect_rounded(items, box->padding_box, inner_radius, box->style->background_color);
+            } else if (box->style->background_color.a != 0) {
+                tbox_render_push_fill_rect_rounded(items, box->border_box, radius, box->style->background_color);
+            }
+        } else {
+            if (box->style != NULL && box->style->background_color.a != 0) {
+                tbox_render_push_fill_rect(items, box->border_box, box->style->background_color);
+            }
+
+            if (effective_border > 0.0) {
+                tbox_css_rgba border_color = box->style->border_color;
+                tbox_rect border_box       = box->border_box;
+                tbox_rect padding_box      = box->padding_box;
+
+                /* Top and bottom span the full border_box width (including
+                 * corners); left and right span only the padding_box
+                 * height, so the 4 corners are each covered exactly once. */
+                tbox_render_push_fill_rect(items, (tbox_rect){ border_box.x, border_box.y, border_box.width, padding_box.y - border_box.y }, border_color);
+                tbox_render_push_fill_rect(items, (tbox_rect){ border_box.x, padding_box.y + padding_box.height, border_box.width, (border_box.y + border_box.height) - (padding_box.y + padding_box.height) }, border_color);
+                tbox_render_push_fill_rect(items, (tbox_rect){ border_box.x, padding_box.y, padding_box.x - border_box.x, padding_box.height }, border_color);
+                tbox_render_push_fill_rect(items, (tbox_rect){ padding_box.x + padding_box.width, padding_box.y, (border_box.x + border_box.width) - (padding_box.x + padding_box.width), padding_box.height }, border_color);
+            }
         }
 
         for (size_t i = 0; i < box->text_run_count; i++) {
@@ -70,6 +184,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
                 op->text          = tbox_string_view_make(NULL, 0);
                 op->face          = NULL;
                 op->image         = run->image;
+                op->radius        = 0.0;
                 continue;
             }
 
@@ -102,6 +217,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
             op->text          = run->text;
             op->face          = run->font;
             op->image         = NULL;
+            op->radius        = 0.0;
 
             /* NOVO v13: <del>/<ins> decoration line -- a thin (1px)
              * FILL_RECT spanning the run's width, positioned off its

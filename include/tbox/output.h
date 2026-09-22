@@ -56,19 +56,40 @@ void tbox_raster_fill_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffe
 void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color);
 
 /* Composites `image`'s decoded RGBA8 pixels (see <tbox/image.h>) into
- * `dest_rect`, nearest-neighbor sampling from `image`'s own intrinsic pixel
- * dimensions -- a `dest_rect` size different from `image->width`/`height`
- * (e.g. an `<img>`'s CSS-resolved width/height differing from its source
- * file's own dimensions) scales accordingly. Each source pixel is
- * alpha-blended (same "over" formula as tbox_raster_fill_rect) using
- * (source_pixel.a / 255.0) as the alpha against that pixel's own RGB,
- * clipped to the buffer's bounds exactly like tbox_raster_fill_rect. A NULL
- * `pixels`/`image`, a non-positive buffer_width/buffer_height, or a
- * non-positive dest_rect.width/height, is a no-op. */
+ * `dest_rect`. When `dest_rect`'s pixel size differs from `image->width`/
+ * `height` (e.g. an `<img>`'s CSS-resolved width/height differing from its
+ * source file's own dimensions), the source is first resampled to that
+ * exact size via stb_image_resize2 (Mitchell/cubic, sRGB-aware -- real
+ * quality resampling, not nearest-neighbor); when the sizes already match,
+ * `image`'s own pixels are used directly with no resize step. Each
+ * resulting pixel is alpha-blended (same "over" formula as
+ * tbox_raster_fill_rect) using (source_pixel.a / 255.0) as the alpha
+ * against that pixel's own RGB, clipped to the buffer's bounds exactly like
+ * tbox_raster_fill_rect. A NULL `pixels`/`image`, a non-positive
+ * buffer_width/buffer_height, a non-positive dest_rect.width/height, or a
+ * resize failure (allocation failure), is a no-op. */
 void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image);
 
+/* NOVO (visual fidelity): same as tbox_raster_fill_rect above, but with
+ * rounded corners -- used for `border-radius`/`box-shadow` (see
+ * tbox_paint_op.radius, <tbox/render.h>). Per-pixel: any pixel in `rect`'s
+ * own bounding box (clamped to the buffer, same as tbox_raster_fill_rect)
+ * is painted UNLESS it falls within one of the 4 `radius x radius` corner
+ * squares AND lies outside that corner's circle (`dx*dx + dy*dy >
+ * radius*radius`, distance from the circle's own center, `radius` px
+ * inset from that corner) -- a hard edge, no anti-aliasing, matching
+ * tbox_raster_fill_rect's own hard rectangular edges (this rasterizer has
+ * no other anti-aliased fill to be consistent with; only glyph rendering,
+ * via FreeType's own coverage bitmaps, is anti-aliased). `radius` is
+ * clamped here to at most half of `min(rect.width, rect.height)`. A NULL
+ * `pixels`, a non-positive buffer_width/buffer_height/rect.width/
+ * rect.height, or color.a == 0, is a no-op; `radius <= 0.0` degenerates to
+ * exactly tbox_raster_fill_rect's own output. */
+void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, double radius, tbox_css_rgba color);
+
 /* Convenience: walks `list->items` in order and dispatches each op to
- * tbox_raster_fill_rect (TBOX_PAINT_FILL_RECT), tbox_raster_text_run
+ * tbox_raster_fill_rect or (NOVO, visual fidelity: op->radius > 0.0)
+ * tbox_raster_fill_rounded_rect (TBOX_PAINT_FILL_RECT), tbox_raster_text_run
  * (TBOX_PAINT_TEXT_RUN), or tbox_raster_image (TBOX_PAINT_IMAGE) -- what a
  * backend's present/frame function calls once per frame instead of
  * switching on op->kind itself. A NULL `list` is a no-op. */

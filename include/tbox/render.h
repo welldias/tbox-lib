@@ -51,6 +51,20 @@ typedef struct tbox_paint_op {
     /* IMAGE only (NULL for FILL_RECT/TEXT_RUN): the decoded image to
      * composite into `rect` -- see tbox_raster_image. */
     const tbox_image *image;
+
+    /* FILL_RECT only (0.0 for TEXT_RUN/IMAGE, and for the overwhelming
+     * majority of FILL_RECT ops too -- border strips/mark-highlight/
+     * text-decoration lines never round their corners): NOVO (visual
+     * fidelity) `border-radius`'s corner radius, in px, already clamped to
+     * at most half of `min(rect.width, rect.height)`. 0.0 (the default) is
+     * a plain rectangle, painted via tbox_raster_fill_rect exactly as
+     * before this field existed; > 0.0 switches Output Display to
+     * tbox_raster_fill_rounded_rect instead -- see tbox_raster_display_list.
+     * No new tbox_paint_op_kind: a rounded rect is still conceptually "a
+     * rect fill", just like every other FILL_RECT use already in this
+     * pipeline (background, border, mark highlight, text-decoration,
+     * box-shadow). */
+    double radius;
 } tbox_paint_op;
 
 typedef struct tbox_display_list {
@@ -59,21 +73,27 @@ typedef struct tbox_display_list {
 } tbox_display_list;
 
 /* Builds the display list for `root`'s subtree (may be NULL, producing an
- * empty list), pre-order: for each box, first (if its style's
- * background_color is non-transparent) a FILL_RECT over its border_box,
- * then (NOVO v4) if `effective_border > 0` (re-derived here from
- * `style->border_style`/`border_width`, same formula as Layout Tree's
- * Tarefa 2 -- only `solid` ever paints) up to 4 more FILL_RECTs in
- * `style->border_color`, one per side, each covering the strip between
- * `border_box` and `padding_box` (top/bottom span the full border_box
- * width including corners; left/right span only the padding_box height),
- * then (NOVO v2) one TEXT_RUN -- or (NOVO, image support) one IMAGE, for a
- * run whose `image` is non-NULL, i.e. built from an `<img>` word -- per
- * entry of box->text_runs, in the order Layout Tree built them (already
- * line-order, left-to-right/top-to-bottom) -- in that order relative to the
- * FILL_RECTs, since backgrounds and borders sit under text/images -- and
- * only then its first_child and the rest of the next_sibling chain,
- * recursively, in the same order. See
+ * empty list), pre-order: for each box, first (NOVO, visual fidelity) if
+ * its style's box_shadow_color is non-transparent, one or more FILL_RECTs
+ * approximating a soft shadow behind border_box (see
+ * tbox_render_push_box_shadow); then, when style->border_radius == 0.0
+ * (the common case, unchanged since v4): if background_color is
+ * non-transparent, a FILL_RECT over its border_box, then if
+ * `effective_border > 0` (re-derived here from `style->border_style`/
+ * `border_width`, same formula as Layout Tree's Tarefa 2 -- only `solid`
+ * ever paints) up to 4 more FILL_RECTs in `style->border_color`, one per
+ * side, each covering the strip between `border_box` and `padding_box`
+ * (top/bottom span the full border_box width including corners; left/right
+ * span only the padding_box height); when border_radius > 0.0 instead, one
+ * or two ROUNDED FILL_RECTs replace that whole background+border step (see
+ * tbox_render_walk in src/render/tbox_render.c for the exact two-nested-
+ * rounded-rects technique) -- then (NOVO v2) one TEXT_RUN -- or (NOVO,
+ * image support) one IMAGE, for a run whose `image` is non-NULL, i.e. built
+ * from an `<img>` word -- per entry of box->text_runs, in the order Layout
+ * Tree built them (already line-order, left-to-right/top-to-bottom) -- in
+ * that order relative to the FILL_RECTs, since backgrounds and borders sit
+ * under text/images -- and only then its first_child and the rest of the
+ * next_sibling chain, recursively, in the same order. See
  * ARCHITECTURE.md's "Render Pipeline" section (no stacking contexts,
  * clipping).
  *

@@ -95,6 +95,82 @@ void tbox_raster_fill_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffe
     }
 }
 
+/* NOVO (visual fidelity): same as tbox_raster_fill_rect above, but with
+ * rounded corners -- see this function's own doc comment in
+ * <tbox/output.h> for the exact per-pixel corner test. `radius <= 0.0`
+ * (after clamping) degenerates to a plain call to tbox_raster_fill_rect, so
+ * every other codepath in this file that already produces a correct plain
+ * rectangle keeps doing so unchanged. */
+void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, double radius, tbox_css_rgba color) {
+    if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || rect.width <= 0.0 || rect.height <= 0.0 || color.a == 0) {
+        return;
+    }
+
+    double max_radius = (rect.width < rect.height ? rect.width : rect.height) / 2.0;
+    if (radius > max_radius) {
+        radius = max_radius;
+    }
+    if (radius < 0.0) {
+        radius = 0.0;
+    }
+
+    if (radius <= 0.0) {
+        tbox_raster_fill_rect(pixels, buffer_width, buffer_height, rect, color);
+        return;
+    }
+
+    int32_t x0 = (int32_t)floor(rect.x);
+    int32_t y0 = (int32_t)floor(rect.y);
+    int32_t x1 = (int32_t)floor(rect.x + rect.width);
+    int32_t y1 = (int32_t)floor(rect.y + rect.height);
+
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x1 > buffer_width) {
+        x1 = buffer_width;
+    }
+    if (y1 > buffer_height) {
+        y1 = buffer_height;
+    }
+
+    double alpha     = color.a / 255.0;
+    double radius_sq = radius * radius;
+
+    for (int32_t y = y0; y < y1; y++) {
+        double ry     = ((double)y + 0.5) - rect.y;
+        uint32_t *row = pixels + (size_t)y * (size_t)buffer_width;
+
+        for (int32_t x = x0; x < x1; x++) {
+            double rx = ((double)x + 0.5) - rect.x;
+
+            bool in_left_band   = rx < radius;
+            bool in_right_band  = rx > rect.width - radius;
+            bool in_top_band    = ry < radius;
+            bool in_bottom_band = ry > rect.height - radius;
+
+            /* Only inside a RADIUSxRADIUS corner square (both an x-band and
+             * a y-band at once) does the circular cutout matter -- anywhere
+             * else in the rect (the "cross" region between the 4 corners)
+             * always paints. */
+            if ((in_left_band || in_right_band) && (in_top_band || in_bottom_band)) {
+                double corner_x = in_left_band ? radius : rect.width - radius;
+                double corner_y = in_top_band ? radius : rect.height - radius;
+                double dx       = rx - corner_x;
+                double dy       = ry - corner_y;
+                if (dx * dx + dy * dy > radius_sq) {
+                    continue;
+                }
+            }
+
+            row[x] = tbox_raster_blend_pixel(row[x], color, alpha);
+        }
+    }
+}
+
 void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || face == NULL || text.size == 0 || color.a == 0) {
         return;
@@ -254,7 +330,11 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
         const tbox_paint_op *op = &list->items[i];
         switch (op->kind) {
         case TBOX_PAINT_FILL_RECT:
-            tbox_raster_fill_rect(pixels, buffer_width, buffer_height, op->rect, op->color);
+            if (op->radius > 0.0) {
+                tbox_raster_fill_rounded_rect(pixels, buffer_width, buffer_height, op->rect, op->radius, op->color);
+            } else {
+                tbox_raster_fill_rect(pixels, buffer_width, buffer_height, op->rect, op->color);
+            }
             break;
         case TBOX_PAINT_TEXT_RUN:
             tbox_raster_text_run(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color);

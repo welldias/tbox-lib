@@ -684,6 +684,154 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* 19: NOVO (visual fidelity) regression -- border_radius == 0.0 (the
+     * default) must produce EXACTLY the same ops as before this feature
+     * existed: one background FILL_RECT (radius 0.0) then 4 border
+     * FILL_RECTs (radius 0.0 each), never the rounded-rect path. */
+    {
+        tbox_style style       = tbox_test_render_default_style();
+        style.background_color = (tbox_css_rgba){ 10, 20, 30, 255 };
+        style.border_style     = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.border_width     = 2.0;
+        style.border_color     = (tbox_css_rgba){ 40, 50, 60, 255 };
+        tbox_layout_box box    = tbox_test_render_default_box(&style);
+        box.border_box         = (tbox_rect){ 0, 0, 100, 50 };
+        box.padding_box        = (tbox_rect){ 2, 2, 96, 46 };
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 5, "radius==0 must produce 1 background + 4 border strips, unchanged");
+        for (size_t i = 0; i < list.count; i++) {
+            TBOX_TEST_ASSERT_MSG(list.items[i].radius == 0.0, "radius==0 ops must all have radius 0.0 (the plain-rect path)");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 20: NOVO (visual fidelity) -- border_radius > 0.0 WITH a border
+     * switches to 2 rounded FILL_RECTs (outer border_box in border_color,
+     * inner padding_box in background_color, inner radius shrunk by the
+     * border's own width) instead of the 4-strip path. */
+    {
+        tbox_style style       = tbox_test_render_default_style();
+        style.background_color = (tbox_css_rgba){ 10, 20, 30, 255 };
+        style.border_style     = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.border_width     = 2.0;
+        style.border_color     = (tbox_css_rgba){ 40, 50, 60, 255 };
+        style.border_radius    = 8.0;
+        tbox_layout_box box    = tbox_test_render_default_box(&style);
+        box.border_box         = (tbox_rect){ 0, 0, 100, 50 };
+        box.padding_box        = (tbox_rect){ 2, 2, 96, 46 };
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 2, "radius>0 with a border must produce exactly 2 rounded FILL_RECTs, not the 4-strip path");
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_FILL_RECT && list.items[0].radius == 8.0);
+            TBOX_TEST_ASSERT_MSG(rect_equal(list.items[0].rect, box.border_box), "outer rounded rect must cover border_box");
+            TBOX_TEST_ASSERT(list.items[0].color.r == 40 && list.items[0].color.g == 50 && list.items[0].color.b == 60);
+
+            TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_FILL_RECT && list.items[1].radius == 6.0, "inner radius must be outer radius minus border_width (8 - 2 = 6)");
+            TBOX_TEST_ASSERT_MSG(rect_equal(list.items[1].rect, box.padding_box), "inner rounded rect must cover padding_box");
+            TBOX_TEST_ASSERT(list.items[1].color.r == 10 && list.items[1].color.g == 20 && list.items[1].color.b == 30);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 21: NOVO (visual fidelity) -- border_radius > 0.0 with NO border
+     * produces exactly 1 rounded FILL_RECT in background_color. */
+    {
+        tbox_style style       = tbox_test_render_default_style();
+        style.background_color = (tbox_css_rgba){ 70, 80, 90, 255 };
+        style.border_radius    = 12.0;
+        tbox_layout_box box    = tbox_test_render_default_box(&style);
+        box.border_box         = (tbox_rect){ 0, 0, 40, 40 };
+        box.padding_box        = box.border_box;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 1, "radius>0 with no border must produce exactly 1 rounded FILL_RECT");
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT(list.items[0].radius == 12.0);
+            TBOX_TEST_ASSERT(list.items[0].color.r == 70 && list.items[0].color.g == 80 && list.items[0].color.b == 90);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 22: NOVO (visual fidelity) -- a radius exceeding half of
+     * min(border_box.width, border_box.height) must clamp, not paint a
+     * self-intersecting/broken shape. */
+    {
+        tbox_style style       = tbox_test_render_default_style();
+        style.background_color = (tbox_css_rgba){ 1, 1, 1, 255 };
+        style.border_radius    = 1000.0;
+        tbox_layout_box box    = tbox_test_render_default_box(&style);
+        box.border_box         = (tbox_rect){ 0, 0, 20, 10 };
+        box.padding_box        = box.border_box;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1);
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT_MSG(list.items[0].radius == 5.0, "radius must clamp to half of min(width,height) -- min(20,10)/2 = 5");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 23: NOVO (visual fidelity) -- box-shadow with blur == 0.0 produces
+     * exactly ONE extra FILL_RECT, positioned at border_box offset by
+     * (offset_x, offset_y), painted BEFORE the box's own background op. */
+    {
+        tbox_style style           = tbox_test_render_default_style();
+        style.background_color    = (tbox_css_rgba){ 200, 200, 200, 255 };
+        style.box_shadow_offset_x = 3.0;
+        style.box_shadow_offset_y = 4.0;
+        style.box_shadow_blur     = 0.0;
+        style.box_shadow_color    = (tbox_css_rgba){ 0, 0, 0, 128 };
+        tbox_layout_box box       = tbox_test_render_default_box(&style);
+        box.border_box            = (tbox_rect){ 10, 10, 50, 50 };
+        box.padding_box           = box.border_box;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 2, "box-shadow with blur==0 must produce exactly 1 shadow op before the background op");
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_FILL_RECT);
+            TBOX_TEST_ASSERT_MSG(list.items[0].rect.x == 13.0 && list.items[0].rect.y == 14.0 && list.items[0].rect.width == 50.0 && list.items[0].rect.height == 50.0, "shadow rect must be border_box offset by (offset_x, offset_y)");
+            TBOX_TEST_ASSERT(list.items[0].color.a == 128);
+            TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_FILL_RECT && rect_equal(list.items[1].rect, box.border_box), "background op must still be the box's own border_box, unaffected by the shadow");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 24: NOVO (visual fidelity) -- box-shadow with blur > 0.0 produces
+     * MULTIPLE shadow ops (the cheap multi-step falloff approximation),
+     * all before the background op: the innermost (last) layer matches the
+     * exact un-grown shadow rect, and the outermost (first) layer is
+     * strictly larger -- proving the layers actually expand outward, not a
+     * flat repeat of the same rect. */
+    {
+        tbox_style style           = tbox_test_render_default_style();
+        style.background_color    = (tbox_css_rgba){ 200, 200, 200, 255 };
+        style.box_shadow_blur     = 12.0;
+        style.box_shadow_color    = (tbox_css_rgba){ 0, 0, 0, 255 };
+        tbox_layout_box box       = tbox_test_render_default_box(&style);
+        box.border_box            = (tbox_rect){ 0, 0, 100, 100 };
+        box.padding_box           = box.border_box;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count > 2, "box-shadow with blur>0 must produce multiple shadow ops plus the background op");
+        if (list.count > 2) {
+            size_t shadow_count      = list.count - 1; /* everything except the final background op */
+            tbox_paint_op last_shadow  = list.items[shadow_count - 1];
+            tbox_paint_op first_shadow = list.items[0];
+            TBOX_TEST_ASSERT_MSG(rect_equal(last_shadow.rect, box.border_box), "the innermost shadow layer must exactly match the un-grown shadow rect");
+            TBOX_TEST_ASSERT_MSG(first_shadow.rect.width > last_shadow.rect.width, "outermost shadow layer must be larger than the innermost one");
+            TBOX_TEST_ASSERT(list.items[shadow_count].kind == TBOX_PAINT_FILL_RECT && rect_equal(list.items[shadow_count].rect, box.border_box) && list.items[shadow_count].color.r == 200);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
     tbox_font_face_destroy(bold_font);
     tbox_font_face_destroy(font);
     free(font_data);

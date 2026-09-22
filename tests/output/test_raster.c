@@ -730,6 +730,171 @@ static void tbox_test_raster_image_invalid_args(int *failures_ptr) {
     *failures_ptr = failures;
 }
 
+/* NOVO (visual fidelity): tbox_raster_fill_rounded_rect -- corners are
+ * actually cut (a pixel deep in a corner's RADIUSxRADIUS square, outside
+ * its circle, stays untouched), while the "cross" region (center, straight
+ * edges away from any corner) paints exactly like a plain rect fill. */
+static void tbox_test_raster_rounded_rect_corners(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 20, height = 20;
+    uint32_t background = tbox_test_raster_xrgb(0, 0, 0);
+    uint32_t *pixels     = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        tbox_css_rgba white = { 255, 255, 255, 255 };
+        tbox_rect rect       = { 0, 0, 20, 20 };
+        tbox_raster_fill_rounded_rect(pixels, width, height, rect, 5.0, white);
+
+        uint32_t painted = tbox_test_raster_xrgb(255, 255, 255);
+
+        /* The extreme corner pixel is well outside the radius-5 circle
+         * (inset (5,5) from that corner) -- must stay background. */
+        TBOX_TEST_ASSERT_MSG(pixels[0 * (size_t)width + 0] == background, "the extreme top-left corner pixel must be cut by the radius");
+
+        /* The dead center of the rect is always inside (the "cross"
+         * region), far from every corner. */
+        TBOX_TEST_ASSERT_MSG(pixels[10 * (size_t)width + 10] == painted, "the center must always be painted");
+
+        /* The middle of the top edge (away from both top corners) is in
+         * neither corner's x-band, so it must paint flat, same as a plain
+         * rect fill would. */
+        TBOX_TEST_ASSERT_MSG(pixels[0 * (size_t)width + 10] == painted, "the middle of a straight edge must paint flat, same as tbox_raster_fill_rect");
+
+        /* A pixel exactly at the inset circle's own center (5,5) is
+         * trivially inside that circle (distance 0) -- must paint. */
+        TBOX_TEST_ASSERT_MSG(pixels[5 * (size_t)width + 5] == painted, "the corner circle's own center must be painted");
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* radius <= 0.0 (after clamping) must produce BYTE-IDENTICAL output to
+ * tbox_raster_fill_rect -- the documented degenerate case. */
+static void tbox_test_raster_rounded_rect_zero_radius_matches_fill_rect(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 12, height = 12;
+    uint32_t *via_rounded = tbox_test_raster_make_buffer(width, height, tbox_test_raster_xrgb(9, 9, 9));
+    uint32_t *via_plain   = tbox_test_raster_make_buffer(width, height, tbox_test_raster_xrgb(9, 9, 9));
+    TBOX_TEST_ASSERT(via_rounded != NULL && via_plain != NULL);
+
+    if (via_rounded != NULL && via_plain != NULL) {
+        tbox_css_rgba color = { 1, 2, 3, 200 };
+        tbox_rect rect       = { 2, 2, 8, 8 };
+
+        tbox_raster_fill_rounded_rect(via_rounded, width, height, rect, 0.0, color);
+        tbox_raster_fill_rect(via_plain, width, height, rect, color);
+
+        TBOX_TEST_ASSERT(memcmp(via_rounded, via_plain, sizeof(uint32_t) * (size_t)width * (size_t)height) == 0);
+
+        free(via_rounded);
+        free(via_plain);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* A radius larger than half the smaller rect dimension must clamp (a
+ * "stadium"/circle shape, never a broken self-intersecting one) -- checked
+ * by confirming a corner pixel that a NAIVE (unclamped) radius would still
+ * consider "inside a straight cross region" is correctly cut once the
+ * radius is clamped down to fit. */
+static void tbox_test_raster_rounded_rect_radius_clamped(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 40, height = 40;
+    uint32_t background = tbox_test_raster_xrgb(0, 0, 0);
+    uint32_t *pixels     = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        tbox_css_rgba white = { 255, 255, 255, 255 };
+        /* rect is 20x10 -- max_radius clamps to min(20,10)/2 = 5, even
+         * though 1000.0 was requested. */
+        tbox_rect rect = { 0, 0, 20, 10 };
+        tbox_raster_fill_rounded_rect(pixels, width, height, rect, 1000.0, white);
+
+        uint32_t painted = tbox_test_raster_xrgb(255, 255, 255);
+
+        /* Vertical center of the short (height=10) edge: with the radius
+         * correctly clamped to 5 (== half the height), EVERY point along
+         * x is within the corners' y-band, so this becomes a full
+         * capsule/stadium shape -- the middle of the left edge (x=0,y=5)
+         * sits exactly on the inset circle's own vertical center, always
+         * inside. */
+        TBOX_TEST_ASSERT_MSG(pixels[5 * (size_t)width + 0] == painted, "clamped radius must still paint the short edge's own vertical center");
+
+        /* The far corners stay cut, exactly like the unclamped case. */
+        TBOX_TEST_ASSERT_MSG(pixels[0 * (size_t)width + 0] == background, "the extreme corner must still be cut after clamping");
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* A rect straddling the buffer's bounds must clip cleanly -- no crash, no
+ * out-of-bounds write, same expectation every other tbox_raster_* function
+ * already has. */
+static void tbox_test_raster_rounded_rect_out_of_bounds(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 10, height = 10;
+    uint32_t background = tbox_test_raster_xrgb(3, 3, 3);
+    uint32_t *pixels     = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        tbox_css_rgba white = { 255, 255, 255, 255 };
+        tbox_rect far_rect   = { 1000, 1000, 20, 20 };
+        tbox_raster_fill_rounded_rect(pixels, width, height, far_rect, 4.0, white);
+        TBOX_TEST_ASSERT(pixels[0] == background);
+
+        tbox_rect straddling = { -5, -5, 15, 15 };
+        tbox_raster_fill_rounded_rect(pixels, width, height, straddling, 3.0, white);
+        TBOX_TEST_ASSERT_MSG(pixels[8 * (size_t)width + 8] == tbox_test_raster_xrgb(255, 255, 255), "the visible portion of a straddling rect must still paint (deep in the cross region, away from the clipped corner)");
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* NULL pixels, non-positive buffer dims, non-positive rect.width/height,
+ * and color.a == 0 are all no-ops -- same "tolerate bad input silently"
+ * contract every other tbox_raster_* function already has. */
+static void tbox_test_raster_rounded_rect_invalid_args(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 8, height = 8;
+    uint32_t background = tbox_test_raster_xrgb(5, 5, 5);
+    uint32_t *pixels     = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        tbox_css_rgba white           = { 255, 255, 255, 255 };
+        tbox_css_rgba transparent     = { 255, 255, 255, 0 };
+        tbox_rect rect                 = { 0, 0, 8, 8 };
+
+        tbox_raster_fill_rounded_rect(NULL, width, height, rect, 2.0, white);
+        tbox_raster_fill_rounded_rect(pixels, 0, height, rect, 2.0, white);
+        tbox_raster_fill_rounded_rect(pixels, width, 0, rect, 2.0, white);
+        tbox_raster_fill_rounded_rect(pixels, width, height, (tbox_rect){ 0, 0, 0, 8 }, 2.0, white);
+        tbox_raster_fill_rounded_rect(pixels, width, height, (tbox_rect){ 0, 0, 8, 0 }, 2.0, white);
+        tbox_raster_fill_rounded_rect(pixels, width, height, rect, 2.0, transparent);
+
+        TBOX_TEST_ASSERT_MSG(pixels[0] == background, "every invalid-argument call above must be a no-op");
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
@@ -743,6 +908,11 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_image_alpha_blend(&failures);
     tbox_test_raster_image_out_of_bounds(&failures);
     tbox_test_raster_image_invalid_args(&failures);
+    tbox_test_raster_rounded_rect_corners(&failures);
+    tbox_test_raster_rounded_rect_zero_radius_matches_fill_rect(&failures);
+    tbox_test_raster_rounded_rect_radius_clamped(&failures);
+    tbox_test_raster_rounded_rect_out_of_bounds(&failures);
+    tbox_test_raster_rounded_rect_invalid_args(&failures);
     tbox_test_raster_write_png_round_trip(&failures);
     tbox_test_raster_write_png_invalid_args(&failures);
 

@@ -422,6 +422,124 @@ static bool tbox_style_resolve_border(const tbox_css_computed_style *computed, d
     return true;
 }
 
+/* NOVO (visual fidelity): `border-radius` -- a single, uniform px length.
+ * Same token shape as `border`'s own width token (tbox_style_resolve_border
+ * above): a bare number followed by "px", nothing else recognized (no
+ * percentages, no per-corner values -- see include/tbox/style.h's field
+ * comment for why). Falls back to `0.0` (no rounding) on anything else,
+ * same "unrecognized token, ignored" posture as `border`. */
+static double tbox_style_resolve_border_radius(const tbox_css_computed_style *computed) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("border-radius"));
+    if (decl == NULL) {
+        return 0.0;
+    }
+
+    tbox_string_view value = tbox_style_trim(decl->value);
+    double radius;
+    if (value.size > 2 && tbox_string_view_equal_ascii_ci(tbox_string_view_make(value.data + value.size - 2, 2), tbox_string_view_from_cstr("px")) && tbox_style_parse_number(tbox_string_view_make(value.data, value.size - 2), &radius) && radius >= 0.0) {
+        return radius;
+    }
+    return 0.0;
+}
+
+/* NOVO (visual fidelity): `box-shadow: <offset-x> <offset-y> [<blur-radius>]
+ * <color>` -- a whitespace-tokenizing loop shaped after
+ * tbox_style_resolve_border above, with ONE addition that function doesn't
+ * need: a token may itself contain internal whitespace when inside
+ * parentheses (e.g. the color `rgba(0, 0, 0, 0.5)`, commonly authored with
+ * a space after each comma) -- the scanner tracks paren depth and only
+ * treats whitespace as a token boundary at depth 0, so that whole color
+ * function call is captured as ONE token rather than shredded into
+ * "rgba(0,", "0,", "0,", "0.5)". The first two "px" tokens found become
+ * offset-x/offset-y (in order); a third "px" token (if any) becomes
+ * blur-radius; the first token that parses as a color (tbox_css_color_parse
+ * -- named/hex/rgb()/rgba()/hsl()/hsla(), all already supported) becomes
+ * the shadow color. A comma at paren depth 0 (separating multiple shadows,
+ * out of scope -- only ONE shadow is supported; a comma INSIDE a color
+ * function's own argument list doesn't count) makes the whole declaration
+ * ignored, same "recognized syntax only" posture as every other property
+ * here. Writes nothing and returns false unless a color AND both offsets
+ * were found -- an incomplete/unrecognized declaration is not a shadow at
+ * all, same as `border` needing at least a recognized token to do
+ * anything. */
+static bool tbox_style_resolve_box_shadow(const tbox_css_computed_style *computed, double *out_offset_x, double *out_offset_y, double *out_blur, tbox_css_rgba *out_color) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("box-shadow"));
+    if (decl == NULL) {
+        return false;
+    }
+
+    tbox_string_view text = tbox_style_trim(decl->value);
+
+    /* A comma OUTSIDE parentheses separates multiple shadows (out of
+     * scope, rejected entirely) -- a comma INSIDE parentheses is just an
+     * rgba()/hsla() color's own argument separator, which must NOT trigger
+     * this. A separate pass (not folded into the tokenizer below) so a
+     * comma with no surrounding whitespace, e.g. "...red,2px...", is still
+     * caught -- the tokenizer's own paren-tracking only governs where IT
+     * splits on whitespace, not comma detection. */
+    {
+        int paren_depth = 0;
+        for (size_t i = 0; i < text.size; i++) {
+            if (text.data[i] == '(') {
+                paren_depth++;
+            } else if (text.data[i] == ')') {
+                if (paren_depth > 0) {
+                    paren_depth--;
+                }
+            } else if (text.data[i] == ',' && paren_depth == 0) {
+                return false;
+            }
+        }
+    }
+
+    double offsets[3];
+    int offset_count = 0;
+    bool have_color   = false;
+    tbox_css_rgba color;
+
+    size_t i = 0;
+    while (i < text.size) {
+        while (i < text.size && tbox_style_is_space(text.data[i])) {
+            i++;
+        }
+        if (i >= text.size) {
+            break;
+        }
+
+        size_t start    = i;
+        int paren_depth = 0;
+        while (i < text.size && (paren_depth > 0 || !tbox_style_is_space(text.data[i]))) {
+            if (text.data[i] == '(') {
+                paren_depth++;
+            } else if (text.data[i] == ')' && paren_depth > 0) {
+                paren_depth--;
+            }
+            i++;
+        }
+        tbox_string_view token = tbox_string_view_make(text.data + start, i - start);
+
+        double length;
+        if (token.size > 2 && tbox_string_view_equal_ascii_ci(tbox_string_view_make(token.data + token.size - 2, 2), tbox_string_view_from_cstr("px")) && tbox_style_parse_number(tbox_string_view_make(token.data, token.size - 2), &length)) {
+            if (offset_count < 3) {
+                offsets[offset_count++] = length;
+            }
+        } else if (tbox_css_color_parse(token, &color)) {
+            have_color = true;
+        }
+        /* else: unrecognized token (e.g. "inset"), ignored -- keep scanning. */
+    }
+
+    if (!have_color || offset_count < 2) {
+        return false;
+    }
+
+    *out_offset_x = offsets[0];
+    *out_offset_y = offsets[1];
+    *out_blur     = offset_count >= 3 ? offsets[2] : 0.0;
+    *out_color    = color;
+    return true;
+}
+
 /* NOVO v4: `position` recognizes `static`/`relative`, case-insensitive.
  * NOVO v5: `absolute`/`fixed`/`sticky` added, same case-insensitive
  * treatment -- see ARCHITECTURE.md's v5 Style section (`sticky` is just
@@ -645,6 +763,17 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
      * always cascade-or-initial, same posture as background-color/border. */
     style.text_decoration = tbox_style_resolve_text_decoration(computed);
     style.vertical_align  = tbox_style_resolve_vertical_align(computed);
+
+    /* border-radius / box-shadow: NOVO (visual fidelity). Neither inherits
+     * -- always cascade-or-initial, same posture as border/background-color
+     * above. */
+    style.border_radius = tbox_style_resolve_border_radius(computed);
+
+    style.box_shadow_offset_x = 0.0;
+    style.box_shadow_offset_y = 0.0;
+    style.box_shadow_blur     = 0.0;
+    style.box_shadow_color    = (tbox_css_rgba){ 0, 0, 0, 0 };
+    tbox_style_resolve_box_shadow(computed, &style.box_shadow_offset_x, &style.box_shadow_offset_y, &style.box_shadow_blur, &style.box_shadow_color);
 
     return style;
 }

@@ -893,5 +893,101 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 45: NOVO (visual fidelity) -- border-radius: a recognized px value is
+     * used as-is; no declaration, or an unrecognized one (percentage,
+     * keyword), falls back to the initial value 0.0. Not inheritable. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { border-radius: 8px; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.border_radius == 8.0);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.border_radius == 0.0, "border-radius must not inherit from the parent");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { border-radius: 50%; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.border_radius == 0.0, "a percentage border-radius (out of scope) must fall back to 0.0, never crash");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 46: NOVO (visual fidelity) -- box-shadow: offset-x/offset-y/color
+     * recognized, blur-radius optional (defaults to 0.0 when only 2 length
+     * tokens are present). Not inheritable. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { box-shadow: 2px 4px 6px red; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.box_shadow_offset_x == 2.0);
+        TBOX_TEST_ASSERT(parent_style.box_shadow_offset_y == 4.0);
+        TBOX_TEST_ASSERT(parent_style.box_shadow_blur == 6.0);
+        TBOX_TEST_ASSERT(rgba_eq(parent_style.box_shadow_color, (tbox_css_rgba){ 255, 0, 0, 255 }));
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.box_shadow_color.a == 0, "box-shadow must not inherit from the parent");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { box-shadow: 1px 2px rgba(0, 0, 0, 0.5); }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.box_shadow_blur == 0.0, "a missing blur-radius token must default to 0.0");
+        TBOX_TEST_ASSERT(style.box_shadow_offset_x == 1.0 && style.box_shadow_offset_y == 2.0);
+        TBOX_TEST_ASSERT(style.box_shadow_color.a == 128); /* 0.5 * 255, rounded, same convention as every other alpha-parsing test in this file */
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    {
+        /* No declaration at all -- initial value: transparent (no shadow). */
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.box_shadow_color.a == 0);
+        TBOX_TEST_ASSERT(style.box_shadow_offset_x == 0.0 && style.box_shadow_offset_y == 0.0 && style.box_shadow_blur == 0.0);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    {
+        /* A comma (multiple shadows, out of scope) makes the whole
+         * declaration ignored, falling back to "no shadow" -- not a crash,
+         * not a half-parsed result. */
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { box-shadow: 1px 1px red, 2px 2px blue; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.box_shadow_color.a == 0, "a comma-separated (multiple shadow) value must be rejected entirely, out of scope");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

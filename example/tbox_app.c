@@ -151,8 +151,13 @@
  * the v14 fixtures -- a screenshot at 3450px showed all four silently
  * cropped off the bottom of the window, so this is bumped to 3750px, same
  * reasoning and same purely-cosmetic window-size-constant nature as every
- * prior bump. */
-#define TBOX_APP_DEMO_HEIGHT 3750
+ * prior bump. The visual-fidelity (border-radius/box-shadow) version
+ * appends .v-radius-shadow-container (five boxes) after .v-img-container --
+ * a screenshot at 3750px showed all but the first box silently cropped off
+ * the bottom of the window, so this is bumped to 4500px, same reasoning
+ * and same purely-cosmetic window-size-constant nature as every prior
+ * bump. */
+#define TBOX_APP_DEMO_HEIGHT 4500
 
 #ifndef TBOX_APP_DEMO_HTML_PATH
 #error "TBOX_APP_DEMO_HTML_PATH must be defined by the build (see example/CMakeLists.txt)"

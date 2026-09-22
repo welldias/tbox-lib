@@ -152,6 +152,24 @@ typedef struct tbox_style {
     tbox_style_text_decoration text_decoration;
     /* NOVO v13: `vertical-align`. NOT inheritable; initial value BASELINE. */
     tbox_style_vertical_align vertical_align;
+    /* NOVO (visual fidelity): `border-radius`. A single px length, uniform
+     * on all 4 corners -- no per-corner syntax, no elliptical (`/`) syntax,
+     * no percentages (would need the containing block's dimensions at
+     * Style-resolve time, same reasoning width/height PERCENT is deferred
+     * to Layout instead -- see tbox_style_resolve_border_radius). NOT
+     * inheritable, same posture as border_width/border_style/border_color
+     * right above; initial value 0.0 (no rounding, box_render_walk's
+     * existing 4-border-strip path is used unchanged). */
+    double border_radius;
+    /* NOVO (visual fidelity): `box-shadow: <offset-x> <offset-y>
+     * [<blur-radius>] <color>` -- ONE shadow only (no comma-separated list,
+     * no `inset`, no spread-radius -- see tbox_style_resolve_box_shadow).
+     * NOT inheritable. box_shadow_color.a == 0 means "no shadow", same
+     * "alpha 0 means absent" convention background_color already has --
+     * that's also the initial value, so an undeclared box-shadow paints
+     * nothing. */
+    double box_shadow_offset_x, box_shadow_offset_y, box_shadow_blur; /* px; initial 0.0 */
+    tbox_css_rgba box_shadow_color;                                  /* initial transparent */
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
