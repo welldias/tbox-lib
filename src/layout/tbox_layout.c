@@ -71,6 +71,15 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
 typedef struct tbox_layout_word {
     tbox_string_view text;
     const tbox_font_face *face;
+    /* NOVO v13: the SAME tbox_style that already decided `face` above (and
+     * ultimately becomes tbox_layout_text_run.style once this word is
+     * merged into a run, see tbox_layout_build_line_runs below) -- populated
+     * at the exact same call sites that already populate `face`, no new
+     * "which style" decision. Never NULL: every pusher of a
+     * tbox_layout_word (tbox_layout_push_words, tbox_layout_push_hard_break)
+     * requires a non-NULL style, same as `face` already effectively required
+     * a non-NULL cache lookup to have produced a word at all. */
+    const tbox_style *style;
     double width;       /* tbox_font_measure_text(face, text) */
     double space_width; /* tbox_font_measure_text(face, " ") -- the gap this word's face would render before it */
 
@@ -95,6 +104,16 @@ typedef struct tbox_layout_word {
 typedef struct tbox_layout_line {
     size_t start, end;
     double height;
+    /* NOVO v13: the max tbox_font_face_ascent among the faces used by words
+     * in [start, end) -- same "max across the line" loop that already
+     * computes `height` above (tbox_font_face_line_height), just with
+     * tbox_font_face_ascent instead; see tbox_layout_break_lines's three
+     * line-closing points. Used by tbox_layout_build_line_runs to align
+     * every run's own baseline with this line's dominant one instead of
+     * `line_y` (the line's TOP) directly -- see ARCHITECTURE.md's "v13 --
+     * Layout Tree" section for why this is needed now (the first time this
+     * project has more than one font size on the same line). */
+    double ascent;
 } tbox_layout_line;
 
 /* Splits `collapsed` (already whitespace-collapsed: single ' ' separators,
@@ -103,7 +122,7 @@ typedef struct tbox_layout_line {
  * measured against `face`. A NULL `face` (tbox_font_face_cache_get failed
  * for this element's (bold, size) -- e.g. an unloadable font) contributes no
  * words at all rather than crashing on tbox_font_measure_text(NULL, ...). */
-static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapsed, const tbox_font_face *face) {
+static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapsed, const tbox_font_face *face, const tbox_style *style) {
     if (face == NULL) {
         return;
     }
@@ -122,6 +141,7 @@ static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapse
             tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
             entry->text             = word;
             entry->face             = face;
+            entry->style            = style;
             entry->width            = tbox_font_measure_text(face, word);
             entry->space_width      = tbox_font_measure_text(face, space);
             entry->hard_break       = false;
@@ -144,10 +164,11 @@ static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapse
  * hard breaks (e.g. `<br><br>`), where the normal "max line-height among the
  * words in range" loop has nothing to iterate. See ARCHITECTURE.md's "v11 --
  * Layout Tree -- <br> (quebra forçada)". */
-static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face *face) {
+static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face *face, const tbox_style *style) {
     tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
     entry->text             = tbox_string_view_make(NULL, 0);
     entry->face             = face;
+    entry->style            = style;
     entry->width            = 0.0;
     entry->space_width      = 0.0;
     entry->hard_break       = true;
@@ -172,22 +193,22 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *n
          * <br> has no style of its own worth resolving here), same call the
          * TEXT branch below already makes. */
         if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "br")) {
-            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
-            tbox_layout_push_hard_break(words, face);
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+            tbox_layout_push_hard_break(words, face, style);
             continue;
         }
 
         if (child->type == TBOX_HTML_NODE_TEXT) {
             tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, child->text.text);
-            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
-            tbox_layout_push_words(words, collapsed, face);
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+            tbox_layout_push_words(words, collapsed, face, style);
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
             if (child_style->display == TBOX_STYLE_DISPLAY_INLINE) {
                 tbox_string_view raw       = tbox_html_node_text_content(arena, child);
                 tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, raw);
-                const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_size);
-                tbox_layout_push_words(words, collapsed, face);
+                const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
+                tbox_layout_push_words(words, collapsed, face, child_style);
             }
         }
         /* else: COMMENT/DOCTYPE, or an ELEMENT that isn't display:inline --
@@ -241,20 +262,27 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
     for (size_t i = 0; i < word_count; i++) {
         if (words[i].hard_break) {
             double height = 0.0;
+            double ascent = 0.0;
             for (size_t j = line_start; j < i; j++) {
                 double face_height = tbox_font_face_line_height(words[j].face);
                 if (face_height > height) {
                     height = face_height;
                 }
+                double face_ascent = tbox_font_face_ascent(words[j].face);
+                if (face_ascent > ascent) {
+                    ascent = face_ascent;
+                }
             }
             if (i == line_start) {
                 height = tbox_font_face_line_height(words[i].face);
+                ascent = tbox_font_face_ascent(words[i].face);
             }
 
             tbox_layout_line *line = (tbox_layout_line *)tbox_vector_push(lines);
             line->start            = line_start;
             line->end              = i;
             line->height           = height;
+            line->ascent           = ascent;
 
             line_start = i + 1;
             line_width = 0.0;
@@ -265,10 +293,15 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
 
         if (!no_wrap && i > line_start && prospective > available_width) {
             double height = 0.0;
+            double ascent = 0.0;
             for (size_t j = line_start; j < i; j++) {
                 double face_height = tbox_font_face_line_height(words[j].face);
                 if (face_height > height) {
                     height = face_height;
+                }
+                double face_ascent = tbox_font_face_ascent(words[j].face);
+                if (face_ascent > ascent) {
+                    ascent = face_ascent;
                 }
             }
 
@@ -276,6 +309,7 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
             line->start            = line_start;
             line->end              = i;
             line->height           = height;
+            line->ascent           = ascent;
 
             line_start = i;
             line_width = words[i].width;
@@ -286,38 +320,79 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
 
     if (line_start < word_count) {
         double height = 0.0;
+        double ascent = 0.0;
         for (size_t j = line_start; j < word_count; j++) {
             double face_height = tbox_font_face_line_height(words[j].face);
             if (face_height > height) {
                 height = face_height;
+            }
+            double face_ascent = tbox_font_face_ascent(words[j].face);
+            if (face_ascent > ascent) {
+                ascent = face_ascent;
             }
         }
         tbox_layout_line *line = (tbox_layout_line *)tbox_vector_push(lines);
         line->start            = line_start;
         line->end              = word_count;
         line->height           = height;
+        line->ascent           = ascent;
+    }
+}
+
+/* NOVO v13: the extra vertical offset (px) `vertical_align: sub`/`super`
+ * adds ON TOP OF baseline alignment (see tbox_layout_build_line_runs below)
+ * -- `0.0` for the initial BASELINE, the universal case through v12 (zero
+ * visual change). `0.15`/`0.35` are fixed fractions of `style->font_size`,
+ * an approximation by common visual convention (browsers' usual order of
+ * magnitude), not a real OpenType `subs`/`sups` table lookup -- out of scope,
+ * see ARCHITECTURE.md's v13 "Fora de escopo". Positive moves DOWN (`sub`),
+ * negative moves UP (`super`), matching this project's y-down coordinate
+ * space. */
+static double tbox_layout_vertical_align_offset(const tbox_style *style) {
+    switch (style->vertical_align) {
+    case TBOX_STYLE_VERTICAL_ALIGN_SUB:
+        return 0.15 * style->font_size;
+    case TBOX_STYLE_VERTICAL_ALIGN_SUPER:
+        return -0.35 * style->font_size;
+    case TBOX_STYLE_VERTICAL_ALIGN_BASELINE:
+    default:
+        return 0.0;
     }
 }
 
 /* Places and merges one line's words into runs, appending them to `runs`.
  * `line_y` is this line's already-computed absolute top (content_y plus
  * every earlier line's height); `content_x` is the text box's content-box
- * left edge. Consecutive words sharing the exact same face merge into one
- * tbox_layout_text_run (their text joined by single spaces, matching
- * tbox_string_collapse_whitespace's own separator); a new run starts only
- * when the face changes (a line boundary is handled by the caller looping
- * per line, never straddled by a single run). The gap between two adjacent
- * runs of different faces (the space that would sit between them in the
- * source text) is accounted for in each run's absolute x position but
- * deliberately belongs to neither run's own text/width -- see
- * ARCHITECTURE.md: color/other run-level properties never vary within one
- * box anyway, so there is nothing visually lost by not assigning that gap a
- * face of its own. */
+ * left edge. Consecutive words sharing the exact same face AND style
+ * (NOVO v13 -- previously face alone) merge into one tbox_layout_text_run
+ * (their text joined by single spaces, matching
+ * tbox_string_collapse_whitespace's own separator); a new run starts when
+ * EITHER changes (a line boundary is handled by the caller looping per
+ * line, never straddled by a single run) -- so e.g. a `<mark>` run never
+ * merges with an adjacent plain-text run even when both resolve to the
+ * IDENTICAL face (no weight/size/family/italic difference declared), since
+ * they still need separate `tbox_layout_text_run.style` pointers for
+ * Render Pipeline's per-run background/decoration (see ARCHITECTURE.md's
+ * "v13 -- Layout Tree" section). The gap between two adjacent runs (the
+ * space that would sit between them in the source text) is accounted for in
+ * each run's absolute x position but deliberately belongs to neither run's
+ * own text/width -- unchanged since before v13.
+ *
+ * NOVO v13: `rect.y` is no longer `line_y` alone -- every run's baseline is
+ * aligned with the LINE's dominant baseline first (`line->ascent -
+ * tbox_font_face_ascent(run_face)`, zero when every run on the line shares
+ * one face/size, the universal case through v12), then shifted further by
+ * `tbox_layout_vertical_align_offset` for `sub`/`super` (zero for the
+ * initial BASELINE). `rect.height` still spans the WHOLE line, not the
+ * run's own reduced size -- a deliberate simplification, see
+ * ARCHITECTURE.md. `run->style` is set to the SAME style that decided
+ * `run_face`, for the reasons above. */
 static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, tbox_vector *runs) {
-    double cursor_x                = 0.0;
-    double run_start_x             = 0.0;
-    double run_end_x               = 0.0;
-    const tbox_font_face *run_face = NULL;
+    double cursor_x                  = 0.0;
+    double run_start_x               = 0.0;
+    double run_end_x                 = 0.0;
+    const tbox_font_face *run_face   = NULL;
+    const tbox_style *run_style      = NULL;
     tbox_string_builder run_builder;
     bool have_run = false;
 
@@ -328,20 +403,22 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
             cursor_x += word->space_width;
         }
 
-        bool new_run = !have_run || word->face != run_face;
+        bool new_run = !have_run || word->face != run_face || word->style != run_style;
         if (new_run) {
             if (have_run) {
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
                 run->rect.x               = content_x + run_start_x;
-                run->rect.y               = line_y;
+                run->rect.y               = line_y + (line->ascent - tbox_font_face_ascent(run_face)) + tbox_layout_vertical_align_offset(run_style);
                 run->rect.width           = run_end_x - run_start_x;
                 run->rect.height          = line->height;
                 run->text                 = tbox_string_builder_finish(&run_builder);
                 run->font                 = run_face;
+                run->style                = run_style;
             }
 
             run_start_x = cursor_x;
             run_face    = word->face;
+            run_style   = word->style;
             tbox_string_builder_init(&run_builder, arena, word->text.size + 8);
             have_run = true;
         } else {
@@ -356,11 +433,12 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
     if (have_run) {
         tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
         run->rect.x               = content_x + run_start_x;
-        run->rect.y               = line_y;
+        run->rect.y               = line_y + (line->ascent - tbox_font_face_ascent(run_face)) + tbox_layout_vertical_align_offset(run_style);
         run->rect.width           = run_end_x - run_start_x;
         run->rect.height          = line->height;
         run->text                 = tbox_string_builder_finish(&run_builder);
         run->font                 = run_face;
+        run->style                = run_style;
     }
 }
 
@@ -393,14 +471,14 @@ static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node
     /* The marker always uses the <li>'s OWN face -- never a nested <b>/<em>'s
      * -- same call tbox_layout_collect_words already makes for the <li>'s
      * direct TEXT children. */
-    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
+    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
     if (face == NULL) {
         return;
     }
 
     if (parent_is_ul) {
         static const tbox_string_view bullet = { "\xE2\x80\xA2", 3 };
-        tbox_layout_push_words(words, bullet, face);
+        tbox_layout_push_words(words, bullet, face, style);
         return;
     }
 
@@ -431,7 +509,7 @@ static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node
     memcpy(copy, buffer, length);
 
     tbox_string_view number = tbox_string_view_make(copy, length);
-    tbox_layout_push_words(words, number, face);
+    tbox_layout_push_words(words, number, face, style);
 }
 
 /* NOVO v11: `<pre>`'s own word-collection function, called by
@@ -455,7 +533,7 @@ static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node
  * has) contributes no words at all rather than crashing on
  * tbox_font_measure_text(NULL, ...). */
 static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words) {
-    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
+    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
     if (face == NULL) {
         return;
     }
@@ -477,6 +555,7 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
         tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
         entry->text             = line;
         entry->face             = face;
+        entry->style            = style;
         entry->width            = tbox_font_measure_text(face, line);
         entry->space_width      = space_width;
         entry->hard_break       = false;
@@ -484,7 +563,7 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
         if (i < text.size) {
             /* A real '\n' (not the end-of-text sentinel iteration) -- more
              * physical lines follow, so close this one with a hard break. */
-            tbox_layout_push_hard_break(words, face);
+            tbox_layout_push_hard_break(words, face, style);
         }
 
         line_start = i + 1;
@@ -534,7 +613,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         box->text_runs      = NULL;
         box->text_run_count = 0;
 
-        const tbox_font_face *own_face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_size);
+        const tbox_font_face *own_face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
         return own_face != NULL ? tbox_font_face_line_height(own_face) : 0.0;
     }
 

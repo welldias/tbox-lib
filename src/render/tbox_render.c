@@ -49,16 +49,39 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
             tbox_render_push_fill_rect(items, (tbox_rect){ padding_box.x + padding_box.width, padding_box.y, (border_box.x + border_box.width) - (padding_box.x + padding_box.width), padding_box.height }, border_color);
         }
 
-        tbox_css_rgba text_color = box->style != NULL ? box->style->color : (tbox_css_rgba){ 0, 0, 0, 255 };
         for (size_t i = 0; i < box->text_run_count; i++) {
             const tbox_layout_text_run *run = &box->text_runs[i];
+
+            /* NOVO v13: <mark> highlight -- a FILL_RECT covering the run's
+             * own rect (not the whole box/line), painted before its
+             * TEXT_RUN so the glyphs draw on top of it. Same helper as the
+             * box background/border FILL_RECTs above. */
+            if (run->style->background_color.a != 0) {
+                tbox_render_push_fill_rect(items, run->rect, run->style->background_color);
+            }
 
             tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
             op->kind          = TBOX_PAINT_TEXT_RUN;
             op->rect          = run->rect;
-            op->color         = text_color; /* same color for every run of one box -- see ARCHITECTURE.md's "Fora de escopo" */
+            op->color         = run->style->color; /* NOVO v13: per-run color (run->style, never NULL), replacing the one shared box->style->color -- see ARCHITECTURE.md's "v13" section */
             op->text          = run->text;
             op->face          = run->font;
+
+            /* NOVO v13: <del>/<ins> decoration line -- a thin (1px)
+             * FILL_RECT spanning the run's width, positioned off its
+             * baseline (same baseline tbox_raster_text_run/Output Display
+             * already computes: rect.y + ascent). UNDERLINE sits a little
+             * below the baseline, LINE_THROUGH a little above it
+             * (approximating x-height by a fraction of ascent -- see
+             * ARCHITECTURE.md's "Fora de escopo"). Painted after the
+             * TEXT_RUN, same color as the text. */
+            if (run->style->text_decoration != TBOX_STYLE_TEXT_DECORATION_NONE) {
+                double baseline = run->rect.y + tbox_font_face_ascent(run->font);
+                double line_y   = run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE
+                                     ? baseline + 2.0
+                                     : baseline - tbox_font_face_ascent(run->font) * 0.3;
+                tbox_render_push_fill_rect(items, (tbox_rect){ run->rect.x, line_y, run->rect.width, 1.0 }, run->style->color);
+            }
         }
 
         tbox_render_walk(box->first_child, items);

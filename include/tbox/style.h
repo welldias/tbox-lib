@@ -77,6 +77,25 @@ typedef enum tbox_style_text_align {
     TBOX_STYLE_TEXT_ALIGN_RIGHT,
 } tbox_style_text_align;
 
+/* NOVO v13: `text-decoration`'s two supported values -- no multi-value
+ * declarations, no `overline`/`blink` (see ARCHITECTURE.md's v13 "Fora de
+ * escopo"). `NONE` is the initial value and the enum's first/zero member. */
+typedef enum tbox_style_text_decoration {
+    TBOX_STYLE_TEXT_DECORATION_NONE, /* initial */
+    TBOX_STYLE_TEXT_DECORATION_UNDERLINE,
+    TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH,
+} tbox_style_text_decoration;
+
+/* NOVO v13: `vertical-align`'s two supported non-baseline values -- no
+ * `top`/`middle`/`bottom`/numeric offsets (see ARCHITECTURE.md's v13 "Fora
+ * de escopo"). `BASELINE` is the initial value and the enum's first/zero
+ * member. */
+typedef enum tbox_style_vertical_align {
+    TBOX_STYLE_VERTICAL_ALIGN_BASELINE, /* initial */
+    TBOX_STYLE_VERTICAL_ALIGN_SUB,
+    TBOX_STYLE_VERTICAL_ALIGN_SUPER,
+} tbox_style_vertical_align;
+
 typedef struct tbox_style {
     /* Initial value in v0 is TBOX_STYLE_DISPLAY_BLOCK, NOT CSS2.1's
      * spec-correct `inline` -- a deliberate v0 simplification, since there
@@ -125,6 +144,14 @@ typedef struct tbox_style {
      * `color` above. `""` = no override anywhere in the inheritance chain --
      * the initial value. */
     char font_family[64];
+    /* NOVO v13: `font-style: italic`. Inheritable, same mechanism as
+     * `font_weight_bold` above; initial value (no parent): false. */
+    bool font_italic;
+    /* NOVO v13: `text-decoration`. NOT inheritable (same posture as
+     * `background_color`); initial value NONE. */
+    tbox_style_text_decoration text_decoration;
+    /* NOVO v13: `vertical-align`. NOT inheritable; initial value BASELINE. */
+    tbox_style_vertical_align vertical_align;
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
@@ -173,9 +200,18 @@ typedef struct tbox_style {
  * comma-separated list is used -- a full list is never kept for fallback --
  * a name in quotes (`"Courier New"`) is recognized with the quotes stripped;
  * inheritable, same mechanism as `color`, falling back to `""` -- no
- * override -- with no parent). Out of scope: `float`, flex/grid, `z-index`,
- * `white-space` (v0 always behaves as `white-space: normal`), `font-style`
- * (italic). */
+ * override -- with no parent), `font-style` (NOVO v13: only the exact
+ * case-insensitive keyword `italic` sets `font_italic = true`; anything else
+ * -- absent, `normal`, `oblique` -- out of scope -- inherits
+ * `parent_style->font_italic`, same inheritance mechanism as
+ * `font-weight`, or falls back to `false` with no parent), `text-decoration`
+ * (NOVO v13: `underline`/`line-through`, case-insensitive; any other
+ * value/absent falls back to the initial value `NONE`; NOT inheritable --
+ * always cascade-or-initial, same posture as `background-color`),
+ * `vertical-align` (NOVO v13: `sub`/`super`, case-insensitive; any other
+ * value/absent falls back to the initial value `BASELINE`; NOT
+ * inheritable). Out of scope: `float`, flex/grid, `z-index`, `white-space`
+ * (v0 always behaves as `white-space: normal`). */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 
 typedef struct tbox_style_entry {

@@ -4161,10 +4161,328 @@ Um app tbox que:
   dois é compartilhado entre chamadas/frames além do que já é esperado
   desses objetos com ciclo de vida próprio.
 
+## v13 — `<strong>`, `<i>`, `<em>`, `<small>`, `<mark>`, `<del>`, `<ins>`, `<sub>`, `<sup>`
+
+Nove elementos inline de formatação de texto, pedidos juntos pelo
+mantenedor. Investigação de código desta sessão mapeou os 9 em só 4
+mecanismos novos/reaproveitados:
+
+- **`<strong>` já funciona hoje sem nenhuma mudança** — a UA stylesheet
+  (`tbox_ua_style_generate_css`) já tem `"b, strong { display: inline;
+  font-weight: bold; }\n"` desde antes desta versão. Só ganha cobertura de
+  teste/demo explícita aqui.
+- **`<i>`/`<em>` precisam de itálico de verdade** — `tbox_font_query.italic`
+  já existe e já é repassado até `FC_SLANT` em
+  `tbox_font_source_fontconfig_resolve` (`src/font/tbox_font_source_fontconfig.c`),
+  mas está hardcoded `false` em todo lugar que monta uma query
+  (`tbox_font_face_cache.c`, `tbox_app_resolve_font_source`) e
+  `tbox_font_face_cache_get` nem recebe um parâmetro pra isso — mesma
+  forma exata do débito que a v12 fechou pra `font-family`, só que agora
+  pra `italic`. `tbox_style` também não tem nenhum campo pra guardar
+  `font-style: italic` declarado.
+- **`<small>` é trivial** — `font-size: 80%` já funciona hoje (`%` já é
+  suportado por `tbox_style_resolve_font_size` desde a v2); só precisa de
+  uma linha na UA stylesheet, zero mudança de engine.
+- **`<mark>`/`<del>`/`<ins>`/`<sub>`/`<sup>` compartilham um problema
+  novo**: `tbox_layout_text_run` (`include/tbox/layout.h`) hoje só carrega
+  `{rect, text, font}` — nenhuma referência ao style que originou aquele
+  run. Sem isso, não dá pra pintar um destaque de fundo só atrás de um
+  trecho (`mark`), desenhar uma linha de decoração só sob um trecho
+  (`del`/`ins`), ou deslocar verticalmente só um trecho dentro da linha
+  (`sub`/`sup`) — hoje TODO texto de uma caixa usa `box->style->color`
+  único (ver "Cor não varia por run" na v2) e nenhum run tem posição
+  vertical própria dentro da linha.
+
+**Decisão de design desta sessão**: em vez de introduzir um mecanismo
+diferente para cada um dos 4 problemas acima, um único campo novo —
+`tbox_layout_text_run.style` (um ponteiro pro MESMO `tbox_style` que já
+decide `font`/`bold`/`size` daquele run, não um novo campo separado)
+resolve os quatro de uma vez: Render Pipeline lê
+`run->style->background_color` pro destaque do `mark` (reaproveitando o
+FILL_RECT que já existe pra fundo de caixa — nenhum novo tipo de
+`tbox_paint_op`), `run->style->text_decoration` (campo novo) pra
+sublinhado/tachado, e Layout Tree lê `run->style->vertical_align` (campo
+novo) pro deslocamento de `sub`/`sup`. Como consequência quase de graça —
+confirmado com o mantenedor antes de implementar — `run->style->color`
+também passa a valer por run em vez de por caixa inteira, fechando o
+débito "Cor não varia por run" registrado desde a v2.
+
+**Efeito colateral que precisa de correção própria**: hoje TODO run de uma
+linha usa `rect.y = line_y` (o topo da linha) e o Output Display calcula
+`baseline_y = rect.y + tbox_font_face_ascent(run->font)` — como até agora
+size_px sempre foi uniforme dentro de uma linha (só peso variava,
+`bold`/`regular` têm ascent praticamente idêntico no mesmo tamanho), isso
+nunca produziu desalinhamento visível. `<small>`/`<sub>`/`<sup>` são os
+PRIMEIROS casos deste projeto com tamanhos de fonte diferentes na mesma
+linha — sem correção, um run menor alinharia pelo TOPO da linha, não pela
+linha de base compartilhada, ficando visualmente alto demais. `tbox_layout_line`
+ganha `ascent` (máximo entre os runs da linha, calculado no mesmo loop que
+já calcula `height`), e cada run ganha um deslocamento vertical de
+alinhamento (`line->ascent - tbox_font_face_ascent(run->font)`) antes de
+qualquer deslocamento adicional de `sub`/`sup` — ver "Layout Tree" abaixo.
+
+### Font — `italic` deixa de ser hardcoded
+
+Mesma forma do que a v12 já fez pra `family`:
+
+```c
+const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox_string_view family, bool bold, bool italic, double size_px);
+```
+(`italic` como quarto parâmetro, logo depois de `bold` — todo call site
+existente, produção e teste, precisa do argumento novo.) A chave de cache
+cresce de `(family, bold, size_px)` pra `(family, bold, italic, size_px)`
+— `tbox_font_face_cache_entry` ganha `bool italic;`, e o vetor
+`family_blobs` (v12) também passa a resolver/cachear por `(family, bold,
+italic)` em vez de só `(family, bold)`.
+
+**Correção feita durante a verificação da fatia vertical desta versão**:
+o desenho original previa que o caminho de MISS com família vazia (o
+default `regular_data`/`bold_data` pré-carregado) sempre ignorasse
+`italic` — mas isso contradizia o próprio critério de "pronto" desta
+versão (`<i>`/`<em>` devem renderizar itálico de verdade SEM precisar de
+`font-family` declarado, e `font-family` fica `""` — a família vazia —
+justamente quando nada na cadeia de ancestrais declara um). Corrigido: o
+caminho rápido sem resolver só se aplica quando família vazia **E**
+`italic == false`; família vazia com `italic == true` cai no MESMO
+mecanismo de resolução sob demanda de qualquer outra família, com
+`family` repassada ao resolver SEM MODIFICAÇÃO — um resolver baseado em
+fontconfig já substitui "sans-serif" pra uma família vazia
+(`tbox_font_source_fontconfig_family_cstr`), a mesma substituição que o
+bootstrap eager de `regular_data`/`bold_data` já usa explicitamente, então
+nenhuma mudança foi necessária na Application layer pra isso funcionar
+ponta a ponta. Consequência: uma família vazia + itálico numa cache SEM
+resolver agora retorna `NULL` (mesmo contrato de falha que qualquer outra
+família já tinha), em vez de silenciosamente devolver a face não-itálica.
+
+No caminho de resolução sob demanda (qualquer família, incluindo a vazia
+com itálico), o resolver passa a receber `{family, bold, italic}` de
+verdade em vez do `{family, bold, false}` hardcoded desde a v12 —
+`tbox_app_font_resolver` (`src/app/tbox_app.c`) **não muda nada**, já
+recebe um `tbox_font_query` inteiro e só repassa pro fontconfig, que já
+suporta `FC_SLANT` desde sempre. `tbox_app_resolve_font_source` (o
+bootstrap eager de regular/bold) continua com `.italic = false`
+explícito — esse caminho nunca precisou de itálico, só alimenta o
+default sans-serif inicial (a versão itálica do sans-serif é resolvida
+sob demanda, na primeira vez que um `<i>`/`<em>` sem `font-family`
+aparece, não pré-carregada).
+
+### Style — `font-style`, `text-decoration`, `vertical-align`
+
+`include/tbox/style.h`:
+```c
+typedef enum tbox_style_text_decoration {
+    TBOX_STYLE_TEXT_DECORATION_NONE, /* initial */
+    TBOX_STYLE_TEXT_DECORATION_UNDERLINE,
+    TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH,
+} tbox_style_text_decoration;
+
+typedef enum tbox_style_vertical_align {
+    TBOX_STYLE_VERTICAL_ALIGN_BASELINE, /* initial */
+    TBOX_STYLE_VERTICAL_ALIGN_SUB,
+    TBOX_STYLE_VERTICAL_ALIGN_SUPER,
+} tbox_style_vertical_align;
+```
+`tbox_style` ganha três campos:
+```c
+bool font_italic;                                /* NOVO v13: inheritable, mesmo padrão de font_weight_bold; initial false */
+tbox_style_text_decoration text_decoration;       /* NOVO v13: NÃO herdável (mesma postura de background_color); initial NONE */
+tbox_style_vertical_align vertical_align;         /* NOVO v13: NÃO herdável; initial BASELINE */
+```
+`font_italic` segue o padrão de três ramos de `font_weight_bold`/
+`text-align` (declaração `font-style: italic` reconhecida — comparação
+exata de `"italic"`, case-insensitive, mesmo `tbox_string_view_equal_ascii_ci`
+já usado por `tbox_style_parse_text_align` — qualquer outra palavra,
+incluindo `"oblique"`/`"normal"`, cai no ramo de herança/inicial; fora de
+escopo distinguir itálico real de oblíquo, mesma simplificação que
+`font-weight` já faz com pesos numéricos). `text_decoration`/
+`vertical_align` seguem o padrão de DOIS ramos de `border`/`position`
+(`tbox_style_resolve_text_decoration`/`tbox_style_resolve_vertical_align`,
+cada uma só olha `computed` e devolve o valor resolvido — declaração
+reconhecida ou valor inicial, nunca olha `parent_style`) — igual a
+`background-color`, decoração/alinhamento vertical não herdam na CSS real,
+e nenhum dos 9 elementos desta versão precisa que herdem.
+
+### Layout Tree — `tbox_layout_text_run.style` + alinhamento de linha de base
+
+`include/tbox/layout.h`:
+```c
+typedef struct tbox_layout_text_run {
+    tbox_rect rect;
+    tbox_string_view text;
+    const tbox_font_face *font;
+    const tbox_style *style; /* NOVO v13: o mesmo style que já decidiu `font` pra este run -- nunca NULL */
+} tbox_layout_text_run;
+```
+`tbox_layout_line` ganha `double ascent;` ao lado de `height` já existente
+— calculado no MESMO loop de `tbox_layout_break_lines` que já acha o
+máximo `tbox_font_face_line_height` entre as palavras do range (3 pontos
+nessa função, um por lugar onde uma linha é fechada), só que com
+`tbox_font_face_ascent` em vez de `tbox_font_face_line_height`, mesmo
+"máximo entre as faces da linha".
+
+`tbox_layout_word` (interno, não público) ganha `const tbox_style *style;`
+ao lado de `face` já existente — populado nos MESMOS 6 pontos de chamada
+que já populam `face` (nenhuma lógica nova de "qual estilo usar", sempre
+o mesmo `style`/`child_style` já usado ali). `tbox_layout_build_line_runs`
+funde palavras em runs comparando `face` **E** `style` (hoje só `face`) —
+uma palavra de `<mark>` nunca funde com uma palavra vizinha sem `<mark>`
+mesmo que ambas resolvam pra face idêntica (ex.: nenhum peso/família/
+tamanho diferente declarado), já que precisam de FILL_RECTs de destaque
+diferentes.
+
+Ao fechar cada run, dois deslocamentos verticais somados em `rect.y` (em
+vez de `line_y` puro, como hoje):
+1. **Alinhamento de linha de base**: `line->ascent -
+   tbox_font_face_ascent(run_face)` — zero quando todo run da linha
+   compartilha a mesma face/tamanho (o caso universal antes desta
+   versão, preservado sem nenhuma mudança visual); positivo (desloca pra
+   baixo) pra qualquer face com ascent menor que a dominante da linha
+   (ex.: o texto reduzido de `<small>`/`<sub>`/`<sup>`, alinhando sua
+   própria linha de base com o resto do texto da linha em vez de com o
+   topo dela).
+2. **Deslocamento extra de `sub`/`sup`**, só quando `run->style-
+   >vertical_align != BASELINE`: `+ 0.15 * run->style->font_size` pra
+   `SUB` (empurra pra baixo, a partir da linha de base já alinhada no
+   passo 1), `- 0.35 * run->style->font_size` pra `SUPER` (empurra pra
+   cima). Constantes escolhidas por aproximação visual comum (ordem de
+   grandeza usual em browsers reais), não derivadas de métrica OpenType
+   nenhuma — fora de escopo ler tabelas `subs`/`sups` do arquivo de
+   fonte. `rect.height` continua igual à altura da linha inteira (não
+   encolhe pro tamanho reduzido do run) — simplificação aceita, o
+   destaque de fundo de um `<mark><sub>` hipotético ficaria um pouco mais
+   alto que o glifo, mesma categoria de simplificação que "cor não varia
+   por run" já era antes desta versão.
+
+Os 6 pontos de chamada de `tbox_font_face_cache_get` (mesmos da v12)
+ganham `style->font_italic` (ou `child_style->font_italic`) como quinto
+argumento.
+
+### Render Pipeline — destaque de fundo e linha de decoração por run
+
+`src/render/tbox_render.c`, dentro do loop de `box->text_runs` em
+`tbox_render_walk` — nenhuma mudança em `include/tbox/render.h` nem no
+Output Display (`src/output/`), os dois novos efeitos reaproveitam
+`TBOX_PAINT_FILL_RECT`, o mesmo paint op que fundo de caixa/borda já
+usam:
+- `op->color` do `TBOX_PAINT_TEXT_RUN` passa a vir de `run->style->color`
+  (novo) em vez de `box->style->color` (removido) — fecha "Cor não varia
+  por run".
+- Antes do `TEXT_RUN`: se `run->style->background_color.a != 0`, um
+  `FILL_RECT` cobrindo `run->rect` inteiro com essa cor (destaque do
+  `mark`) — mesma função `tbox_render_push_fill_rect` já usada por
+  fundo/borda de caixa.
+- Depois do `TEXT_RUN`: se `run->style->text_decoration !=
+  TBOX_STYLE_TEXT_DECORATION_NONE`, um `FILL_RECT` fino (1px de altura)
+  spanning `run->rect.width`, cor = `run->style->color` (mesma cor do
+  texto), posicionado a partir da linha de base do run
+  (`run->rect.y + tbox_font_face_ascent(run->font)`, mesmo cálculo que o
+  Output Display já faz): `UNDERLINE` uma pequena distância ABAIXO da
+  linha de base (`+ 2px`); `LINE_THROUGH` uma distância ACIMA dela (`-
+  tbox_font_face_ascent(run->font) * 0.3`, aproximando a altura-x —
+  mesma classe de aproximação que o deslocamento de `sub`/`sup` acima,
+  não uma métrica OpenType real).
+
+### Orchestration — UA stylesheet
+
+`tbox_ua_style_generate_css` (`src/context/tbox_context.c`): a linha
+existente `"i, em, span, a { display: inline; }\n"` se divide em duas
+(`span`/`a` continuam sem nenhum estilo de fonte próprio); seis linhas
+novas, todas texto literal (sem `%g` novo, nenhum campo novo em
+`tbox_ua_style_config`):
+```c
+"i, em { display: inline; font-style: italic; }\n"
+"span, a { display: inline; }\n"
+/* ... */
+"small { display: inline; font-size: 80%; }\n"
+"mark { display: inline; background-color: yellow; }\n"
+"del { display: inline; text-decoration: line-through; }\n"
+"ins { display: inline; text-decoration: underline; }\n"
+"sub { display: inline; font-size: 75%; vertical-align: sub; }\n"
+"sup { display: inline; font-size: 75%; vertical-align: super; }\n"
+```
+`b, strong { display: inline; font-weight: bold; }` já existe, sem
+mudança. Qualquer uma dessas 9 tags pode ser sobrescrita por CSS de autor
+normalmente — mesmo mecanismo de cascata que já vale pra `h1`-`h6`/`hr`/
+`pre`, nenhum tratamento especial.
+
+### Fora de escopo
+
+HTML Parser: nenhuma das 9 tags precisa de fechamento implícito ou
+tratamento de void element — todas são elementos pareados comuns, sem
+regra especial (diferente de `<p>`/`<li>`/`<hr>`/`<br>`). `oblique` como
+valor distinto de `italic` (débito pré-existente do jeito que
+`font-weight` já trata pesos numéricos). Múltiplos valores simultâneos de
+`text-decoration` (`underline line-through` juntos) — só um valor por
+declaração é reconhecido, mesmo com a CSS real permitindo lista. Métrica
+real de subscript/superscript/sublinhado/tachado lida do arquivo de fonte
+(tabelas OpenType `subs`/`sups`/`post`) — usa aproximação por fração de
+`font-size`, documentada acima. `vertical-align` com qualquer valor além
+de `sub`/`super` (`top`/`middle`/`bottom`/comprimento — CSS real tem
+~7 valores, só 2 são usados pelas tags desta versão). Nesting profundo de
+inline dentro de inline (ex. `<mark><del>x</del></mark>`) além do que o
+mecanismo de UM nível de `tbox_layout_collect_words` já suporta desde a
+v2 — débito pré-existente ("elementos inline não ganham `tbox_layout_box`
+próprio"), não introduzido nem agravado aqui.
+
+### Fatia vertical v13 — critério de "pronto"
+
+Um app tbox que, sem regredir nada de v0-v12:
+- mostra `<strong>` e `<b>` visualmente idênticos (negrito);
+- mostra `<i>`/`<em>` com glifos realmente inclinados (itálico de
+  verdade, não só "mesmo peso que texto normal" como até a v12);
+- mostra `<small>` visivelmente menor que o texto ao redor, com a linha
+  de base alinhada (não "flutuando" mais alto/baixo que o resto da
+  linha);
+- mostra `<mark>` com fundo amarelo só atrás do trecho marcado, não da
+  linha/parágrafo inteiro;
+- mostra `<del>` tachado e `<ins>` sublinhado;
+- mostra `<sub>` visivelmente abaixo da linha de base e `<sup>` acima
+  dela, ambos menores que o texto ao redor;
+- um `<span>`/`<a>` continua sem nenhum efeito visual próprio (só
+  `display: inline`, como sempre) — prova de que a divisão da regra UA
+  antiga não quebrou nada.
+
+## Decisões já tomadas (v13)
+
+- **9 tags mapeadas em 4 mecanismos**, não 9 mecanismos separados —
+  `<strong>` já funcionava; `<i>`/`<em>` reusam o `italic` que já existia
+  em `tbox_font_query` desde sempre, só nunca ligado; `<small>` é só uma
+  linha de UA stylesheet usando `%` de `font-size`, já suportado desde a
+  v2; `<mark>`/`<del>`/`<ins>`/`<sub>`/`<sup>` compartilham um único
+  campo novo (`tbox_layout_text_run.style`).
+- **`tbox_layout_text_run` ganha `style`, não 4 campos separados** —
+  destaque de fundo, decoração e alinhamento vertical todos lidos do
+  MESMO `tbox_style` que já decide a face do run, sem duplicar
+  informação.
+- **Cor por run corrigida de graça** — confirmado com o mantenedor antes
+  de implementar: já que `run->style` ia existir de qualquer forma, ler
+  `run->style->color` em vez de `box->style->color` custa quase nada e
+  fecha o débito "Cor não varia por run" (v2).
+- **`text-decoration`/`vertical-align` NÃO herdam**, mesma postura de
+  `background-color` — CSS real também não herda essas propriedades, e
+  nenhuma das 9 tags precisa que herdem.
+- **Destaque/decoração reaproveitam `TBOX_PAINT_FILL_RECT`**, nenhum novo
+  `tbox_paint_op` nem mudança no Output Display — mesmo primitivo que
+  fundo/borda de caixa e `<hr>` já usam.
+- **Alinhamento de linha de base por `tbox_layout_line.ascent`** —
+  necessário porque `<small>`/`<sub>`/`<sup>` são os primeiros casos
+  deste projeto com tamanhos de fonte diferentes numa mesma linha; zero
+  efeito visual quando todos os runs de uma linha compartilham face
+  (o caso universal de v0-v12).
+- **Deslocamento de `sub`/`sup` por fração fixa de `font-size`**
+  (`0.15`/`0.35`), não métrica OpenType real — aproximação documentada,
+  mesma categoria de simplificação já aceita em outros lugares do
+  projeto (ex. espessura de linha de decoração fixa em 1px).
+- **Sem novo estado global/estático** — `style` em `tbox_layout_text_run`
+  é um ponteiro pra dentro de `tbox_style_table` (já existente, por
+  frame/arena); `ascent` em `tbox_layout_line` é um campo de valor local
+  à função; os 3 campos novos de `tbox_style` são campos de instância
+  por nó, mesmo padrão de todo campo de `tbox_style` já existente.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 e v12
+fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12 e v13
 (registrada nas seções de cada camada), pra "Ferramentas de
 desenvolvimento — captura de tela headless" acima (não uma versão da
 escada, mas com o mesmo nível de decisão documentada), ou consolidada

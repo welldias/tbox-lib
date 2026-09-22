@@ -319,5 +319,100 @@
        rule. -->
   <div id="v9-inline-important-id" style="background-color: gold !important;"></div>
 
+  <!-- v13: `<strong>`/`<i>`/`<em>`/`<small>`/`<mark>`/`<del>`/`<ins>`/`<sub>`/
+       `<sup>` demo (Tarefa 6, the v13 vertical slice). All nine tags below
+       rely ENTIRELY on the UA stylesheet (tbox_ua_style_generate_css,
+       Orchestration Tarefa 5) -- no author CSS in tbox_app_demo.css
+       overrides font-weight/font-style/font-size/background-color/
+       text-decoration/vertical-align for any of them; each .v13-* class
+       below only sets a light background-color, purely so the paragraph is
+       easy to locate in the screenshot, same convention as
+       .v6-entities/.v7-entities/.v11-br-demo elsewhere in this file. -->
+
+  <!-- <strong> vs. the pre-existing <b> inside the v2 paragraph above
+       ("uma parte em negrito") -- both resolve through the SAME UA rule
+       (`b, strong { display: inline; font-weight: bold; }`, unchanged since
+       before this version) so they must render visually IDENTICAL
+       (identical weight, identical face). -->
+  <p class="v13-strong-b">v13: <strong>negrito via strong</strong> ao lado de um <b>negrito via b</b> (o mesmo
+    peso do <b>uma parte em negrito</b> do parágrafo acima) -- devem renderizar visualmente idênticos.</p>
+
+  <!-- <i>/<em> with REAL italics now (Font Tarefa 1 + Style Tarefa 2): the
+       UA stylesheet's `i, em { display: inline; font-style: italic; }`
+       resolves font_italic=true down to tbox_font_face_cache_get's new
+       `italic` parameter, which reaches FC_SLANT via fontconfig -- unlike
+       the pre-existing <em> inside the v2 paragraph above (still literally
+       captioned "que ainda renderiza igual ao texto normal", true when that
+       sentence was written pre-v13, now stale prose left untouched per this
+       task's "never remove/alter v0-v12 content" rule, but visually
+       superseded: that <em> now ALSO renders truly italic, from the exact
+       same UA rule). No font-family declared here (deliberately, per this
+       task's spec: "sem precisar declarar font-family própria") -- the
+       default sans-serif is supposed to resolve its own italic variant via
+       fontconfig without any author help.
+       GAP found while validating this fixture, fixed by the maintainer in
+       src/font/tbox_font_face_cache.c right after this task's handback: the
+       empty-family MISS branch originally used regular_data/bold_data
+       unconditionally, branching only on `bold` -- `italic` was read
+       nowhere in that branch, so an empty family always fell back to the
+       non-italic default face regardless of what the caller asked for.
+       Fixed by narrowing that fast path to `family_buf[0] == '\0' &&
+       !italic` only; an empty family WITH italic now falls through to the
+       same on-demand resolver path any other family already used, with
+       `family` passed through unchanged -- a Fontconfig-backed resolver
+       already substitutes "sans-serif" for an empty family
+       (tbox_font_source_fontconfig_family_cstr), the same substitution
+       regular_data/bold_data's own eager bootstrap already relies on, so no
+       Application-layer change was needed. See ARCHITECTURE.md's v13 Font
+       section for the corrected design. -->
+  <p class="v13-italic">v13: <i>itálico via i</i> e <em>itálico via em</em> -- ambos mostram glifos
+    REALMENTE inclinados agora, mesmo sem nenhum dos dois (nem o body) declarar
+    font-family própria.</p>
+
+  <!-- <small> -- font-size: 80% (UA rule), trivial resolution (`%` already
+       worked since v2), but the interesting proof is the NEW baseline
+       alignment (Layout Tree Tarefa 4, tbox_layout_line.ascent): the
+       smaller run must sit on the SAME baseline as the surrounding text,
+       not float higher (aligned by line top) the way any run with a
+       differently-sized face would have before this version's fix. -->
+  <p class="v13-small">v13: texto normal ao redor de um trecho <small>bem menor (small, font-size: 80%)</small>
+    que deve continuar alinhado pela mesma linha de base do resto do parágrafo, não flutuando mais alto nem
+    mais baixo que o restante da linha.</p>
+
+  <!-- <mark> -- background-color: yellow (UA rule) painted only behind the
+       marked run's own rect (Render Pipeline Tarefa 5, reusing FILL_RECT),
+       not behind the whole line/paragraph -- the paragraph's own light
+       .v13-mark background-color makes the contrast between "whole
+       paragraph background" and "just this run's yellow highlight"
+       unambiguous in the screenshot. -->
+  <p class="v13-mark">v13: um trecho <mark>marcado com fundo amarelo</mark> só atrás dessas palavras, não atrás
+    da linha inteira nem do parágrafo inteiro.</p>
+
+  <!-- <del>/<ins> side by side -- text-decoration: line-through / underline
+       (UA rule), painted as a thin FILL_RECT positioned from the run's own
+       baseline (Render Pipeline Tarefa 5), using the run's own text color. -->
+  <p class="v13-del-ins">v13: <del>texto tachado (del)</del> e <ins>texto sublinhado (ins)</ins>, lado a lado
+    para comparação direta.</p>
+
+  <!-- <sub>/<sup> -- font-size: 75% AND vertical_align SUB/SUPER (UA rule),
+       the two effects that stack on top of the baseline alignment from the
+       .v13-small paragraph above: after aligning by baseline, sub is pushed
+       further DOWN and sup further UP (Layout Tree Tarefa 4's extra
+       0.15/-0.35 * font_size offset), both visibly smaller than the
+       surrounding text at the same time. -->
+  <p class="v13-sub-sup">v13: água (H<sub>2</sub>O) e uma potência (x<sup>2</sup>) -- <sub>sub</sub> e
+    <sup>sup</sup> visivelmente deslocados da linha de base (sub para baixo, sup para cima) e menores que o
+    texto ao redor.
+  </p>
+
+  <!-- <span>/<a> -- proof that splitting the old combined UA rule
+       ("i, em, span, a { display: inline; }") into "i, em { ...
+       font-style: italic; }" / "span, a { display: inline; }"
+       (Orchestration Tarefa 5) left span/a with NO font-style/font-weight/
+       font-size/background-color/text-decoration/vertical-align effect of
+       their own -- both must render as plain inline text, same face/size/
+       color as the surrounding paragraph. -->
+  <p class="v13-span-a">v13: um <span>span</span> e um <a href="#">link (a)</a> sem nenhum estilo próprio -- só
+    `display: inline`, provando que dividir a regra UA antiga em duas não quebrou nenhum dos dois.</p>
 
 </body>

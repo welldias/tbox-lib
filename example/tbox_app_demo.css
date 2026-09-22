@@ -539,3 +539,44 @@ body {
     font-family: "DejaVu Serif";
     background-color: lavenderblush;
 }
+
+/* v13: `<strong>`/`<i>`/`<em>`/`<small>`/`<mark>`/`<del>`/`<ins>`/`<sub>`/
+ * `<sup>`/`<span>`/`<a>` demo (see the matching HTML comments above each
+ * .v13-* paragraph in tbox_app_demo.html). Every visual effect proven by
+ * this section (bold, real italics, smaller-but-baseline-aligned text,
+ * localized mark background, del/ins decoration, sub/sup offset, and
+ * span/a's total lack of effect) comes entirely from the UA stylesheet
+ * (tbox_ua_style_generate_css) -- none of the seven classes below sets
+ * anything but a light background-color, purely so each paragraph is easy
+ * to locate in the screenshot, same convention as .v6-entities/
+ * .v7-entities/.v11-br-demo above. */
+.v13-strong-b {
+    background-color: honeydew;
+}
+
+.v13-italic {
+    background-color: seashell;
+}
+
+.v13-small {
+    background-color: oldlace;
+}
+
+/* Deliberately a color far from yellow (the UA `mark` background) so the
+ * contrast between "whole paragraph background" and "just the marked run's
+ * highlight" reads unambiguously in the screenshot. */
+.v13-mark {
+    background-color: azure;
+}
+
+.v13-del-ins {
+    background-color: ghostwhite;
+}
+
+.v13-sub-sup {
+    background-color: ivory;
+}
+
+.v13-span-a {
+    background-color: whitesmoke;
+}

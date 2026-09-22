@@ -30,8 +30,22 @@ typedef struct tbox_rect {
  * these (greedy word-wrap, run merging by face, per-line height). */
 typedef struct tbox_layout_text_run {
     tbox_rect rect;             /* this run's absolute position/size, already placed on the right line */
-    tbox_string_view text;      /* the longest contiguous sequence of words sharing the same resolved face AND fitting on the same line */
+    tbox_string_view text;      /* the longest contiguous sequence of words sharing the same resolved face AND style AND fitting on the same line */
     const tbox_font_face *font; /* tbox_font_face_cache_get(fonts, ..., ...) for the element that originated this run */
+    /* NOVO v13: the SAME tbox_style that already decided `font` above
+     * (font_family/font_weight_bold/font_italic/font_size) for this run --
+     * never NULL, a pointer into the tbox_style_table the caller already
+     * passed to tbox_layout_build (or tbox_layout_default_style's address,
+     * same fallback `font` itself already relies on for a node missing from
+     * `styles`). Lets Render Pipeline read run->style->color/background_color/
+     * text_decoration per RUN instead of per box (see ARCHITECTURE.md's "v13
+     * -- Layout Tree" section: `<mark>`/`<del>`/`<ins>`/`<sub>`/`<sup>` all
+     * need this, and it also fixes color varying only by box, a pre-existing
+     * debt since v2). Also read internally by the Layout Tree itself (see
+     * src/layout/tbox_layout.c's tbox_layout_build_line_runs) BEFORE this
+     * struct is even filled in, to decide `rect.y`'s extra `vertical_align`
+     * offset for `sub`/`sup`. */
+    const tbox_style *style;
 } tbox_layout_text_run;
 
 typedef struct tbox_layout_box {

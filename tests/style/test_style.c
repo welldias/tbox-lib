@@ -760,5 +760,138 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 38: NOVO v13 -- font-style: italic sets font_italic = true. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-style: italic; }");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.font_italic == true);
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 39: regression -- no font-style declared, no parent, resolves to the
+     * initial value false. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT_MSG(style.font_italic == false, "no font-style declared, no parent, should be the initial value false");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 40: NOVO v13 -- font_italic inherits from the parent when undeclared,
+     * same inheritance mechanism as color/font-weight/text-align. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-style: italic; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.font_italic == true);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.font_italic == true, "font_italic should inherit when undeclared");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 41: NOVO v13 -- text-decoration: underline/line-through resolve to
+     * their respective enum values; absent resolves to NONE. */
+    {
+        static const struct {
+            const char *css;
+            tbox_style_text_decoration expected;
+        } cases[] = {
+            { "div { text-decoration: underline; }", TBOX_STYLE_TEXT_DECORATION_UNDERLINE },
+            { "div { text-decoration: line-through; }", TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH },
+            { "", TBOX_STYLE_TEXT_DECORATION_NONE },
+        };
+
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+            const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+            tbox_css_stylesheet *sheet = parse_css_cstr(cases[i].css);
+
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT(style.text_decoration == cases[i].expected);
+
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
+    /* 42: NOVO v13 -- text-decoration does NOT inherit -- a child with no
+     * text-decoration declared stays NONE even though its parent has
+     * `text-decoration: underline` (unlike font_italic in test 40 above). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { text-decoration: underline; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.text_decoration == TBOX_STYLE_TEXT_DECORATION_NONE, "text-decoration must not inherit from the parent");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 43: NOVO v13 -- vertical-align: sub/super resolve to their respective
+     * enum values; absent resolves to BASELINE. */
+    {
+        static const struct {
+            const char *css;
+            tbox_style_vertical_align expected;
+        } cases[] = {
+            { "div { vertical-align: sub; }", TBOX_STYLE_VERTICAL_ALIGN_SUB },
+            { "div { vertical-align: super; }", TBOX_STYLE_VERTICAL_ALIGN_SUPER },
+            { "", TBOX_STYLE_VERTICAL_ALIGN_BASELINE },
+        };
+
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+            const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+            tbox_css_stylesheet *sheet = parse_css_cstr(cases[i].css);
+
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT(style.vertical_align == cases[i].expected);
+
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
+    /* 44: NOVO v13 -- vertical-align does NOT inherit -- a child with no
+     * vertical-align declared stays BASELINE even though its parent has
+     * `vertical-align: sub`. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { vertical-align: sub; }");
+
+        tbox_style parent_style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent_style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_SUB);
+
+        tbox_style child_style = resolve_node(sheet, p, &parent_style);
+        TBOX_TEST_ASSERT_MSG(child_style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BASELINE, "vertical-align must not inherit from the parent");
+
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

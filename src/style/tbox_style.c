@@ -191,6 +191,45 @@ static bool tbox_style_parse_text_align(tbox_string_view raw, tbox_style_text_al
     return false;
 }
 
+/* NOVO v13: resolves `text-decoration` per ARCHITECTURE.md's v13 Style
+ * section -- same two-branch pattern as tbox_style_resolve_position/the
+ * `border` block above: only looks at `computed`, never at `parent_style`
+ * (text-decoration is not inheritable). Recognizes the case-insensitive
+ * keywords `underline`/`line-through`; anything else -- absent, unparsable,
+ * or any other keyword (e.g. `overline`, out of scope) -- falls back to the
+ * initial value NONE. */
+static tbox_style_text_decoration tbox_style_resolve_text_decoration(const tbox_css_computed_style *computed) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-decoration"));
+    if (decl != NULL) {
+        tbox_string_view value = tbox_style_trim(decl->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("underline"))) {
+            return TBOX_STYLE_TEXT_DECORATION_UNDERLINE;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("line-through"))) {
+            return TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH;
+        }
+    }
+    return TBOX_STYLE_TEXT_DECORATION_NONE;
+}
+
+/* NOVO v13: resolves `vertical-align` per ARCHITECTURE.md's v13 Style
+ * section -- same two-branch, not-inheritable pattern as
+ * tbox_style_resolve_text_decoration above. Recognizes the case-insensitive
+ * keywords `sub`/`super`; anything else -- absent, unparsable, or any other
+ * keyword (e.g. `top`/`middle`/`bottom`, out of scope) -- falls back to the
+ * initial value BASELINE. */
+static tbox_style_vertical_align tbox_style_resolve_vertical_align(const tbox_css_computed_style *computed) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("vertical-align"));
+    if (decl != NULL) {
+        tbox_string_view value = tbox_style_trim(decl->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("sub"))) {
+            return TBOX_STYLE_VERTICAL_ALIGN_SUB;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("super"))) {
+            return TBOX_STYLE_VERTICAL_ALIGN_SUPER;
+        }
+    }
+    return TBOX_STYLE_VERTICAL_ALIGN_BASELINE;
+}
+
 /* NOVO v12: parses `font-family` per ARCHITECTURE.md's v12 Style section --
  * only the FIRST name of a comma-separated list is ever used (the rest,
  * meant for fallback, is discarded -- decision confirmed with the
@@ -544,6 +583,25 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     } else {
         style.font_family[0] = '\0';
     }
+
+    /* font-style: NOVO v13. Same three-branch inheritance mechanism as
+     * `font-weight` above -- only the exact case-insensitive keyword
+     * "italic" sets true; anything else (absent, "normal", "oblique" -- out
+     * of scope) inherits the parent's already-resolved value, or false with
+     * no parent. */
+    const tbox_css_resolved_declaration *font_style_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-style"));
+    if (font_style_decl != NULL && tbox_string_view_equal_ascii_ci(font_style_decl->value, tbox_string_view_from_cstr("italic"))) {
+        style.font_italic = true;
+    } else if (parent_style != NULL) {
+        style.font_italic = parent_style->font_italic;
+    } else {
+        style.font_italic = false;
+    }
+
+    /* text-decoration / vertical-align: NOVO v13. Neither inherits --
+     * always cascade-or-initial, same posture as background-color/border. */
+    style.text_decoration = tbox_style_resolve_text_decoration(computed);
+    style.vertical_align  = tbox_style_resolve_vertical_align(computed);
 
     return style;
 }

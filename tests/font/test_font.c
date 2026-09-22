@@ -167,30 +167,39 @@ int tbox_test_font_run(void) {
         tbox_string_view no_family = tbox_string_view_make(NULL, 0);
 
         /* 8: _get(regular, 16) does not return NULL. */
-        const tbox_font_face *regular_16 = tbox_font_face_cache_get(cache, no_family, false, 16.0);
+        const tbox_font_face *regular_16 = tbox_font_face_cache_get(cache, no_family, false, false, 16.0);
         TBOX_TEST_ASSERT(regular_16 != NULL);
 
         /* 9: a second _get(regular, 16) returns the exact same pointer --
          * cache hit, does not reload. */
-        const tbox_font_face *regular_16_again = tbox_font_face_cache_get(cache, no_family, false, 16.0);
+        const tbox_font_face *regular_16_again = tbox_font_face_cache_get(cache, no_family, false, false, 16.0);
         TBOX_TEST_ASSERT(regular_16_again == regular_16);
 
         /* 10: _get(bold, 16) returns a pointer DIFFERENT from
          * _get(regular, 16), even though both happen to load from the same
          * underlying bytes in this test, since they're cached under
          * different keys. */
-        const tbox_font_face *bold_16 = tbox_font_face_cache_get(cache, no_family, true, 16.0);
+        const tbox_font_face *bold_16 = tbox_font_face_cache_get(cache, no_family, true, false, 16.0);
         TBOX_TEST_ASSERT(bold_16 != NULL);
         TBOX_TEST_ASSERT(bold_16 != regular_16);
 
         /* 11: _get(regular, 32) returns a pointer different from
          * _get(regular, 16) -- different size_px, different cache key. */
-        const tbox_font_face *regular_32 = tbox_font_face_cache_get(cache, no_family, false, 32.0);
+        const tbox_font_face *regular_32 = tbox_font_face_cache_get(cache, no_family, false, false, 32.0);
         TBOX_TEST_ASSERT(regular_32 != NULL);
         TBOX_TEST_ASSERT(regular_32 != regular_16);
 
+        /* 11b: NOVO v13 -- an empty family with italic=true no longer takes
+         * the default (regular_data/bold_data) fast path (those have no
+         * italic variant of their own): it falls through to the same
+         * on-demand resolution as any other family, so on a cache with
+         * resolver == NULL (this one), it returns NULL instead of silently
+         * handing back the non-italic default face. */
+        const tbox_font_face *regular_16_italic = tbox_font_face_cache_get(cache, no_family, false, true, 16.0);
+        TBOX_TEST_ASSERT(regular_16_italic == NULL);
+
         /* 12: _get on a NULL cache returns NULL instead of crashing. */
-        TBOX_TEST_ASSERT(tbox_font_face_cache_get(NULL, no_family, false, 16.0) == NULL);
+        TBOX_TEST_ASSERT(tbox_font_face_cache_get(NULL, no_family, false, false, 16.0) == NULL);
 
         /* 13: _destroy does not crash. */
         tbox_font_face_cache_destroy(cache);
@@ -213,13 +222,14 @@ int tbox_test_font_run(void) {
     if (resolving_cache != NULL) {
         tbox_string_view family = tbox_test_font_view_from_cstr("Alguma Familia");
 
-        const tbox_font_face *family_16 = tbox_font_face_cache_get(resolving_cache, family, false, 16.0);
+        const tbox_font_face *family_16 = tbox_font_face_cache_get(resolving_cache, family, false, false, 16.0);
         TBOX_TEST_ASSERT(family_16 != NULL);
         TBOX_TEST_ASSERT(resolver_state.calls == 1);
 
         /* 16: a second identical _get returns the SAME pointer and does NOT
-         * call the resolver again -- cache hit on (family, bold, size_px). */
-        const tbox_font_face *family_16_again = tbox_font_face_cache_get(resolving_cache, family, false, 16.0);
+         * call the resolver again -- cache hit on (family, bold, italic,
+         * size_px). */
+        const tbox_font_face *family_16_again = tbox_font_face_cache_get(resolving_cache, family, false, false, 16.0);
         TBOX_TEST_ASSERT(family_16_again == family_16);
         TBOX_TEST_ASSERT(resolver_state.calls == 1);
 
@@ -228,17 +238,51 @@ int tbox_test_font_run(void) {
          * size), but the resolver is still NOT called again -- proof the
          * family's resolved blob was reused from family_blobs instead of
          * re-resolving. */
-        const tbox_font_face *family_32 = tbox_font_face_cache_get(resolving_cache, family, false, 32.0);
+        const tbox_font_face *family_32 = tbox_font_face_cache_get(resolving_cache, family, false, false, 32.0);
         TBOX_TEST_ASSERT(family_32 != NULL);
         TBOX_TEST_ASSERT(family_32 != family_16);
         TBOX_TEST_ASSERT(resolver_state.calls == 1);
 
-        /* 18: regression -- an empty family, even on a cache with a resolver
-         * configured, still uses the default path and never invokes the
-         * resolver. */
-        const tbox_font_face *default_16 = tbox_font_face_cache_get(resolving_cache, tbox_string_view_make(NULL, 0), false, 16.0);
+        /* 17b: _get(family, bold=false, italic=true, 16) returns a pointer
+         * DIFFERENT from _get(family, bold=false, italic=false, 16) -- same
+         * family/weight/size, but italic is part of the cache key too, so
+         * this is a fresh resolve (a distinct (family, bold, italic) blob). */
+        const tbox_font_face *family_16_italic = tbox_font_face_cache_get(resolving_cache, family, false, true, 16.0);
+        TBOX_TEST_ASSERT(family_16_italic != NULL);
+        TBOX_TEST_ASSERT(family_16_italic != family_16);
+        TBOX_TEST_ASSERT(resolver_state.calls == 2);
+
+        /* 17c: a second call with the exact same (family, bold, italic,
+         * size_px) as 17b returns the SAME pointer -- cache hit, no new
+         * resolver call. */
+        const tbox_font_face *family_16_italic_again = tbox_font_face_cache_get(resolving_cache, family, false, true, 16.0);
+        TBOX_TEST_ASSERT(family_16_italic_again == family_16_italic);
+        TBOX_TEST_ASSERT(resolver_state.calls == 2);
+
+        /* 18: regression -- an empty family, NON-italic, even on a cache
+         * with a resolver configured, still uses the default path and never
+         * invokes the resolver. */
+        const tbox_font_face *default_16 = tbox_font_face_cache_get(resolving_cache, tbox_string_view_make(NULL, 0), false, false, 16.0);
         TBOX_TEST_ASSERT(default_16 != NULL);
-        TBOX_TEST_ASSERT(resolver_state.calls == 1);
+        TBOX_TEST_ASSERT(resolver_state.calls == 2);
+
+        /* 18b: NOVO v13 -- an empty family WITH italic=true, on a cache with
+         * a resolver configured, DOES invoke the resolver (empty `family` is
+         * passed through unchanged -- see tbox_font_face_cache_get's doc
+         * comment) and returns a face DIFFERENT from default_16 (a distinct
+         * (family="", bold=false, italic=true) cache key) -- this is what
+         * lets `<i>`/`<em>` resolve a real italic face without any
+         * `font-family` declared anywhere in the ancestor chain. */
+        const tbox_font_face *default_16_italic = tbox_font_face_cache_get(resolving_cache, tbox_string_view_make(NULL, 0), false, true, 16.0);
+        TBOX_TEST_ASSERT(default_16_italic != NULL);
+        TBOX_TEST_ASSERT(default_16_italic != default_16);
+        TBOX_TEST_ASSERT(resolver_state.calls == 3);
+
+        /* 18c: a second identical call returns the SAME pointer and does NOT
+         * call the resolver again -- cache hit, same as any other family. */
+        const tbox_font_face *default_16_italic_again = tbox_font_face_cache_get(resolving_cache, tbox_string_view_make(NULL, 0), false, true, 16.0);
+        TBOX_TEST_ASSERT(default_16_italic_again == default_16_italic);
+        TBOX_TEST_ASSERT(resolver_state.calls == 3);
 
         tbox_font_face_cache_destroy(resolving_cache);
     }
@@ -250,7 +294,7 @@ int tbox_test_font_run(void) {
 
     if (no_resolver_cache != NULL) {
         tbox_string_view family = tbox_test_font_view_from_cstr("Alguma Familia");
-        TBOX_TEST_ASSERT(tbox_font_face_cache_get(no_resolver_cache, family, false, 16.0) == NULL);
+        TBOX_TEST_ASSERT(tbox_font_face_cache_get(no_resolver_cache, family, false, false, 16.0) == NULL);
 
         tbox_font_face_cache_destroy(no_resolver_cache);
     }

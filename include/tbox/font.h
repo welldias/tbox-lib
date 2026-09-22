@@ -217,29 +217,40 @@ tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size
  * byte buffers and the cache struct itself. A no-op if cache == NULL. */
 void tbox_font_face_cache_destroy(tbox_font_face_cache *cache);
 
-/* Looks up (family, bold, size_px) in the cache; on a miss, calls
+/* Looks up (family, bold, italic, size_px) in the cache; on a miss, calls
  * tbox_font_face_load internally and stores the result before returning it
  * -- same arena/malloc-backed vector-plus-linear-scan idiom already used by
  * tbox_style_table and v1's click-handler table, just with lazy loading
  * instead of everything pre-populated up front.
  *
- * `family.size == 0` (the empty/default family) always uses the bytes given
- * to tbox_font_face_cache_create (regular_data/bold_data) -- the same fast
- * path this function has always had, no resolver call. Any other family is
- * resolved on demand, once per (family, bold) pair no matter how many
- * distinct size_px values are later requested for it: the first time
- * (family, bold) is seen, this function checks its internal family_blobs
- * cache first, and only calls `cache`'s resolver (see
- * tbox_font_resolver_fn/tbox_font_face_cache_create) if that pair hasn't
+ * `family.size == 0` (the empty/default family) with `italic == false` uses
+ * the bytes given to tbox_font_face_cache_create (regular_data/bold_data)
+ * directly -- the fast path this function has always had, no resolver call.
+ * `family.size == 0` with `italic == true` (NOVO v13) does NOT take that
+ * fast path -- regular_data/bold_data have no italic variant of their own --
+ * and instead resolves on demand exactly like any other family (see below),
+ * with `family` passed to the resolver unchanged: a resolver backed by
+ * Fontconfig already substitutes "sans-serif" for an empty family (see
+ * tbox_font_source_fontconfig_family_cstr), the same substitution
+ * regular_data/bold_data's own eager bootstrap already relies on, so this
+ * needs no help from the caller. Any family (default-with-italic, or any
+ * other name) is resolved on demand, once per (family, bold, italic) triple
+ * no matter how many distinct size_px values are later requested for it: the
+ * first time (family, bold, italic) is seen, this function checks its
+ * internal family_blobs cache first, and only calls `cache`'s resolver (see
+ * tbox_font_resolver_fn/tbox_font_face_cache_create) if that triple hasn't
  * been resolved before. A resolver's successful result is copied into the
  * cache's own memory and kept in family_blobs, reused by any later size_px
- * for that same (family, bold) without calling the resolver again. If the
- * resolver is NULL, or it (or tbox_font_face_load) fails, nothing is
+ * for that same (family, bold, italic) without calling the resolver again.
+ * If the resolver is NULL, or it (or tbox_font_face_load) fails, nothing is
  * cached, so a later retry with the same parameters tries again rather than
- * being permanently stuck. The returned pointer stays valid for `cache`'s
- * whole lifetime (never invalidated by later calls to this function, unlike
- * the aliasing warning on tbox_font_rasterize_glyph's return value). */
-const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox_string_view family, bool bold, double size_px);
+ * being permanently stuck (this includes a default-family italic request on
+ * a cache with no resolver configured: it now returns NULL rather than
+ * silently falling back to a non-italic face). The returned pointer stays
+ * valid for `cache`'s whole lifetime (never invalidated by later calls to
+ * this function, unlike the aliasing warning on tbox_font_rasterize_glyph's
+ * return value). */
+const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox_string_view family, bool bold, bool italic, double size_px);
 
 #ifdef __cplusplus
 }

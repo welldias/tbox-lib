@@ -162,6 +162,53 @@ static bool toggle_class_handler(tbox_context *ctx, tbox_html_node *node, void *
     return true;
 }
 
+/* NOVO v13 (Tarefa 5): shared setup for the 8 new UA-stylesheet tests below
+ * (<i>/<em>/<small>/<mark>/<del>/<ins>/<sub>/<sup>) -- same two-call resolve
+ * pattern test 37 below already established for <pre>/font-family: generate
+ * the REAL production UA CSS via tbox_ua_style_generate_css, parse it, and
+ * cascade+resolve the single top-level element against it with no author
+ * CSS and no parent style. Deliberately has NO TBOX_TEST_ASSERT/
+ * TBOX_TEST_ASSERT_MSG calls of its own -- those macros increment a local
+ * variable literally named `failures` (see test_support.h), so they only
+ * work inlined directly in tbox_test_context_run itself, not in a helper it
+ * calls. Callers check
+ * the returned bool and assert on `*out_style`. `html` must be a single
+ * top-level element, e.g. "<i>x</i>" -- the document root's first child,
+ * same assumption test 37 makes explicit. Returns false (leaving
+ * `*out_style` untouched) if any setup step fails. */
+static bool resolve_first_child_style(const char *html, tbox_style *out_style) {
+    char ua_css_text[4096];
+    if (!tbox_ua_style_generate_css(tbox_ua_style_config_default(), ua_css_text, sizeof(ua_css_text))) {
+        return false;
+    }
+
+    tbox_html_document *doc = tbox_html_parse(html, strlen(html));
+    if (doc == NULL) {
+        return false;
+    }
+
+    const tbox_html_node *node = tbox_html_document_root(doc)->first_child;
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT) {
+        tbox_html_document_destroy(doc);
+        return false;
+    }
+
+    tbox_css_stylesheet *ua_sheet = tbox_css_parse(ua_css_text, strlen(ua_css_text));
+    if (ua_sheet == NULL) {
+        tbox_html_document_destroy(doc);
+        return false;
+    }
+
+    tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(ua_sheet, node);
+    *out_style                       = tbox_style_resolve(node, NULL, &computed);
+
+    tbox_css_computed_style_destroy(&computed);
+    tbox_css_stylesheet_destroy(ua_sheet);
+    tbox_html_document_destroy(doc);
+
+    return true;
+}
+
 int tbox_test_context_run(void) {
     int failures = 0;
 
@@ -1239,6 +1286,88 @@ int tbox_test_context_run(void) {
 
                 tbox_html_document_destroy(doc);
             }
+        }
+    }
+
+    /* 38: NOVO v13 (Tarefa 5) -- <i>/<em> resolve font_italic == true purely
+     * from the UA stylesheet ("i, em { display: inline; font-style:
+     * italic; }"), no author CSS involved. */
+    {
+        tbox_style i_style, em_style;
+        bool i_ok  = resolve_first_child_style("<i>x</i>", &i_style);
+        bool em_ok = resolve_first_child_style("<em>x</em>", &em_style);
+        TBOX_TEST_ASSERT_MSG(i_ok && em_ok, "resolve_first_child_style must succeed for <i>/<em>");
+        if (i_ok) {
+            TBOX_TEST_ASSERT_MSG(i_style.font_italic == true, "an <i> with no author CSS must resolve font_italic from the UA stylesheet alone");
+        }
+        if (em_ok) {
+            TBOX_TEST_ASSERT_MSG(em_style.font_italic == true, "an <em> with no author CSS must resolve font_italic from the UA stylesheet alone");
+        }
+    }
+
+    /* 39: NOVO v13 (Tarefa 5) -- <small> resolves a font_size 80% of the
+     * inherited (here: default 16px, no parent) font-size purely from the
+     * UA stylesheet ("small { display: inline; font-size: 80%; }"). The
+     * expected value mirrors tbox_style_resolve_font_size's own percent
+     * formula (parent_font_size * value / 100.0) exactly, so the
+     * comparison is bit-exact rather than an approximation. */
+    {
+        tbox_style small_style;
+        bool ok = resolve_first_child_style("<small>x</small>", &small_style);
+        TBOX_TEST_ASSERT_MSG(ok, "resolve_first_child_style must succeed for <small>");
+        if (ok) {
+            TBOX_TEST_ASSERT_MSG(small_style.font_size == 16.0 * 80.0 / 100.0, "a <small> with no author CSS must resolve font-size to 80% of the inherited font-size from the UA stylesheet alone");
+        }
+    }
+
+    /* 40: NOVO v13 (Tarefa 5) -- <mark> resolves an opaque yellow
+     * background_color (255, 255, 0, 255) purely from the UA stylesheet
+     * ("mark { display: inline; background-color: yellow; }"), proving the
+     * named color "yellow" reaches the cascade -- same named-color
+     * inspection pattern as test 35 above for <hr>/"gray". */
+    {
+        tbox_style mark_style;
+        bool ok = resolve_first_child_style("<mark>x</mark>", &mark_style);
+        TBOX_TEST_ASSERT_MSG(ok, "resolve_first_child_style must succeed for <mark>");
+        if (ok) {
+            TBOX_TEST_ASSERT_MSG(mark_style.background_color.r == 255 && mark_style.background_color.g == 255 && mark_style.background_color.b == 0 && mark_style.background_color.a == 255, "a <mark> with no author CSS must resolve an opaque yellow (255, 255, 0, 255) background-color from the UA stylesheet alone");
+        }
+    }
+
+    /* 41: NOVO v13 (Tarefa 5) -- <del>/<ins> resolve text_decoration
+     * LINE_THROUGH/UNDERLINE purely from the UA stylesheet ("del {
+     * display: inline; text-decoration: line-through; }" / "ins { display:
+     * inline; text-decoration: underline; }"). */
+    {
+        tbox_style del_style, ins_style;
+        bool del_ok = resolve_first_child_style("<del>x</del>", &del_style);
+        bool ins_ok = resolve_first_child_style("<ins>x</ins>", &ins_style);
+        TBOX_TEST_ASSERT_MSG(del_ok && ins_ok, "resolve_first_child_style must succeed for <del>/<ins>");
+        if (del_ok) {
+            TBOX_TEST_ASSERT_MSG(del_style.text_decoration == TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH, "a <del> with no author CSS must resolve text_decoration LINE_THROUGH from the UA stylesheet alone");
+        }
+        if (ins_ok) {
+            TBOX_TEST_ASSERT_MSG(ins_style.text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE, "an <ins> with no author CSS must resolve text_decoration UNDERLINE from the UA stylesheet alone");
+        }
+    }
+
+    /* 42: NOVO v13 (Tarefa 5) -- <sub>/<sup> resolve vertical_align SUB/
+     * SUPER AND a font_size 75% of the inherited font-size, both purely
+     * from the UA stylesheet ("sub { display: inline; font-size: 75%;
+     * vertical-align: sub; }" / "sup { ...; vertical-align: super; }") --
+     * same bit-exact percent-formula comparison as test 39 above. */
+    {
+        tbox_style sub_style, sup_style;
+        bool sub_ok = resolve_first_child_style("<sub>x</sub>", &sub_style);
+        bool sup_ok = resolve_first_child_style("<sup>x</sup>", &sup_style);
+        TBOX_TEST_ASSERT_MSG(sub_ok && sup_ok, "resolve_first_child_style must succeed for <sub>/<sup>");
+        if (sub_ok) {
+            TBOX_TEST_ASSERT_MSG(sub_style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_SUB, "a <sub> with no author CSS must resolve vertical_align SUB from the UA stylesheet alone");
+            TBOX_TEST_ASSERT_MSG(sub_style.font_size == 16.0 * 75.0 / 100.0, "a <sub> with no author CSS must resolve font-size to 75% of the inherited font-size from the UA stylesheet alone");
+        }
+        if (sup_ok) {
+            TBOX_TEST_ASSERT_MSG(sup_style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_SUPER, "a <sup> with no author CSS must resolve vertical_align SUPER from the UA stylesheet alone");
+            TBOX_TEST_ASSERT_MSG(sup_style.font_size == 16.0 * 75.0 / 100.0, "a <sup> with no author CSS must resolve font-size to 75% of the inherited font-size from the UA stylesheet alone");
         }
     }
 

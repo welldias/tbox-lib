@@ -160,7 +160,14 @@ bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_
         "hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"
         "pre { display: block; font-family: monospace; }\n"
         "b, strong { display: inline; font-weight: bold; }\n"
-        "i, em, span, a { display: inline; }\n",
+        "i, em { display: inline; font-style: italic; }\n"
+        "span, a { display: inline; }\n"
+        "small { display: inline; font-size: 80%%; }\n"
+        "mark { display: inline; background-color: yellow; }\n"
+        "del { display: inline; text-decoration: line-through; }\n"
+        "ins { display: inline; text-decoration: underline; }\n"
+        "sub { display: inline; font-size: 75%%; vertical-align: sub; }\n"
+        "sup { display: inline; font-size: 75%%; vertical-align: super; }\n",
         config.margin.body_px, config.font.base_px,
         config.font.heading_em[0], config.margin.heading_px[0],
         config.font.heading_em[1], config.margin.heading_px[1],

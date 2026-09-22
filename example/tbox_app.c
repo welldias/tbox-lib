@@ -141,8 +141,13 @@
  * paragraph (.v12-serif-font, with a nested <em>) after the v9 fixtures --
  * a screenshot at 2900px showed that new paragraph silently cropped off the
  * bottom of the window, so this is bumped to 3150px, same reasoning and
- * same purely-cosmetic window-size-constant nature as every prior bump. */
-#define TBOX_APP_DEMO_HEIGHT 3150
+ * same purely-cosmetic window-size-constant nature as every prior bump. v13
+ * appends seven more paragraphs (.v13-strong-b through .v13-span-a) after
+ * the v9 fixtures -- a screenshot at 3150px showed the last two of them
+ * (.v13-sub-sup and .v13-span-a) silently cropped off the bottom of the
+ * window, so this is bumped to 3450px, same reasoning and same
+ * purely-cosmetic window-size-constant nature as every prior bump. */
+#define TBOX_APP_DEMO_HEIGHT 3450
 
 #ifndef TBOX_APP_DEMO_HTML_PATH
 #error "TBOX_APP_DEMO_HTML_PATH must be defined by the build (see example/CMakeLists.txt)"

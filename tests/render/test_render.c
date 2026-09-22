@@ -182,9 +182,10 @@ int tbox_test_render_run(void) {
         tbox_layout_box box = tbox_test_render_default_box(&style);
 
         tbox_layout_text_run run;
-        run.rect = (tbox_rect){ 15.0, 25.0, 40.0, 16.0 };
-        run.text = tbox_test_render_view_from_cstr("hello");
-        run.font = font;
+        run.rect  = (tbox_rect){ 15.0, 25.0, 40.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("hello");
+        run.font  = font;
+        run.style = &style; /* NOVO v13: never NULL, per <tbox/layout.h> */
 
         box.text_runs      = &run;
         box.text_run_count = 1;
@@ -211,10 +212,17 @@ int tbox_test_render_run(void) {
         box.content_box        = (tbox_rect){ 0.0, 0.0, 50.0, 16.0 };
         box.border_box         = (tbox_rect){ 0.0, 0.0, 50.0, 16.0 };
 
+        /* Own style for the run, distinct from the box's -- the box's
+         * `style` has a non-transparent background_color, which would
+         * otherwise (NOVO v13) also trigger the run's own highlight
+         * FILL_RECT and break this test's "exactly 2 ops" expectation. */
+        tbox_style run_style = tbox_test_render_default_style();
+
         tbox_layout_text_run run;
-        run.rect = (tbox_rect){ 0.0, 0.0, 16.0, 16.0 };
-        run.text = tbox_test_render_view_from_cstr("hi");
-        run.font = font;
+        run.rect  = (tbox_rect){ 0.0, 0.0, 16.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("hi");
+        run.font  = font;
+        run.style = &run_style; /* NOVO v13: never NULL; transparent run background here, no extra FILL_RECT */
 
         box.text_runs      = &run;
         box.text_run_count = 1;
@@ -261,15 +269,18 @@ int tbox_test_render_run(void) {
         tbox_layout_box box = tbox_test_render_default_box(&style);
 
         tbox_layout_text_run runs[3];
-        runs[0].rect = (tbox_rect){ 0.0, 0.0, 20.0, 16.0 };
-        runs[0].text = tbox_test_render_view_from_cstr("one");
-        runs[0].font = font;
-        runs[1].rect = (tbox_rect){ 20.0, 0.0, 20.0, 16.0 };
-        runs[1].text = tbox_test_render_view_from_cstr("two");
-        runs[1].font = bold_font;
-        runs[2].rect = (tbox_rect){ 0.0, 16.0, 20.0, 16.0 };
-        runs[2].text = tbox_test_render_view_from_cstr("three");
-        runs[2].font = font;
+        runs[0].rect  = (tbox_rect){ 0.0, 0.0, 20.0, 16.0 };
+        runs[0].text  = tbox_test_render_view_from_cstr("one");
+        runs[0].font  = font;
+        runs[0].style = &style;
+        runs[1].rect  = (tbox_rect){ 20.0, 0.0, 20.0, 16.0 };
+        runs[1].text  = tbox_test_render_view_from_cstr("two");
+        runs[1].font  = bold_font;
+        runs[1].style = &style;
+        runs[2].rect  = (tbox_rect){ 0.0, 16.0, 20.0, 16.0 };
+        runs[2].text  = tbox_test_render_view_from_cstr("three");
+        runs[2].font  = font;
+        runs[2].style = &style;
 
         box.text_runs      = runs;
         box.text_run_count = 3;
@@ -304,21 +315,29 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
-    /* 9: NOVO v2 -- every TEXT_RUN from the same box carries the SAME
-     * color (box->style->color), even though the two runs have different
-     * faces -- no per-run color in this version. */
+    /* 9: NOVO v13 -- each TEXT_RUN carries its OWN run->style->color, which
+     * may now differ between runs of the same box (e.g. a <b> nested in a
+     * <p> with a different color) -- superseding v2-v12's shared
+     * box->style->color. */
     {
-        tbox_style style    = tbox_test_render_default_style();
-        style.color         = (tbox_css_rgba){ 42, 43, 44, 255 };
-        tbox_layout_box box = tbox_test_render_default_box(&style);
+        tbox_style box_style    = tbox_test_render_default_style();
+        box_style.color         = (tbox_css_rgba){ 42, 43, 44, 255 };
+        tbox_layout_box box     = tbox_test_render_default_box(&box_style);
+
+        tbox_style run1_style   = tbox_test_render_default_style();
+        run1_style.color        = (tbox_css_rgba){ 42, 43, 44, 255 };
+        tbox_style run2_style   = tbox_test_render_default_style();
+        run2_style.color        = (tbox_css_rgba){ 99, 88, 77, 255 };
 
         tbox_layout_text_run runs[2];
-        runs[0].rect = (tbox_rect){ 0.0, 0.0, 20.0, 16.0 };
-        runs[0].text = tbox_test_render_view_from_cstr("regular");
-        runs[0].font = font;
-        runs[1].rect = (tbox_rect){ 20.0, 0.0, 20.0, 16.0 };
-        runs[1].text = tbox_test_render_view_from_cstr("bold");
-        runs[1].font = bold_font;
+        runs[0].rect  = (tbox_rect){ 0.0, 0.0, 20.0, 16.0 };
+        runs[0].text  = tbox_test_render_view_from_cstr("regular");
+        runs[0].font  = font;
+        runs[0].style = &run1_style;
+        runs[1].rect  = (tbox_rect){ 20.0, 0.0, 20.0, 16.0 };
+        runs[1].text  = tbox_test_render_view_from_cstr("bold");
+        runs[1].font  = bold_font;
+        runs[1].style = &run2_style;
 
         box.text_runs      = runs;
         box.text_run_count = 2;
@@ -328,8 +347,8 @@ int tbox_test_render_run(void) {
         TBOX_TEST_ASSERT_MSG(list.count == 2, "two text_runs must produce two ops");
         if (list.count == 2) {
             TBOX_TEST_ASSERT_MSG(list.items[0].face != list.items[1].face, "test setup: the two runs must actually use different faces");
-            TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 42 && list.items[0].color.g == 43 && list.items[0].color.b == 44, "first run must carry the box's style color");
-            TBOX_TEST_ASSERT_MSG(list.items[1].color.r == 42 && list.items[1].color.g == 43 && list.items[1].color.b == 44, "second run must carry the SAME color as the first, despite the different face");
+            TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 42 && list.items[0].color.g == 43 && list.items[0].color.b == 44, "first run must carry its OWN run->style->color");
+            TBOX_TEST_ASSERT_MSG(list.items[1].color.r == 99 && list.items[1].color.g == 88 && list.items[1].color.b == 77, "second run must carry its own (different) run->style->color, not the box's or the first run's");
         }
         tbox_arena_destroy(&arena);
     }
@@ -429,10 +448,17 @@ int tbox_test_render_run(void) {
         box.padding_box         = (tbox_rect){ 2.0, 2.0, 50.0, 16.0 };
         box.border_box          = (tbox_rect){ 0.0, 0.0, 54.0, 20.0 };
 
+        /* Own style for the run, distinct from the box's: transparent
+         * background/no decoration, so this test stays about box
+         * background+border+text ordering, not the NOVO v13 run-level
+         * effects (covered separately below). */
+        tbox_style run_style = tbox_test_render_default_style();
+
         tbox_layout_text_run run;
-        run.rect = (tbox_rect){ 2.0, 2.0, 16.0, 16.0 };
-        run.text = tbox_test_render_view_from_cstr("hi");
-        run.font = font;
+        run.rect  = (tbox_rect){ 2.0, 2.0, 16.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("hi");
+        run.font  = font;
+        run.style = &run_style;
 
         box.text_runs      = &run;
         box.text_run_count = 1;
@@ -476,6 +502,143 @@ int tbox_test_render_run(void) {
                 TBOX_TEST_ASSERT(list.items[i].color.r == 7 && list.items[i].color.g == 7 && list.items[i].color.b == 7);
             }
             TBOX_TEST_ASSERT_MSG(list.items[4].color.r == 3, "child's own background must come after the parent's border ops");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 14: NOVO v13 -- a run with a non-transparent run->style->background_color
+     * (<mark>) produces an extra FILL_RECT immediately BEFORE its TEXT_RUN,
+     * covering exactly run->rect (not the box's border_box/the whole
+     * line). */
+    {
+        tbox_style box_style = tbox_test_render_default_style();
+        tbox_layout_box box  = tbox_test_render_default_box(&box_style);
+
+        tbox_style run_style       = tbox_test_render_default_style();
+        run_style.color            = (tbox_css_rgba){ 1, 2, 3, 255 };
+        run_style.background_color = (tbox_css_rgba){ 255, 255, 0, 255 }; /* yellow highlight */
+
+        tbox_layout_text_run run;
+        run.rect  = (tbox_rect){ 8.0, 4.0, 30.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("marked");
+        run.font  = font;
+        run.style = &run_style;
+
+        box.text_runs      = &run;
+        box.text_run_count = 1;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 2, "a run with a non-transparent background must produce exactly 2 ops: the highlight FILL_RECT + its TEXT_RUN");
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT_MSG(list.items[0].kind == TBOX_PAINT_FILL_RECT, "the highlight FILL_RECT must come before the TEXT_RUN");
+            TBOX_TEST_ASSERT_MSG(rect_equal(list.items[0].rect, run.rect), "the highlight FILL_RECT must cover exactly run->rect");
+            TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 255 && list.items[0].color.g == 255 && list.items[0].color.b == 0 && list.items[0].color.a == 255, "the highlight FILL_RECT must use run->style->background_color");
+            TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_TEXT_RUN, "op 1 must be the TEXT_RUN");
+            TBOX_TEST_ASSERT_MSG(list.items[1].color.r == 1 && list.items[1].color.g == 2 && list.items[1].color.b == 3, "the TEXT_RUN's color must be run->style->color, unaffected by its own background");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 15: NOVO v13 -- a run with text_decoration == UNDERLINE produces an
+     * extra thin FILL_RECT immediately AFTER its TEXT_RUN, 1px tall,
+     * spanning run->rect.width from run->rect.x, at y = baseline + 2 (where
+     * baseline = run->rect.y + tbox_font_face_ascent(run->font)), in
+     * run->style->color. */
+    {
+        tbox_style box_style = tbox_test_render_default_style();
+        tbox_layout_box box  = tbox_test_render_default_box(&box_style);
+
+        tbox_style run_style      = tbox_test_render_default_style();
+        run_style.color           = (tbox_css_rgba){ 11, 22, 33, 255 };
+        run_style.text_decoration = TBOX_STYLE_TEXT_DECORATION_UNDERLINE;
+
+        tbox_layout_text_run run;
+        run.rect  = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("ins");
+        run.font  = font;
+        run.style = &run_style;
+
+        box.text_runs      = &run;
+        box.text_run_count = 1;
+
+        double expected_y = run.rect.y + tbox_font_face_ascent(font) + 2.0;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 2, "a run with UNDERLINE must produce exactly 2 ops: its TEXT_RUN + the decoration FILL_RECT");
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT_MSG(list.items[0].kind == TBOX_PAINT_TEXT_RUN, "op 0 must still be the TEXT_RUN");
+            TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_FILL_RECT, "the decoration FILL_RECT must come after the TEXT_RUN");
+            TBOX_TEST_ASSERT_MSG(list.items[1].rect.x == run.rect.x && list.items[1].rect.width == run.rect.width && list.items[1].rect.height == 1.0, "the underline FILL_RECT must span run->rect.x/width, 1px tall");
+            TBOX_TEST_ASSERT_MSG(list.items[1].rect.y == expected_y, "the underline FILL_RECT must sit 2px below the run's baseline");
+            TBOX_TEST_ASSERT_MSG(list.items[1].color.r == 11 && list.items[1].color.g == 22 && list.items[1].color.b == 33, "the underline FILL_RECT must use run->style->color, same as the text");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 16: NOVO v13 -- a run with text_decoration == LINE_THROUGH produces an
+     * extra thin FILL_RECT after its TEXT_RUN at y = baseline -
+     * ascent * 0.3, above the baseline (unlike UNDERLINE's below). */
+    {
+        tbox_style box_style = tbox_test_render_default_style();
+        tbox_layout_box box  = tbox_test_render_default_box(&box_style);
+
+        tbox_style run_style      = tbox_test_render_default_style();
+        run_style.color           = (tbox_css_rgba){ 44, 55, 66, 255 };
+        run_style.text_decoration = TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH;
+
+        tbox_layout_text_run run;
+        run.rect  = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("del");
+        run.font  = font;
+        run.style = &run_style;
+
+        box.text_runs      = &run;
+        box.text_run_count = 1;
+
+        double baseline    = run.rect.y + tbox_font_face_ascent(font);
+        double expected_y  = baseline - tbox_font_face_ascent(font) * 0.3;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 2, "a run with LINE_THROUGH must produce exactly 2 ops: its TEXT_RUN + the decoration FILL_RECT");
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_FILL_RECT, "the decoration FILL_RECT must come after the TEXT_RUN");
+            TBOX_TEST_ASSERT_MSG(list.items[1].rect.y == expected_y, "the line-through FILL_RECT must sit ascent*0.3 above the run's baseline");
+            TBOX_TEST_ASSERT_MSG(list.items[1].rect.y < baseline, "the line-through FILL_RECT must be above the baseline, unlike UNDERLINE below it");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 17: NOVO v13 regression -- a run with a transparent background AND
+     * text_decoration == NONE still produces only its TEXT_RUN, no extra
+     * FILL_RECT (v0-v12 behavior), and that TEXT_RUN's color is the run's
+     * own run->style->color, not a color shared with the box's style. */
+    {
+        tbox_style box_style = tbox_test_render_default_style();
+        box_style.color      = (tbox_css_rgba){ 200, 200, 200, 255 }; /* deliberately different from the run's, to prove it's NOT used */
+        tbox_layout_box box  = tbox_test_render_default_box(&box_style);
+
+        tbox_style run_style = tbox_test_render_default_style();
+        run_style.color      = (tbox_css_rgba){ 9, 8, 7, 255 };
+        /* run_style.background_color left transparent, text_decoration left NONE by tbox_test_render_default_style() */
+
+        tbox_layout_text_run run;
+        run.rect  = (tbox_rect){ 0.0, 0.0, 20.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("plain");
+        run.font  = font;
+        run.style = &run_style;
+
+        box.text_runs      = &run;
+        box.text_run_count = 1;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 1, "transparent run background + NONE decoration must produce only the TEXT_RUN, no extra FILL_RECT");
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_TEXT_RUN);
+            TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 9 && list.items[0].color.g == 8 && list.items[0].color.b == 7, "TEXT_RUN color must be run->style->color, not box->style->color");
         }
         tbox_arena_destroy(&arena);
     }

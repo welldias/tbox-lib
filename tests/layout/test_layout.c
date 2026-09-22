@@ -1,11 +1,23 @@
 #include <tbox/layout.h>
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "base/tbox_arena.h"
 #include "test_support.h"
+
+/* NOVO v13: baseline-alignment assertions below compare a run's rect.y
+ * against a value computed independently in the test from
+ * tbox_font_face_ascent/style->font_size -- both sides go through the same
+ * double-precision arithmetic tbox_layout.c itself does, so exact equality
+ * would normally hold, but a small epsilon avoids any brittleness from
+ * operation-order/rounding differences between this file and
+ * tbox_layout_build_line_runs's own expression. */
+static bool tbox_test_double_approx_equal(double a, double b) {
+    return fabs(a - b) < 1e-6;
+}
 
 static tbox_html_document *parse_html_cstr(const char *html) {
     return tbox_html_parse(html, strlen(html));
@@ -112,7 +124,7 @@ int tbox_test_layout_run(void) {
         return failures + 1;
     }
 
-    const tbox_font_face *regular_16 = tbox_font_face_cache_get(fonts, tbox_string_view_make(NULL, 0), false, 16.0);
+    const tbox_font_face *regular_16 = tbox_font_face_cache_get(fonts, tbox_string_view_make(NULL, 0), false, false, 16.0);
     TBOX_TEST_ASSERT_MSG(regular_16 != NULL, "failed to resolve the regular 16px face");
 
     /* 1: an explicit width/height in px is used as-is. */
@@ -460,7 +472,7 @@ int tbox_test_layout_run(void) {
                 TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[1].text, "bold"), "the second run must be the bold word");
                 TBOX_TEST_ASSERT_MSG(box->text_runs[0].font != box->text_runs[1].font, "the bold run must resolve to a DIFFERENT face pointer than the plain run");
                 TBOX_TEST_ASSERT(box->text_runs[0].font == regular_16);
-                TBOX_TEST_ASSERT(box->text_runs[1].font == tbox_font_face_cache_get(fonts, tbox_string_view_make(NULL, 0), true, 16.0));
+                TBOX_TEST_ASSERT(box->text_runs[1].font == tbox_font_face_cache_get(fonts, tbox_string_view_make(NULL, 0), true, false, 16.0));
             }
         }
 
@@ -1618,7 +1630,7 @@ int tbox_test_layout_run(void) {
             if (box != NULL) {
                 TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "\"x\" must fit on a single run");
                 if (box->text_run_count == 1) {
-                    const tbox_font_face *expected = tbox_font_face_cache_get(family_fonts, tbox_string_view_make("Verdana", strlen("Verdana")), false, 16.0);
+                    const tbox_font_face *expected = tbox_font_face_cache_get(family_fonts, tbox_string_view_make("Verdana", strlen("Verdana")), false, false, 16.0);
                     TBOX_TEST_ASSERT_MSG(box->text_runs[0].font == expected, "the declared style=\"font-family: Verdana;\" must reach the face chosen by the Layout Tree");
                 }
             }
@@ -1651,7 +1663,7 @@ int tbox_test_layout_run(void) {
             if (box_plain != NULL) {
                 TBOX_TEST_ASSERT_MSG(box_plain->text_run_count == 1, "\"x\" must fit on a single run");
                 if (box_plain->text_run_count == 1) {
-                    const tbox_font_face *default_regular_16 = tbox_font_face_cache_get(family_fonts, tbox_string_view_make(NULL, 0), false, 16.0);
+                    const tbox_font_face *default_regular_16 = tbox_font_face_cache_get(family_fonts, tbox_string_view_make(NULL, 0), false, false, 16.0);
                     TBOX_TEST_ASSERT_MSG(box_plain->text_runs[0].font == default_regular_16, "a <p> with no font-family declared must keep resolving the same default (empty-family) face");
                 }
             }
@@ -1663,6 +1675,237 @@ int tbox_test_layout_run(void) {
 
             tbox_font_face_cache_destroy(family_fonts);
         }
+    }
+
+    /* 49: NOVO v13 -- <p style="font-family: Verdana;"><i>italic</i> normal</p>:
+     * font_italic reaches face selection -- the <i> run resolves to a
+     * DIFFERENT face pointer than the plain run even though weight/size/
+     * family are all identical (only italic differs). Needs its own
+     * resolver-backed cache (same pattern as test 47) since the default
+     * empty-family fast path deliberately ignores `italic` (see
+     * tbox_font_face_cache_get's doc comment: the default family never had
+     * an italic face of its own) -- a non-empty, shared font-family is
+     * required to actually exercise the italic axis. */
+    {
+        tbox_test_layout_resolver_state resolver_state = {
+            .font_data = font_data,
+            .font_size = font_size,
+            .calls     = 0,
+        };
+        tbox_font_face_cache *italic_fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, tbox_test_layout_resolver, &resolver_state);
+        TBOX_TEST_ASSERT_MSG(italic_fonts != NULL, "failed to create font face cache with test resolver");
+
+        if (italic_fonts != NULL) {
+            tbox_html_document *doc    = parse_html_cstr("<p style=\"font-family: Verdana;\"><i>italic</i> normal</p>");
+            const tbox_html_node *root = tbox_html_document_root(doc);
+            tbox_css_stylesheet *sheet = parse_css_cstr("i { display: inline; font-style: italic; }");
+
+            tbox_arena arena               = tbox_arena_create(0);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, italic_fonts, 800.0, 600.0);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"italic\" + \"normal\" must merge into exactly two runs (one per face) on one line");
+                if (box->text_run_count == 2) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "italic"), "the first run must be the italic word");
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[1].text, "normal"), "the second run must be the plain word");
+                    TBOX_TEST_ASSERT_MSG(box->text_runs[0].font != box->text_runs[1].font, "the <i> run must resolve to a DIFFERENT face pointer than the plain run, even with identical weight/size/family");
+
+                    const tbox_font_face *expected_italic = tbox_font_face_cache_get(italic_fonts, tbox_string_view_make("Verdana", strlen("Verdana")), false, true, 16.0);
+                    const tbox_font_face *expected_normal  = tbox_font_face_cache_get(italic_fonts, tbox_string_view_make("Verdana", strlen("Verdana")), false, false, 16.0);
+                    TBOX_TEST_ASSERT(box->text_runs[0].font == expected_italic);
+                    TBOX_TEST_ASSERT(box->text_runs[1].font == expected_normal);
+                }
+            }
+
+            tbox_arena_destroy(&arena);
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+
+            tbox_font_face_cache_destroy(italic_fonts);
+        }
+    }
+
+    /* 50: NOVO v13 -- <p>Normal <small>pequeno</small></p>: a run whose
+     * face is SMALLER than the line's dominant face gets shifted DOWN by
+     * exactly `line->ascent - tbox_font_face_ascent(small_face)` so its own
+     * baseline lines up with the rest of the line instead of "floating"
+     * high, aligned to the line's TOP like every run before v13. Declares
+     * `font-size: 50%` directly (TASKS.md: fine to author this manually
+     * instead of depending on the real UA stylesheet's `small { font-size:
+     * 80%; }`, which Tarefa 5 owns) so this stays isolated from that other
+     * task. Verified with the EXACT formula, not just "is different". */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>Normal <small>pequeno</small></p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("small { display: inline; font-size: 50%; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"Normal\" + \"pequeno\" must merge into exactly two runs (one per face) on one line");
+            if (box->text_run_count == 2) {
+                const tbox_font_face *small_face = tbox_font_face_cache_get(fonts, tbox_string_view_make(NULL, 0), false, false, 8.0);
+                TBOX_TEST_ASSERT_MSG(small_face != NULL, "failed to resolve the 8px (50% of 16px) small face");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[1].font == small_face, "the <small> run must resolve to the 50%-of-16px face");
+
+                double ascent_normal = tbox_font_face_ascent(regular_16);
+                double ascent_small  = tbox_font_face_ascent(small_face);
+                TBOX_TEST_ASSERT_MSG(ascent_normal >= ascent_small, "a 16px face's ascent must be at least as large as an 8px face's -- otherwise this test's premise doesn't hold");
+                double line_ascent = ascent_normal > ascent_small ? ascent_normal : ascent_small;
+
+                double line_y             = box->content_box.y;
+                double expected_normal_y  = line_y + (line_ascent - ascent_normal);
+                double expected_small_y   = line_y + (line_ascent - ascent_small);
+
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(box->text_runs[0].rect.y, expected_normal_y), "the normal-size run's rect.y must equal line_y + (line->ascent - its own ascent)");
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(box->text_runs[1].rect.y, expected_small_y), "the <small> run's rect.y must equal line_y + (line->ascent - its own ascent)");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[1].rect.y > box->text_runs[0].rect.y, "the smaller run must sit LOWER (larger rect.y) than the line's dominant baseline, not float at the line's top");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 51: NOVO v13 -- <p>Normal <sub>baixo</sub></p>: `vertical-align: sub`
+     * adds `+ 0.15 * font_size` ON TOP OF baseline alignment. Declares ONLY
+     * `vertical-align: sub` (no font-size change), so this run shares the
+     * SAME face as the plain run -- isolating the sub/sup term from test
+     * 50's face-size-driven baseline-alignment term (which is exactly 0
+     * here, since both runs share one face/ascent): the ENTIRE rect.y
+     * difference between the two runs must be exactly `0.15 * font_size`. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>Normal <sub>baixo</sub></p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("sub { display: inline; vertical-align: sub; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"Normal\" + \"baixo\" must still be TWO runs (style differs) even though the face is identical");
+            if (box->text_run_count == 2) {
+                TBOX_TEST_ASSERT_MSG(box->text_runs[0].font == box->text_runs[1].font, "the <sub> run shares the SAME face as the plain run here (no font-size change declared)");
+
+                double expected_extra = 0.15 * 16.0;
+                double actual_extra   = box->text_runs[1].rect.y - box->text_runs[0].rect.y;
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(actual_extra, expected_extra), "the <sub> run must sit exactly 0.15 * font_size BELOW the plain run's rect.y");
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(box->text_runs[0].rect.y, box->content_box.y), "the plain run must still sit exactly at line_y (same face as the line's other run, zero baseline-alignment offset)");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 52: NOVO v13 -- <p>Normal <sup>alto</sup></p>: `vertical-align: super`
+     * subtracts `0.35 * font_size` past baseline alignment (moves UP, the
+     * opposite sign of test 51's SUB). Same isolation strategy: no
+     * font-size change declared, so both runs share one face/ascent and the
+     * entire rect.y difference is exactly the sup term. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>Normal <sup>alto</sup></p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("sup { display: inline; vertical-align: super; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"Normal\" + \"alto\" must still be TWO runs (style differs) even though the face is identical");
+            if (box->text_run_count == 2) {
+                TBOX_TEST_ASSERT_MSG(box->text_runs[0].font == box->text_runs[1].font, "the <sup> run shares the SAME face as the plain run here (no font-size change declared)");
+
+                double expected_extra = -0.35 * 16.0;
+                double actual_extra   = box->text_runs[1].rect.y - box->text_runs[0].rect.y;
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(actual_extra, expected_extra), "the <sup> run must sit exactly 0.35 * font_size ABOVE the plain run's rect.y");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 53: NOVO v13 regression -- <p>um<br>dois</p>, all text sharing ONE
+     * face/style (no <small>/<sub>/<sup>/<mark> anywhere): every run's
+     * rect.y stays EXACTLY `line_y` (zero baseline-alignment offset, zero
+     * vertical-align offset) -- proves v0-v12 didn't regress now that
+     * rect.y is a computed expression instead of `line_y` copied verbatim.
+     * Also checks run->style is populated (never NULL) and points at the
+     * SAME style that decided the run's face -- here, the <p>'s own. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>um<br>dois</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"um\" and \"dois\" must be two runs, one per line");
+            if (box->text_run_count == 2) {
+                double line_height = tbox_font_face_line_height(regular_16);
+                TBOX_TEST_ASSERT_MSG(box->text_runs[0].rect.y == box->content_box.y, "the first line's run must sit EXACTLY at line_y (zero offset when every run shares one face)");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[1].rect.y == box->content_box.y + line_height, "the second line's run must sit EXACTLY at its own line_y, same zero-offset rule");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[0].style == box->style, "run->style must be populated with the SAME style that decided the run's face -- here, the <p>'s own resolved style");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[1].style == box->style, "run->style must be populated with the SAME style that decided the run's face -- here, the <p>'s own resolved style");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 54: NOVO v13 -- <p><mark>x</mark> normal</p> where BOTH resolve to
+     * the IDENTICAL face (no weight/size/family/italic declared on `mark`)
+     * -- style is now ALSO part of the run-merge key (not just face), so
+     * this still produces TWO separate runs, not one merged run: Render
+     * Pipeline needs a distinct run->style per stretch for the <mark>
+     * background highlight, which a merged run couldn't carry. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p><mark>x</mark> normal</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("mark { display: inline; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "<mark> must still produce a SEPARATE run from the plain text even though both resolve to the identical face -- style is now part of the merge key too");
+            if (box->text_run_count == 2) {
+                TBOX_TEST_ASSERT_MSG(box->text_runs[0].font == box->text_runs[1].font, "both runs must share the IDENTICAL face -- <mark> declares no weight/size/family/italic override");
+                TBOX_TEST_ASSERT_MSG(box->text_runs[0].style != box->text_runs[1].style, "the two runs must carry DIFFERENT style pointers (the <mark>'s own vs. the <p>'s), even with an identical face");
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "x"), "the first run must be the <mark> word");
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[1].text, "normal"), "the second run must be the plain word");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
     }
 
     tbox_font_face_cache_destroy(fonts);
