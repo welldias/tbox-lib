@@ -3,6 +3,7 @@
 
 #include <tbox/font.h>
 #include <tbox/html_parser.h>
+#include <tbox/image.h>
 #include <tbox/string_view.h>
 #include <tbox/style.h>
 
@@ -46,6 +47,17 @@ typedef struct tbox_layout_text_run {
      * struct is even filled in, to decide `rect.y`'s extra `vertical_align`
      * offset for `sub`/`sup`. */
     const tbox_style *style;
+
+    /* NOVO (image support): non-NULL for a run built from an <img> word
+     * (tbox_layout_push_image_word in src/layout/tbox_layout.c) instead of
+     * text -- `text`/`font` are then meaningless (empty/whatever the
+     * surrounding text context's face happened to be, never read for an
+     * image run), and `rect` is the image's own resolved destination
+     * rectangle (already scaled from `image`'s intrinsic pixel dimensions
+     * if CSS declared a different width/height) rather than sharing the
+     * line's full height the way a text run's `rect.height` does. NULL for
+     * an ordinary text run. */
+    const tbox_image *image;
 } tbox_layout_text_run;
 
 typedef struct tbox_layout_box {
@@ -78,9 +90,12 @@ typedef struct tbox_layout_box {
  * tbox_font_face_cache -- used to resolve the right face for every
  * text-bearing box's own resolved style->font_weight_bold/font_size, rather
  * than a single face shared by the whole document like in v0/v1; Layout
- * Tree never loads a font itself, only looks one up in this cache).
- * `viewport_width`/`viewport_height` become the root box's containing
- * block's content width/height, positioned at (0, 0).
+ * Tree never loads a font itself, only looks one up in this cache) and
+ * `images` (same shape, for `<img>` -- see <tbox/image.h>'s
+ * tbox_image_cache; NULL is a valid "no images" value, same as a NULL font
+ * resolver, so every `<img>` then simply contributes nothing, same as a
+ * missing `src`). `viewport_width`/`viewport_height` become the root box's
+ * containing block's content width/height, positioned at (0, 0).
  *
  * A node whose resolved style->display == TBOX_STYLE_DISPLAY_NONE produces
  * no box at all: it is absent from the returned tree, contributes nothing
@@ -96,7 +111,7 @@ typedef struct tbox_layout_box {
  * the top of ARCHITECTURE.md). Returns NULL only if `root` has no ELEMENT
  * to lay out (e.g. an empty document, or a DOCUMENT node with no ELEMENT
  * child). */
-tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, double viewport_width, double viewport_height);
+tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double viewport_width, double viewport_height);
 
 #ifdef __cplusplus
 }

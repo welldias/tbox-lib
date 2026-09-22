@@ -509,7 +509,7 @@ static void tbox_test_raster_display_list_matches_direct_calls(int *failures_ptr
         tbox_css_rgba bg_color = { 240, 240, 240, 255 };
         tbox_css_rgba fg_color = { 0, 0, 0, 255 };
 
-        tbox_paint_op ops[2];
+        tbox_paint_op ops[2] = { 0 };
         ops[0].kind  = TBOX_PAINT_FILL_RECT;
         ops[0].rect  = (tbox_rect){ 0, 0, width, height };
         ops[0].color = bg_color;
@@ -545,6 +545,191 @@ static void tbox_test_raster_display_list_matches_direct_calls(int *failures_ptr
     *failures_ptr = failures;
 }
 
+/* NOVO (image support): tbox_raster_image, 1:1 -- a 2x2 opaque RGBA source
+ * painted into a matching 2x2 dest_rect must copy each source pixel
+ * exactly, with no scaling/blending involved (full alpha). */
+static void tbox_test_raster_image_basic(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 10, height = 10;
+    uint32_t background = tbox_test_raster_xrgb(200, 200, 200);
+    uint32_t *pixels     = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        /* 2x2 RGBA8, row-major: top-left red, top-right green, bottom-left
+         * blue, bottom-right opaque black. */
+        unsigned char source_pixels[2 * 2 * 4] = {
+            255, 0, 0, 255,   0, 255, 0, 255,
+            0, 0, 255, 255,   0, 0, 0, 255,
+        };
+        tbox_image image = { 2, 2, source_pixels };
+
+        tbox_rect dest_rect = { 3, 3, 2, 2 };
+        tbox_raster_image(pixels, width, height, dest_rect, &image);
+
+        TBOX_TEST_ASSERT_MSG(pixels[3 * (size_t)width + 3] == tbox_test_raster_xrgb(255, 0, 0), "top-left source pixel must land at dest_rect's top-left");
+        TBOX_TEST_ASSERT_MSG(pixels[3 * (size_t)width + 4] == tbox_test_raster_xrgb(0, 255, 0), "top-right source pixel must land at dest_rect's top-right");
+        TBOX_TEST_ASSERT_MSG(pixels[4 * (size_t)width + 3] == tbox_test_raster_xrgb(0, 0, 255), "bottom-left source pixel must land at dest_rect's bottom-left");
+        TBOX_TEST_ASSERT_MSG(pixels[4 * (size_t)width + 4] == tbox_test_raster_xrgb(0, 0, 0), "bottom-right source pixel must land at dest_rect's bottom-right");
+
+        /* Strictly outside dest_rect: untouched. */
+        TBOX_TEST_ASSERT(pixels[0] == background);
+        TBOX_TEST_ASSERT(pixels[9 * (size_t)width + 9] == background);
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* Upscaling: the SAME 2x2 source painted into a 4x4 dest_rect goes through
+ * stb_image_resize2's real (Mitchell/cubic, sRGB-aware) resampling, not a
+ * flat nearest-neighbor block per source pixel -- the interior blends
+ * between neighboring source colors. What's still exactly predictable
+ * (edge-clamped resampling anchors here) is each of the FOUR CORNER pixels
+ * of the destination, which must stay close to their one nearest source
+ * pixel's color -- proving both that real scaling happened (dest is 4x4,
+ * not silently left at 2x2 or some other size) and that source-to-dest
+ * orientation/mapping is correct (top-left dest corner is red, not e.g.
+ * bottom-right's black). */
+static void tbox_test_raster_image_scaling(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 10, height = 10;
+    uint32_t *pixels = tbox_test_raster_make_buffer(width, height, tbox_test_raster_xrgb(0, 0, 0));
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        unsigned char source_pixels[2 * 2 * 4] = {
+            255, 0, 0, 255,   0, 255, 0, 255,
+            0, 0, 255, 255,   0, 0, 0, 255,
+        };
+        tbox_image image = { 2, 2, source_pixels };
+
+        tbox_rect dest_rect = { 0, 0, 4, 4 };
+        tbox_raster_image(pixels, width, height, dest_rect, &image);
+
+        const int tolerance = 30;
+        uint32_t top_left     = pixels[0 * (size_t)width + 0];
+        uint32_t top_right    = pixels[0 * (size_t)width + 3];
+        uint32_t bottom_left  = pixels[3 * (size_t)width + 0];
+        uint32_t bottom_right = pixels[3 * (size_t)width + 3];
+
+        TBOX_TEST_ASSERT_MSG(abs((int)((top_left >> 16) & 0xFF) - 255) <= tolerance && abs((int)((top_left >> 8) & 0xFF) - 0) <= tolerance && abs((int)(top_left & 0xFF) - 0) <= tolerance, "top-left dest corner must stay close to red, the nearest source pixel");
+        TBOX_TEST_ASSERT_MSG(abs((int)((top_right >> 16) & 0xFF) - 0) <= tolerance && abs((int)((top_right >> 8) & 0xFF) - 255) <= tolerance && abs((int)(top_right & 0xFF) - 0) <= tolerance, "top-right dest corner must stay close to green, the nearest source pixel");
+        TBOX_TEST_ASSERT_MSG(abs((int)((bottom_left >> 16) & 0xFF) - 0) <= tolerance && abs((int)((bottom_left >> 8) & 0xFF) - 0) <= tolerance && abs((int)(bottom_left & 0xFF) - 255) <= tolerance, "bottom-left dest corner must stay close to blue, the nearest source pixel");
+        TBOX_TEST_ASSERT_MSG(abs((int)((bottom_right >> 16) & 0xFF) - 0) <= tolerance && abs((int)((bottom_right >> 8) & 0xFF) - 0) <= tolerance && abs((int)(bottom_right & 0xFF) - 0) <= tolerance, "bottom-right dest corner must stay close to black, the nearest source pixel");
+
+        /* Untouched outside the 4x4 dest_rect. */
+        TBOX_TEST_ASSERT(pixels[9 * (size_t)width + 9] == tbox_test_raster_xrgb(0, 0, 0));
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* Alpha compositing: a fully-transparent source pixel must leave the
+ * destination untouched (same "alpha == 0 is a no-op" contract
+ * tbox_raster_fill_rect already has), and a half-transparent one must blend
+ * with the "over" formula rather than overwrite. */
+static void tbox_test_raster_image_alpha_blend(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 4, height = 1;
+    uint32_t background = tbox_test_raster_xrgb(100, 100, 100);
+    uint32_t *pixels     = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        /* 2x1: fully transparent red, then half-alpha (128) opaque-red-ish
+         * source over the same grey background. */
+        unsigned char source_pixels[2 * 1 * 4] = {
+            255, 0, 0, 0,
+            255, 0, 0, 128,
+        };
+        tbox_image image = { 2, 1, source_pixels };
+
+        tbox_rect dest_rect = { 0, 0, 2, 1 };
+        tbox_raster_image(pixels, width, height, dest_rect, &image);
+
+        TBOX_TEST_ASSERT_MSG(pixels[0] == background, "alpha == 0 source pixel must leave the destination untouched");
+
+        unsigned char blended_r = (unsigned char)(255.0 * (128.0 / 255.0) + 100.0 * (1.0 - 128.0 / 255.0) + 0.5);
+        unsigned char blended_g = (unsigned char)(0.0 * (128.0 / 255.0) + 100.0 * (1.0 - 128.0 / 255.0) + 0.5);
+        uint32_t expected       = tbox_test_raster_xrgb(blended_r, blended_g, blended_g);
+        TBOX_TEST_ASSERT_MSG(pixels[1] == expected, "half-alpha source pixel must alpha-blend over the destination, not overwrite it");
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* A dest_rect partially/fully outside the buffer's bounds must clip cleanly
+ * (no crash, no out-of-bounds write) -- same expectation tbox_raster_fill_rect
+ * already has (tbox_test_raster_fill_rect_out_of_bounds above). */
+static void tbox_test_raster_image_out_of_bounds(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 5, height = 5;
+    uint32_t background = tbox_test_raster_xrgb(1, 2, 3);
+    uint32_t *pixels     = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        unsigned char source_pixels[1 * 1 * 4] = { 255, 255, 255, 255 };
+        tbox_image image                       = { 1, 1, source_pixels };
+
+        /* Entirely outside (past the right/bottom edge) -- must be a no-op,
+         * not a crash. */
+        tbox_rect far_rect = { 100, 100, 10, 10 };
+        tbox_raster_image(pixels, width, height, far_rect, &image);
+        TBOX_TEST_ASSERT(pixels[0] == background);
+
+        /* Straddles the top-left corner -- only the visible portion paints. */
+        tbox_rect corner_rect = { -1, -1, 3, 3 };
+        tbox_raster_image(pixels, width, height, corner_rect, &image);
+        TBOX_TEST_ASSERT_MSG(pixels[1 * (size_t)width + 1] == tbox_test_raster_xrgb(255, 255, 255), "the visible portion of a straddling dest_rect must still paint");
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* NULL image, non-positive buffer dims, and non-positive dest_rect
+ * width/height are all no-ops -- same "tolerate bad input silently"
+ * contract every other tbox_raster_* function already has. */
+static void tbox_test_raster_image_invalid_args(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 4, height = 4;
+    uint32_t background = tbox_test_raster_xrgb(9, 9, 9);
+    uint32_t *pixels     = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+
+    if (pixels != NULL) {
+        unsigned char source_pixels[1 * 1 * 4] = { 255, 255, 255, 255 };
+        tbox_image image                       = { 1, 1, source_pixels };
+        tbox_rect rect                         = { 0, 0, 4, 4 };
+
+        tbox_raster_image(pixels, width, height, rect, NULL);
+        tbox_raster_image(NULL, width, height, rect, &image);
+        tbox_raster_image(pixels, 0, height, rect, &image);
+        tbox_raster_image(pixels, width, 0, rect, &image);
+        tbox_raster_image(pixels, width, height, (tbox_rect){ 0, 0, 0, 4 }, &image);
+        tbox_raster_image(pixels, width, height, (tbox_rect){ 0, 0, 4, 0 }, &image);
+
+        TBOX_TEST_ASSERT_MSG(pixels[0] == background, "every invalid-argument call above must be a no-op");
+
+        free(pixels);
+    }
+
+    *failures_ptr = failures;
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
@@ -553,6 +738,11 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_fill_rect_paint_order(&failures);
     tbox_test_raster_fill_rect_alpha_blend(&failures);
     tbox_test_raster_fill_rect_fully_transparent_noop(&failures);
+    tbox_test_raster_image_basic(&failures);
+    tbox_test_raster_image_scaling(&failures);
+    tbox_test_raster_image_alpha_blend(&failures);
+    tbox_test_raster_image_out_of_bounds(&failures);
+    tbox_test_raster_image_invalid_args(&failures);
     tbox_test_raster_write_png_round_trip(&failures);
     tbox_test_raster_write_png_invalid_args(&failures);
 

@@ -72,7 +72,7 @@ static bool string_view_equal_cstr(tbox_string_view view, const char *cstr) {
 }
 
 static tbox_context *open_cstr(const char *html, const char *css, tbox_font_face_cache *fonts) {
-    return tbox_context_open(html, strlen(html), css, strlen(css), fonts);
+    return tbox_context_open(html, strlen(html), css, strlen(css), fonts, NULL);
 }
 
 /* Shared by every tbox_context_on_click test below: a click_capture is
@@ -667,8 +667,8 @@ int tbox_test_context_run(void) {
         tbox_ua_style_config custom_config  = default_config;
         custom_config.font.heading_em[0]    = 5.0;
 
-        tbox_context *default_ctx = tbox_context_open_with_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, default_config);
-        tbox_context *custom_ctx  = tbox_context_open_with_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, custom_config);
+        tbox_context *default_ctx = tbox_context_open_with_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, NULL, default_config);
+        tbox_context *custom_ctx  = tbox_context_open_with_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, NULL, custom_config);
         TBOX_TEST_ASSERT_MSG(default_ctx != NULL && custom_ctx != NULL, "tbox_context_open_with_config must succeed for both configs");
         if (default_ctx != NULL && custom_ctx != NULL) {
             tbox_display_list default_list, custom_list;
@@ -739,8 +739,8 @@ int tbox_test_context_run(void) {
         custom_config.font.base_px          = 32.0;
 
         const char *html = "<body><p>oi</p></body>";
-        tbox_context *default_ctx = tbox_context_open_with_config(html, strlen(html), "", 0, fonts, default_config);
-        tbox_context *custom_ctx  = tbox_context_open_with_config(html, strlen(html), "", 0, fonts, custom_config);
+        tbox_context *default_ctx = tbox_context_open_with_config(html, strlen(html), "", 0, fonts, NULL, default_config);
+        tbox_context *custom_ctx  = tbox_context_open_with_config(html, strlen(html), "", 0, fonts, NULL, custom_config);
         TBOX_TEST_ASSERT_MSG(default_ctx != NULL && custom_ctx != NULL, "tbox_context_open_with_config must succeed for both configs");
         if (default_ctx != NULL && custom_ctx != NULL) {
             tbox_display_list default_list, custom_list;

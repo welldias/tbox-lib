@@ -55,11 +55,23 @@ void tbox_raster_fill_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffe
  * buffer_width/buffer_height, an empty `text`, or color.a == 0 is a no-op. */
 void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color);
 
+/* Composites `image`'s decoded RGBA8 pixels (see <tbox/image.h>) into
+ * `dest_rect`, nearest-neighbor sampling from `image`'s own intrinsic pixel
+ * dimensions -- a `dest_rect` size different from `image->width`/`height`
+ * (e.g. an `<img>`'s CSS-resolved width/height differing from its source
+ * file's own dimensions) scales accordingly. Each source pixel is
+ * alpha-blended (same "over" formula as tbox_raster_fill_rect) using
+ * (source_pixel.a / 255.0) as the alpha against that pixel's own RGB,
+ * clipped to the buffer's bounds exactly like tbox_raster_fill_rect. A NULL
+ * `pixels`/`image`, a non-positive buffer_width/buffer_height, or a
+ * non-positive dest_rect.width/height, is a no-op. */
+void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image);
+
 /* Convenience: walks `list->items` in order and dispatches each op to
- * tbox_raster_fill_rect (TBOX_PAINT_FILL_RECT) or tbox_raster_text_run
- * (TBOX_PAINT_TEXT_RUN) -- what a backend's present/frame function calls
- * once per frame instead of switching on op->kind itself. A NULL `list` is a
- * no-op. */
+ * tbox_raster_fill_rect (TBOX_PAINT_FILL_RECT), tbox_raster_text_run
+ * (TBOX_PAINT_TEXT_RUN), or tbox_raster_image (TBOX_PAINT_IMAGE) -- what a
+ * backend's present/frame function calls once per frame instead of
+ * switching on op->kind itself. A NULL `list` is a no-op. */
 void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list);
 
 /* Writes `pixels` (buffer_width x buffer_height, XRGB8888 -- same layout

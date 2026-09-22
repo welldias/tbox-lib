@@ -7,6 +7,31 @@
 
 #include "utf8.h"
 
+/* stb_image_resize2 is third-party, vendored code (external/stb_image/, see
+ * its own README.md) -- not held to this project's own -Wall -Wextra
+ * -Wpedantic -Werror bar. Its implementation is pulled in exactly once,
+ * here, guarded by pragmas so its own warnings never fail this project's
+ * build -- same pattern src/image/tbox_image.c already uses for
+ * stb_image.h's implementation. */
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb_image_resize2.h"
+
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
 /* Blends `src` (0-255) over `dst` (0-255) using the standard "over" operator:
  * result = src*alpha + dst*(1-alpha). Rounds to nearest. */
 static unsigned char tbox_raster_blend_channel(unsigned char src, unsigned char dst, double alpha) {
@@ -88,7 +113,7 @@ void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer
     double color_alpha = color.a / 255.0;
 
     const char *cursor = text.data;
-    const char *end     = text.data + text.size;
+    const char *end    = text.data + text.size;
 
     while (cursor < end) {
         utf8_int32_t codepoint;
@@ -130,6 +155,96 @@ void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer
     }
 }
 
+/* Composites `image`'s decoded RGBA8 pixels into `dest_rect`. When
+ * `dest_rect`'s (rounded-to-integer) pixel size differs from `image`'s own
+ * intrinsic dimensions -- e.g. a `style="width:...;height:..."` different
+ * from the source file's own dimensions -- the source is first resampled to
+ * that exact size via stb_image_resize2's "easy API"
+ * (stbir_resize_uint8_srgb: Mitchell filter downsampling / cubic upsampling,
+ * sRGB-aware so scaling happens in linear light -- real quality resampling,
+ * not nearest-neighbor), into a temporary heap buffer freed before this
+ * function returns; when the sizes already match, `image->pixels` is
+ * blitted directly with no resize step at all. `STBIR_RGBA` tells it the
+ * source is straight (non-premultiplied) alpha, exactly what stb_image
+ * decoded it as (tbox_image_cache_get always requests 4 channels), so
+ * alpha-weighted resampling avoids partially-transparent edge pixels
+ * bleeding color from fully-transparent neighbors. Every visible
+ * destination pixel is then composited via tbox_raster_blend_pixel with
+ * `alpha = (source_pixel.a / 255.0)`, same "over" formula as
+ * tbox_raster_fill_rect/tbox_raster_text_run. NULL `pixels`/`image`, a
+ * non-positive buffer_width/buffer_height, a non-positive
+ * dest_rect.width/height, or a resize failure (allocation failure, treated
+ * as a no-op rather than a crash), skips painting entirely. */
+void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image) {
+    if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || image == NULL || image->pixels == NULL || dest_rect.width <= 0.0 || dest_rect.height <= 0.0) {
+        return;
+    }
+
+    int32_t dest_width  = (int32_t)(dest_rect.width + 0.5);
+    int32_t dest_height = (int32_t)(dest_rect.height + 0.5);
+    if (dest_width <= 0 || dest_height <= 0) {
+        return;
+    }
+
+    const unsigned char *sample_pixels = image->pixels;
+    int32_t sample_width               = image->width;
+    unsigned char *resized             = NULL;
+
+    if (dest_width != image->width || dest_height != image->height) {
+        resized = (unsigned char *)malloc((size_t)dest_width * (size_t)dest_height * 4);
+        if (resized == NULL) {
+            return;
+        }
+
+        if (stbir_resize_uint8_srgb(image->pixels, image->width, image->height, 0, resized, dest_width, dest_height, 0, STBIR_RGBA) == NULL) {
+            free(resized);
+            return;
+        }
+
+        sample_pixels = resized;
+        sample_width  = dest_width;
+    }
+
+    int32_t origin_x = (int32_t)floor(dest_rect.x);
+    int32_t origin_y = (int32_t)floor(dest_rect.y);
+
+    int32_t x0 = origin_x;
+    int32_t y0 = origin_y;
+    int32_t x1 = origin_x + dest_width;
+    int32_t y1 = origin_y + dest_height;
+
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x1 > buffer_width) {
+        x1 = buffer_width;
+    }
+    if (y1 > buffer_height) {
+        y1 = buffer_height;
+    }
+
+    for (int32_t y = y0; y < y1; y++) {
+        const unsigned char *source_row = sample_pixels + (size_t)(y - origin_y) * (size_t)sample_width * 4;
+        uint32_t *dest_row              = pixels + (size_t)y * (size_t)buffer_width;
+
+        for (int32_t x = x0; x < x1; x++) {
+            const unsigned char *source_pixel = source_row + (size_t)(x - origin_x) * 4;
+            unsigned char source_alpha        = source_pixel[3];
+            if (source_alpha == 0) {
+                continue;
+            }
+
+            tbox_css_rgba color = { source_pixel[0], source_pixel[1], source_pixel[2], source_alpha };
+            dest_row[x]         = tbox_raster_blend_pixel(dest_row[x], color, source_alpha / 255.0);
+        }
+    }
+
+    free(resized);
+}
+
 void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list) {
     if (list == NULL) {
         return;
@@ -143,6 +258,9 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
             break;
         case TBOX_PAINT_TEXT_RUN:
             tbox_raster_text_run(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color);
+            break;
+        case TBOX_PAINT_IMAGE:
+            tbox_raster_image(pixels, buffer_width, buffer_height, op->rect, op->image);
             break;
         }
     }
@@ -171,7 +289,7 @@ static uint32_t tbox_png_crc32_update(uint32_t crc, const uint8_t *data, size_t 
         crc ^= data[i];
         for (int bit = 0; bit < 8; bit++) {
             uint32_t mask = (crc & 1u) ? 0xFFFFFFFFu : 0u;
-            crc            = (crc >> 1) ^ (0xEDB88320u & mask);
+            crc           = (crc >> 1) ^ (0xEDB88320u & mask);
         }
     }
     return crc;
@@ -250,10 +368,10 @@ bool tbox_raster_write_png(const char *path, const uint32_t *pixels, int32_t buf
         uint8_t *row = raw + y * row_bytes;
         row[0]       = 0; /* filter: None */
         for (size_t x = 0; x < width; x++) {
-            uint32_t pixel        = pixels[y * width + x];
-            row[1 + x * 3 + 0]    = (uint8_t)((pixel >> 16) & 0xFFu);
-            row[1 + x * 3 + 1]    = (uint8_t)((pixel >> 8) & 0xFFu);
-            row[1 + x * 3 + 2]    = (uint8_t)(pixel & 0xFFu);
+            uint32_t pixel     = pixels[y * width + x];
+            row[1 + x * 3 + 0] = (uint8_t)((pixel >> 16) & 0xFFu);
+            row[1 + x * 3 + 1] = (uint8_t)((pixel >> 8) & 0xFFu);
+            row[1 + x * 3 + 2] = (uint8_t)(pixel & 0xFFu);
         }
     }
 
@@ -267,16 +385,16 @@ bool tbox_raster_write_png(const char *path, const uint32_t *pixels, int32_t buf
     if (block_count == 0) {
         block_count = 1; /* an empty image still needs one (empty) final block */
     }
-    size_t zlib_size  = 2 + block_count * 5 + raw_size + 4;
+    size_t zlib_size   = 2 + block_count * 5 + raw_size + 4;
     uint8_t *zlib_data = (uint8_t *)malloc(zlib_size);
     if (zlib_data == NULL) {
         free(raw);
         return false;
     }
 
-    size_t pos          = 0;
-    zlib_data[pos++]    = 0x78; /* CMF: DEFLATE, 32K window */
-    zlib_data[pos++]    = 0x01; /* FLG: fastest, no preset dictionary (valid check bits for 0x78) */
+    size_t pos       = 0;
+    zlib_data[pos++] = 0x78; /* CMF: DEFLATE, 32K window */
+    zlib_data[pos++] = 0x01; /* FLG: fastest, no preset dictionary (valid check bits for 0x78) */
 
     size_t remaining = raw_size;
     size_t raw_pos   = 0;
@@ -287,7 +405,7 @@ bool tbox_raster_write_png(const char *path, const uint32_t *pixels, int32_t buf
         zlib_data[pos++] = final ? 0x01 : 0x00; /* BFINAL | BTYPE=00 (stored), byte-aligned */
         zlib_data[pos++] = (uint8_t)(chunk & 0xFFu);
         zlib_data[pos++] = (uint8_t)((chunk >> 8) & 0xFFu);
-        uint16_t nlen     = (uint16_t)(~(uint16_t)chunk);
+        uint16_t nlen    = (uint16_t)(~(uint16_t)chunk);
         zlib_data[pos++] = (uint8_t)(nlen & 0xFFu);
         zlib_data[pos++] = (uint8_t)((nlen >> 8) & 0xFFu);
 
@@ -297,7 +415,7 @@ bool tbox_raster_write_png(const char *path, const uint32_t *pixels, int32_t buf
         remaining -= chunk;
     }
 
-    uint32_t adler    = tbox_png_adler32_update(1u, raw, raw_size);
+    uint32_t adler   = tbox_png_adler32_update(1u, raw, raw_size);
     zlib_data[pos++] = (uint8_t)((adler >> 24) & 0xFFu);
     zlib_data[pos++] = (uint8_t)((adler >> 16) & 0xFFu);
     zlib_data[pos++] = (uint8_t)((adler >> 8) & 0xFFu);

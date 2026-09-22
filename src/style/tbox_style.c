@@ -458,8 +458,45 @@ static tbox_style_length tbox_style_resolve_length_property(const tbox_css_compu
     return result;
 }
 
+/* `<img width="100" height="100">`: real HTML lets these bare numeric
+ * attributes (no unit, unlike CSS) set the SAME properties as `width`/
+ * `height` in CSS, but as a low-priority "presentational hint" -- any CSS
+ * declaration (author OR the UA stylesheet) still wins outright, which is
+ * exactly what calling this ONLY when `tbox_style_resolve_length_property`
+ * already came back AUTO (no cascade declaration won) already guarantees,
+ * with zero cascade/specificity machinery of its own. `<img>`-only, and
+ * deliberately narrow: the first place Style reads a plain HTML attribute
+ * for anything beyond `style`/`class`/`id` (see tbox_style_resolve's own
+ * `(void)node` comment below, still true for every OTHER property). Returns
+ * AUTO (a no-op override) unless `node` is an ELEMENT `<img>` with a
+ * `name`-named attribute (e.g. `name == "width"`) whose value parses as a
+ * bare number via tbox_style_parse_number (e.g. "100" -- not "100px", real
+ * HTML doesn't allow a unit here). */
+static tbox_style_length tbox_style_resolve_img_dimension_attribute(const tbox_html_node *node, const char *name) {
+    tbox_style_length result = { TBOX_STYLE_LENGTH_AUTO, 0.0 };
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("img"))) {
+        return result;
+    }
+
+    const tbox_html_attribute *attr = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr(name));
+    if (attr == NULL) {
+        return result;
+    }
+
+    double value;
+    if (tbox_style_parse_number(tbox_style_trim(attr->value), &value)) {
+        result.kind  = TBOX_STYLE_LENGTH_PX;
+        result.value = value;
+    }
+    return result;
+}
+
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed) {
-    (void)node; /* not needed by any of v0's in-scope properties; kept in the signature for per-tag defaults later (see ARCHITECTURE.md) */
+    /* `node` is used below ONLY by width/height's `<img>` HTML-attribute
+     * fallback (tbox_style_resolve_img_dimension_attribute) -- every other
+     * property here is still a pure function of `computed`/`parent_style`,
+     * unchanged from v0's original "kept in the signature for per-tag
+     * defaults later" stance (see ARCHITECTURE.md). */
 
     tbox_style style;
 
@@ -485,6 +522,12 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
 
     style.width  = tbox_style_resolve_length_property(computed, "width", style.font_size);
     style.height = tbox_style_resolve_length_property(computed, "height", style.font_size);
+    if (style.width.kind == TBOX_STYLE_LENGTH_AUTO) {
+        style.width = tbox_style_resolve_img_dimension_attribute(node, "width");
+    }
+    if (style.height.kind == TBOX_STYLE_LENGTH_AUTO) {
+        style.height = tbox_style_resolve_img_dimension_attribute(node, "height");
+    }
 
     for (int i = 0; i < 4; i++) {
         style.margin[i].kind   = TBOX_STYLE_LENGTH_PX;

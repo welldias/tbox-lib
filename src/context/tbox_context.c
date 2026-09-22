@@ -47,6 +47,7 @@ struct tbox_context {
     tbox_css_stylesheet *ua_stylesheet; /* NOVO v2: owned, same lifecycle -- generated from a tbox_ua_style_config and parsed once in tbox_context_open_with_config, TBOX_CSS_ORIGIN_USER_AGENT in tbox_context_run_frame's cascade */
     tbox_css_stylesheet *internal_stylesheet; /* NOVO v9: owned, same lifecycle as `stylesheet` -- NULL se o documento não tem nenhum <style>; concatenação de todo <style> encontrado na árvore, mesma origem TBOX_CSS_ORIGIN_AUTHOR que `stylesheet` em tbox_context_run_frame */
     tbox_font_face_cache *fonts;        /* borrowed -- built/destroyed by the caller, never by tbox_context (NOVO v2: was a single tbox_font_face) */
+    tbox_image_cache *images;           /* borrowed, same lifecycle stance as `fonts` above -- may be NULL ("no images", see <tbox/image.h>) */
     tbox_layout_box *root;              /* last computed layout tree (lives in frame_arena); NULL until the first run_frame */
     tbox_arena frame_arena;             /* backing for tbox_style_table + tbox_layout_box + tbox_display_list; reset at the start of every run_frame */
     tbox_arena handler_arena;           /* backing for `handlers` below -- deliberately NOT frame_arena: a tbox_context_on_click registration must survive every tbox_context_run_frame's arena reset */
@@ -161,7 +162,9 @@ bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_
         "pre { display: block; font-family: monospace; }\n"
         "b, strong { display: inline; font-weight: bold; }\n"
         "i, em { display: inline; font-style: italic; }\n"
-        "span, a { display: inline; }\n"
+        "span { display: inline; }\n"
+        "a { display: inline; color: blue; text-decoration: underline; }\n"
+        "img { display: inline; }\n"
         "small { display: inline; font-size: 80%%; }\n"
         "mark { display: inline; background-color: yellow; }\n"
         "del { display: inline; text-decoration: line-through; }\n"
@@ -207,7 +210,7 @@ static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_ht
     }
 }
 
-tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_ua_style_config config) {
+tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config) {
     tbox_html_document *document = tbox_html_parse(html, html_length);
     if (document == NULL) {
         return NULL;
@@ -272,6 +275,7 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     ctx->ua_stylesheet       = ua_stylesheet;
     ctx->internal_stylesheet = internal_stylesheet;
     ctx->fonts               = fonts;
+    ctx->images              = images;
     ctx->root                = NULL;
     ctx->frame_arena         = tbox_arena_create(0);
     ctx->handler_arena       = tbox_arena_create(0);
@@ -282,8 +286,8 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     return ctx;
 }
 
-tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts) {
-    return tbox_context_open_with_config(html, html_length, css, css_length, fonts, tbox_ua_style_config_default());
+tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images) {
+    return tbox_context_open_with_config(html, html_length, css, css_length, fonts, images, tbox_ua_style_config_default());
 }
 
 void tbox_context_close(tbox_context *ctx) {
@@ -356,7 +360,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
      * so tbox_context_hit_test has something to search (or not) between
      * frames. */
-    ctx->root = tbox_layout_build(&ctx->frame_arena, root, &styles, ctx->fonts, viewport_width, viewport_height);
+    ctx->root = tbox_layout_build(&ctx->frame_arena, root, &styles, ctx->fonts, ctx->images, viewport_width, viewport_height);
 
     /* tbox_render_build_display_list already treats a NULL root as "empty
      * subtree", producing {NULL, 0} -- no special-casing needed here. */

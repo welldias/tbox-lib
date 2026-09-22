@@ -1,5 +1,7 @@
 #include <tbox/layout.h>
 
+#include <tbox/image.h>
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +69,10 @@ static char *read_file(const char *path, size_t *out_size) {
 
 #ifndef TBOX_TEST_LIBERATION_SANS_PATH
 #define TBOX_TEST_LIBERATION_SANS_PATH "external/liberation-sans/LiberationSans-Regular.ttf"
+#endif
+
+#ifndef TBOX_TEST_ASSETS_DIR
+#define TBOX_TEST_ASSETS_DIR "tests/assets"
 #endif
 
 static bool string_view_equal_cstr(tbox_string_view view, const char *cstr) {
@@ -137,7 +143,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT(box->content_box.width == 200.0);
@@ -160,7 +166,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT(box->content_box.width == 800.0);
@@ -183,7 +189,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *first  = outer_box->first_child;
@@ -212,7 +218,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "short text that fits on one line must produce exactly 1 text_run");
@@ -241,7 +247,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->content_box.width == 800.0, "text must never shrink the box's width");
@@ -265,7 +271,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT(box->text_run_count == 0);
@@ -289,7 +295,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 0, "a <div> with loose text must still produce zero text_runs");
@@ -314,7 +320,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             TBOX_TEST_ASSERT_MSG(outer_box->content_box.height == 40.0, "display:none child must not contribute to auto-height");
@@ -339,7 +345,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, div, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, div, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT(box->first_child != NULL && box->last_child != NULL && box->first_child != box->last_child);
@@ -364,7 +370,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count >= 2, "text much wider than a 60px container must wrap onto 2+ lines/runs");
@@ -392,7 +398,7 @@ int tbox_test_layout_run(void) {
         tbox_arena arena_one               = tbox_arena_create(0);
         tbox_css_cascade_source source_one = { sheet_one, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table_one         = tbox_style_resolve_tree(&arena_one, root_one, &source_one, 1);
-        tbox_layout_box *box_one           = tbox_layout_build(&arena_one, root_one, &table_one, fonts, 800.0, 600.0);
+        tbox_layout_box *box_one           = tbox_layout_build(&arena_one, root_one, &table_one, fonts, NULL, 800.0, 600.0);
 
         tbox_html_document *doc_three    = parse_html_cstr("<p>alpha beta gamma delta epsilon zeta eta theta</p>");
         const tbox_html_node *root_three = tbox_html_document_root(doc_three);
@@ -401,7 +407,7 @@ int tbox_test_layout_run(void) {
         tbox_arena arena_three               = tbox_arena_create(0);
         tbox_css_cascade_source source_three = { sheet_three, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table_three         = tbox_style_resolve_tree(&arena_three, root_three, &source_three, 1);
-        tbox_layout_box *box_three           = tbox_layout_build(&arena_three, root_three, &table_three, fonts, 800.0, 600.0);
+        tbox_layout_box *box_three           = tbox_layout_build(&arena_three, root_three, &table_three, fonts, NULL, 800.0, 600.0);
 
         TBOX_TEST_ASSERT(box_one != NULL && box_three != NULL);
         if (box_one != NULL && box_three != NULL) {
@@ -433,7 +439,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "a single word alone on a line must never be split into multiple runs");
@@ -463,7 +469,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"plain \" + \"bold\" must merge into exactly two runs (one per face) on one line");
@@ -495,7 +501,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             tbox_layout_box *h1_box = box->first_child;
@@ -529,7 +535,7 @@ int tbox_test_layout_run(void) {
         tbox_arena arena_border               = tbox_arena_create(0);
         tbox_css_cascade_source source_border = { sheet_border, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table_border         = tbox_style_resolve_tree(&arena_border, root_border, &source_border, 1);
-        tbox_layout_box *box_border           = tbox_layout_build(&arena_border, root_border, &table_border, fonts, 800.0, 600.0);
+        tbox_layout_box *box_border           = tbox_layout_build(&arena_border, root_border, &table_border, fonts, NULL, 800.0, 600.0);
 
         tbox_html_document *doc_plain    = parse_html_cstr("<div>x</div>");
         const tbox_html_node *root_plain = tbox_html_document_root(doc_plain);
@@ -538,7 +544,7 @@ int tbox_test_layout_run(void) {
         tbox_arena arena_plain               = tbox_arena_create(0);
         tbox_css_cascade_source source_plain = { sheet_plain, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table_plain         = tbox_style_resolve_tree(&arena_plain, root_plain, &source_plain, 1);
-        tbox_layout_box *box_plain           = tbox_layout_build(&arena_plain, root_plain, &table_plain, fonts, 800.0, 600.0);
+        tbox_layout_box *box_plain           = tbox_layout_build(&arena_plain, root_plain, &table_plain, fonts, NULL, 800.0, 600.0);
 
         TBOX_TEST_ASSERT(box_border != NULL && box_plain != NULL);
         if (box_border != NULL && box_plain != NULL) {
@@ -571,7 +577,7 @@ int tbox_test_layout_run(void) {
             tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
             tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
             TBOX_TEST_ASSERT(box != NULL);
             if (box != NULL) {
                 TBOX_TEST_ASSERT_MSG(box->border_box.x == box->padding_box.x && box->border_box.y == box->padding_box.y &&
@@ -600,7 +606,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *first  = outer_box->first_child;
@@ -638,7 +644,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *inner_box = outer_box->first_child;
@@ -665,7 +671,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *inner_box = outer_box->first_child;
@@ -694,7 +700,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *first  = outer_box->first_child;
@@ -724,7 +730,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *first  = outer_box->first_child;
@@ -754,7 +760,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *first = outer_box->first_child;
@@ -785,7 +791,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *inner_box = outer_box->first_child;
@@ -815,7 +821,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             TBOX_TEST_ASSERT_MSG(outer_box->content_box.x == 50.0, "test setup: outer's own content_box.x must be shifted by its 50px left margin");
@@ -849,7 +855,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             TBOX_TEST_ASSERT_MSG(outer_box->content_box.x == 100.0, "test setup: outer's relative shift must land it at x=100");
@@ -882,7 +888,7 @@ int tbox_test_layout_run(void) {
         tbox_arena arena_relative               = tbox_arena_create(0);
         tbox_css_cascade_source source_relative = { sheet_relative, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table_relative         = tbox_style_resolve_tree(&arena_relative, root_relative, &source_relative, 1);
-        tbox_layout_box *outer_box_relative     = tbox_layout_build(&arena_relative, outer_relative, &table_relative, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box_relative     = tbox_layout_build(&arena_relative, outer_relative, &table_relative, fonts, NULL, 800.0, 600.0);
 
         tbox_html_document *doc_sticky    = parse_html_cstr("<div><div class=\"a\">x</div></div>");
         const tbox_html_node *root_sticky  = tbox_html_document_root(doc_sticky);
@@ -892,7 +898,7 @@ int tbox_test_layout_run(void) {
         tbox_arena arena_sticky               = tbox_arena_create(0);
         tbox_css_cascade_source source_sticky = { sheet_sticky, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table_sticky         = tbox_style_resolve_tree(&arena_sticky, root_sticky, &source_sticky, 1);
-        tbox_layout_box *outer_box_sticky     = tbox_layout_build(&arena_sticky, outer_sticky, &table_sticky, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box_sticky     = tbox_layout_build(&arena_sticky, outer_sticky, &table_sticky, fonts, NULL, 800.0, 600.0);
 
         TBOX_TEST_ASSERT(outer_box_relative != NULL && outer_box_sticky != NULL);
         if (outer_box_relative != NULL && outer_box_sticky != NULL) {
@@ -935,7 +941,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             TBOX_TEST_ASSERT_MSG(outer_box->content_box.height == 90.0, "a 500px absolute child must not inflate the parent's auto-height (30 + collapsed-20 + 40 == 90)");
@@ -984,7 +990,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *inner_box = outer_box->first_child;
@@ -1016,7 +1022,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *outer_box = tbox_layout_build(&arena, outer, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(outer_box != NULL);
         if (outer_box != NULL) {
             tbox_layout_box *inner_box = outer_box->first_child;
@@ -1049,7 +1055,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(ul_box != NULL);
         if (ul_box != NULL) {
             tbox_layout_box *li_box = ul_box->first_child;
@@ -1082,7 +1088,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(ul_box != NULL);
         if (ul_box != NULL) {
             tbox_layout_box *first  = ul_box->first_child;
@@ -1121,7 +1127,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(ul_box != NULL);
         if (ul_box != NULL) {
             TBOX_TEST_ASSERT_MSG(ul_box->text_run_count == 0, "<ul> must not become a text tag just because Tarefa 1 added <li> to the list");
@@ -1149,7 +1155,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(ul_box != NULL);
         if (ul_box != NULL) {
             tbox_layout_box *li_box = ul_box->first_child;
@@ -1181,7 +1187,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *ol_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *ol_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(ol_box != NULL);
         if (ol_box != NULL) {
             tbox_layout_box *first  = ol_box->first_child;
@@ -1221,7 +1227,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(ul_box != NULL);
         if (ul_box != NULL) {
             tbox_layout_box *li_box = ul_box->first_child;
@@ -1252,7 +1258,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "<p>texto</p> must still produce a single run");
@@ -1277,7 +1283,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "<h1>texto</h1> must still produce a single run");
@@ -1308,7 +1314,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *li_box = div_box->first_child;
@@ -1339,7 +1345,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "<br> must force \"um\"/\"dois\" onto two separate runs, not merge them into one");
@@ -1372,7 +1378,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "a blank line between two <br>s produces no run of its own -- only \"um\" and \"tres\" render");
@@ -1403,7 +1409,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "a trailing <br> with nothing after it must NOT create a phantom blank line/run");
@@ -1431,7 +1437,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "a single physical <pre> line with no '\\n' must produce exactly one run");
@@ -1459,7 +1465,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "a literal '\\n' inside <pre> must split into two runs, without any <br>");
@@ -1490,7 +1496,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "a <pre> line, however wide, must never wrap onto more than one run/line");
@@ -1522,7 +1528,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *p_box = div_box->first_child;
@@ -1560,7 +1566,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "\"texto normal\" must fit on a single run, unchanged from prior versions");
@@ -1588,7 +1594,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *ul_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(ul_box != NULL);
         if (ul_box != NULL) {
             tbox_layout_box *li_box = ul_box->first_child;
@@ -1634,7 +1640,7 @@ int tbox_test_layout_run(void) {
             tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
             tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, family_fonts, 800.0, 600.0);
+            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, family_fonts, NULL, 800.0, 600.0);
             TBOX_TEST_ASSERT(box != NULL);
             if (box != NULL) {
                 TBOX_TEST_ASSERT_MSG(box->text_run_count == 1, "\"x\" must fit on a single run");
@@ -1667,7 +1673,7 @@ int tbox_test_layout_run(void) {
 
             int calls_before = resolver_state.calls;
 
-            tbox_layout_box *box_plain = tbox_layout_build(&arena_plain, root_plain, &table_plain, family_fonts, 800.0, 600.0);
+            tbox_layout_box *box_plain = tbox_layout_build(&arena_plain, root_plain, &table_plain, family_fonts, NULL, 800.0, 600.0);
             TBOX_TEST_ASSERT(box_plain != NULL);
             if (box_plain != NULL) {
                 TBOX_TEST_ASSERT_MSG(box_plain->text_run_count == 1, "\"x\" must fit on a single run");
@@ -1713,7 +1719,7 @@ int tbox_test_layout_run(void) {
             tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
             tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, italic_fonts, 800.0, 600.0);
+            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, italic_fonts, NULL, 800.0, 600.0);
             TBOX_TEST_ASSERT(box != NULL);
             if (box != NULL) {
                 TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"italic\" + \"normal\" must merge into exactly two runs (one per face) on one line");
@@ -1755,7 +1761,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"Normal\" + \"pequeno\" must merge into exactly two runs (one per face) on one line");
@@ -1800,7 +1806,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"Normal\" + \"baixo\" must still be TWO runs (style differs) even though the face is identical");
@@ -1833,7 +1839,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"Normal\" + \"alto\" must still be TWO runs (style differs) even though the face is identical");
@@ -1867,7 +1873,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "\"um\" and \"dois\" must be two runs, one per line");
@@ -1900,7 +1906,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL);
         if (box != NULL) {
             TBOX_TEST_ASSERT_MSG(box->text_run_count == 2, "<mark> must still produce a SEPARATE run from the plain text even though both resolve to the identical face -- style is now part of the merge key too");
@@ -1932,7 +1938,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *anon = div_box->first_child;
@@ -1968,7 +1974,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *p1 = div_box->first_child;
@@ -2009,7 +2015,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *anon = div_box->first_child;
@@ -2054,7 +2060,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *anon = div_box->first_child;
@@ -2090,7 +2096,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *first = div_box->first_child;
@@ -2142,7 +2148,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *anon = div_box->first_child;
@@ -2167,7 +2173,7 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
 
-        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(div_box != NULL);
         if (div_box != NULL) {
             tbox_layout_box *anon = div_box->first_child;
@@ -2181,6 +2187,205 @@ int tbox_test_layout_run(void) {
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
+    }
+
+    /* NOVO (image support): <img> as an inline "word" -- black.png/
+     * yellow.png (tests/assets/, also used by tests/assets/024.html's real
+     * regression fixture) are known 200x200 RGBA fixtures. */
+    {
+        tbox_image_cache *images = tbox_image_cache_create(TBOX_TEST_ASSETS_DIR);
+        TBOX_TEST_ASSERT(images != NULL);
+        if (images != NULL) {
+            /* 1: both width/height AUTO falls back to the image's intrinsic
+             * pixel dimensions. */
+            {
+                tbox_html_document *doc    = parse_html_cstr("<div><img src=\"black.png\"></div>");
+                const tbox_html_node *root = tbox_html_document_root(doc);
+                tbox_css_stylesheet *sheet = parse_css_cstr("img { display: inline; }");
+
+                tbox_arena arena               = tbox_arena_create(0);
+                tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+                tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+                tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, images, 800.0, 600.0);
+                TBOX_TEST_ASSERT(div_box != NULL);
+                if (div_box != NULL) {
+                    tbox_layout_box *anon = div_box->first_child;
+                    TBOX_TEST_ASSERT_MSG(anon != NULL && anon->text_run_count == 1, "a lone <img> under a block container must produce one run in its anonymous box");
+                    if (anon != NULL && anon->text_run_count == 1) {
+                        TBOX_TEST_ASSERT_MSG(anon->text_runs[0].image != NULL, "the run must carry the decoded image");
+                        TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(anon->text_runs[0].rect.width, 200.0) && tbox_test_double_approx_equal(anon->text_runs[0].rect.height, 200.0), "both-AUTO must resolve to black.png's own 200x200 intrinsic size");
+                    }
+                }
+
+                tbox_arena_destroy(&arena);
+                tbox_css_stylesheet_destroy(sheet);
+                tbox_html_document_destroy(doc);
+            }
+
+            /* 2: bare HTML width/height attributes (no style="") override
+             * AUTO -- see tbox_style_resolve_img_dimension_attribute in
+             * src/style/tbox_style.c, same behavior tests/assets/024.html's
+             * first <img> (width="100" height="100") exercises for real. */
+            {
+                tbox_html_document *doc    = parse_html_cstr("<div><img src=\"black.png\" width=\"50\" height=\"50\"></div>");
+                const tbox_html_node *root = tbox_html_document_root(doc);
+                tbox_css_stylesheet *sheet = parse_css_cstr("img { display: inline; }");
+
+                tbox_arena arena               = tbox_arena_create(0);
+                tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+                tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+                tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, images, 800.0, 600.0);
+                TBOX_TEST_ASSERT(div_box != NULL);
+                if (div_box != NULL) {
+                    tbox_layout_box *anon = div_box->first_child;
+                    TBOX_TEST_ASSERT_MSG(anon != NULL && anon->text_run_count == 1, "a lone <img> must still produce one run");
+                    if (anon != NULL && anon->text_run_count == 1) {
+                        TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(anon->text_runs[0].rect.width, 50.0) && tbox_test_double_approx_equal(anon->text_runs[0].rect.height, 50.0), "HTML width/height attributes must override the intrinsic 200x200 size");
+                    }
+                }
+
+                tbox_arena_destroy(&arena);
+                tbox_css_stylesheet_destroy(sheet);
+                tbox_html_document_destroy(doc);
+            }
+
+            /* 3: a CSS declaration wins over the HTML attribute (CSS always
+             * has priority over the "presentational hint" attribute
+             * fallback). */
+            {
+                tbox_html_document *doc    = parse_html_cstr("<div><img src=\"black.png\" width=\"50\" height=\"50\" style=\"width:10px;height:10px;\"></div>");
+                const tbox_html_node *root = tbox_html_document_root(doc);
+                tbox_css_stylesheet *sheet = parse_css_cstr("img { display: inline; }");
+
+                tbox_arena arena               = tbox_arena_create(0);
+                tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+                tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+                tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, images, 800.0, 600.0);
+                TBOX_TEST_ASSERT(div_box != NULL);
+                if (div_box != NULL) {
+                    tbox_layout_box *anon = div_box->first_child;
+                    TBOX_TEST_ASSERT_MSG(anon != NULL && anon->text_run_count == 1, "a lone <img> must still produce one run");
+                    if (anon != NULL && anon->text_run_count == 1) {
+                        TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(anon->text_runs[0].rect.width, 10.0) && tbox_test_double_approx_equal(anon->text_runs[0].rect.height, 10.0), "an inline style=\"\" declaration must win over the width/height attributes");
+                    }
+                }
+
+                tbox_arena_destroy(&arena);
+                tbox_css_stylesheet_destroy(sheet);
+                tbox_html_document_destroy(doc);
+            }
+
+            /* 4: a missing/undecodable src with NO `alt` attribute
+             * contributes nothing -- no run at all, same as an empty text
+             * word, never a crash. */
+            {
+                tbox_html_document *doc    = parse_html_cstr("<div><img src=\"does-not-exist.png\"></div>");
+                const tbox_html_node *root = tbox_html_document_root(doc);
+                tbox_css_stylesheet *sheet = parse_css_cstr("img { display: inline; }");
+
+                tbox_arena arena               = tbox_arena_create(0);
+                tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+                tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+                tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, images, 800.0, 600.0);
+                TBOX_TEST_ASSERT(div_box != NULL);
+                if (div_box != NULL) {
+                    tbox_layout_box *anon = div_box->first_child;
+                    TBOX_TEST_ASSERT_MSG(anon == NULL || anon->text_run_count == 0, "a missing src with no alt must contribute zero runs, never crash");
+                }
+
+                tbox_arena_destroy(&arena);
+                tbox_css_stylesheet_destroy(sheet);
+                tbox_html_document_destroy(doc);
+            }
+
+            /* 4b: a missing/undecodable src WITH a non-empty `alt` falls
+             * back to that text, rendered as an ordinary text run (not an
+             * image run) -- the exact tests/assets/024.html scenario
+             * (`<img src="notfound.png" alt="Image not found">`). */
+            {
+                tbox_html_document *doc    = parse_html_cstr("<div><img src=\"does-not-exist.png\" alt=\"Image not found\"></div>");
+                const tbox_html_node *root = tbox_html_document_root(doc);
+                tbox_css_stylesheet *sheet = parse_css_cstr("img { display: inline; }");
+
+                tbox_arena arena               = tbox_arena_create(0);
+                tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+                tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+                tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, images, 800.0, 600.0);
+                TBOX_TEST_ASSERT(div_box != NULL);
+                if (div_box != NULL) {
+                    tbox_layout_box *anon = div_box->first_child;
+                    TBOX_TEST_ASSERT_MSG(anon != NULL && anon->text_run_count == 1, "a missing src WITH alt text must produce one text run");
+                    if (anon != NULL && anon->text_run_count == 1) {
+                        TBOX_TEST_ASSERT_MSG(anon->text_runs[0].image == NULL, "the alt-text fallback must be an ordinary TEXT run, not an image run");
+                        TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(anon->text_runs[0].text, "Image not found"), "the fallback run's text must be the alt attribute's value");
+                    }
+                }
+
+                tbox_arena_destroy(&arena);
+                tbox_css_stylesheet_destroy(sheet);
+                tbox_html_document_destroy(doc);
+            }
+
+            /* 4c: alt="" (explicitly empty -- the standard "decorative
+             * image" marker) contributes nothing, same as no alt at all. */
+            {
+                tbox_html_document *doc    = parse_html_cstr("<div><img src=\"does-not-exist.png\" alt=\"\"></div>");
+                const tbox_html_node *root = tbox_html_document_root(doc);
+                tbox_css_stylesheet *sheet = parse_css_cstr("img { display: inline; }");
+
+                tbox_arena arena               = tbox_arena_create(0);
+                tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+                tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+                tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, images, 800.0, 600.0);
+                TBOX_TEST_ASSERT(div_box != NULL);
+                if (div_box != NULL) {
+                    tbox_layout_box *anon = div_box->first_child;
+                    TBOX_TEST_ASSERT_MSG(anon == NULL || anon->text_run_count == 0, "an explicitly empty alt=\"\" must contribute zero runs, same as no alt at all");
+                }
+
+                tbox_arena_destroy(&arena);
+                tbox_css_stylesheet_destroy(sheet);
+                tbox_html_document_destroy(doc);
+            }
+
+            /* 5: <a><img></a> -- the bounded one-level img-in-inline
+             * extension (tests/assets/024.html's linked-image case). The
+             * <a> itself is display:inline with no <img> sibling text, so
+             * this must still produce exactly one image run, not a
+             * flattened-to-empty-text run. */
+            {
+                tbox_html_document *doc    = parse_html_cstr("<div><a href=\"x\"><img src=\"yellow.png\" width=\"20\" height=\"20\"></a></div>");
+                const tbox_html_node *root = tbox_html_document_root(doc);
+                tbox_css_stylesheet *sheet = parse_css_cstr("a { display: inline; } img { display: inline; }");
+
+                tbox_arena arena               = tbox_arena_create(0);
+                tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+                tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+                tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, images, 800.0, 600.0);
+                TBOX_TEST_ASSERT(div_box != NULL);
+                if (div_box != NULL) {
+                    tbox_layout_box *anon = div_box->first_child;
+                    TBOX_TEST_ASSERT_MSG(anon != NULL && anon->text_run_count == 1, "<a><img></a> must produce exactly one image run");
+                    if (anon != NULL && anon->text_run_count == 1) {
+                        TBOX_TEST_ASSERT_MSG(anon->text_runs[0].image != NULL, "the run must carry the decoded image, not be flattened to empty text");
+                        TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(anon->text_runs[0].rect.width, 20.0) && tbox_test_double_approx_equal(anon->text_runs[0].rect.height, 20.0), "the nested <img>'s own width/height attributes must still apply");
+                    }
+                }
+
+                tbox_arena_destroy(&arena);
+                tbox_css_stylesheet_destroy(sheet);
+                tbox_html_document_destroy(doc);
+            }
+
+            tbox_image_cache_destroy(images);
+        }
     }
 
     tbox_font_face_cache_destroy(fonts);

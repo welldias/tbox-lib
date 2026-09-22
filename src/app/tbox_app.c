@@ -6,6 +6,7 @@
 
 #include <tbox/context.h>
 #include <tbox/font.h>
+#include <tbox/image.h>
 #include <tbox/output.h>
 #include <tbox/string_view.h>
 
@@ -18,8 +19,15 @@
  * escopo" about vsync), not to wait for something to happen. */
 #define TBOX_APP_POLL_TIMEOUT_MS 0
 
+/* Generous fixed size for tbox_app_dirname's output buffer -- truncated
+ * (never overflowed) if an html_path's directory component is longer than
+ * this, same truncate-not-reject posture as tbox_image_cache's own path
+ * buffers (src/image/tbox_image.c). */
+#define TBOX_APP_PATH_BUF_SIZE 4096
+
 struct tbox_app {
     tbox_font_face_cache *fonts;
+    tbox_image_cache *images;
     tbox_context *ctx;
     tbox_backend_wayland *backend;
 
@@ -158,23 +166,65 @@ static tbox_font_face_cache *tbox_app_build_font_cache(void) {
     return fonts;
 }
 
+/* Writes `path`'s directory component (everything before the last '/') into
+ * `out`, NUL-terminated and truncated if it doesn't fit `out_size` -- same
+ * "truncate, never crash" posture as tbox_image_cache_get's own fixed
+ * buffers (src/image/tbox_image.c). `path == NULL`, or no '/' anywhere in
+ * it, writes an empty string, which tbox_image_cache_create treats
+ * identically to a NULL base_dir (<tbox/image.h>: "use src as-is").
+ * Deliberately no dirname()/libgen.h dependency -- manual last-'/' scan,
+ * matching this file's existing "html_path/css_path used exactly as given,
+ * no path-joining" posture everywhere else. */
+static void tbox_app_dirname(const char *path, char *out, size_t out_size) {
+    if (out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (path == NULL) {
+        return;
+    }
+
+    const char *last_slash = strrchr(path, '/');
+    if (last_slash == NULL) {
+        return;
+    }
+
+    size_t len = (size_t)(last_slash - path);
+    if (len >= out_size) {
+        len = out_size - 1;
+    }
+    memcpy(out, path, len);
+    out[len] = '\0';
+}
+
 /* Shared by tbox_app_create/tbox_app_create_with_config (the same "thin
  * public wrapper over one real implementation" shape as
  * tbox_context_open/tbox_context_open_with_config): builds the font cache
- * (see tbox_app_build_font_cache above), opens the tbox_context (with or
- * without an explicit tbox_ua_style_config, per `use_config`) and the
- * Wayland window, and allocates the tbox_app struct.
+ * (see tbox_app_build_font_cache above) and the image cache (`base_dir` --
+ * see tbox_app_dirname above -- is NULL/empty for tbox_app_create/
+ * _with_config's raw-HTML-string callers, since there is no HTML file to
+ * derive one from; tbox_app_create_from_files_impl below passes the real
+ * one), opens the tbox_context (with or without an explicit
+ * tbox_ua_style_config, per `use_config`) and the Wayland window, and
+ * allocates the tbox_app struct.
  *
  * Returns NULL on any failure, cleaning up whatever had already been
  * allocated first; never crashes either way. */
-static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
+static tbox_app *tbox_app_create_impl(const char *html, const char *css, const char *base_dir, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
     tbox_font_face_cache *fonts = tbox_app_build_font_cache();
     if (fonts == NULL) {
         return NULL;
     }
 
-    tbox_context *ctx = use_config ? tbox_context_open_with_config(html, strlen(html), css, strlen(css), fonts, config) : tbox_context_open(html, strlen(html), css, strlen(css), fonts);
+    tbox_image_cache *images = tbox_image_cache_create(base_dir);
+    if (images == NULL) {
+        tbox_font_face_cache_destroy(fonts);
+        return NULL;
+    }
+
+    tbox_context *ctx = use_config ? tbox_context_open_with_config(html, strlen(html), css, strlen(css), fonts, images, config) : tbox_context_open(html, strlen(html), css, strlen(css), fonts, images);
     if (ctx == NULL) {
+        tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
         return NULL;
     }
@@ -182,6 +232,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t
     tbox_backend_wayland *backend = tbox_backend_wayland_open(width, height, NULL);
     if (backend == NULL) {
         tbox_context_close(ctx);
+        tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
         return NULL;
     }
@@ -190,11 +241,13 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t
     if (app == NULL) {
         tbox_backend_wayland_destroy(backend);
         tbox_context_close(ctx);
+        tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
         return NULL;
     }
 
     app->fonts       = fonts;
+    app->images      = images;
     app->ctx         = ctx;
     app->backend     = backend;
     app->last_width  = 0;
@@ -207,11 +260,11 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, int32_t
 tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height) {
     tbox_ua_style_config unused_config; /* never read: use_config == false below */
     memset(&unused_config, 0, sizeof(unused_config));
-    return tbox_app_create_impl(html, css, width, height, false, unused_config);
+    return tbox_app_create_impl(html, css, NULL, width, height, false, unused_config);
 }
 
 tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
-    return tbox_app_create_impl(html, css, width, height, true, config);
+    return tbox_app_create_impl(html, css, NULL, width, height, true, config);
 }
 
 /* NOVO v3: reads `path` fully into a malloc'd, NUL-terminated buffer -- same
@@ -293,7 +346,10 @@ static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const ch
         }
     }
 
-    tbox_app *app = tbox_app_create_impl(html, css != NULL ? css : "", width, height, use_config, config);
+    char base_dir[TBOX_APP_PATH_BUF_SIZE];
+    tbox_app_dirname(html_path, base_dir, sizeof(base_dir));
+
+    tbox_app *app = tbox_app_create_impl(html, css != NULL ? css : "", base_dir, width, height, use_config, config);
 
     free(css);
     free(html);
@@ -338,30 +394,37 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
         }
     }
 
+    char base_dir[TBOX_APP_PATH_BUF_SIZE];
+    tbox_app_dirname(html_path, base_dir, sizeof(base_dir));
+
     bool ok = false;
 
     tbox_font_face_cache *fonts = tbox_app_build_font_cache();
     if (fonts != NULL) {
-        tbox_context *ctx = tbox_context_open(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts);
-        if (ctx != NULL) {
-            tbox_display_list list;
-            tbox_context_run_frame(ctx, (double)width, (double)height, &list);
+        tbox_image_cache *images = tbox_image_cache_create(base_dir);
+        if (images != NULL) {
+            tbox_context *ctx = tbox_context_open(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts, images);
+            if (ctx != NULL) {
+                tbox_display_list list;
+                tbox_context_run_frame(ctx, (double)width, (double)height, &list);
 
-            uint32_t *pixels = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)width * (size_t)height);
-            if (pixels != NULL) {
-                /* Same "clear to opaque white first" v0's tbox_backend_wayland_present
-                 * uses -- see its doc comment in <tbox/output.h> for why (no UA
-                 * background-color default yet, white matches every real browser's
-                 * canvas default more closely than showing nothing/black would). */
-                for (size_t i = 0; i < (size_t)width * (size_t)height; i++) {
-                    pixels[i] = 0xFFFFFFFFu;
+                uint32_t *pixels = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)width * (size_t)height);
+                if (pixels != NULL) {
+                    /* Same "clear to opaque white first" v0's tbox_backend_wayland_present
+                     * uses -- see its doc comment in <tbox/output.h> for why (no UA
+                     * background-color default yet, white matches every real browser's
+                     * canvas default more closely than showing nothing/black would). */
+                    for (size_t i = 0; i < (size_t)width * (size_t)height; i++) {
+                        pixels[i] = 0xFFFFFFFFu;
+                    }
+                    tbox_raster_display_list(pixels, width, height, &list);
+                    ok = tbox_raster_write_png(png_path, pixels, width, height);
+                    free(pixels);
                 }
-                tbox_raster_display_list(pixels, width, height, &list);
-                ok = tbox_raster_write_png(png_path, pixels, width, height);
-                free(pixels);
-            }
 
-            tbox_context_close(ctx);
+                tbox_context_close(ctx);
+            }
+            tbox_image_cache_destroy(images);
         }
         tbox_font_face_cache_destroy(fonts);
     }
@@ -442,6 +505,7 @@ void tbox_app_close(tbox_app *app) {
 
     tbox_backend_wayland_destroy(app->backend);
     tbox_context_close(app->ctx);
+    tbox_image_cache_destroy(app->images);
     tbox_font_face_cache_destroy(app->fonts);
     free(app);
 }

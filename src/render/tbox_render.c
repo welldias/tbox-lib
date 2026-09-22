@@ -15,15 +15,18 @@ static void tbox_render_push_fill_rect(tbox_vector *items, tbox_rect rect, tbox_
     op->color         = color;
     op->text          = tbox_string_view_make(NULL, 0);
     op->face          = NULL;
+    op->image         = NULL;
 }
 
 /* Pre-order walk over `box` and its first_child/next_sibling chain, pushing
  * paint ops onto `items` (see tbox_render_build_display_list). A box's own
  * FILL_RECT (if its background isn't transparent) always precedes its own
  * (NOVO v4) border FILL_RECTs (if `effective_border > 0`), which in turn
- * precede its own TEXT_RUN ops (NOVO v2: one per box->text_runs entry, in
- * the order Layout Tree built them), and all of that precedes its
- * children's ops -- see ARCHITECTURE.md's "Render Pipeline" section. */
+ * precede its own TEXT_RUN/IMAGE ops (NOVO v2/image support: one per
+ * box->text_runs entry, in the order Layout Tree built them -- IMAGE for a
+ * run whose `image` is non-NULL, TEXT_RUN otherwise), and all of that
+ * precedes its children's ops -- see ARCHITECTURE.md's "Render Pipeline"
+ * section. */
 static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
         if (box->style != NULL && box->style->background_color.a != 0) {
@@ -51,6 +54,24 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
 
         for (size_t i = 0; i < box->text_run_count; i++) {
             const tbox_layout_text_run *run = &box->text_runs[i];
+
+            /* NOVO (image support): an <img> word's run paints its decoded
+             * pixels instead of text -- no background highlight, no
+             * text-decoration line (neither applies to a replaced element
+             * in this project's scope), just one IMAGE op straight into
+             * `run->rect` (already the resolved destination size -- see
+             * tbox_layout_push_image_word/tbox_layout_build_line_runs).
+             * Skips the rest of this loop body entirely for this run. */
+            if (run->image != NULL) {
+                tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
+                op->kind          = TBOX_PAINT_IMAGE;
+                op->rect          = run->rect;
+                op->color         = (tbox_css_rgba){ 0, 0, 0, 0 };
+                op->text          = tbox_string_view_make(NULL, 0);
+                op->face          = NULL;
+                op->image         = run->image;
+                continue;
+            }
 
             /* NOVO v13: <mark> highlight -- a FILL_RECT covering the run's
              * own rect (not the whole box/line), painted before its
@@ -80,6 +101,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
             op->color         = run->style->color; /* NOVO v13: per-run color (run->style, never NULL), replacing the one shared box->style->color -- see ARCHITECTURE.md's "v13" section */
             op->text          = run->text;
             op->face          = run->font;
+            op->image         = NULL;
 
             /* NOVO v13: <del>/<ins> decoration line -- a thin (1px)
              * FILL_RECT spanning the run's width, positioned off its

@@ -1,5 +1,7 @@
 #include <tbox/render.h>
 
+#include <tbox/image.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -181,7 +183,7 @@ int tbox_test_render_run(void) {
         style.color         = (tbox_css_rgba){ 5, 6, 7, 255 };
         tbox_layout_box box = tbox_test_render_default_box(&style);
 
-        tbox_layout_text_run run;
+        tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 15.0, 25.0, 40.0, 16.0 };
         run.text  = tbox_test_render_view_from_cstr("hello");
         run.font  = font;
@@ -218,7 +220,7 @@ int tbox_test_render_run(void) {
          * FILL_RECT and break this test's "exactly 2 ops" expectation. */
         tbox_style run_style = tbox_test_render_default_style();
 
-        tbox_layout_text_run run;
+        tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 0.0, 0.0, 16.0, 16.0 };
         run.text  = tbox_test_render_view_from_cstr("hi");
         run.font  = font;
@@ -268,7 +270,7 @@ int tbox_test_render_run(void) {
         tbox_style style    = tbox_test_render_default_style();
         tbox_layout_box box = tbox_test_render_default_box(&style);
 
-        tbox_layout_text_run runs[3];
+        tbox_layout_text_run runs[3] = { 0 };
         runs[0].rect  = (tbox_rect){ 0.0, 0.0, 20.0, 16.0 };
         runs[0].text  = tbox_test_render_view_from_cstr("one");
         runs[0].font  = font;
@@ -305,7 +307,7 @@ int tbox_test_render_run(void) {
         tbox_style style    = tbox_test_render_default_style();
         tbox_layout_box box = tbox_test_render_default_box(&style);
 
-        tbox_layout_text_run unused_run;
+        tbox_layout_text_run unused_run = { 0 };
         box.text_runs      = &unused_run;
         box.text_run_count = 0;
 
@@ -329,7 +331,7 @@ int tbox_test_render_run(void) {
         tbox_style run2_style   = tbox_test_render_default_style();
         run2_style.color        = (tbox_css_rgba){ 99, 88, 77, 255 };
 
-        tbox_layout_text_run runs[2];
+        tbox_layout_text_run runs[2] = { 0 };
         runs[0].rect  = (tbox_rect){ 0.0, 0.0, 20.0, 16.0 };
         runs[0].text  = tbox_test_render_view_from_cstr("regular");
         runs[0].font  = font;
@@ -454,7 +456,7 @@ int tbox_test_render_run(void) {
          * effects (covered separately below). */
         tbox_style run_style = tbox_test_render_default_style();
 
-        tbox_layout_text_run run;
+        tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 2.0, 2.0, 16.0, 16.0 };
         run.text  = tbox_test_render_view_from_cstr("hi");
         run.font  = font;
@@ -518,7 +520,7 @@ int tbox_test_render_run(void) {
         run_style.color            = (tbox_css_rgba){ 1, 2, 3, 255 };
         run_style.background_color = (tbox_css_rgba){ 255, 255, 0, 255 }; /* yellow highlight */
 
-        tbox_layout_text_run run;
+        tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 8.0, 4.0, 30.0, 16.0 };
         run.text  = tbox_test_render_view_from_cstr("marked");
         run.font  = font;
@@ -553,7 +555,7 @@ int tbox_test_render_run(void) {
         run_style.color           = (tbox_css_rgba){ 11, 22, 33, 255 };
         run_style.text_decoration = TBOX_STYLE_TEXT_DECORATION_UNDERLINE;
 
-        tbox_layout_text_run run;
+        tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
         run.text  = tbox_test_render_view_from_cstr("ins");
         run.font  = font;
@@ -588,7 +590,7 @@ int tbox_test_render_run(void) {
         run_style.color           = (tbox_css_rgba){ 44, 55, 66, 255 };
         run_style.text_decoration = TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH;
 
-        tbox_layout_text_run run;
+        tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
         run.text  = tbox_test_render_view_from_cstr("del");
         run.font  = font;
@@ -624,7 +626,7 @@ int tbox_test_render_run(void) {
         run_style.color      = (tbox_css_rgba){ 9, 8, 7, 255 };
         /* run_style.background_color left transparent, text_decoration left NONE by tbox_test_render_default_style() */
 
-        tbox_layout_text_run run;
+        tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 0.0, 0.0, 20.0, 16.0 };
         run.text  = tbox_test_render_view_from_cstr("plain");
         run.font  = font;
@@ -639,6 +641,45 @@ int tbox_test_render_run(void) {
         if (list.count == 1) {
             TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_TEXT_RUN);
             TBOX_TEST_ASSERT_MSG(list.items[0].color.r == 9 && list.items[0].color.g == 8 && list.items[0].color.b == 7, "TEXT_RUN color must be run->style->color, not box->style->color");
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 18: NOVO (image support) -- a run whose `image` is non-NULL produces
+     * exactly one IMAGE op (never TEXT_RUN), carrying the run's own rect and
+     * image pointer, with no extra FILL_RECT even though the run's own
+     * style has a non-transparent background_color (an image run skips the
+     * mark-highlight/decoration extras entirely -- see tbox_render_walk's
+     * `continue` right after pushing the IMAGE op). */
+    {
+        tbox_image fake_image = { 42, 24, (const unsigned char *)"fake pixel data" };
+
+        /* box_style stays fully transparent/default (tbox_test_render_default_box
+         * below), so the box ITSELF paints no FILL_RECT of its own -- the
+         * only thing under test is whether the RUN's own background_color/
+         * text_decoration (on a DIFFERENT style, run_style) get skipped. */
+        tbox_style box_style = tbox_test_render_default_style();
+        tbox_layout_box box  = tbox_test_render_default_box(&box_style);
+
+        tbox_style run_style       = tbox_test_render_default_style();
+        run_style.background_color = (tbox_css_rgba){ 1, 2, 3, 255 }; /* must be IGNORED for an image run */
+        run_style.text_decoration  = TBOX_STYLE_TEXT_DECORATION_UNDERLINE; /* must also be IGNORED */
+
+        tbox_layout_text_run run = { 0 };
+        run.rect  = (tbox_rect){ 5.0, 6.0, 42.0, 24.0 };
+        run.style = &run_style;
+        run.image = &fake_image;
+
+        box.text_runs      = &run;
+        box.text_run_count = 1;
+
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT_MSG(list.count == 1, "an image run must produce exactly one op, no mark-background FILL_RECT or decoration line");
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_IMAGE);
+            TBOX_TEST_ASSERT(list.items[0].image == &fake_image);
+            TBOX_TEST_ASSERT_MSG(list.items[0].rect.x == 5.0 && list.items[0].rect.y == 6.0 && list.items[0].rect.width == 42.0 && list.items[0].rect.height == 24.0, "IMAGE op's rect must be the run's own rect");
         }
         tbox_arena_destroy(&arena);
     }

@@ -408,12 +408,18 @@
   <!-- <span>/<a> -- proof that splitting the old combined UA rule
        ("i, em, span, a { display: inline; }") into "i, em { ...
        font-style: italic; }" / "span, a { display: inline; }"
-       (Orchestration Tarefa 5) left span/a with NO font-style/font-weight/
+       (Orchestration Tarefa 5) left span with NO font-style/font-weight/
        font-size/background-color/text-decoration/vertical-align effect of
-       their own -- both must render as plain inline text, same face/size/
-       color as the surrounding paragraph. -->
-  <p class="v13-span-a">v13: um <span>span</span> e um <a href="#">link (a)</a> sem nenhum estilo próprio -- só
-    `display: inline`, provando que dividir a regra UA antiga em duas não quebrou nenhum dos dois.</p>
+       its own -- it must render as plain inline text, same face/size/color
+       as the surrounding paragraph. `<a>` no longer belongs in that "no
+       effect" set: the image-support version's UA stylesheet split
+       "span, a { display: inline; }" further into its own
+       "a { display: inline; color: blue; text-decoration: underline; }"
+       rule (see tbox_ua_style_generate_css, src/context/tbox_context.c) --
+       `<a>` now renders in blue with an underline by default, same as every
+       real browser, while `<span>` keeps having no styling of its own. -->
+  <p class="v13-span-a">v13/imagem: um <span>span</span> sem nenhum estilo próprio, e um <a href="#">link (a)</a>
+    agora azul e sublinhado por padrão -- só `display: inline` pro span, `color`/`text-decoration` novos pro a.</p>
 
   <!-- v14: caixa de bloco anônima demo (Layout Tree Tarefa 1 + a fatia
        vertical desta versão). Reproduz o padrão exato descoberto em
@@ -436,6 +442,30 @@
       bloco anônima, antes do parágrafo abaixo.</strong>
     <p class="v14-anon-p">v14: parágrafo de bloco normal, irmão do texto solto acima -- deve aparecer DEPOIS dele, na
       mesma ordem do documento.</p>
+  </div>
+
+  <!-- <img> -- image-support version demo, mirroring tests/assets/024.html's
+       real regression fixture (see ARCHITECTURE.md): tbox_app_demo_black.png
+       (a 200x200 PNG copied from tests/assets/black.png) shown three ways --
+       (1) both width/height AUTO, at its intrinsic 200x200 size; (2) sized
+       down via bare HTML width/height ATTRIBUTES (no style=""), proving
+       tbox_style_resolve_img_dimension_attribute's presentational-hint
+       fallback; (3) sized via an explicit CSS style="width:...;height:...",
+       proving CSS still wins over the attributes when both are present. All
+       three are loose <img> elements directly under this <div> (no <p>
+       wrapping them) -- display:inline by default, so they flow through the
+       SAME v14 anonymous-block-box mechanism as .v14-anon-loose above,
+       proving <img> needed no new box-generation plumbing of its own. The
+       fourth line links the intrinsic-size image through an <a> (one level
+       of inline nesting, see tbox_layout_collect_words' img-in-inline
+       special case) -- the link's own text stays default-styled (blue,
+       underlined, see the v13-span-a demo above) even though it wraps an
+       image instead of text. -->
+  <div class="v-img-container">
+    <img src="tbox_app_demo_black.png" alt="intrinsic 200x200">
+    <img src="tbox_app_demo_black.png" width="60" height="60" alt="60x60 via HTML attributes">
+    <img src="tbox_app_demo_black.png" style="width:100px;height:40px;" alt="100x40 via CSS, stretched">
+    <a href="#"><img src="tbox_app_demo_black.png" width="60" height="60" alt="linked, 60x60"></a>
   </div>
 
 </body>

@@ -25,6 +25,7 @@ int tbox_test_css_cascade_color_convert_run(void);
 int tbox_test_css_cascade_color_parse_run(void);
 int tbox_test_style_run(void);
 int tbox_test_font_run(void);
+int tbox_test_image_run(void);
 int tbox_test_layout_run(void);
 int tbox_test_render_run(void);
 int tbox_test_output_raster_run(void);
@@ -48,6 +49,7 @@ static const tbox_test_group tbox_test_groups[] = {
     { "css_cascade_color_parse",   tbox_test_css_cascade_color_parse_run   },
     { "style",                     tbox_test_style_run                     },
     { "font",                      tbox_test_font_run                      },
+    { "image",                     tbox_test_image_run                     },
     { "layout",                    tbox_test_layout_run                    },
     { "render",                    tbox_test_render_run                    },
     { "output_raster",             tbox_test_output_raster_run             },

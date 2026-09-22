@@ -6,6 +6,7 @@
 
 #include <tbox/font.h>
 #include <tbox/html_parser.h>
+#include <tbox/image.h>
 #include <tbox/layout.h>
 #include <tbox/render.h>
 
@@ -103,16 +104,17 @@ tbox_ua_style_config tbox_ua_style_config_default(void);
  * their own docs) and only return NULL on allocation failure, which is
  * therefore also the only way this function fails. `fonts` (NOVO v2: a
  * tbox_font_face_cache, not a single tbox_font_face -- see <tbox/font.h>)
- * is borrowed: the caller (Application) builds it once and destroys it
- * once -- tbox_context never takes ownership, and tbox_context_close never
- * touches it. No layout exists yet after this call returns
- * (tbox_context_hit_test returns NULL until the first
- * tbox_context_run_frame).
+ * and `images` (a tbox_image_cache -- see <tbox/image.h>; may be NULL, "no
+ * images", same as a NULL font resolver) are both borrowed: the caller
+ * (Application) builds them once and destroys them once -- tbox_context
+ * never takes ownership, and tbox_context_close never touches either. No
+ * layout exists yet after this call returns (tbox_context_hit_test returns
+ * NULL until the first tbox_context_run_frame).
  *
  * NOVO v2: internally a thin wrapper over tbox_context_open_with_config,
  * passing tbox_ua_style_config_default() -- the caller of this function
  * never needs to know tbox_ua_style_config exists. */
-tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts);
+tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images);
 
 /* NOVO v2: same as tbox_context_open, plus an explicit tbox_ua_style_config
  * this context's user-agent stylesheet is generated from (a template CSS
@@ -121,13 +123,13 @@ tbox_context *tbox_context_open(const char *html, size_t html_length, const char
  * implementation; tbox_context_open is a thin wrapper around this one with
  * tbox_ua_style_config_default(). Fails under the exact same conditions as
  * tbox_context_open. */
-tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_ua_style_config config);
+tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config);
 
 /* Destroys the parsed document/stylesheet/user-agent-stylesheet (NOVO v2)
  * and the frame arena -- every tbox_style_table/tbox_layout_box/
  * tbox_display_list this context ever produced becomes invalid at that
- * point -- then frees `ctx` itself. Does NOT destroy `fonts` (see
- * tbox_context_open: it is borrowed, not owned). A no-op if ctx == NULL. */
+ * point -- then frees `ctx` itself. Does NOT destroy `fonts`/`images` (see
+ * tbox_context_open: both are borrowed, not owned). A no-op if ctx == NULL. */
 void tbox_context_close(tbox_context *ctx);
 
 /* Redoes the whole compute pipeline against `viewport_width`/

@@ -146,8 +146,13 @@
  * the v9 fixtures -- a screenshot at 3150px showed the last two of them
  * (.v13-sub-sup and .v13-span-a) silently cropped off the bottom of the
  * window, so this is bumped to 3450px, same reasoning and same
- * purely-cosmetic window-size-constant nature as every prior bump. */
-#define TBOX_APP_DEMO_HEIGHT 3450
+ * purely-cosmetic window-size-constant nature as every prior bump. The
+ * image-support version appends .v-img-container (four <img> demos) after
+ * the v14 fixtures -- a screenshot at 3450px showed all four silently
+ * cropped off the bottom of the window, so this is bumped to 3750px, same
+ * reasoning and same purely-cosmetic window-size-constant nature as every
+ * prior bump. */
+#define TBOX_APP_DEMO_HEIGHT 3750
 
 #ifndef TBOX_APP_DEMO_HTML_PATH
 #error "TBOX_APP_DEMO_HTML_PATH must be defined by the build (see example/CMakeLists.txt)"
