@@ -55,8 +55,22 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
             /* NOVO v13: <mark> highlight -- a FILL_RECT covering the run's
              * own rect (not the whole box/line), painted before its
              * TEXT_RUN so the glyphs draw on top of it. Same helper as the
-             * box background/border FILL_RECTs above. */
-            if (run->style->background_color.a != 0) {
+             * box background/border FILL_RECTs above.
+             *
+             * `run->style != box->style` guards against double-painting: a
+             * run's own direct text (no inline descendant in between, e.g.
+             * `<h1 style="background-color:...">`) is built with
+             * `run->style` pointing at the SAME tbox_style as `box->style`
+             * (see tbox_layout_build_text_runs/tbox_layout_collect_words),
+             * whose background_color the box FILL_RECT above already
+             * painted across the whole border_box. Without this guard, that
+             * identical color gets painted a second time over just the
+             * run's rect, compositing its alpha on top of itself and
+             * producing a visibly different (darker/more opaque) patch
+             * behind the text than the rest of the box -- only an inline
+             * descendant with its OWN resolved style (a distinct pointer,
+             * e.g. `<mark>`) should get this highlight. */
+            if (run->style != box->style && run->style->background_color.a != 0) {
                 tbox_render_push_fill_rect(items, run->rect, run->style->background_color);
             }
 
