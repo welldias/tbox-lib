@@ -499,4 +499,52 @@
       mesma ordem do documento.</p>
   </div>
 
+  <!-- <table>/<tr>/<th>/<td> -- table-support version demo: a real,
+       column-aligned table (src/layout/tbox_layout.c's
+       tbox_layout_build_table_children/tbox_layout_build_table_row_children),
+       not a simplified block-stacking fallback. Proves, in one fixture:
+       (1) column ALIGNMENT across rows -- every cell in a column shares
+       the exact same computed width, regardless of that row's own
+       content; (2) CONTENT-PROPORTIONAL column widths -- "Role" (long
+       text in every row) ends up visibly wider than "Years" (always a
+       short number), the column-width algorithm's natural-text-width
+       scaling at work, not equal-width columns; (3) a RAGGED row (the
+       last <tr> has only ONE <td>, no "Role"/"Years" cells at all) still
+       aligns its one real cell under the correct ("Name") column, using
+       the SAME table-wide column width every other row's first cell
+       uses, never a width computed from that short row in isolation;
+       (4) <th> gets its bold + centered UA default automatically, no
+       author CSS needed; (5) a <td> is a real text tag underneath --
+       .v-table-role-cell's <b> child (row 2) proves inline markup inside
+       a cell works exactly like inside a <p>, with zero new word-wrap
+       code of its own. .v-table itself gets a border + background so the
+       whole grid is trivially visible in the screenshot; each cell's own
+       border (inherited from no one -- border is NOT inheritable, same
+       as always) is declared directly on <td>/<th> via .v-table-cell,
+       since CSS `border-collapse` is out of scope (see ARCHITECTURE.md)
+       -- adjacent cells each paint their own edge independently, so
+       shared edges are visibly doubled, same simplification
+       border-radius's own "ring" technique already documents for a
+       transparent background. -->
+  <table class="v-table">
+    <tr>
+      <th class="v-table-cell">Name</th>
+      <th class="v-table-cell">Role</th>
+      <th class="v-table-cell">Years</th>
+    </tr>
+    <tr>
+      <td class="v-table-cell">Alice</td>
+      <td class="v-table-cell v-table-role-cell">Senior <b>Backend</b> Engineer</td>
+      <td class="v-table-cell">5</td>
+    </tr>
+    <tr>
+      <td class="v-table-cell">Bob</td>
+      <td class="v-table-cell">Designer</td>
+      <td class="v-table-cell">12</td>
+    </tr>
+    <tr>
+      <td class="v-table-cell">Carol -- ragged row, só esta célula (sem Role/Years)</td>
+    </tr>
+  </table>
+
 </body>

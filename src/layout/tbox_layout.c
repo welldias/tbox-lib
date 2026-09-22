@@ -47,13 +47,21 @@ static const tbox_style *tbox_layout_style_or_default(const tbox_style_table *st
  * ARCHITECTURE.md's "Layout Tree" section) -- checked by plain byte-exact
  * comparison since tbox_html_node tag names are already lowercase ASCII.
  * Unchanged since v0/v1: generalizing this to arbitrary containers (e.g. a
- * <div> with loose text) is explicitly out of scope for v2 too. */
+ * <div> with loose text) is explicitly out of scope for v2 too. NOVO
+ * (table support): "td"/"th" added -- a table cell reuses this EXACT same
+ * word-wrap/text-run machinery (tbox_layout_build_text_runs) as <p>/<li>,
+ * with no new code of its own; only its CONTAINING BLOCK differs (a
+ * column's own width, not its row's full width -- see
+ * tbox_layout_build_table_row_children). Same pre-existing consequence
+ * every other text tag already has: a table cell never builds child BOXES
+ * of its own, so a <table> nested inside a <td>/<th> is silently dropped,
+ * same as a <div> nested inside a <p> already is. */
 static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
     if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return false;
     }
 
-    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre" };
+    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th" };
     tbox_string_view tag_name            = node->element.tag_name;
     for (size_t i = 0; i < sizeof(text_tags) / sizeof(text_tags[0]); i++) {
         if (tbox_string_view_equal_cstr(tag_name, text_tags[i])) {
@@ -938,7 +946,13 @@ typedef struct tbox_layout_positioned_context {
     tbox_rect viewport;
 } tbox_layout_positioned_context;
 
-static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context);
+/* NOVO (table support): `row_column_widths`/`row_column_count`, trailing --
+ * NULL/0 at every call site except tbox_layout_build_table_children's own
+ * (building a <tr>'s box), where they carry the table's already-computed
+ * per-column widths down into this SAME shared function so its dispatch
+ * (see the definition below) can take the "table row" branch instead of
+ * the generic one. See ARCHITECTURE.md's table-support section. */
+static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count);
 
 /* NOVO v5: resolves an `absolute`/`fixed` box's MARGIN BOX origin on one axis
  * -- a POSITION against the containing block's origin/size, not a delta like
@@ -1088,6 +1102,235 @@ static tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const
     box->margin_box  = rect;
 
     return box;
+}
+
+/* ---- NOVO (table support): <table>/<tr>/<th>/<td> -- see ARCHITECTURE.md's
+ * table-support section for the full column algorithm rationale. Direct
+ * children only: a <tr> must be a direct child of <table>, a <th>/<td> a
+ * direct child of <tr> -- no <thead>/<tbody>/<tfoot>, out of scope. ---- */
+
+/* Counts `table_node`'s columns: the MAX, across every direct <tr> child,
+ * of that row's own direct <th>/<td> element-child count. A ragged table
+ * (rows with fewer cells than the widest one) is tolerated -- those rows
+ * simply leave their trailing columns empty, never an error. */
+static size_t tbox_layout_table_column_count(const tbox_html_node *table_node) {
+    size_t max_count = 0;
+
+    for (const tbox_html_node *row = table_node->first_child; row != NULL; row = row->next_sibling) {
+        if (row->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(row->element.tag_name, "tr")) {
+            continue;
+        }
+
+        size_t count = 0;
+        for (const tbox_html_node *cell = row->first_child; cell != NULL; cell = cell->next_sibling) {
+            if (cell->type == TBOX_HTML_NODE_ELEMENT && (tbox_string_view_equal_cstr(cell->element.tag_name, "td") || tbox_string_view_equal_cstr(cell->element.tag_name, "th"))) {
+                count++;
+            }
+        }
+        if (count > max_count) {
+            max_count = count;
+        }
+    }
+
+    return max_count;
+}
+
+/* Fills `out_widths[0..column_count)` with each column's own width, summing
+ * to EXACTLY `content_width` (the table's own already-resolved content
+ * width -- same "AUTO always fills the container" rule, D4, every other
+ * block box already has). Two passes: first, for every cell, its "natural"
+ * width -- its own flattened text content (tbox_html_node_text_content,
+ * same "fold nested markup into one plain-text measurement" approximation
+ * already used for an inline child's own text, see
+ * tbox_layout_collect_words) measured at the cell's own resolved face, plus
+ * its own padding/border -- and the MAX natural width per column across
+ * every row; then a single uniform scale so the per-column maxes sum to
+ * exactly `content_width`. A per-cell explicit `width` is NOT consulted
+ * (only measured text) -- documented scope limitation, same class as images
+ * not preserving aspect ratio on a single explicit axis. Falls back to an
+ * equal share per column if every cell measured a natural width of 0 (e.g.
+ * every cell is empty), avoiding a divide-by-zero in the scale step. This
+ * is a deliberate simplification of CSS2.1's real automatic table layout
+ * algorithm (separate min-content/max-content tracking per column, only
+ * growing proportionally past the sum of max-contents) -- out of scope. */
+static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, size_t column_count, double content_width, double *out_widths) {
+    for (size_t i = 0; i < column_count; i++) {
+        out_widths[i] = 0.0;
+    }
+
+    for (const tbox_html_node *row = table_node->first_child; row != NULL; row = row->next_sibling) {
+        if (row->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(row->element.tag_name, "tr")) {
+            continue;
+        }
+
+        size_t column_index = 0;
+        for (const tbox_html_node *cell = row->first_child; cell != NULL; cell = cell->next_sibling) {
+            if (cell->type != TBOX_HTML_NODE_ELEMENT || (!tbox_string_view_equal_cstr(cell->element.tag_name, "td") && !tbox_string_view_equal_cstr(cell->element.tag_name, "th"))) {
+                continue;
+            }
+            if (column_index >= column_count) {
+                break;
+            }
+
+            const tbox_style *cell_style = tbox_layout_style_or_default(styles, cell);
+            double padding_left          = tbox_layout_resolve_edge(cell_style->padding[3], content_width);
+            double padding_right         = tbox_layout_resolve_edge(cell_style->padding[1], content_width);
+            double effective_border      = (cell_style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID) ? cell_style->border_width : 0.0;
+
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(cell_style->font_family), cell_style->font_weight_bold, cell_style->font_italic, cell_style->font_size);
+            double text_width          = 0.0;
+            if (face != NULL) {
+                tbox_string_view text = tbox_html_node_text_content(arena, cell);
+                text_width             = tbox_font_measure_text(face, text);
+            }
+
+            double natural_width = text_width + padding_left + padding_right + 2.0 * effective_border;
+            if (natural_width > out_widths[column_index]) {
+                out_widths[column_index] = natural_width;
+            }
+
+            column_index++;
+        }
+    }
+
+    double total_natural = 0.0;
+    for (size_t i = 0; i < column_count; i++) {
+        total_natural += out_widths[i];
+    }
+
+    if (total_natural <= 0.0) {
+        double equal_share = content_width / (double)column_count;
+        for (size_t i = 0; i < column_count; i++) {
+            out_widths[i] = equal_share;
+        }
+        return;
+    }
+
+    double scale = content_width / total_natural;
+    for (size_t i = 0; i < column_count; i++) {
+        out_widths[i] *= scale;
+    }
+}
+
+/* Lays out one <tr>'s direct <th>/<td> children SIDE BY SIDE (not stacked
+ * -- unlike every other container in this file, a table row is a
+ * horizontal formatting context) at x-offsets derived from
+ * `column_widths`. Each cell is built via tbox_layout_build_element itself
+ * -- cells are text tags (see tbox_layout_is_text_tag), so this is the
+ * EXACT same per-box machinery (margin/padding/border/content resolution,
+ * then tbox_layout_build_text_runs for wrapped text) every other text tag
+ * already uses, just called with `container.width = column_widths[i]`
+ * instead of the row's own full width. Returns the row's own content
+ * height: the MAX of every cell's margin_box.height -- a row's height is
+ * dictated by its tallest cell; shorter cells keep their own natural
+ * height (no cross-cell vertical stretch to fill the row -- documented
+ * simplification, same class as images not preserving aspect ratio). */
+static double tbox_layout_build_table_row_children(tbox_arena *arena, const tbox_html_node *row_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, const double *column_widths, size_t column_count, tbox_layout_box *row_box, tbox_layout_positioned_context positioned_context) {
+    double max_height          = 0.0;
+    double cursor_x            = content_x;
+    size_t column_index        = 0;
+    tbox_layout_box *previous  = NULL;
+
+    for (const tbox_html_node *cell = row_node->first_child; cell != NULL; cell = cell->next_sibling) {
+        if (cell->type != TBOX_HTML_NODE_ELEMENT || (!tbox_string_view_equal_cstr(cell->element.tag_name, "td") && !tbox_string_view_equal_cstr(cell->element.tag_name, "th"))) {
+            continue;
+        }
+        if (column_index >= column_count) {
+            break; /* defensive only -- column_count is already the max across every row, so this row can never exceed it */
+        }
+
+        const tbox_style *cell_style = tbox_layout_style_or_default(styles, cell);
+        if (cell_style->display == TBOX_STYLE_DISPLAY_NONE) {
+            cursor_x += column_widths[column_index];
+            column_index++;
+            continue;
+        }
+
+        tbox_layout_containing_block cell_container = {
+            .x               = cursor_x,
+            .y               = content_y,
+            .width           = column_widths[column_index],
+            .height          = 0.0,
+            .height_definite = false,
+        };
+
+        tbox_layout_box *cell_box = tbox_layout_build_element(arena, cell, styles, fonts, images, cell_container, content_y, positioned_context, NULL, 0);
+        cell_box->parent          = row_box;
+        if (previous == NULL) {
+            row_box->first_child = cell_box;
+        } else {
+            previous->next_sibling = cell_box;
+        }
+        row_box->last_child = cell_box;
+        previous            = cell_box;
+
+        if (cell_box->margin_box.height > max_height) {
+            max_height = cell_box->margin_box.height;
+        }
+
+        cursor_x += column_widths[column_index];
+        column_index++;
+    }
+
+    return max_height;
+}
+
+/* Lays out `table_node`'s direct <tr> children STACKED vertically (like any
+ * other block-level sibling sequence, but bespoke here rather than reusing
+ * tbox_layout_build_children -- a table row never collapses margins with
+ * anything and never triggers the v14 loose-inline-content mechanism,
+ * neither of which apply inside a table). Computes `column_count`/
+ * `column_widths` ONCE (tbox_layout_table_column_count/
+ * tbox_layout_table_compute_column_widths above) before building any row,
+ * since every row's cells need the SAME column widths to stay aligned.
+ * Each row's own box is built via tbox_layout_build_element too, passing
+ * `column_widths`/`column_count` through its trailing parameters so IT
+ * takes the "table row" branch (see that function's dispatch). Returns the
+ * table's own content height: the sum of every row's margin_box.height. */
+static double tbox_layout_build_table_children(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double content_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context) {
+    size_t column_count = tbox_layout_table_column_count(table_node);
+    if (column_count == 0) {
+        return 0.0;
+    }
+
+    double *column_widths = (double *)tbox_arena_alloc(arena, sizeof(double) * column_count);
+    tbox_layout_table_compute_column_widths(arena, table_node, styles, fonts, column_count, content_width, column_widths);
+
+    double cursor_y           = content_y;
+    tbox_layout_box *previous = NULL;
+
+    for (const tbox_html_node *row = table_node->first_child; row != NULL; row = row->next_sibling) {
+        if (row->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(row->element.tag_name, "tr")) {
+            continue;
+        }
+
+        const tbox_style *row_style = tbox_layout_style_or_default(styles, row);
+        if (row_style->display == TBOX_STYLE_DISPLAY_NONE) {
+            continue;
+        }
+
+        tbox_layout_containing_block row_container = {
+            .x               = content_x,
+            .y               = content_y,
+            .width           = content_width,
+            .height          = 0.0,
+            .height_definite = false,
+        };
+
+        tbox_layout_box *row_box = tbox_layout_build_element(arena, row, styles, fonts, images, row_container, cursor_y, positioned_context, column_widths, column_count);
+        row_box->parent          = table_box;
+        if (previous == NULL) {
+            table_box->first_child = row_box;
+        } else {
+            previous->next_sibling = row_box;
+        }
+        table_box->last_child = row_box;
+        previous              = row_box;
+
+        cursor_y += row_box->margin_box.height;
+    }
+
+    return cursor_y - content_y;
 }
 
 /* Walks `node`'s children (NOVO v14: TEXT children are no longer always
@@ -1243,7 +1486,7 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
                 .height_definite = true, /* a concrete rect -- always definite, see tbox_layout_positioned_context */
             };
 
-            tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, images, out_of_flow_container, border_bottom, positioned_context);
+            tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, images, out_of_flow_container, border_bottom, positioned_context, NULL, 0);
             child_box->parent          = parent_box;
             if (previous == NULL) {
                 parent_box->first_child = child_box;
@@ -1270,7 +1513,7 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
             cursor_y = border_bottom + pending_margin_bottom;
         }
 
-        tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, images, children_container, cursor_y, positioned_context);
+        tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, images, children_container, cursor_y, positioned_context, NULL, 0);
         child_box->parent          = parent_box;
         if (previous == NULL) {
             parent_box->first_child = child_box;
@@ -1301,9 +1544,21 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
  * below). `positioned_context` (NOVO v5) is what this box's OWN descendants,
  * if any, will use to position themselves if they turn out to be
  * `absolute`/`fixed` -- see tbox_layout_positioned_context above. */
-static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context) {
+static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count) {
     const tbox_style *style = tbox_layout_style_or_default(styles, node);
     bool is_text_tag        = tbox_layout_is_text_tag(node);
+
+    /* NOVO (table support): dispatched by TAG NAME, not style->display --
+     * <table>/<tr> already default to the v0 BLOCK fallback (correct for
+     * how their PARENT treats them as an ordinary in-flow block child; no
+     * new UA stylesheet rule is even required for this), and neither ever
+     * needs a different `display` value. `is_table_row` is true exactly
+     * when `row_column_widths` is non-NULL, which only ever happens at the
+     * ONE call site inside tbox_layout_build_table_children -- a <tr> built
+     * any other way (there is none, today) would fall through to the
+     * generic container branch below instead. */
+    bool is_table     = node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "table");
+    bool is_table_row = row_column_widths != NULL;
 
     /* NOVO v5: RELATIVE/ABSOLUTE/FIXED/STICKY all count as "positioned" for
      * being a containing block (see tbox_layout_positioned_context), but
@@ -1452,6 +1707,18 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
          * lines' heights (or one face's line-height for empty text) -- see
          * tbox_layout_build_text_runs's doc comment. */
         content_height = tbox_layout_build_text_runs(arena, node, node->first_child, NULL, style, styles, fonts, images, content_x, content_y, content_width, box);
+    } else if (is_table) {
+        /* NOVO (table support): a <table>'s content_height is ALWAYS the
+         * summed row heights, same "content always dictates height,
+         * style->height is never consulted" posture is_text_tag already
+         * has above -- no PX/PERCENT `height` branch, no positioned-context
+         * threading for descendants (a `position: absolute` box inside a
+         * table resolving against the table itself is out of scope). */
+        content_height = tbox_layout_build_table_children(arena, node, styles, fonts, images, content_x, content_y, content_width, box, positioned_context);
+    } else if (is_table_row) {
+        /* NOVO (table support): same posture as the <table> branch above --
+         * content always dictates a row's height. */
+        content_height = tbox_layout_build_table_row_children(arena, node, styles, fonts, images, content_x, content_y, row_column_widths, row_column_count, box, positioned_context);
     } else {
         /* Container node: recurse into ELEMENT children first (their
          * containing block is this node's own content box), then decide
@@ -1607,5 +1874,5 @@ tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root
         .nearest_ancestor = viewport_rect,
         .viewport         = viewport_rect,
     };
-    return tbox_layout_build_element(arena, element, styles, fonts, images, viewport, 0.0, root_positioned_context);
+    return tbox_layout_build_element(arena, element, styles, fonts, images, viewport, 0.0, root_positioned_context, NULL, 0);
 }

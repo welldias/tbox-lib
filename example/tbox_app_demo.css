@@ -650,3 +650,21 @@ body {
     background-color: orange;
     border-radius: 1000px;
 }
+
+/* <table> demo (table-support version, see the HTML comment above .v-table
+ * in tbox_app_demo.html for what the fixture proves). .v-table gives the
+ * whole grid a border + light background so it's trivially visible;
+ * .v-table-cell gives every <td>/<th> its own border (border-collapse is
+ * out of scope, see that same HTML comment) -- th's bold/centered default
+ * and every cell's 4px padding both already come from the UA stylesheet
+ * (tbox_ua_style_generate_css), no author CSS needed for those two. */
+.v-table {
+    width: 500px;
+    margin: 16px 0px;
+    border: 1px solid black;
+    background-color: whitesmoke;
+}
+
+.v-table-cell {
+    border: 1px solid gray;
+}

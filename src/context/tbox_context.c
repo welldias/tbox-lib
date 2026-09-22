@@ -170,7 +170,10 @@ bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_
         "del { display: inline; text-decoration: line-through; }\n"
         "ins { display: inline; text-decoration: underline; }\n"
         "sub { display: inline; font-size: 75%%; vertical-align: sub; }\n"
-        "sup { display: inline; font-size: 75%%; vertical-align: super; }\n",
+        "sup { display: inline; font-size: 75%%; vertical-align: super; }\n"
+        "table, tr { display: block; }\n"
+        "th { font-weight: bold; text-align: center; }\n"
+        "td, th { padding: 4px; }\n",
         config.margin.body_px, config.font.base_px,
         config.font.heading_em[0], config.margin.heading_px[0],
         config.font.heading_em[1], config.margin.heading_px[1],

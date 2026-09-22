@@ -2388,6 +2388,234 @@ int tbox_test_layout_run(void) {
         }
     }
 
+    /* NOVO (table support): <table>/<tr>/<th>/<td> -- real column-aligned
+     * tables (see ARCHITECTURE.md's table-support section). */
+
+    /* 1: two columns, content-proportional widths that sum to exactly the
+     * table's own content width, laid out side by side (not stacked). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<table><tr><td>Hi</td><td>Hello there, a much longer cell</td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(table_box != NULL);
+        if (table_box != NULL) {
+            tbox_layout_box *row_box = table_box->first_child;
+            TBOX_TEST_ASSERT_MSG(row_box != NULL && row_box->next_sibling == NULL, "the table must have exactly one row box");
+            if (row_box != NULL) {
+                tbox_layout_box *cell1 = row_box->first_child;
+                tbox_layout_box *cell2 = cell1 != NULL ? cell1->next_sibling : NULL;
+                TBOX_TEST_ASSERT_MSG(cell1 != NULL && cell2 != NULL && cell2->next_sibling == NULL, "the row must have exactly two cells");
+                if (cell1 != NULL && cell2 != NULL) {
+                    TBOX_TEST_ASSERT_MSG(cell2->border_box.width > cell1->border_box.width, "the column with longer text must be wider");
+                    TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(cell1->border_box.width + cell2->border_box.width, table_box->content_box.width), "columns must sum to exactly the table's own content width");
+                    TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(cell1->border_box.x, table_box->content_box.x), "the first column must start at the table's own content edge");
+                    TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(cell2->border_box.x, cell1->border_box.x + cell1->border_box.width), "the second column must start right after the first one ends");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 2: every cell empty (natural width 0) falls back to an equal share
+     * per column, never a divide-by-zero/crash. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<table><tr><td></td><td></td><td></td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(table_box != NULL);
+        if (table_box != NULL && table_box->first_child != NULL) {
+            tbox_layout_box *cell1 = table_box->first_child->first_child;
+            tbox_layout_box *cell2 = cell1 != NULL ? cell1->next_sibling : NULL;
+            tbox_layout_box *cell3 = cell2 != NULL ? cell2->next_sibling : NULL;
+            TBOX_TEST_ASSERT(cell1 != NULL && cell2 != NULL && cell3 != NULL);
+            if (cell1 != NULL && cell2 != NULL && cell3 != NULL) {
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(cell1->border_box.width, cell2->border_box.width) && tbox_test_double_approx_equal(cell2->border_box.width, cell3->border_box.width), "all-empty cells must fall back to an equal-share column width");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 3: a ragged row (fewer cells than the widest row) gets only as many
+     * cell boxes as it actually has -- and that cell still uses the SAME
+     * table-wide column width as the row above it, never a width computed
+     * from its own row in isolation. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<table><tr><td>A</td><td>B</td><td>C</td></tr><tr><td>Only one</td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(table_box != NULL);
+        if (table_box != NULL) {
+            tbox_layout_box *row1 = table_box->first_child;
+            tbox_layout_box *row2 = row1 != NULL ? row1->next_sibling : NULL;
+            TBOX_TEST_ASSERT_MSG(row1 != NULL && row2 != NULL && row2->next_sibling == NULL, "the table must have exactly two row boxes");
+            if (row1 != NULL && row2 != NULL) {
+                tbox_layout_box *row1_cell1 = row1->first_child;
+                tbox_layout_box *row2_cell1 = row2->first_child;
+                TBOX_TEST_ASSERT_MSG(row2_cell1 != NULL && row2_cell1->next_sibling == NULL, "the ragged row must have exactly one cell box, not padded with empty ones");
+                TBOX_TEST_ASSERT(row1_cell1 != NULL);
+                if (row1_cell1 != NULL && row2_cell1 != NULL) {
+                    TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(row1_cell1->border_box.width, row2_cell1->border_box.width), "a ragged row's cell must use the SAME table-wide column width as the row above it");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 4: a row's own height is the MAX of its cells' margin_box.height --
+     * forced here by squeezing the table narrow enough that the long
+     * multi-word cell wraps across several lines while the short
+     * single-word cell (never force-split mid-word, see D4) stays on one
+     * line regardless of how little width its own column gets. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<table style=\"width:100px;\"><tr><td>Short</td><td>This is a much longer piece of text with many separate words that will wrap across several lines when squeezed into a narrow column</td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(table_box != NULL && table_box->first_child != NULL);
+        if (table_box != NULL && table_box->first_child != NULL) {
+            tbox_layout_box *row_box = table_box->first_child;
+            tbox_layout_box *cell1   = row_box->first_child;
+            tbox_layout_box *cell2   = cell1 != NULL ? cell1->next_sibling : NULL;
+            TBOX_TEST_ASSERT(cell1 != NULL && cell2 != NULL);
+            if (cell1 != NULL && cell2 != NULL) {
+                TBOX_TEST_ASSERT_MSG(cell2->margin_box.height > cell1->margin_box.height, "the long-text cell must wrap across more lines, growing taller than the short-text cell");
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(row_box->content_box.height, cell2->margin_box.height), "the row's own height must be the MAX of its cells' heights");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 5: <th> resolves bold + centered by default (UA stylesheet), unlike
+     * <td>. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<table><tr><th>Header</th></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        /* This harness resolves style against ONLY the CSS given here, no
+         * UA stylesheet layered in (unlike the real tbox_context_open
+         * pipeline) -- th's bold/center default is normally a UA rule
+         * (tbox_ua_style_generate_css), so it must be restated here. */
+        tbox_css_stylesheet *sheet = parse_css_cstr("th { font-weight: bold; text-align: center; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(table_box != NULL && table_box->first_child != NULL && table_box->first_child->first_child != NULL);
+        if (table_box != NULL && table_box->first_child != NULL && table_box->first_child->first_child != NULL) {
+            tbox_layout_box *th_box = table_box->first_child->first_child;
+            TBOX_TEST_ASSERT_MSG(th_box->style->font_weight_bold, "<th> must be bold by default");
+            TBOX_TEST_ASSERT_MSG(th_box->style->text_align == TBOX_STYLE_TEXT_ALIGN_CENTER, "<th> must be centered by default");
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 6: a <td> is a real text tag -- inline children (<b>) still produce
+     * separate text runs with a distinct (bold) face, exactly like the
+     * same markup inside a <p>. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<table><tr><td>Texto <b>negrito</b></td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        /* No UA stylesheet in this harness (see the <th> test above) --
+         * <b>'s "display: inline; font-weight: bold;" is normally a UA
+         * rule, restated here. */
+        tbox_css_stylesheet *sheet = parse_css_cstr("b { display: inline; font-weight: bold; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(table_box != NULL && table_box->first_child != NULL && table_box->first_child->first_child != NULL);
+        if (table_box != NULL && table_box->first_child != NULL && table_box->first_child->first_child != NULL) {
+            tbox_layout_box *td_box = table_box->first_child->first_child;
+            TBOX_TEST_ASSERT_MSG(td_box->text_run_count == 2, "a <td> with a <b> child must produce two runs, exactly like the same markup inside a <p>");
+            if (td_box->text_run_count == 2) {
+                TBOX_TEST_ASSERT(string_view_equal_cstr(td_box->text_runs[0].text, "Texto"));
+                TBOX_TEST_ASSERT(string_view_equal_cstr(td_box->text_runs[1].text, "negrito"));
+                TBOX_TEST_ASSERT_MSG(td_box->text_runs[1].font != td_box->text_runs[0].font, "the <b> run must use a different (bold) face than the plain-text run");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 7: an empty table (no rows) and a table with only empty rows (no
+     * cells anywhere) must both produce zero row/cell boxes, never crash. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<table></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT_MSG(table_box != NULL && table_box->first_child == NULL, "an empty table must produce a box with no children, never crash");
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    {
+        tbox_html_document *doc    = parse_html_cstr("<table><tr></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT_MSG(table_box != NULL && table_box->first_child == NULL, "a table with only empty rows (no cells anywhere) must produce zero row boxes, never crash");
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 
