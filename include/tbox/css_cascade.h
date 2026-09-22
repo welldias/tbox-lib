@@ -144,11 +144,25 @@ typedef struct tbox_css_cascade_source {
  * ruleset->selectors actually matched the node and had the highest
  * specificity among the branches that did (all branches of one ruleset
  * share the same declarations, so only the winning branch's specificity is
- * kept -- see tbox_css_cascade_resolve). `property`/`value` are views into
- * that same stylesheet (value with any "!important" suffix already
- * stripped by tbox_css_cascade_strip_important). All of these remain valid
- * exactly as long as the stylesheet they came from does -- the same
- * aliasing contract as tbox_css_selector_match. */
+ * kept -- see tbox_css_cascade_resolve). `property`/`value` (value with
+ * any "!important" suffix already stripped by
+ * tbox_css_cascade_strip_important) are each an OWNED COPY, valid for as
+ * long as the surrounding tbox_css_computed_style itself is (destroyed by
+ * tbox_css_computed_style_destroy, same as every field of every item) --
+ * NOT a view into any stylesheet, fixed after a real bug where an
+ * AUTHOR_INLINE item's `property`/`value` aliased a SYNTHETIC style=""
+ * stylesheet (tbox_css_cascade_parse_inline_style's result) that
+ * tbox_css_cascade_resolve destroys before ever returning, corrupting
+ * `style="..."` declarations non-deterministically depending on how much
+ * other cascade/Style-layer allocation happened to land on the freed bytes
+ * first. `ruleset`/`selector` are NOT copied (still real pointers into
+ * whichever stylesheet produced them, when that stylesheet is one of the
+ * caller's own `sources` -- same aliasing contract as
+ * tbox_css_selector_match); for an AUTHOR_INLINE item specifically, both
+ * alias the already-destroyed synthetic stylesheet and must never be
+ * dereferenced (nothing in this project does today -- only `property`/
+ * `value`/`origin`/`important`/`specificity` are ever read back from a
+ * resolved declaration). */
 typedef struct tbox_css_resolved_declaration {
     const tbox_css_ruleset *ruleset;
     const tbox_css_selector *selector;

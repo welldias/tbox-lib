@@ -415,4 +415,27 @@
   <p class="v13-span-a">v13: um <span>span</span> e um <a href="#">link (a)</a> sem nenhum estilo próprio -- só
     `display: inline`, provando que dividir a regra UA antiga em duas não quebrou nenhum dos dois.</p>
 
+  <!-- v14: caixa de bloco anônima demo (Layout Tree Tarefa 1 + a fatia
+       vertical desta versão). Reproduz o padrão exato descoberto em
+       tests/assets/011.html: um elemento inline (<strong>) solto DIRETO
+       dentro de um <div>, sem nenhum <p> envolvendo, misturado com um <p>
+       de bloco normal como irmão logo depois. Antes desta versão,
+       tbox_layout_build_children ignorava esse <strong> solto inteiramente
+       (nem TEXTO nem ELEMENT display:inline fora de uma tag de texto fixa
+       produzia qualquer caixa) -- o texto "v14: texto solto..." abaixo
+       simplesmente não aparecia. Agora ele deve render numa caixa de bloco
+       ANÔNIMA (tbox_layout_build_anonymous_box, box->node == NULL) logo
+       ACIMA do parágrafo .v14-anon-p, na ordem do documento -- a mesma
+       ordem/posição que o <small> solto acima dos três <p> em
+       tests/assets/011.html já prova. .v14-anon-loose e .v14-anon-p usam
+       cores de fundo claras bem distintas só pra tornar as duas caixas
+       (anônima vs. <p> real) fáceis de distinguir no screenshot, mesma
+       convenção de .v13-*/.v11-br-demo acima. -->
+  <div class="v14-anon-container">
+    <strong class="v14-anon-loose">v14: texto solto (strong), sem &lt;p&gt; ao redor -- deve aparecer numa caixa de
+      bloco anônima, antes do parágrafo abaixo.</strong>
+    <p class="v14-anon-p">v14: parágrafo de bloco normal, irmão do texto solto acima -- deve aparecer DEPOIS dele, na
+      mesma ordem do documento.</p>
+  </div>
+
 </body>

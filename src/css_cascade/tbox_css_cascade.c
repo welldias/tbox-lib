@@ -15,6 +15,26 @@ static bool tbox_css_cascade_is_space(char byte) {
     return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == '\f';
 }
 
+/* Copies `view`'s bytes into `arena`, returning a NEW tbox_string_view that
+ * owns memory of its own instead of aliasing whatever `view.data` pointed
+ * at -- needed by tbox_css_cascade_resolve below, whose `property`/`value`
+ * string views can otherwise alias a SYNTHETIC style="" stylesheet
+ * (tbox_css_cascade_parse_inline_style's result) that gets destroyed
+ * before the caller ever sees the returned tbox_css_computed_style, a
+ * violation of this header's own documented aliasing contract ("exactly as
+ * long as the stylesheet they came from does"). `view.size == 0` still
+ * produces a valid, zero-length view (whatever `tbox_arena_alloc` returns
+ * for a zero-size request, same as `tbox_string_view_make(NULL, 0)`
+ * elsewhere in this project -- a NULL `data` with `size == 0` is a normal,
+ * already-used empty view, never dereferenced). */
+static tbox_string_view tbox_css_cascade_copy_view(tbox_arena *arena, tbox_string_view view) {
+    char *copy = tbox_arena_alloc(arena, view.size);
+    if (view.size > 0) {
+        memcpy(copy, view.data, view.size);
+    }
+    return tbox_string_view_make(copy, view.size);
+}
+
 static bool tbox_css_cascade_is_known_pseudo_element(tbox_string_view name) {
     static const char *const pseudo_elements[] = { "before", "after", "first-line", "first-letter" };
     for (size_t i = 0; i < sizeof(pseudo_elements) / sizeof(pseudo_elements[0]); i++) {
@@ -272,8 +292,21 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
                         candidate.ruleset     = ruleset;
                         candidate.selector    = ruleset->selector_count > 0 ? &ruleset->selectors[0] : NULL;
                         candidate.origin      = TBOX_CSS_ORIGIN_AUTHOR_INLINE;
-                        candidate.property    = declaration->property;
-                        candidate.value       = tbox_css_cascade_strip_important(declaration->value, &candidate.important);
+                        /* Deep-copied into `scratch` (still alive -- only
+                         * destroyed at the very end of this function, after
+                         * `result.items` is itself built from `winners`)
+                         * instead of left aliasing `inline_sheet`'s own
+                         * memory: `inline_sheet` is destroyed a few lines
+                         * below, right after this loop, well before
+                         * `winners` is ever read back out -- copying HERE,
+                         * before that destroy, is the only point at which
+                         * the source bytes are still guaranteed valid. See
+                         * tbox_css_cascade_copy_view's doc comment for the
+                         * full bug this fixes (found via a report that
+                         * `style="text-align:center;"` silently did nothing
+                         * on <h1>/<h2>). */
+                        candidate.property    = tbox_css_cascade_copy_view(&scratch, declaration->property);
+                        candidate.value       = tbox_css_cascade_copy_view(&scratch, tbox_css_cascade_strip_important(declaration->value, &candidate.important));
                         candidate.specificity = (tbox_css_specificity){ 0, 0, 0 };
 
                         tbox_css_cascade_offer(&winners, &candidate);
@@ -291,6 +324,25 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
         result.items          = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_resolved_declaration));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_css_resolved_declaration *)tbox_vector_at_const(&winners, i);
+
+            /* Second half of the fix for a real bug (found while
+             * investigating a report that `style="text-align: center;"`
+             * silently did nothing on <h1>/<h2>, worse on elements with
+             * more UA-stylesheet declarations of their own): the inline-
+             * style loop above already deep-copies AUTHOR_INLINE items'
+             * `property`/`value` into `scratch` before `inline_sheet` is
+             * destroyed (the actual use-after-free this whole fix is
+             * about), but `scratch` itself is destroyed at the end of
+             * THIS function, right before returning -- `winners` (and
+             * anything still aliasing `scratch`) would be dangling the
+             * instant the caller got `result` back. Copying every item
+             * (not just inline-origin ones, cheap either way since these
+             * strings are always short) into `out_arena` -- which lives
+             * exactly as long as `result` does, per this header's
+             * aliasing contract -- detaches `result` from `scratch`'s
+             * lifetime entirely. */
+            result.items[i].property = tbox_css_cascade_copy_view(out_arena, result.items[i].property);
+            result.items[i].value    = tbox_css_cascade_copy_view(out_arena, result.items[i].value);
         }
         result.count     = count;
         result.reserved_ = out_arena;

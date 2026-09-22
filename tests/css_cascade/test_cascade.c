@@ -487,5 +487,46 @@ int tbox_test_css_cascade_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 23: regression for a real use-after-free -- style="" inline on a node
+     * that ALSO has several other winning declarations from an author
+     * stylesheet (mirrors a <h1> against the UA stylesheet's own
+     * display/font-size/font-weight/margin rule, which is exactly the
+     * shape a real report came in as: `<h1 style="text-align:center;">`
+     * silently ignored, only when h1 also had several UA declarations of
+     * its own -- <li>/<div> with just the one inline declaration never
+     * showed it). Root cause: tbox_css_cascade_resolve used to build the
+     * synthetic `style=""` stylesheet, offer its declarations into
+     * `winners`, destroy that synthetic stylesheet, and only THEN copy
+     * `winners` into the returned tbox_css_computed_style -- the inline
+     * declaration's `property`/`value` views ended up aliasing already-
+     * freed memory, silently corrupted by any allocation that happened to
+     * reuse that address before this test (or any real caller) ever read
+     * the value back. Several OTHER declarations winning first (from the
+     * five-rule author stylesheet below) reproduce the amount of
+     * intervening allocation that made the corruption reliably visible.
+     * Fixed by deep-copying `property`/`value` before the synthetic
+     * stylesheet is destroyed (see tbox_css_cascade_copy_view). */
+    {
+        tbox_html_document *doc = parse_html_cstr("<h1 style=\"text-align: center;\">x</h1>");
+        const tbox_html_node *h1 = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "h1 { display: block; }"
+            "h1 { font-size: 2em; }"
+            "h1 { font-weight: bold; }"
+            "h1 { margin: 21px 0px; }"
+            "h1 { color: black; }");
+
+        tbox_css_computed_style style = tbox_css_cascade_resolve_stylesheet(sheet, h1);
+        TBOX_TEST_ASSERT(style.count == 6);
+        const tbox_css_resolved_declaration *text_align = find_cstr(&style, "text-align");
+        TBOX_TEST_ASSERT_MSG(text_align != NULL, "text-align must still be present among 6 winning declarations");
+        TBOX_TEST_ASSERT_MSG(text_align != NULL && text_eq(text_align->value, "center"), "text-align's value must read back exactly \"center\", not corrupted/freed memory");
+        TBOX_TEST_ASSERT(text_align != NULL && text_align->origin == TBOX_CSS_ORIGIN_AUTHOR_INLINE);
+
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

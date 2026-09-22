@@ -4479,11 +4479,213 @@ Um app tbox que, sem regredir nada de v0-v12:
   à função; os 3 campos novos de `tbox_style` são campos de instância
   por nó, mesmo padrão de todo campo de `tbox_style` já existente.
 
+## v14 — Caixas de bloco anônimas (conteúdo inline solto)
+
+**Descoberto durante a verificação da v13**: comparando o render do tbox
+contra `tests/assets/011.png` (golden capturado de um browser real) pra
+`tests/assets/011.html`, `<strong>`/`<i>`/`<em>` e `<small>` desapareceram
+inteiramente do render — não é problema de estilo (negrito/itálico/
+tamanho), o TEXTO em si nunca aparece. Causa raiz: a Layout Tree só
+coleta texto de uma lista fixa de "tags de texto" (`h1`-`h6`, `p`, `li`,
+`pre`, ver `tbox_layout_is_text_tag`) e só olha os filhos DIRETOS delas
+(`tbox_layout_collect_words`). Um elemento inline (`<strong>`, `<i>`,
+`<em>`, `<small>`, ou até um nó de TEXTO puro) que seja filho direto de um
+container que NÃO é uma tag de texto (`<body>`, `<div>`, etc.) nunca é
+visitado por `tbox_layout_collect_words` — `tbox_layout_build_children`
+(o código que constrói caixas de bloco) ignora nós de TEXTO
+completamente (`if (child->type != TBOX_HTML_NODE_ELEMENT) continue;`) e,
+mesmo para um filho ELEMENT com `display: inline`, constrói uma caixa de
+BLOCO pra ele via `tbox_layout_build_element` (que não colhe texto, já
+que o próprio elemento inline não está na lista fixa) — resultando numa
+caixa de altura zero, sem nenhum conteúdo visível.
+
+Isso é um débito de design conhecido desde a v2 ("Elementos inline não
+ganham `tbox_layout_box` próprio — ficam como runs de texto no ancestral
+h1-h6/p mais próximo"), nunca exercitado até agora porque toda demo/teste
+anterior sempre envolvia tags inline dentro de um `<p>`. `011.html` é o
+primeiro caso real com conteúdo inline solto direto em `<body>`/`<div>`,
+e mistura os dois casos: `<body>` tem só filhos inline soltos
+(`<strong>`/`<i>`/`<em>`), enquanto o `<div>` logo abaixo mistura
+`<small>` (inline) com três `<p>` (bloco) como irmãos — o caso mais geral,
+que exige o equivalente simplificado de "caixas de bloco anônimas" da CSS
+real: quando um container de bloco tem uma mistura de filhos de bloco e
+conteúdo inline solto, cada sequência contígua de conteúdo inline vira uma
+caixa sintética, sem elemento HTML próprio, posicionada no fluxo normal
+entre os filhos de bloco reais, na ordem do documento.
+
+### Escopo
+
+- **Detecção de sequências (`runs`) de conteúdo inline** dentro de
+  `tbox_layout_build_children`: ao iterar os filhos de um nó, um TEXTO
+  não-só-espaço ou um ELEMENT em fluxo (não `position: absolute/fixed`)
+  com `display: inline` **inicia** uma sequência; ela se estende por
+  TEXTO (qualquer, incluindo só-espaço — preserva espaçamento entre
+  palavras/elementos inline) e ELEMENTs em fluxo com `display: inline`
+  seguintes, pulando transparentemente por cima de `display: none`
+  (nem inicia nem quebra a sequência) e TERMINA ao encontrar um ELEMENT
+  em fluxo com `display` diferente de `inline`, um ELEMENT fora de fluxo
+  (`absolute`/`fixed` — mantém o tratamento de sempre, nunca entra numa
+  sequência), ou o fim dos filhos.
+- **Uma caixa de bloco anônima por sequência** (`tbox_layout_box.node ==
+  NULL` — convenção já documentada desde a v2, já tratada com segurança
+  pela Context layer no hit-test, `tbox_context_hit_test_box`/
+  `tbox_context_ancestor_matches`: `box->node == NULL` já cai fora do
+  hit-test em vez de crashar), construída reaproveitando o MESMO
+  mecanismo de coleta de palavras/quebra de linha/runs que uma tag de
+  texto real já usa (`tbox_layout_collect_words`/`tbox_layout_break_lines`/
+  `tbox_layout_build_line_runs`), generalizado pra aceitar um INTERVALO
+  de irmãos em vez de sempre `node->first_child`.
+- **Style da caixa anônima**: só as propriedades HERDÁVEIS de
+  `tbox_style` (`color`, `font_family`, `font_weight_bold`,
+  `font_italic`, `font_size`, `text_align`) copiadas do style do
+  CONTAINER pai; toda propriedade NÃO herdável (`display`, `width`/
+  `height`, `margin`/`padding`, `background_color`, `border`,
+  `position`/`offset`) fica no valor inicial (igual a
+  `tbox_layout_default_style` — já `display: block`, margens/paddings
+  zero, sem fundo/borda) — mesmo comportamento que o style resolvido de
+  um elemento sem NENHUMA declaração própria já teria contra esse pai,
+  só que calculado inteiramente dentro da Layout Tree (sem chamar de
+  volta a Style layer, que já rodou antes e não tem UI de "resolva isso
+  sem nó nenhum"). Corrige de graça um problema real que a alternativa
+  óbvia (reusar o `tbox_style*` do PRÓPRIO pai como `box->style` da caixa
+  anônima) teria: se o pai declarasse `border`/`background-color`
+  próprios, a caixa anônima pintaria uma SEGUNDA cópia desses efeitos por
+  cima do conteúdo do pai (já que `tbox_render_walk` pinta fundo/borda de
+  TODA caixa cujo `style->background_color`/`border_style` não é
+  transparente/none, sem saber que uma caixa é "anônima").
+- **Sem margem/padding/borda própria** — a caixa anônima nunca contribui
+  margem própria pro colapso de margens com os irmãos (mesmo
+  comportamento real da CSS: caixas anônimas não têm box model próprio,
+  só o conteúdo inline dentro delas tem).
+
+### Layout Tree — assinaturas exatas
+
+`src/layout/tbox_layout.c` (funções internas, não públicas — nenhuma
+mudança em `include/tbox/layout.h`):
+
+```c
+/* Generalizada: antes recebia `node` e sempre iterava node->first_child
+ * até NULL; agora recebe o intervalo de irmãos explicitamente. Todo call
+ * site existente passa (node->first_child, NULL, ...) -- comportamento
+ * idêntico ao de hoje. */
+static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_vector *words);
+
+/* Generalizada: `node` agora pode ser NULL (caixa anônima -- desativa
+ * is_preformatted e o marcador de <li>, nenhum dos dois faz sentido sem
+ * um elemento real) e `first_sibling`/`end_exclusive` substituem a
+ * derivação implícita de `node->first_child`. Todo call site existente
+ * (dentro de tbox_layout_build_element, pra uma tag de texto real) passa
+ * (node, node->first_child, NULL, ...) -- comportamento idêntico ao de
+ * hoje. */
+static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, double content_x, double content_y, double available_width, tbox_layout_box *box);
+
+/* NOVA: constrói UMA caixa de bloco anônima cobrindo [run_start,
+ * run_end) -- estilo sintetizado a partir de `container_style` (só
+ * campos herdáveis, ver "Escopo" acima), sem margem própria. Devolve a
+ * caixa já com content_box/padding_box/border_box/margin_box preenchidos
+ * (os quatro idênticos entre si, já que margem/padding/borda são sempre
+ * zero) e text_runs/text_run_count populados via
+ * tbox_layout_build_text_runs(arena, NULL, run_start, run_end, ...). */
+static tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, double content_x, double cursor_y, double available_width);
+```
+
+`tbox_layout_build_children` ganha um parâmetro novo, `const tbox_style
+*container_style` (o style do PRÓPRIO `node` cujos filhos estão sendo
+construídos — hoje essa função só recebe `styles`/a tabela inteira, nunca
+o style já resolvido do container; `tbox_layout_build_element` já tem
+essa variável (`style`) à mão no ÚNICO call site existente, só precisa
+repassá-la) — usado exclusivamente pra sintetizar o style de uma eventual
+caixa anônima, nunca pros filhos ELEMENT normais (que continuam
+resolvendo o PRÓPRIO style via `styles`, tabela, inalterado).
+
+### Algoritmo de `tbox_layout_build_children` (detecção de sequência)
+
+Documentado em detalhe pra quem for implementar (ver TASKS.md pro texto
+completo do algoritmo): a iteração atual (`for child in node->first_child
+.. NULL`) passa a, pra CADA `child`, primeiro decidir se ele é "gatilho de
+sequência inline" (TEXTO não-só-espaço, OU ELEMENT em fluxo com `display:
+inline`). Se não for, o código de hoje se aplica sem nenhuma mudança
+(TEXTO só-espaço e ELEMENT `display: none` são pulados sem construir
+caixa; ELEMENT fora de fluxo E ELEMENT `display: block` em fluxo
+continuam construindo via `tbox_layout_build_element` exatamente como
+hoje). Se for, um scan pra frente acha o fim da sequência (primeiro
+ELEMENT em fluxo não-inline, ou primeiro ELEMENT fora de fluxo, ou fim
+dos filhos — TEXTO de qualquer conteúdo e ELEMENT `display: none` são
+transparentes ao scan, nunca terminam a sequência), `tbox_layout_build_anonymous_box`
+constrói UMA caixa cobrindo esse intervalo, ela entra na lista
+`first_child`/`last_child`/`next_sibling` do pai exatamente como qualquer
+outra caixa filha (mesma ordem do documento), o cursor de fluxo avança
+pela altura da caixa (sem margem, ver "Escopo"), e a iteração externa
+pula direto pro primeiro filho DEPOIS do fim da sequência.
+
+### Fora de escopo
+
+Elemento inline com `position: absolute`/`fixed` interrompe a sequência
+(tratado pelo caminho fora-de-fluxo de sempre, nunca vira parte do texto
+de uma caixa anônima nem a quebra ao meio — simplificação aceita, CSS
+real também tira um elemento posicionado do fluxo normal sem quebrar o
+texto ao redor, mas não around-flow de verdade). Múltiplos níveis de
+aninhamento inline-dentro-de-inline além do que
+`tbox_layout_collect_words` já suporta desde a v2 (débito pré-existente,
+não agravado aqui — uma caixa anônima aplica o MESMO mecanismo de coleta
+que uma tag de texto real já usa, com as mesmas limitações). `white-space`
+além do já suportado (collapse padrão, `pre` só dentro de `<pre>`).
+Reconciliar 100% pixel-a-pixel contra o golden de `011.html` (fontes/
+métricas ainda não batem exatamente com um browser real, mesmo débito de
+sempre — o critério aqui é o TEXTO aparecer e ter posição/ordem corretos,
+não pixel-perfect).
+
+### Fatia vertical v14 — critério de "pronto"
+
+Duas provas, uma nova e uma já existente:
+- `tests/assets/011.html` renderizado via `tbox_app_screenshot_from_files`
+  mostra TODO o texto presente (nenhuma linha sumida — em particular
+  `<strong>This text is important!</strong><i>This text is
+  italic.</i><em>This text is emphasized.</em>` solto direto em `<body>`,
+  e `<small>This is some smaller text.</small>` solto direto em `<div>`,
+  ambos ausentes hoje) na ordem e posição corretas em relação aos
+  parágrafos ao redor (a mistura `<small>` inline + três `<p>` de bloco
+  dentro do mesmo `<div>` precisa preservar a ordem do documento).
+- `example/tbox_app_demo.html`/`.css` ganha um exemplo NOVO reproduzindo
+  o padrão de `011.html` (texto/elemento inline solto direto em `<body>`/
+  `<div>`, misturado com `<p>` de bloco) — confirma visualmente que o
+  texto aparece, sem remover nada de v0-v13.
+- Nenhuma regressão: suíte inteira (`ctest --test-dir build`) + demo
+  completa continuam idênticas visualmente pro que já funcionava (nenhum
+  `<p>`/`h1`-`h6`/`<li>`/`<pre>` muda de comportamento — só o caminho de
+  "conteúdo inline solto fora de uma tag de texto", inexistente até
+  agora, passa a existir).
+
+## Decisões já tomadas (v14)
+
+- **Caixa de bloco anônima (`box->node == NULL`)**, não expandir a lista
+  fixa de "tags de texto" pra incluir `body`/`div`/etc. — generaliza
+  corretamente pro caso misto (bloco + inline como irmãos, o caso real de
+  `011.html`), que uma lista de tags maior não resolveria sozinha.
+- **Style sintetizado só com campos herdáveis do pai**, não reusar o
+  `tbox_style*` do pai diretamente — evita pintura duplicada de fundo/
+  borda quando o pai declara os dois.
+- **Sem margem/padding/borda na caixa anônima** — mesmo comportamento da
+  CSS real, e mantém o colapso de margem entre os filhos de bloco reais
+  ao redor dela inalterado.
+- **Elemento fora de fluxo nunca entra numa sequência inline** — mantém
+  100% do tratamento de `absolute`/`fixed` já existente desde a v5,
+  intocado.
+- **Generalização de `tbox_layout_collect_words`/`tbox_layout_build_text_runs`
+  pra aceitar um intervalo de irmãos**, em vez de duplicar a lógica de
+  coleta/quebra de linha/runs numa função paralela só pra caixas
+  anônimas — reaproveita 100% do mecanismo de inline formatting context
+  já existente desde a v2.
+- **Sem novo estado global/estático** — `container_style` é um parâmetro
+  a mais repassado por chamada; a caixa anônima e seu style sintetizado
+  vivem no mesmo `tbox_arena` de qualquer outra caixa/style dessa
+  chamada de `tbox_layout_build`.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi
-fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12 e v13
-(registrada nas seções de cada camada), pra "Ferramentas de
+fechada para v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13 e
+v14 (registrada nas seções de cada camada), pra "Ferramentas de
 desenvolvimento — captura de tela headless" acima (não uma versão da
 escada, mas com o mesmo nível de decisão documentada), ou consolidada
 como débito de design conhecido acima, com gatilho explícito de quando

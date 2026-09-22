@@ -174,17 +174,25 @@ static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face
     entry->hard_break       = true;
 }
 
-/* Walks `node`'s DIRECT children in document order (see ARCHITECTURE.md's
- * algorithm): a TEXT child contributes its own words in `style`'s own face
- * (the h1-h6/p element itself); an ELEMENT child whose OWN resolved style
- * has display == INLINE recurses one level -- via tbox_html_node_text_content,
- * which already folds any further nesting away -- contributing ITS whole
- * text in ITS OWN face (this is how e.g. a <b> renders bold within a
- * regular <p>). Any other child (a BLOCK/NONE element, COMMENT, DOCTYPE) is
- * skipped entirely -- no box, no text, no recursion -- matching the fixed
- * tag list being the sole gate for "this element gets text content". */
-static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_vector *words) {
-    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+/* Walks the sibling range [first_sibling, end_exclusive) in document order
+ * (see ARCHITECTURE.md's algorithm): a TEXT child contributes its own words
+ * in `style`'s own face (the h1-h6/p element itself, or -- NOVO v14 -- the
+ * container style synthesized for an anonymous box); an ELEMENT child whose
+ * OWN resolved style has display == INLINE recurses one level -- via
+ * tbox_html_node_text_content, which already folds any further nesting away
+ * -- contributing ITS whole text in ITS OWN face (this is how e.g. a <b>
+ * renders bold within a regular <p>). Any other child (a BLOCK/NONE element,
+ * COMMENT, DOCTYPE) is skipped entirely -- no box, no text, no recursion.
+ *
+ * NOVO v14: generalized from always iterating `node->first_child` to NULL to
+ * an explicit sibling range, so the SAME word-collection mechanism can be
+ * reused for an anonymous box's [run_start, run_end) interval (see
+ * tbox_layout_build_anonymous_box below) instead of always a whole node's
+ * children. The only pre-v14 call site (inside tbox_layout_build_text_runs,
+ * for a real text-tag element) passes (node->first_child, NULL, ...) --
+ * behavior identical to before. */
+static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_vector *words) {
+    for (const tbox_html_node *child = first_sibling; child != end_exclusive; child = child->next_sibling) {
         /* NOVO v11: a <br> child forces a line break -- checked BEFORE the
          * TEXT branch below and independently of the `display == INLINE`
          * gate an ELEMENT child otherwise needs (see ARCHITECTURE.md): <br>
@@ -595,17 +603,30 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
  * one line are laid out left-to-right with no gaps between them and
  * `content_x`). A negative/zero offset (an overflowing line, wider than
  * `available_width`) is left alone -- same "never shift left" policy D4
- * already has for overflow. */
-static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, double content_x, double content_y, double available_width, tbox_layout_box *box) {
-    bool is_preformatted = tbox_string_view_equal_cstr(node->element.tag_name, "pre");
+ * already has for overflow.
+ *
+ * NOVO v14: `node` may now be NULL (an anonymous box, see
+ * tbox_layout_build_anonymous_box -- no real element to speak of), in which
+ * case `is_preformatted` is forced false (a <pre> tag can't exist without a
+ * node) and tbox_layout_push_list_marker is skipped entirely (a <li> marker
+ * makes no sense without a real <li> node either). `first_sibling`/
+ * `end_exclusive` replace the implicit `node->first_child`/NULL range
+ * tbox_layout_collect_words used to derive on its own -- the only pre-v14
+ * call site (inside tbox_layout_build_element, for a real text-tag element)
+ * passes (node, node->first_child, NULL, ...), behavior identical to
+ * before. */
+static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, double content_x, double content_y, double available_width, tbox_layout_box *box) {
+    bool is_preformatted = node != NULL && tbox_string_view_equal_cstr(node->element.tag_name, "pre");
 
     tbox_vector words;
     tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
     if (is_preformatted) {
         tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
     } else {
-        tbox_layout_push_list_marker(arena, node, style, fonts, &words);
-        tbox_layout_collect_words(arena, node, style, styles, fonts, &words);
+        if (node != NULL) {
+            tbox_layout_push_list_marker(arena, node, style, fonts, &words);
+        }
+        tbox_layout_collect_words(arena, first_sibling, end_exclusive, style, styles, fonts, &words);
     }
 
     size_t word_count = tbox_vector_length(&words);
@@ -784,10 +805,131 @@ static double tbox_layout_resolve_absolute_edge(tbox_style_length primary, tbox_
     return container_origin;
 }
 
-/* Walks `node`'s ELEMENT children (TEXT/COMMENT/DOCTYPE children never get
- * their own box, see ARCHITECTURE.md), skipping any whose resolved
- * style->display == TBOX_STYLE_DISPLAY_NONE entirely -- no box, no
- * recursion into its subtree, no contribution to the height sum returned.
+/* NOVO v14: true when `child` alone would START a new anonymous inline-box
+ * sequence inside tbox_layout_build_children (see ARCHITECTURE.md's v14
+ * "Algoritmo de tbox_layout_build_children"): non-whitespace-only TEXT, or
+ * an ELEMENT whose resolved style is display:inline AND in flow (not
+ * absolute/fixed). Whitespace-only TEXT and any other ELEMENT
+ * (display:none/block, or out-of-flow) never trigger a sequence on their
+ * own -- even though whitespace TEXT and display:none still EXTEND an
+ * already-triggered sequence, see tbox_layout_inline_run_end below. */
+static bool tbox_layout_is_inline_run_trigger(tbox_arena *arena, const tbox_html_node *child, const tbox_style_table *styles) {
+    if (child->type == TBOX_HTML_NODE_TEXT) {
+        tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, child->text.text);
+        return collapsed.size > 0;
+    }
+
+    if (child->type == TBOX_HTML_NODE_ELEMENT) {
+        const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
+        bool is_out_of_flow            = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED);
+        return child_style->display == TBOX_STYLE_DISPLAY_INLINE && !is_out_of_flow;
+    }
+
+    return false;
+}
+
+/* NOVO v14: scans forward from `run_start` (itself already known to be an
+ * inline-run trigger, see tbox_layout_is_inline_run_trigger above) for the
+ * first sibling that must NOT be consumed by the sequence -- the first
+ * in-flow ELEMENT with display != inline, the first out-of-flow ELEMENT, or
+ * the end of the sibling list (NULL, meaning the sequence runs to the last
+ * child). TEXT of ANY content (including whitespace-only -- preserves
+ * spacing between words/inline elements), ELEMENT display:none, and
+ * COMMENT/DOCTYPE nodes are all transparent and extend the sequence without
+ * ever starting or ending it on their own. */
+static const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start, const tbox_style_table *styles) {
+    const tbox_html_node *node;
+    for (node = run_start; node != NULL; node = node->next_sibling) {
+        if (node->type != TBOX_HTML_NODE_ELEMENT) {
+            continue; /* TEXT (any content), COMMENT, DOCTYPE: transparent */
+        }
+
+        const tbox_style *node_style = tbox_layout_style_or_default(styles, node);
+        if (node_style->display == TBOX_STYLE_DISPLAY_NONE) {
+            continue; /* transparent, same as display:none anywhere else */
+        }
+
+        bool is_out_of_flow = (node_style->position == TBOX_STYLE_POSITION_ABSOLUTE || node_style->position == TBOX_STYLE_POSITION_FIXED);
+        if (is_out_of_flow) {
+            break; /* terminates, NOT consumed -- built via the out-of-flow path instead */
+        }
+
+        if (node_style->display == TBOX_STYLE_DISPLAY_INLINE) {
+            continue; /* in-flow inline: extends the sequence */
+        }
+
+        break; /* in-flow block terminates, NOT consumed */
+    }
+    return node;
+}
+
+/* NOVO v14: builds ONE anonymous block box (`box->node == NULL`, a
+ * convention documented since v2 and already handled safely by the Context
+ * layer's hit-test, see src/context/tbox_context.c) covering the sibling
+ * range [run_start, run_end) -- a contiguous sequence of loose inline
+ * content directly inside a block container (see ARCHITECTURE.md's v14
+ * "Escopo" for the full rationale). Reuses the exact same inline formatting
+ * mechanism a real text-tag element already uses
+ * (tbox_layout_build_text_runs, generalized to accept a sibling range and a
+ * NULL `node` earlier in this file) rather than a parallel implementation.
+ *
+ * The synthesized style starts from tbox_layout_default_style (every
+ * NON-inheritable property at its CSS2.1 initial value -- display:block,
+ * zero margin/padding/border, transparent background, no position -- so the
+ * anonymous box paints nothing of its own and never double-paints the
+ * container's background/border, see ARCHITECTURE.md) and then copies ONLY
+ * the six INHERITABLE tbox_style fields from `container_style` (see
+ * include/tbox/style.h's "inheritable" comments on each field): `color`,
+ * `font_family` (the whole fixed buffer, via memcpy -- not a pointer),
+ * `font_weight_bold`, `font_italic`, `font_size`, `text_align`. This is
+ * exactly what a real, undeclared child element would resolve to against
+ * this same parent, computed here without calling back into the Style
+ * layer (which already ran and has no entry point for "resolve a style with
+ * no node").
+ *
+ * The returned box has no margin/padding/border of its own (see
+ * ARCHITECTURE.md's "Escopo" -- CSS2.1 anonymous boxes never contribute a
+ * box model of their own), so its four rects (content/padding/border/margin
+ * box) are all identical: `{content_x, cursor_y, available_width, height}`,
+ * `height` coming straight out of tbox_layout_build_text_runs. */
+static tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, double content_x, double cursor_y, double available_width) {
+    tbox_style anon = tbox_layout_default_style;
+    anon.color            = container_style->color;
+    memcpy(anon.font_family, container_style->font_family, sizeof(anon.font_family));
+    anon.font_weight_bold = container_style->font_weight_bold;
+    anon.font_italic      = container_style->font_italic;
+    anon.font_size        = container_style->font_size;
+    anon.text_align       = container_style->text_align;
+
+    /* `box->style` is a pointer that must outlive this call -- unlike `anon`
+     * itself (a local), the synthesized style needs arena-backed storage,
+     * same lifetime as every other tbox_style this Layout Tree build
+     * produces. */
+    tbox_style *anon_style = (tbox_style *)tbox_arena_alloc(arena, sizeof(tbox_style));
+    *anon_style            = anon;
+
+    /* Zero-initialized, same pattern as tbox_layout_build_element: parent/
+     * first_child/last_child/next_sibling all start NULL, only overwritten
+     * by the caller (tbox_layout_build_children) for the sibling links. */
+    tbox_layout_box *box = (tbox_layout_box *)tbox_arena_alloc_zero(arena, sizeof(tbox_layout_box));
+    box->node             = NULL;
+    box->style             = anon_style;
+
+    double height = tbox_layout_build_text_runs(arena, NULL, run_start, run_end, anon_style, styles, fonts, content_x, cursor_y, available_width, box);
+
+    tbox_rect rect      = { content_x, cursor_y, available_width, height };
+    box->content_box = rect;
+    box->padding_box = rect;
+    box->border_box  = rect;
+    box->margin_box  = rect;
+
+    return box;
+}
+
+/* Walks `node`'s children (NOVO v14: TEXT children are no longer always
+ * ignored, see below), skipping any ELEMENT whose resolved style->display
+ * == TBOX_STYLE_DISPLAY_NONE entirely -- no box, no recursion into its
+ * subtree, no contribution to the height sum returned.
  *
  * NOVO v4: adjacent siblings now collapse their touching margins (CSS2.1
  * 8.3.1's sibling case -- see ARCHITECTURE.md) instead of always summing
@@ -838,19 +980,92 @@ static double tbox_layout_resolve_absolute_edge(tbox_style_length primary, tbox_
  * `border_bottom` currently holds -- a valid double, required by the
  * function's signature, but never actually used for their geometry since
  * `style->position != STATIC/RELATIVE/STICKY` there takes the
- * `container.x`/`container.y`-based path instead. */
-static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block children_container, double start_y, tbox_layout_box *parent_box, tbox_layout_positioned_context positioned_context) {
+ * `container.x`/`container.y`-based path instead.
+ *
+ * NOVO v14: gains `container_style` -- `node`'s OWN already-resolved style
+ * (the caller, tbox_layout_build_element, already has this as its local
+ * `style`), used exclusively to synthesize an eventual anonymous box's style
+ * (see tbox_layout_build_anonymous_box above), never for `node`'s ELEMENT
+ * children (those keep resolving their OWN style via `styles`, unchanged).
+ * Before deciding whether a child is skipped/out-of-flow/in-flow-block (the
+ * three pre-v14 cases, all unchanged in behavior), each child is first
+ * checked for whether it TRIGGERS a loose-inline-content sequence
+ * (tbox_layout_is_inline_run_trigger: non-whitespace TEXT, or an in-flow
+ * ELEMENT with display:inline -- see ARCHITECTURE.md's v14 "Algoritmo").
+ * When it does, tbox_layout_inline_run_end finds the end of that sequence
+ * (the first in-flow non-inline ELEMENT, the first out-of-flow ELEMENT, or
+ * NULL), tbox_layout_build_anonymous_box builds ONE box for the whole
+ * [run_start, run_end) range, and the outer loop resumes at `run_end` --
+ * never `child->next_sibling` -- so the entire sequence is consumed in one
+ * step. The anonymous box is linked into `parent_box->first_child`/
+ * `last_child`/`next_sibling` exactly like any other child box (preserving
+ * document order against real block siblings around it) and advances
+ * `border_bottom` by its own height with NO margin contribution (it has
+ * none, see ARCHITECTURE.md's "Escopo") -- `pending_margin_bottom` is
+ * cleared afterwards, the same way a real block's own (here: zero) bottom
+ * margin already clears it for the next sibling. A child that does NOT
+ * trigger a sequence falls through to the pre-v14 behavior unchanged:
+ * whitespace-only TEXT and display:none ELEMENTs are skipped with no box;
+ * out-of-flow and in-flow-block ELEMENTs build via tbox_layout_build_element
+ * exactly as before. */
+static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_layout_containing_block children_container, double start_y, tbox_layout_box *parent_box, tbox_layout_positioned_context positioned_context, const tbox_style *container_style) {
     double border_bottom         = start_y;
     double pending_margin_bottom = 0.0;
     tbox_layout_box *previous    = NULL;
 
-    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
-        if (child->type != TBOX_HTML_NODE_ELEMENT) {
+    /* NOVO v14: `<script>`/`<style>` are HTML5 "raw text" elements -- the
+     * HTML parser already treats them specially, tokenizing their content
+     * as opaque text rather than markup (see
+     * src/html_parser/tbox_html_tree_builder.c). Their one TEXT child (CSS/
+     * script source) must never become visible page content -- browsers
+     * never render it, and tbox_context_collect_style_elements (Context
+     * layer) already reads `<style>`'s raw text straight from the DOM for
+     * the cascade, independently of the Layout Tree. Before v14 this held
+     * "for free" (loose TEXT was ignored everywhere); the inline-run
+     * detection below would otherwise now wrap that source text in an
+     * anonymous box like any other loose text. Scoped to exactly these two
+     * tags -- every other element keeps the new v14 behavior unchanged. */
+    bool is_raw_text_container = tbox_string_view_equal_cstr(node->element.tag_name, "script") || tbox_string_view_equal_cstr(node->element.tag_name, "style");
+
+    for (const tbox_html_node *child = node->first_child; child != NULL;) {
+        if (child->type != TBOX_HTML_NODE_ELEMENT && child->type != TBOX_HTML_NODE_TEXT) {
+            /* COMMENT/DOCTYPE: never a box, never a sequence trigger. */
+            child = child->next_sibling;
+            continue;
+        }
+
+        if (!is_raw_text_container && tbox_layout_is_inline_run_trigger(arena, child, styles)) {
+            const tbox_html_node *run_start = child;
+            const tbox_html_node *run_end   = tbox_layout_inline_run_end(run_start, styles);
+
+            double cursor_y             = border_bottom + pending_margin_bottom;
+            tbox_layout_box *child_box  = tbox_layout_build_anonymous_box(arena, run_start, run_end, container_style, styles, fonts, children_container.x, cursor_y, children_container.width);
+            child_box->parent           = parent_box;
+            if (previous == NULL) {
+                parent_box->first_child = child_box;
+            } else {
+                previous->next_sibling = child_box;
+            }
+            parent_box->last_child = child_box;
+            previous               = child_box;
+
+            border_bottom          = cursor_y + child_box->margin_box.height;
+            pending_margin_bottom  = 0.0;
+
+            child = run_end;
+            continue;
+        }
+
+        if (child->type == TBOX_HTML_NODE_TEXT) {
+            /* Whitespace-only TEXT that never triggered a sequence above:
+             * contributes nothing -- unchanged since before v14. */
+            child = child->next_sibling;
             continue;
         }
 
         const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
         if (child_style->display == TBOX_STYLE_DISPLAY_NONE) {
+            child = child->next_sibling;
             continue;
         }
 
@@ -877,6 +1092,7 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
             /* Deliberately NOT touching border_bottom/pending_margin_bottom:
              * an out-of-flow child never collapses margins with, or advances
              * the cursor for, any sibling -- see doc comment above. */
+            child = child->next_sibling;
             continue;
         }
 
@@ -903,6 +1119,8 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
         double child_margin_bottom = tbox_layout_resolve_edge(child_style->margin[2], children_container.width);
         border_bottom              = cursor_y + child_box->margin_box.height - child_margin_bottom;
         pending_margin_bottom      = child_margin_bottom;
+
+        child = child->next_sibling;
     }
 
     return (border_bottom - start_y) + pending_margin_bottom;
@@ -1069,7 +1287,7 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
          * never a box of their own. Height is the sum of the wrapped
          * lines' heights (or one face's line-height for empty text) -- see
          * tbox_layout_build_text_runs's doc comment. */
-        content_height = tbox_layout_build_text_runs(arena, node, style, styles, fonts, content_x, content_y, content_width, box);
+        content_height = tbox_layout_build_text_runs(arena, node, node->first_child, NULL, style, styles, fonts, content_x, content_y, content_width, box);
     } else {
         /* Container node: recurse into ELEMENT children first (their
          * containing block is this node's own content box), then decide
@@ -1134,7 +1352,7 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
             .height          = content_height,
             .height_definite = height_definite,
         };
-        double children_total_height = tbox_layout_build_children(arena, node, styles, fonts, children_container, content_y, box, context_for_children);
+        double children_total_height = tbox_layout_build_children(arena, node, styles, fonts, children_container, content_y, box, context_for_children, style);
         if (!height_definite) {
             content_height = children_total_height;
         }

@@ -580,3 +580,22 @@ body {
 .v13-span-a {
     background-color: whitesmoke;
 }
+
+/* v14: caixa de bloco anônima demo (see the HTML comment above
+ * .v14-anon-container in tbox_app_demo.html). .v14-anon-loose colors the
+ * loose <strong> text itself (inherited by the synthesized anonymous box's
+ * text runs, per this version's "Style da caixa anônima" -- color/
+ * font-family/font-weight/font-style/font-size/text-align are inheritable,
+ * background-color/border are not, so this color proves the RUN inherits
+ * it while the anonymous box itself paints no background of its own).
+ * .v14-anon-p gives the sibling <p> a strongly contrasting background so
+ * the two boxes (anonymous vs. real <p>) are trivially distinguishable in
+ * the screenshot, and their vertical order (loose text above, <p> below)
+ * confirms document order was preserved. */
+.v14-anon-loose {
+    color: darkgreen;
+}
+
+.v14-anon-p {
+    background-color: mistyrose;
+}

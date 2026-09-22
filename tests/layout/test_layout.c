@@ -959,12 +959,21 @@ int tbox_test_layout_run(void) {
      * containing block (minus its own margin/padding/border), rather than
      * shrinking to its content -- the documented CSS 10.3.7 simplification
      * (ARCHITECTURE.md "Layout Tree -- geometria de absolute/fixed"). The
-     * SAME box's `height: auto` -- with zero ELEMENT children -- comes out
-     * as 0, exactly like the pre-existing (unchanged since v0) flow
-     * auto-height formula: ARCHITECTURE.md documents content_height as
-     * "inalterado ... AUTO continua sendo a soma dos filhos ... exatamente
-     * como hoje" for absolute/fixed too -- only content_width reuses the
-     * flow AUTO formula in a way that happens to fill rather than shrink. */
+     * SAME box's `height: auto` comes out as the (unchanged since v0)
+     * flow auto-height formula: the sum of every child box's margin_box
+     * height -- ARCHITECTURE.md documents content_height as "inalterado ...
+     * AUTO continua sendo a soma dos filhos ... exatamente como hoje" for
+     * absolute/fixed too -- only content_width reuses the flow AUTO formula
+     * in a way that happens to fill rather than shrink.
+     *
+     * NOVO v14 update: `.inner`'s content is the loose TEXT "x" (no
+     * ELEMENT child at all) -- pre-v14 this was silently ignored (the
+     * fixed-text-tag debt this version fixes), so the auto-height sum came
+     * out as 0 with zero children counted. Now "x" triggers exactly ONE
+     * anonymous box (see tbox_layout_build_anonymous_box), so the sum is
+     * that one box's own height (a single line at the default 16px face) --
+     * proving the auto-height formula itself is unchanged, just now correctly
+     * counting the anonymous box like any other child. */
     {
         tbox_html_document *doc     = parse_html_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>");
         const tbox_html_node *root  = tbox_html_document_root(doc);
@@ -985,7 +994,7 @@ int tbox_test_layout_run(void) {
                  * all around); inner's width:auto must fill that minus its own
                  * 5px margin and 3px padding on each side: 320 - 10 - 6 == 304. */
                 TBOX_TEST_ASSERT_MSG(inner_box->content_box.width == 304.0, "width:auto on an absolute box must fill the containing block, not shrink to content");
-                TBOX_TEST_ASSERT_MSG(inner_box->content_box.height == 0.0, "height:auto with zero element children must still be the (unchanged) children sum, not an implicit fill");
+                TBOX_TEST_ASSERT_MSG(inner_box->content_box.height == tbox_font_face_line_height(regular_16), "NOVO v14: height:auto must now sum in the anonymous box built for the loose \"x\" text -- a single line at the default face");
             }
         }
 
@@ -1900,6 +1909,272 @@ int tbox_test_layout_run(void) {
                 TBOX_TEST_ASSERT_MSG(box->text_runs[0].style != box->text_runs[1].style, "the two runs must carry DIFFERENT style pointers (the <mark>'s own vs. the <p>'s), even with an identical face");
                 TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, "x"), "the first run must be the <mark> word");
                 TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[1].text, "normal"), "the second run must be the plain word");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 55: NOVO v14 -- <div><strong>Bold</strong></div>: an inline element
+     * SOLTO directly inside a block container, with no <p>/h1-h6/li/pre
+     * wrapping it at all, must now produce visible text -- the whole point
+     * of v14's fix. The div's ONLY child box is an ANONYMOUS one
+     * (box->node == NULL), reusing the same inline formatting context a
+     * real text-tag element already uses. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><strong>Bold</strong></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("strong { display: inline; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *anon = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(anon != NULL, "a loose <strong> with no wrapping text tag must still produce a child box");
+            if (anon != NULL) {
+                TBOX_TEST_ASSERT_MSG(anon->node == NULL, "the box built for loose inline content must be ANONYMOUS (node == NULL)");
+                TBOX_TEST_ASSERT_MSG(anon->text_run_count == 1, "\"Bold\" must fit on a single run");
+                if (anon->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(anon->text_runs[0].text, "Bold"), "the anonymous box's run must be the <strong>'s own text");
+                }
+                TBOX_TEST_ASSERT_MSG(anon->next_sibling == NULL, "the div must have exactly ONE child box -- the anonymous box for the whole loose sequence");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 56: NOVO v14 regression -- <div><p>a</p>\n  <p>b</p></div>: the
+     * whitespace-only TEXT node sitting between the two <p>s must NOT
+     * trigger an anonymous box (it never becomes non-empty after
+     * tbox_string_collapse_whitespace) -- the div's children stay exactly
+     * the two <p> boxes, in document order, immediately stacked with no
+     * gap (same "no margin declared" geometry test 3 above already
+     * exercises for two plain <div>s). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>a</p>\n  <p>b</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *p1 = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(p1 != NULL, "the div must have a first child box");
+            if (p1 != NULL) {
+                TBOX_TEST_ASSERT_MSG(p1->node != NULL && string_view_equal_cstr(p1->node->element.tag_name, "p"), "the FIRST child box must be the real <p> element, not an anonymous box for the whitespace before it");
+                TBOX_TEST_ASSERT_MSG(p1->text_run_count == 1 && string_view_equal_cstr(p1->text_runs[0].text, "a"), "the first <p>'s own text must be \"a\"");
+
+                tbox_layout_box *p2 = p1->next_sibling;
+                TBOX_TEST_ASSERT_MSG(p2 != NULL, "the div must have a second child box");
+                if (p2 != NULL) {
+                    TBOX_TEST_ASSERT_MSG(p2->node != NULL && string_view_equal_cstr(p2->node->element.tag_name, "p"), "the SECOND child box must be the real <p> element, not an anonymous box for the whitespace between the two <p>s");
+                    TBOX_TEST_ASSERT_MSG(p2->text_run_count == 1 && string_view_equal_cstr(p2->text_runs[0].text, "b"), "the second <p>'s own text must be \"b\"");
+                    TBOX_TEST_ASSERT_MSG(p2->margin_box.y == p1->margin_box.height, "the two <p>s must stack with NO gap -- no anonymous box was inserted for the whitespace-only text between them");
+                    TBOX_TEST_ASSERT_MSG(p2->next_sibling == NULL, "the div must have EXACTLY two child boxes -- no anonymous box after the second <p> either");
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 57: NOVO v14 -- the exact mixed pattern 011.html exercises: a <div>
+     * with a loose inline element (<small>) as its FIRST child, followed by
+     * two block <p>s. Produces THREE child boxes in document order: an
+     * anonymous box for the <small>'s text, then the two <p> boxes --
+     * proving anonymous and real block boxes interleave correctly and
+     * document order/geometry (increasing, non-overlapping Y) is
+     * preserved. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><small>Small</small><p>a</p><p>b</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("small { display: inline; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *anon = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(anon != NULL, "the div must have a first child box (the anonymous box for the loose <small>)");
+            if (anon != NULL) {
+                TBOX_TEST_ASSERT_MSG(anon->node == NULL, "the FIRST child box must be anonymous (the loose <small>'s text)");
+                TBOX_TEST_ASSERT_MSG(anon->text_run_count == 1 && string_view_equal_cstr(anon->text_runs[0].text, "Small"), "the anonymous box's run must be the <small>'s own text");
+
+                tbox_layout_box *p1 = anon->next_sibling;
+                TBOX_TEST_ASSERT_MSG(p1 != NULL && p1->node != NULL && string_view_equal_cstr(p1->node->element.tag_name, "p"), "the SECOND child box must be the real first <p>");
+                if (p1 != NULL) {
+                    TBOX_TEST_ASSERT_MSG(p1->margin_box.y == anon->margin_box.height, "the first <p> must sit immediately below the anonymous box, no overlap/gap (anonymous box has no margin)");
+
+                    tbox_layout_box *p2 = p1->next_sibling;
+                    TBOX_TEST_ASSERT_MSG(p2 != NULL && p2->node != NULL && string_view_equal_cstr(p2->node->element.tag_name, "p"), "the THIRD child box must be the real second <p>");
+                    if (p2 != NULL) {
+                        TBOX_TEST_ASSERT_MSG(p2->margin_box.y == p1->margin_box.y + p1->margin_box.height, "the second <p> must sit immediately below the first, no overlap/gap");
+                        TBOX_TEST_ASSERT_MSG(p2->next_sibling == NULL, "the div must have EXACTLY three child boxes -- anonymous, <p>, <p>, in document order");
+                    }
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 58: NOVO v14 -- <div>texto <span style="display:none">oculto</span>
+     * mais texto</div>: a display:none ELEMENT sitting in the MIDDLE of a
+     * loose-inline sequence is transparent to the sequence-detection scan
+     * (per ARCHITECTURE.md's algorithm) -- it neither starts nor ends the
+     * sequence, so the text before AND after it merge into a SINGLE
+     * anonymous box, not two separate ones. The hidden element itself
+     * contributes no words (same display:none treatment as anywhere else). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>texto <span style=\"display:none;\">oculto</span> mais texto</div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *anon = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(anon != NULL, "the div must have a first child box");
+            if (anon != NULL) {
+                TBOX_TEST_ASSERT_MSG(anon->node == NULL, "the child box must be anonymous");
+                TBOX_TEST_ASSERT_MSG(anon->text_run_count == 1, "the text before and after the hidden <span> must merge into a SINGLE run -- the display:none element never breaks the sequence");
+                if (anon->text_run_count == 1) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(anon->text_runs[0].text, "texto mais texto"), "the hidden <span>'s text must contribute nothing -- only \"texto\" and \"mais texto\" survive, joined as one run");
+                }
+                TBOX_TEST_ASSERT_MSG(anon->next_sibling == NULL, "the div must have EXACTLY one child box -- one anonymous box for the whole sequence");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 59: NOVO v14 -- <div>antes <span style="position:absolute;">flutuante
+     * </span> depois</div>: an out-of-flow (position:absolute) inline
+     * element sitting in the MIDDLE of loose inline content TERMINATES the
+     * sequence before it (per ARCHITECTURE.md's "Fora de escopo") -- three
+     * child boxes result, in document order: an anonymous box for "antes",
+     * the <span> itself (built via the ordinary out-of-flow path, own box,
+     * own node), and a SECOND, separate anonymous box for "depois". */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>antes <span style=\"position:absolute;\">flutuante</span> depois</div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *first = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(first != NULL, "the div must have a first child box");
+            if (first != NULL) {
+                TBOX_TEST_ASSERT_MSG(first->node == NULL, "the FIRST child box must be anonymous (the text before the positioned <span>)");
+                TBOX_TEST_ASSERT_MSG(first->text_run_count == 1 && string_view_equal_cstr(first->text_runs[0].text, "antes"), "the first anonymous box's text must be exactly \"antes\" -- the positioned <span> must NOT be absorbed into it");
+
+                tbox_layout_box *second = first->next_sibling;
+                TBOX_TEST_ASSERT_MSG(second != NULL, "the div must have a second child box");
+                if (second != NULL) {
+                    TBOX_TEST_ASSERT_MSG(second->node != NULL && string_view_equal_cstr(second->node->element.tag_name, "span"), "the SECOND child box must be the <span> itself, built via the ordinary out-of-flow path -- not folded into any anonymous box");
+
+                    tbox_layout_box *third = second->next_sibling;
+                    TBOX_TEST_ASSERT_MSG(third != NULL, "the div must have a third child box");
+                    if (third != NULL) {
+                        TBOX_TEST_ASSERT_MSG(third->node == NULL, "the THIRD child box must be a SEPARATE anonymous box (the text after the positioned <span>)");
+                        TBOX_TEST_ASSERT_MSG(third->text_run_count == 1 && string_view_equal_cstr(third->text_runs[0].text, "depois"), "the second anonymous box's text must be exactly \"depois\"");
+                        TBOX_TEST_ASSERT_MSG(third->next_sibling == NULL, "the div must have EXACTLY three child boxes -- anonymous, <span>, anonymous, in document order");
+                    }
+                }
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 60: NOVO v14 -- the anonymous box's synthesized style inherits ONLY
+     * the six inheritable tbox_style fields (color/font_family/
+     * font_weight_bold/font_italic/font_size/text_align) from the
+     * container, and NOTHING else -- proven with two separate documents:
+     * (a) <div style="color: red; font-weight: bold;">texto solto</div>
+     * must reach the resulting run's style with color red and
+     * font_weight_bold true (inheritable properties DO flow through); (b)
+     * <div style="background-color: blue; border: 1px solid black;">texto
+     * solto</div> must NOT give the anonymous box itself (not the text
+     * inside it -- the BOX) any background/border of its own, proving it
+     * never paints a second copy of the container's background/border (see
+     * ARCHITECTURE.md's "Escopo" rationale for why the alternative --
+     * reusing the container's own tbox_style* outright -- was rejected). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div style=\"color: red; font-weight: bold;\">texto solto</div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *anon = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(anon != NULL && anon->node == NULL, "the div's loose text must produce an anonymous child box");
+            if (anon != NULL && anon->text_run_count == 1) {
+                const tbox_style *run_style = anon->text_runs[0].style;
+                TBOX_TEST_ASSERT_MSG(run_style->color.r == 255 && run_style->color.g == 0 && run_style->color.b == 0 && run_style->color.a == 255, "the anonymous box's run must inherit the container's declared color: red");
+                TBOX_TEST_ASSERT_MSG(run_style->font_weight_bold == true, "the anonymous box's run must inherit the container's declared font-weight: bold");
+            }
+        }
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div style=\"background-color: blue; border: 1px solid black;\">texto solto</div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+        tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, 800.0, 600.0);
+        TBOX_TEST_ASSERT(div_box != NULL);
+        if (div_box != NULL) {
+            tbox_layout_box *anon = div_box->first_child;
+            TBOX_TEST_ASSERT_MSG(anon != NULL && anon->node == NULL, "the div's loose text must produce an anonymous child box");
+            if (anon != NULL) {
+                TBOX_TEST_ASSERT_MSG(anon->style->background_color.a == 0, "the anonymous box ITSELF must have a transparent background -- background-color is NOT inheritable, and reusing the container's own style would have double-painted its blue background");
+                TBOX_TEST_ASSERT_MSG(anon->style->border_style == TBOX_STYLE_BORDER_STYLE_NONE, "the anonymous box ITSELF must have no border of its own -- border is NOT inheritable, and reusing the container's own style would have double-painted its black border");
             }
         }
 

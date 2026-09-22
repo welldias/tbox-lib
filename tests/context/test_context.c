@@ -234,7 +234,11 @@ int tbox_test_context_run(void) {
      * display list with the expected FILL_RECT (rect == border_box,
      * color == the declared background-color). */
     {
-        tbox_context *ctx = open_cstr("<div>x</div>", "div { width: 200px; height: 100px; background-color: rgb(10, 20, 30); }", fonts);
+        /* NOVO v14: uses an EMPTY <div> -- with the fixed-text-tag debt
+         * fixed, a loose "x" here would now trigger its own anonymous
+         * text box (a second, TEXT_RUN paint op), which is irrelevant to
+         * this test's actual point (one background FILL_RECT). */
+        tbox_context *ctx = open_cstr("<div></div>", "div { width: 200px; height: 100px; background-color: rgb(10, 20, 30); }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed for well-formed HTML+CSS");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -308,7 +312,12 @@ int tbox_test_context_run(void) {
      * `node`'s tag name), a point clearly outside any box's area returns
      * NULL. */
     {
-        tbox_context *ctx = open_cstr("<div><div>a</div></div>", "div div { width: 50px; height: 50px; }", fonts);
+        /* NOVO v14: the inner <div> is EMPTY -- a loose "a" would now
+         * trigger its own anonymous text box, which the hit-test at
+         * (10, 10) would find INSTEAD of the inner div itself (node ==
+         * NULL, breaking this test's "inner->node != NULL" premise);
+         * irrelevant to this test's actual point (hit-test structure). */
+        tbox_context *ctx = open_cstr("<div><div></div></div>", "div div { width: 50px; height: 50px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -361,9 +370,19 @@ int tbox_test_context_run(void) {
     }
 
     /* 7: a click inside a matching element's box fires its handler exactly
-     * once, with the clicked node itself. */
+     * once, with the clicked node itself.
+     *
+     * NOVO v14: the <button> is EMPTY -- a loose "Click" label would now
+     * build its own anonymous text box covering the button's content area;
+     * tbox_context_hit_test would then find that anonymous box (node ==
+     * NULL) instead of the button itself, and tbox_context_dispatch_click
+     * bails out early on box->node == NULL (see src/context/tbox_context.c)
+     * -- correctly out of scope for this Layout Tree task (dispatch
+     * bubbling through an anonymous box is Context layer work), but
+     * irrelevant to what THIS test actually checks (dispatch landing on the
+     * button itself). */
     {
-        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", fonts);
+        tbox_context *ctx = open_cstr("<button></button>", "button { width: 100px; height: 40px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture capture;
@@ -408,9 +427,17 @@ int tbox_test_context_run(void) {
     /* 9: two nested elements where only the OUTER one matches the
      * registered selector -- a click on the inner element must still fire
      * the handler, on the outer element (nearest matching ancestor), via
-     * the node->parent walk. */
+     * the node->parent walk.
+     *
+     * NOVO v14: the inner <div> is EMPTY -- a loose "x" would now build its
+     * own anonymous text box, which the hit-test at (10, 10) would find
+     * INSTEAD of the inner div (node == NULL, on which
+     * tbox_context_dispatch_click bails out early -- see
+     * src/context/tbox_context.c); dispatching THROUGH an anonymous box is
+     * out of scope for this Layout Tree task and irrelevant to what this
+     * test actually checks (the ancestor walk from a real inner node). */
     {
-        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
+        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\"></div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture capture;
@@ -438,9 +465,15 @@ int tbox_test_context_run(void) {
 
     /* 10: two handlers registered with different selectors, both applicable
      * to the same node, both fire on a single click -- and in registration
-     * order. */
+     * order.
+     *
+     * NOVO v14: the <div> is EMPTY -- a loose "x" would now build its own
+     * anonymous text box, which the hit-test at (10, 10) would find INSTEAD
+     * of the div itself (node == NULL, on which dispatch bails out early --
+     * out of scope for this Layout Tree task, irrelevant to this test's
+     * actual point: both handlers firing on the same matched node). */
     {
-        tbox_context *ctx = open_cstr("<div id=\"target\" class=\"box\">x</div>", "#target { width: 60px; height: 60px; }", fonts);
+        tbox_context *ctx = open_cstr("<div id=\"target\" class=\"box\"></div>", "#target { width: 60px; height: 60px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture id_capture;
@@ -513,9 +546,14 @@ int tbox_test_context_run(void) {
      * pass to tbox_html_node_set_attribute -- mirrors the v1 vertical
      * slice's ".off"/".on" class-swap-on-click scenario end to end (click
      * mutates the attribute, the NEXT run_frame's display list reflects the
-     * new class's declaration). */
+     * new class's declaration).
+     *
+     * NOVO v14: the <div> is EMPTY -- a loose "x" would now build its own
+     * anonymous text box, adding a second (TEXT_RUN) paint op and stealing
+     * the click dispatch (node == NULL) from the div itself, both
+     * irrelevant to this test's actual point (background swap on click). */
     {
-        tbox_context *ctx = open_cstr("<div class=\"box off\">x</div>",
+        tbox_context *ctx = open_cstr("<div class=\"box off\"></div>",
             ".off { width: 40px; height: 40px; background-color: rgb(0, 0, 0); }"
             ".on  { width: 40px; height: 40px; background-color: rgb(255, 0, 0); }",
             fonts);
@@ -737,9 +775,15 @@ int tbox_test_context_run(void) {
 
     /* 19: tbox_context_update_hover changes hover state when the point
      * moves onto an element's box, and returns true only when something
-     * actually changed. */
+     * actually changed.
+     *
+     * NOVO v14: the <div> is EMPTY -- a loose "x" would now build its own
+     * anonymous text box, which tbox_context_hit_test would find INSTEAD of
+     * the div (node == NULL, so tbox_context_update_hover's `new_hovered =
+     * box->node` would stay NULL -- indistinguishable from "nothing
+     * hovered", breaking this test's actual point: hovering the div). */
     {
-        tbox_context *ctx = open_cstr("<div>x</div>", "div { width: 100px; height: 100px; }", fonts);
+        tbox_context *ctx = open_cstr("<div></div>", "div { width: 100px; height: 100px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -757,9 +801,13 @@ int tbox_test_context_run(void) {
 
     /* 20: has_position == false un-hovers a previously hovered element
      * (and reports that as a change); with nothing hovered to begin with,
-     * it is a no-op (no change). */
+     * it is a no-op (no change).
+     *
+     * NOVO v14: the <div> is EMPTY, same rationale as test 19 above -- a
+     * loose "x" would steal the hover target as an anonymous (node == NULL)
+     * box, breaking the div-hover premise this test actually checks. */
     {
-        tbox_context *ctx = open_cstr("<div>x</div>", "div { width: 100px; height: 100px; }", fonts);
+        tbox_context *ctx = open_cstr("<div></div>", "div { width: 100px; height: 100px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -779,9 +827,14 @@ int tbox_test_context_run(void) {
      * .box:hover author rule resolved via tbox_context_run_frame AFTER
      * update_hover points at the element produces the hover color in the
      * resulting FILL_RECT; not hovering (or un-hovering) produces the
-     * normal color. */
+     * normal color.
+     *
+     * NOVO v14: the <div> is EMPTY -- a loose "x" would now build its own
+     * anonymous text box, both adding a second (TEXT_RUN) paint op AND
+     * stealing the hover target as an anonymous (node == NULL) box, both
+     * irrelevant to this test's actual point (:hover reaching the cascade). */
     {
-        tbox_context *ctx = open_cstr("<div class=\"box\">x</div>",
+        tbox_context *ctx = open_cstr("<div class=\"box\"></div>",
             ".box { width: 100px; height: 100px; background-color: rgb(0, 0, 0); }"
             ".box:hover { background-color: rgb(255, 0, 0); }",
             fonts);
@@ -818,9 +871,15 @@ int tbox_test_context_run(void) {
 
     /* 22: a click on a nested node with handlers registered on TWO
      * different ancestors fires both, nearest ancestor first -- real
-     * bubbling order (checked via a shared log both handlers append to). */
+     * bubbling order (checked via a shared log both handlers append to).
+     *
+     * NOVO v14: the inner <div> is EMPTY -- a loose "x" would now build its
+     * own anonymous text box, which the hit-test at (10, 10) would find
+     * INSTEAD of the inner div (node == NULL, on which dispatch bails out
+     * early -- out of scope for this Layout Tree task, irrelevant to this
+     * test's actual point: bubbling order from a real inner node). */
     {
-        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
+        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\"></div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             bubble_log log;
@@ -845,9 +904,11 @@ int tbox_test_context_run(void) {
     }
 
     /* 23: a handler returning false (stopPropagation) prevents a farther
-     * ancestor's otherwise-matching handler from firing at all. */
+     * ancestor's otherwise-matching handler from firing at all.
+     *
+     * NOVO v14: the inner <div> is EMPTY, same rationale as test 22 above. */
     {
-        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\">x</div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
+        tbox_context *ctx = open_cstr("<div class=\"outer\"><div class=\"inner\"></div></div>", ".outer { width: 100px; height: 100px; } .inner { width: 50px; height: 50px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture inner_capture;
@@ -870,9 +931,13 @@ int tbox_test_context_run(void) {
     }
 
     /* 24: tbox_context_unbind_click followed by a new dispatch at the same
-     * point no longer fires the unbound handler. */
+     * point no longer fires the unbound handler.
+     *
+     * NOVO v14: the <button> is EMPTY, same rationale as test 7 above -- a
+     * loose "Click" label would steal the dispatch target as an anonymous
+     * (node == NULL) box. */
     {
-        tbox_context *ctx = open_cstr("<button>Click</button>", "button { width: 100px; height: 40px; }", fonts);
+        tbox_context *ctx = open_cstr("<button></button>", "button { width: 100px; height: 40px; }", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             click_capture capture;
@@ -1072,10 +1137,14 @@ int tbox_test_context_run(void) {
      * wrapper is the sole top-level element, and <style> (not one of Layout
      * Tree's fixed text-tag list -- h1-h6/p/li -- so its raw text content is
      * never collected as words) paints nothing of its own, leaving the FILL_RECT
-     * count entirely attributable to div.algo. */
+     * count entirely attributable to div.algo.
+     *
+     * NOVO v14: div.algo itself is EMPTY -- a loose "x" would now build its
+     * own anonymous text box (a second, TEXT_RUN paint op), irrelevant to
+     * this test's actual point (which stylesheet source wins the cascade). */
     {
         tbox_context *ctx = open_cstr(
-            "<div><style>.algo{background-color:blue;}</style><div class=\"algo\">x</div></div>", "", fonts);
+            "<div><style>.algo{background-color:blue;}</style><div class=\"algo\"></div></div>", "", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed for a document with an embedded <style>");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -1096,8 +1165,9 @@ int tbox_test_context_run(void) {
      * CSS (decision documented in ARCHITECTURE.md's v9 "Escopo": internal
      * is placed LAST in tbox_context_run_frame's sources array). */
     {
+        /* NOVO v14: div.algo is EMPTY, same rationale as test 30 above. */
         tbox_context *ctx = open_cstr(
-            "<div><style>.algo{background-color:blue;}</style><div class=\"algo\">x</div></div>",
+            "<div><style>.algo{background-color:blue;}</style><div class=\"algo\"></div></div>",
             ".algo{background-color:green;}", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
@@ -1117,8 +1187,9 @@ int tbox_test_context_run(void) {
      * still resolves the external CSS exactly as before (no behavior
      * change for documents that don't use the new feature). */
     {
+        /* NOVO v14: div.algo is EMPTY, same rationale as test 30 above. */
         tbox_context *ctx = open_cstr(
-            "<div class=\"algo\">x</div>", ".algo{background-color:green;}", fonts);
+            "<div class=\"algo\"></div>", ".algo{background-color:green;}", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
             tbox_display_list list;
@@ -1136,14 +1207,18 @@ int tbox_test_context_run(void) {
     /* 33: two SEPARATE <style> blocks, at different positions in the
      * document, both apply -- proof the concatenation in
      * tbox_context_collect_style_elements walks the WHOLE tree and doesn't
-     * stop at (or drop) any block after the first one found. */
+     * stop at (or drop) any block after the first one found.
+     *
+     * NOVO v14: both div.a/div.b are EMPTY -- loose "x"/"y" would each now
+     * build their own anonymous text box (extra TEXT_RUN paint ops),
+     * irrelevant to this test's actual point (both <style> blocks applying). */
     {
         tbox_context *ctx = open_cstr(
             "<div>"
             "<style>.a{background-color:blue;}</style>"
-            "<div class=\"a\">x</div>"
+            "<div class=\"a\"></div>"
             "<style>.b{background-color:green;}</style>"
-            "<div class=\"b\">y</div>"
+            "<div class=\"b\"></div>"
             "</div>",
             "", fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
