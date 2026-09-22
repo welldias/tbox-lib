@@ -353,7 +353,7 @@ static bool tbox_app_demo_register(tbox_app *app, const char *selector, tbox_con
     return true;
 }
 
-/* --screenshot <path>: renders this exact demo document into `path` via
+/* --screenshot <path>: renders `html_path`/`css_path` into `path` via
  * tbox_app_screenshot_from_files (<tbox/app.h>) and exits, WITHOUT ever
  * opening a Wayland window -- see that function's doc comment for why: no
  * compositor, no screenshot tool (grim/similar), no window-manager
@@ -365,8 +365,8 @@ static bool tbox_app_demo_register(tbox_app *app, const char *selector, tbox_con
  * on success, 1 on failure (bad HTML/CSS, font resolution failure, or the
  * PNG couldn't be written -- tbox_app_screenshot_from_files doesn't
  * distinguish which, so neither does this message). */
-static int tbox_app_demo_run_screenshot(const char *png_path) {
-    bool ok = tbox_app_screenshot_from_files(TBOX_APP_DEMO_HTML_PATH, TBOX_APP_DEMO_CSS_PATH, TBOX_APP_DEMO_WIDTH, TBOX_APP_DEMO_HEIGHT, png_path);
+static int tbox_app_demo_run_screenshot(const char *html_path, const char *css_path, const char *png_path) {
+    bool ok = tbox_app_screenshot_from_files(html_path, css_path, TBOX_APP_DEMO_WIDTH, TBOX_APP_DEMO_HEIGHT, png_path);
     if (!ok) {
         fprintf(stderr, "tbox_app_screenshot_from_files failed to write \"%s\"\n", png_path);
         return 1;
@@ -375,21 +375,85 @@ static int tbox_app_demo_run_screenshot(const char *png_path) {
     return 0;
 }
 
-int main(int argc, char **argv) {
+/* `[<html_path> [<css_path>]]`: both optional, positional, and independent
+ * of `--screenshot`'s own flag+argument pair (which may appear anywhere
+ * among argv, same as before this was added). Neither file is read here --
+ * this only decides which path strings tbox_app_create_from_files/
+ * tbox_app_screenshot_from_files below get handed.
+ *
+ * `html_path` omitted (`argc`'s only positional-eligible args are none, or
+ * just `--screenshot <path>`) -- resolves BOTH `*out_html_path` and
+ * `*out_css_path` to the existing TBOX_APP_DEMO_HTML_PATH/
+ * TBOX_APP_DEMO_CSS_PATH build-time defaults, unchanged from this file's
+ * behavior before this function existed -- this is the exact fallback the
+ * project's maintainer asked for.
+ *
+ * `html_path` given but `css_path` omitted -- `*out_css_path` resolves to
+ * NULL, not the demo's own default CSS: pairing a caller-supplied HTML
+ * fixture with this file's own hoverable/bubbling/stopPropagation-styled
+ * demo stylesheet would misleadingly style unrelated markup. NULL is a
+ * legitimate value for both tbox_app_create_from_files and
+ * tbox_app_screenshot_from_files (see tbox_app_create_from_files_impl in
+ * src/app/tbox_app.c: "NULL means no author stylesheet", not an error) --
+ * the caller's HTML then renders against the UA stylesheet alone, same as
+ * any other author-stylesheet-less document this engine already supports.
+ *
+ * Returns false (having already printed to stderr) only on a genuine usage
+ * error: more than two positional arguments. */
+static bool tbox_app_demo_parse_args(int argc, char **argv, const char **out_screenshot_path, const char **out_html_path, const char **out_css_path) {
+    const char *screenshot_path = NULL;
+    const char *html_path       = NULL;
+    const char *css_path        = NULL;
+    int positional_count        = 0;
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--screenshot") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "--screenshot requires a <path> argument\n");
-                return 1;
+                return false;
             }
-            return tbox_app_demo_run_screenshot(argv[i + 1]);
+            screenshot_path = argv[++i];
+            continue;
         }
+
+        if (positional_count == 0) {
+            html_path = argv[i];
+        } else if (positional_count == 1) {
+            css_path = argv[i];
+        } else {
+            fprintf(stderr, "unexpected extra argument \"%s\"\n", argv[i]);
+            return false;
+        }
+        positional_count++;
+    }
+
+    if (html_path == NULL) {
+        html_path = TBOX_APP_DEMO_HTML_PATH;
+        css_path  = TBOX_APP_DEMO_CSS_PATH;
+    }
+
+    *out_screenshot_path = screenshot_path;
+    *out_html_path       = html_path;
+    *out_css_path        = css_path;
+    return true;
+}
+
+int main(int argc, char **argv) {
+    const char *screenshot_path;
+    const char *html_path;
+    const char *css_path;
+    if (!tbox_app_demo_parse_args(argc, argv, &screenshot_path, &html_path, &css_path)) {
+        return 1;
+    }
+
+    if (screenshot_path != NULL) {
+        return tbox_app_demo_run_screenshot(html_path, css_path, screenshot_path);
     }
 
     tbox_log_init("tbox_app_demo", tbox_env_bool("TBOX_WAYLAND_DEBUG"));
     long close_delay_ms = tbox_env_long("TBOX_WAYLAND_CLOSE_DELAY_MS", 0);
 
-    tbox_app *app = tbox_app_create_from_files(TBOX_APP_DEMO_HTML_PATH, TBOX_APP_DEMO_CSS_PATH, TBOX_APP_DEMO_WIDTH, TBOX_APP_DEMO_HEIGHT);
+    tbox_app *app = tbox_app_create_from_files(html_path, css_path, TBOX_APP_DEMO_WIDTH, TBOX_APP_DEMO_HEIGHT);
     if (app == NULL) {
         fprintf(stderr, "tbox_app_create_from_files failed\n");
         return 1;
