@@ -31,7 +31,7 @@ find_package(PkgConfig QUIET)
 
 set(TBOX_FONTCONFIG_FOUND FALSE)
 
-if(PkgConfig_FOUND)
+if(TBOX_ENABLE_FONTCONFIG AND PkgConfig_FOUND)
     pkg_check_modules(FONTCONFIG QUIET fontconfig)
     if(FONTCONFIG_FOUND)
         set(TBOX_FONTCONFIG_FOUND TRUE)
@@ -53,14 +53,15 @@ set(FONTCONFIG_LIBRARIES ${FONTCONFIG_LIBRARIES} PARENT_SCOPE)
 
 if(NOT TBOX_FONTCONFIG_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_source_fontconfig.c)
-    message(WARNING
-        "Fontconfig (pkg-config module 'fontconfig') not found: "
-        "tbox_font_source_fontconfig.c is excluded from this build -- "
-        "libtbox and its test suite still build fine against the embedded "
-        "font backend alone.\n"
-        "  Arch Linux:    sudo pacman -S fontconfig\n"
-        "  Debian/Ubuntu: sudo apt install libfontconfig1-dev"
-    )
+    if(TBOX_ENABLE_FONTCONFIG)
+        message(WARNING
+            "Fontconfig (pkg-config module 'fontconfig') not found: "
+            "application rendering is unavailable, but the core library "
+            "still builds with embedded fonts.\n"
+            "  Arch Linux:    sudo pacman -S fontconfig\n"
+            "  Debian/Ubuntu: sudo apt install libfontconfig1-dev"
+        )
+    endif()
 endif()
 
 # tbox_backend_wayland.c (Output Display's real Wayland backend) needs
@@ -76,16 +77,12 @@ else()
     list(APPEND TBOX_SOURCES ${TBOX_XDG_SHELL_PROTOCOL_C})
 endif()
 
-# tbox_app.c (Application layer, tbox_app_open) hard-depends on BOTH a real
-# window backend and real font discovery -- it makes no sense to open a
-# window with no way to find a font, or to resolve a font with no window to
-# show it in -- so, unlike every other module here, it is gated on the
-# combination of TBOX_WAYLAND_FOUND and TBOX_FONTCONFIG_FOUND rather than
-# either alone. Same graceful-skip philosophy: missing either just excludes
-# this one file, libtbox (and its test suite, which never exercises
-# tbox_app_open -- see tests/CMakeLists.txt) still builds fine without it.
-if(NOT TBOX_WAYLAND_FOUND OR NOT TBOX_FONTCONFIG_FOUND)
+# Screenshot rendering needs Fontconfig but no window backend. When font
+# discovery is absent, linkable application stubs expose that limitation.
+if(NOT TBOX_FONTCONFIG_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/app/tbox_app.c)
+else()
+    list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/app/tbox_app_unavailable.c)
 endif()
 
 option(TBOX_BUILD_STATIC "Build the static tbox library (libtbox.a)" ON)
@@ -109,6 +106,7 @@ if(TBOX_BUILD_STATIC)
         target_link_libraries(tbox_static PRIVATE ${FONTCONFIG_LIBRARIES})
     endif()
     if(TBOX_WAYLAND_FOUND)
+        target_compile_definitions(tbox_static PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)
         add_dependencies(tbox_static tbox_wayland_xdg_shell_protocol)
         target_include_directories(tbox_static PRIVATE
             "${TBOX_XDG_SHELL_PROTOCOL_DIR}"
@@ -141,6 +139,7 @@ if(TBOX_BUILD_SHARED)
         target_link_libraries(tbox_shared PRIVATE ${FONTCONFIG_LIBRARIES})
     endif()
     if(TBOX_WAYLAND_FOUND)
+        target_compile_definitions(tbox_shared PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)
         add_dependencies(tbox_shared tbox_wayland_xdg_shell_protocol)
         target_include_directories(tbox_shared PRIVATE
             "${TBOX_XDG_SHELL_PROTOCOL_DIR}"

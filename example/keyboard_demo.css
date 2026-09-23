@@ -1,0 +1,2 @@
+button { width: 230px; margin: 8px 0px; background-color: white; }
+button:focus { border: 2px solid blue; background-color: yellow; }

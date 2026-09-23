@@ -54,7 +54,11 @@ struct tbox_context {
     tbox_vector handlers;               /* tbox_context_click_binding elements, arena-backed by handler_arena; array + linear scan on dispatch, same shape as tbox_style_table */
     int next_handler_id;                /* NOVO v3: monotonic counter for tbox_context_on_click's returned handle -- never reused, even after tbox_context_unbind_click removes a binding */
     const tbox_html_node *hovered_node; /* NOVO v3: the node currently under the pointer, or NULL -- a plain struct field with its own lifetime, deliberately NOT part of frame_arena (must survive every tbox_context_run_frame's arena reset so tbox_context_update_hover can compare across frames; see <tbox/context.h>) */
+    const tbox_html_node *focused_node;
+    tbox_style_table styles; /* last frame's styles, for focus visibility checks */
 };
+
+static bool tbox_context_node_attached(const tbox_context *ctx, const tbox_html_node *node);
 
 tbox_ua_style_config tbox_ua_style_config_default(void) {
     tbox_ua_style_config config;
@@ -158,6 +162,8 @@ bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_
         "p { display: block; margin: %gpx 0px; }\n"
         "ul, ol { display: block; margin: %gpx 0px; padding: 0px 0px 0px %gpx; }\n"
         "li { display: block; }\n"
+        "button { display: block; border: 1px solid gray; padding: 4px; }\n"
+        "button:focus { border: 2px solid blue; }\n"
         "hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"
         "pre { display: block; font-family: monospace; }\n"
         "b, strong { display: inline; font-weight: bold; }\n"
@@ -285,6 +291,8 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     tbox_vector_init(&ctx->handlers, &ctx->handler_arena, sizeof(tbox_context_click_binding), 0);
     ctx->next_handler_id = 0;
     ctx->hovered_node    = NULL;
+    ctx->focused_node    = NULL;
+    ctx->styles          = (tbox_style_table){0};
 
     return ctx;
 }
@@ -327,6 +335,11 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * ARCHITECTURE.md). Must happen before ctx->root is overwritten below:
      * the old tree lives in this same arena. */
     tbox_arena_reset(&ctx->frame_arena);
+    ctx->styles = (tbox_style_table){0};
+
+    if (ctx->focused_node != NULL && !tbox_context_node_attached(ctx, ctx->focused_node)) {
+        ctx->focused_node = NULL;
+    }
 
     const tbox_html_node *root = tbox_html_document_root(ctx->document);
 
@@ -338,6 +351,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * tbox_css_selector_set_hover_context for the full sequencing
      * contract this call fulfills. */
     tbox_css_selector_set_hover_context(ctx->hovered_node);
+    tbox_css_selector_set_focus_context(ctx->focused_node);
 
     /* NOVO v2: three cascade sources -- the user-agent stylesheet, the
      * external author stylesheet, and (NOVO v9) the internal stylesheet
@@ -359,6 +373,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
         { ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR },
     };
     tbox_style_table styles = tbox_style_resolve_tree(&ctx->frame_arena, root, sources, 3);
+    ctx->styles = styles;
 
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
      * so tbox_context_hit_test has something to search (or not) between
@@ -497,20 +512,97 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding) {
     return false;
 }
 
-bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
-    if (ctx == NULL) {
+static bool tbox_context_node_attached(const tbox_context *ctx, const tbox_html_node *node) {
+    const tbox_html_node *root = tbox_html_document_root(ctx->document);
+    while (node != NULL && node->parent != NULL) {
+        node = node->parent;
+    }
+    return node == root;
+}
+
+static const tbox_html_node *tbox_context_next_node(const tbox_html_node *root, const tbox_html_node *node) {
+    if (node->first_child != NULL) {
+        return node->first_child;
+    }
+    while (node != root) {
+        if (node->next_sibling != NULL) {
+            return node->next_sibling;
+        }
+        node = node->parent;
+    }
+    return NULL;
+}
+
+static bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node) {
+    if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return false;
     }
 
-    /* NULL both when there is no layout yet and when nothing is under the
-     * point -- tbox_context_hit_test already covers both guards. `node` is
-     * NULL only for an anonymous box (not produced by v0/v1/v2's layout,
-     * but guarded defensively -- see tbox_layout_box::node). */
-    const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);
-    if (box == NULL || box->node == NULL) {
+    tbox_string_view tag = node->element.tag_name;
+    bool control = tbox_string_view_equal_cstr(tag, "button");
+    if (!control || tbox_html_node_get_attribute(node, tbox_string_view_make("disabled", 8)) != NULL) {
         return false;
     }
 
+    for (const tbox_html_node *ancestor = node; ancestor != NULL; ancestor = ancestor->parent) {
+        if (ancestor->type != TBOX_HTML_NODE_ELEMENT) {
+            continue;
+        }
+        if (tbox_html_node_get_attribute(ancestor, tbox_string_view_make("hidden", 6)) != NULL) {
+            return false;
+        }
+        const tbox_style *style = tbox_style_table_find(&ctx->styles, ancestor);
+        if (style != NULL && style->display == TBOX_STYLE_DISPLAY_NONE) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool tbox_context_set_focus(tbox_context *ctx, const tbox_html_node *node) {
+    if (ctx->focused_node == node) {
+        return false;
+    }
+    ctx->focused_node = node;
+    tbox_css_selector_set_focus_context(node);
+    return true;
+}
+
+static bool tbox_context_move_focus(tbox_context *ctx, bool reverse) {
+    const tbox_html_node *root = tbox_html_document_root(ctx->document);
+    const tbox_html_node *current = ctx->focused_node;
+    if (current != NULL && (!tbox_context_node_attached(ctx, current) || !tbox_context_focusable(ctx, current))) {
+        current = NULL;
+    }
+
+    const tbox_html_node *first = NULL;
+    const tbox_html_node *last = NULL;
+    const tbox_html_node *before = NULL;
+    const tbox_html_node *after = NULL;
+    bool seen_current = false;
+    for (const tbox_html_node *node = root; node != NULL; node = tbox_context_next_node(root, node)) {
+        if (!tbox_context_focusable(ctx, node)) {
+            continue;
+        }
+        if (first == NULL) first = node;
+        last = node;
+        if (node == current) {
+            seen_current = true;
+        } else if (!seen_current) {
+            before = node;
+        } else if (after == NULL) {
+            after = node;
+        }
+    }
+
+    const tbox_html_node *next = reverse ? (current == NULL ? last : (before != NULL ? before : last))
+                                         : (current == NULL ? first : (after != NULL ? after : first));
+    return tbox_context_set_focus(ctx, next);
+}
+
+static bool tbox_context_dispatch_click_node(tbox_context *ctx, const tbox_html_node *node) {
+    tbox_css_selector_set_hover_context(ctx->hovered_node);
+    tbox_css_selector_set_focus_context(ctx->focused_node);
     bool dispatched      = false;
     size_t handler_count = tbox_vector_length(&ctx->handlers);
 
@@ -519,7 +611,7 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
      * (in registration order); every one that matches fires. A handler
      * returning false (stopPropagation) stops the ancestor walk
      * immediately, so no farther ancestor is even tested. */
-    for (const tbox_html_node *ancestor = box->node; ancestor != NULL; ancestor = ancestor->parent) {
+    for (const tbox_html_node *ancestor = node; ancestor != NULL; ancestor = ancestor->parent) {
         bool stop_propagation = false;
 
         for (size_t i = 0; i < handler_count; i++) {
@@ -550,6 +642,56 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
     }
 
     return dispatched;
+}
+
+bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
+    if (ctx == NULL) {
+        return false;
+    }
+    const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);
+    if (box == NULL) {
+        tbox_context_set_focus(ctx, NULL);
+        return false;
+    }
+    while (box != NULL && box->node == NULL) {
+        box = box->parent;
+    }
+    if (box == NULL) {
+        return false;
+    }
+
+    const tbox_html_node *focus = NULL;
+    for (const tbox_html_node *node = box->node; node != NULL; node = node->parent) {
+        if (tbox_context_focusable(ctx, node)) {
+            focus = node;
+            break;
+        }
+    }
+    tbox_context_set_focus(ctx, focus);
+    return tbox_context_dispatch_click_node(ctx, box->node);
+}
+
+bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
+    if (ctx == NULL || !event.pressed) {
+        return false;
+    }
+    if (event.key == TBOX_KEY_TAB) {
+        return tbox_context_move_focus(ctx, event.shift);
+    }
+    if ((event.key == TBOX_KEY_ENTER || event.key == TBOX_KEY_SPACE) &&
+        ctx->focused_node != NULL && tbox_context_node_attached(ctx, ctx->focused_node) &&
+        tbox_context_focusable(ctx, ctx->focused_node)) {
+        tbox_string_view tag = ctx->focused_node->element.tag_name;
+        if (tbox_string_view_equal_cstr(tag, "button")) {
+            return tbox_context_dispatch_click_node(ctx, ctx->focused_node);
+        }
+    }
+    return false;
+}
+
+const tbox_html_node *tbox_context_focused_node(const tbox_context *ctx) {
+    return ctx == NULL || ctx->focused_node == NULL || !tbox_context_node_attached(ctx, ctx->focused_node)
+               ? NULL : ctx->focused_node;
 }
 
 tbox_html_document *tbox_context_document(tbox_context *ctx) {

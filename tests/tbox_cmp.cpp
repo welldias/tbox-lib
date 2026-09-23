@@ -1,8 +1,7 @@
 /* v10 (ARCHITECTURE.md's "v10 -- tbox_cmp"): visual regression tool.
  * Renders every tests/assets/NNN.html fixture (via tbox_app_screenshot_from_files,
- * v7 -- offscreen, no Wayland window needed at runtime, only at build time
- * for this executable, see tests/CMakeLists.txt's TBOX_OPENCV_FOUND AND
- * TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND gate) and compares it
+ * v7 -- offscreen, no Wayland window needed, see tests/CMakeLists.txt's
+ * OpenCV and Fontconfig gate) and compares it
  * against the paired tests/assets/NNN.png "golden" reference via SSIM.
  *
  * .cpp, not .c: the original version of this file (written by the

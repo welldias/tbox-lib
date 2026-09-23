@@ -2,6 +2,8 @@
 
 #include <tbox/output.h>
 
+#include "tbox_backend_wayland.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -67,19 +69,28 @@ struct tbox_backend_wayland {
     bool configured;
     bool should_close;
 
-    /* wl_pointer state: pointer_x/pointer_y track the current surface-local
-     * position (kept up to date by enter/motion), pointer_has_focus is true
-     * only while backend->surface holds pointer focus (between enter and
-     * leave). click_pending/click_x/click_y record a PRESS of the primary
-     * button since the last tbox_backend_wayland_take_click call -- see
-     * that function's doc comment in <tbox/output.h>. */
+    /* Events are queued in compositor delivery order. Pointer position is
+     * tracked separately for hover and click coordinates. */
     bool pointer_has_focus;
     double pointer_x;
     double pointer_y;
-    bool click_pending;
-    double click_x;
-    double click_y;
+    tbox_input_event *events;
+    size_t event_count;
+    size_t event_capacity;
 };
+
+static void tbox_backend_wayland_push_event(tbox_backend_wayland *backend, tbox_input_event event) {
+    if (backend->event_count == backend->event_capacity) {
+        size_t capacity = backend->event_capacity == 0 ? 8 : backend->event_capacity * 2;
+        tbox_input_event *events = realloc(backend->events, capacity * sizeof(*events));
+        if (events == NULL) {
+            return;
+        }
+        backend->events = events;
+        backend->event_capacity = capacity;
+    }
+    backend->events[backend->event_count++] = event;
+}
 
 /* --- xdg_wm_base: must pong every ping or the compositor may consider the
  * client unresponsive and kill it. --- */
@@ -92,7 +103,7 @@ static const struct xdg_wm_base_listener tbox_backend_wayland_wm_base_listener =
     .ping = tbox_backend_wayland_wm_base_ping,
 };
 
-/* --- wl_keyboard: only what's needed to detect ESC. --- */
+/* --- wl_keyboard: map native key symbols into tbox's logical keys. --- */
 static void tbox_backend_wayland_keyboard_keymap(void *data, struct wl_keyboard *keyboard, uint32_t format, int32_t fd, uint32_t size) {
     (void)keyboard;
     tbox_backend_wayland *backend = data;
@@ -130,16 +141,34 @@ static void tbox_backend_wayland_keyboard_key(void *data, struct wl_keyboard *ke
     (void)time;
     tbox_backend_wayland *backend = data;
 
-    if (state != WL_KEYBOARD_KEY_STATE_PRESSED || backend->xkb_state == NULL) {
+    if (backend->xkb_state == NULL) {
         return;
     }
 
     xkb_keycode_t keycode = (xkb_keycode_t)(key + 8); /* evdev-to-xkb keycode offset */
     xkb_keysym_t sym      = xkb_state_key_get_one_sym(backend->xkb_state, keycode);
 
-    if (sym == XKB_KEY_Escape) {
+    tbox_key logical_key = TBOX_KEY_UNKNOWN;
+    switch (sym) {
+    case XKB_KEY_Tab:
+    case XKB_KEY_ISO_Left_Tab: logical_key = TBOX_KEY_TAB; break;
+    case XKB_KEY_Return:
+    case XKB_KEY_KP_Enter: logical_key = TBOX_KEY_ENTER; break;
+    case XKB_KEY_space: logical_key = TBOX_KEY_SPACE; break;
+    case XKB_KEY_Escape: logical_key = TBOX_KEY_ESCAPE; break;
+    default: break;
+    }
+    if (logical_key == TBOX_KEY_UNKNOWN) {
+        return;
+    }
+    bool shift = xkb_state_mod_name_is_active(backend->xkb_state, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE) > 0;
+    if (logical_key == TBOX_KEY_ESCAPE && state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         backend->should_close = true;
     }
+    tbox_backend_wayland_push_event(backend, (tbox_input_event){
+        .kind = TBOX_INPUT_KEY,
+        .data.key = {logical_key, state == WL_KEYBOARD_KEY_STATE_PRESSED, shift || sym == XKB_KEY_ISO_Left_Tab},
+    });
 }
 
 static void tbox_backend_wayland_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {
@@ -189,9 +218,9 @@ static const struct wl_keyboard_listener tbox_backend_wayland_keyboard_listener 
 
 /* --- wl_pointer: enter/leave track which surface (if any) has pointer
  * focus, motion keeps the current surface-local position up to date, and
- * button records a pending click -- PRESS only, primary button (BTN_LEFT)
- * only, no drag/double-click tracking -- consumed by
- * tbox_backend_wayland_take_click. Bound at the same wl_seat version as the
+ * button queues a click -- PRESS only, primary button (BTN_LEFT)
+ * only, no drag/double-click tracking -- consumed in order with keyboard
+ * events by tbox_backend_wayland_take_event. Bound at the same wl_seat version as the
  * keyboard (see tbox_backend_wayland_seat_capabilities and the registry
  * bind below), so every event up to version 7 needs a real (even if no-op)
  * handler here, same reasoning as the keyboard listener's comment above;
@@ -238,9 +267,10 @@ static void tbox_backend_wayland_pointer_button(void *data, struct wl_pointer *p
         return;
     }
 
-    backend->click_pending = true;
-    backend->click_x       = backend->pointer_x;
-    backend->click_y       = backend->pointer_y;
+    tbox_backend_wayland_push_event(backend, (tbox_input_event){
+        .kind = TBOX_INPUT_POINTER_CLICK,
+        .data.click = {backend->pointer_x, backend->pointer_y},
+    });
 }
 
 /* axis/frame/axis_source/axis_stop/axis_discrete carry nothing this backend
@@ -466,6 +496,7 @@ void tbox_backend_wayland_destroy(tbox_backend_wayland *backend) {
         wl_display_disconnect(backend->display);
     }
 
+    free(backend->events);
     free(backend);
 }
 
@@ -540,17 +571,13 @@ void tbox_backend_wayland_size(const tbox_backend_wayland *backend, int32_t *out
     }
 }
 
-bool tbox_backend_wayland_take_click(tbox_backend_wayland *backend, double *out_x, double *out_y) {
-    if (backend == NULL || out_x == NULL || out_y == NULL) {
+bool tbox_backend_wayland_take_event(tbox_backend_wayland *backend, tbox_input_event *out_event) {
+    if (backend == NULL || out_event == NULL || backend->event_count == 0) {
         return false;
     }
-    if (!backend->click_pending) {
-        return false;
-    }
-
-    *out_x                 = backend->click_x;
-    *out_y                 = backend->click_y;
-    backend->click_pending = false;
+    *out_event = backend->events[0];
+    backend->event_count--;
+    memmove(backend->events, backend->events + 1, backend->event_count * sizeof(*backend->events));
     return true;
 }
 

@@ -41,13 +41,9 @@ endforeach()
 # tbox_cmp (v10, see ARCHITECTURE.md's "v10 -- tbox_cmp") renders each
 # tests/assets/*.html fixture via tbox_app_screenshot_from_files (v7) and
 # compares it against its paired *.png reference via OpenCV/SSIM -- needs
-# OpenCV itself, plus the same two dependencies tbox_app_demo already needs
-# (Wayland + Fontconfig, see example/CMakeLists.txt), since
-# tbox_app_screenshot_from_files only exists in the build when both of those
-# are present (src/app/tbox_app.c's own gate). Entirely optional: absent any
-# of the three, this whole block is skipped and the rest of the test suite
-# is unaffected.
-if(TBOX_OPENCV_FOUND AND TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
+# OpenCV and Fontconfig. Wayland is unnecessary because screenshots render
+# without a window. This tool remains optional and outside ctest.
+if(TBOX_OPENCV_FOUND AND TBOX_FONTCONFIG_FOUND)
     add_executable(tbox_cmp tbox_cmp.cpp)
 
     if(TBOX_BUILD_STATIC)

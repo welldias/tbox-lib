@@ -1446,6 +1446,73 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* Keyboard focus is computed in the backend-independent context. Tab
+     * skips disabled and hidden controls, wraps, and exposes :focus to CSS.
+     * Enter activates the focused button through the existing click API. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><button id='one'>One</button><button disabled>Skip</button>"
+            "<button style='display:none'>Hidden</button><button id='two'>Two</button></div>",
+            "button:focus { background-color: rgb(255, 0, 0); }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 200.0, &list);
+            bool button_text_painted = false;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN) {
+                    button_text_painted = true;
+                }
+            }
+            TBOX_TEST_ASSERT_MSG(button_text_painted, "button labels must produce text paint operations");
+            const tbox_html_node *root = tbox_html_document_root(tbox_context_document(ctx));
+            const tbox_html_node *one = root->first_child->first_child;
+            const tbox_html_node *two = one->next_sibling->next_sibling->next_sibling;
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#one", 4, record_click, &capture) >= 0);
+
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
+            tbox_context_run_frame(ctx, 320.0, 200.0, &list);
+            bool focus_painted = false;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].color.r == 255 &&
+                    list.items[i].color.g == 0 && list.items[i].color.b == 0) {
+                    focus_painted = true;
+                }
+            }
+            TBOX_TEST_ASSERT_MSG(focus_painted, ":focus must reach CSS painting");
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false}));
+            TBOX_TEST_ASSERT(capture.call_count == 1 && capture.node == one);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false}));
+            TBOX_TEST_ASSERT(capture.call_count == 2);
+
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
+            tbox_context_run_frame(ctx, 320.0, 200.0, &list);
+            bool clicked_two = false;
+            for (int y = 0; y < 200 && !clicked_two; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 8.0, (double)y);
+                if (hit != NULL && hit->node == two) {
+                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, 8.0, (double)y));
+                    TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
+                    clicked_two = true;
+                }
+            }
+            TBOX_TEST_ASSERT_MSG(clicked_two, "pointer click must focus a rendered button without a handler");
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
+            tbox_html_node_remove((tbox_html_node *)one);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
+            tbox_context_close(ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

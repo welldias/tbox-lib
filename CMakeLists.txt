@@ -20,6 +20,8 @@ endif()
 option(TBOX_BUILD_EXAMPLES "Build the tbox example programs" ON)
 option(TBOX_BUILD_TESTS "Build the tbox test suite" ON)
 option(TBOX_ENABLE_SANITIZERS "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(TBOX_ENABLE_WAYLAND "Build the Linux Wayland window backend when available" ON)
+option(TBOX_ENABLE_FONTCONFIG "Use Fontconfig for application font discovery when available" ON)
 
 # Treat every compiler warning as an error across the whole project.
 add_library(tbox_warnings INTERFACE)
@@ -88,7 +90,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig QUIET)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PkgConfig_FOUND)
+if(TBOX_ENABLE_WAYLAND AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PkgConfig_FOUND)
     pkg_check_modules(WAYLAND_CLIENT QUIET wayland-client)
     pkg_check_modules(WAYLAND_PROTOCOLS QUIET wayland-protocols)
     pkg_check_modules(XKBCOMMON QUIET xkbcommon)
@@ -149,7 +151,7 @@ if(TBOX_WAYLAND_FOUND)
     add_custom_target(tbox_wayland_xdg_shell_protocol
         DEPENDS "${TBOX_XDG_SHELL_PROTOCOL_C}" "${TBOX_XDG_SHELL_PROTOCOL_H}"
     )
-else()
+elseif(TBOX_ENABLE_WAYLAND)
     message(WARNING
         "Skipping the Wayland Output Display backend and the tbox_wayland example: "
         "requires the wayland-client, wayland-protocols and xkbcommon pkg-config "

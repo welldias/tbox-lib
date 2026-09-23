@@ -11,9 +11,14 @@
  * mouse pointer justifies "what's hovered now" being process-global rather
  * than threaded through every selector-matching signature. */
 static const tbox_html_node *tbox_css_selector_hovered_node = NULL;
+static const tbox_html_node *tbox_css_selector_focused_node = NULL;
 
 void tbox_css_selector_set_hover_context(const tbox_html_node *hovered) {
     tbox_css_selector_hovered_node = hovered;
+}
+
+void tbox_css_selector_set_focus_context(const tbox_html_node *focused) {
+    tbox_css_selector_focused_node = focused;
 }
 
 static const tbox_html_attribute *tbox_css_selector_find_attribute(const tbox_html_node *node, tbox_string_view name) {
@@ -120,11 +125,8 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
     }
 
     case TBOX_CSS_SIMPLE_SELECTOR_PSEUDO:
-        /* Only the structural pseudo-classes computable from tree shape
-         * alone, plus "hover" against the global hover context, are
-         * supported; see <tbox/css_selector.h>'s top comment for the
-         * rationale. Everything else (keyboard focus, generated content)
-         * never matches. */
+        /* Structural selectors and the context's current hover/focus nodes
+         * are supported here. Other pseudo-classes never match. */
         if (tbox_string_view_equal_cstr(item->name, "first-child")) {
             return node->type == TBOX_HTML_NODE_ELEMENT && tbox_css_selector_prev_element_sibling(node) == NULL;
         }
@@ -133,6 +135,9 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
         }
         if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("hover", 5))) {
             return node == tbox_css_selector_hovered_node;
+        }
+        if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("focus", 5))) {
+            return node == tbox_css_selector_focused_node;
         }
         return false;
     }

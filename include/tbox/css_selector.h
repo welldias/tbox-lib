@@ -20,13 +20,9 @@ extern "C" {
  * or tbox_css_selector_compile below) against a tbox_html_node tree. Every
  * tbox_css_simple_selector_kind is supported except a reduced subset of
  * PSEUDO: "first-child" and "last-child" are evaluated (both purely
- * structural, computed from prev_sibling/next_sibling), and "hover" is
- * evaluated against the global hover context set by
- * tbox_css_selector_set_hover_context below (matches iff node == the
- * pointer last passed there); every other pseudo-class or pseudo-element
- * (:lang(), :before, ...) never matches -- deliberate scope reduction,
- * since this library has no concept of keyboard focus or generated content
- * to evaluate them against. ID and
+ * structural, computed from prev_sibling/next_sibling). "hover" and
+ * "focus" match the nodes provided by the context. Other unsupported
+ * pseudo-classes or pseudo-elements never match. ID and
  * CLASS simple selectors compare case-sensitively (per CSS2.1); TYPE, the
  * "id"/"class" attribute lookup itself, and ATTRIBUTE names compare
  * case-insensitively (tag/attribute names are already lowercased by
@@ -120,7 +116,8 @@ bool tbox_css_selector_matches(const tbox_css_selector *selector, const tbox_htm
 /* Defines the node currently under the pointer (or NULL for none) for
  * subsequent tbox_css_selector_matches calls to evaluate a simple selector
  * PSEUDO named "hover" -- matches iff `node == hovered` (pointer equality);
- * every other pseudo-class/pseudo-element remains "never matches", as
+ * :focus matches the focused node set by the context. Other unsupported
+ * pseudo-classes/pseudo-elements remain "never matches", as
  * documented above (only first-child/last-child are structural and already
  * worked). Backed by a single file-static global (this library is already
  * documented as not thread-safe, no internal locking -- see the top of this
@@ -128,6 +125,9 @@ bool tbox_css_selector_matches(const tbox_css_selector *selector, const tbox_htm
  * is expected to call this immediately before each tbox_style_resolve_tree,
  * never reusing a value left over from a different tbox_context. */
 void tbox_css_selector_set_hover_context(const tbox_html_node *hovered);
+
+/* Sets the node matched by :focus for subsequent selector evaluations. */
+void tbox_css_selector_set_focus_context(const tbox_html_node *focused);
 
 #ifdef __cplusplus
 }

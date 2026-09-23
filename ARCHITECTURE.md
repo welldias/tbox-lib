@@ -4690,3 +4690,19 @@ desenvolvimento — captura de tela headless" acima (não uma versão da
 escada, mas com o mesmo nível de decisão documentada), ou consolidada
 como débito de design conhecido acima, com gatilho explícito de quando
 revisitar.
+
+## Entrada e fronteira de backend (etapa posterior)
+
+`tbox_app` usa a interface privada `src/output/tbox_window_backend.h` para
+abrir a janela, coletar eventos e apresentar quadros. O adaptador atual
+encaminha essas operações ao backend Wayland; as declarações Wayland ficam
+em `src/output/tbox_backend_wayland.h`. `include/tbox/output.h` expõe apenas
+a rasterização independente de plataforma. Um backend futuro implementa o
+mesmo contrato de janela e traduz seus eventos nativos para a fila ordenada
+de `tbox_input_event`, que carrega teclas lógicas e cliques.
+
+O contexto guarda o foco lógico e resolve `:focus`; Tab/Shift+Tab percorrem
+botões visíveis e habilitados, e Enter/Espaço acionam o mesmo handler usado
+por clique. O backend Wayland só fornece os eventos lógicos e não decide
+foco ou ativação. Edição de texto requer um canal separado de composição,
+com tratamento de IME, e permanece como próxima etapa.

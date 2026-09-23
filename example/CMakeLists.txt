@@ -133,16 +133,15 @@ if(TBOX_WAYLAND_FOUND)
     set_target_properties(tbox_wayland PROPERTIES OUTPUT_NAME tbox_wayland)
 endif()
 
-# tbox_app_demo exercises the Application layer's single public entry point,
-# tbox_app_open() (src/app/tbox_app.c) -- the v0 vertical slice end to end,
-# through the real library API rather than tbox_wayland's own low-level
-# Wayland/FreeType calls. tbox_app.c is only compiled into libtbox when BOTH
-# TBOX_WAYLAND_FOUND and TBOX_FONTCONFIG_FOUND (see src/CMakeLists.txt --
-# TBOX_FONTCONFIG_FOUND is pushed up to this scope from there, the same
-# reason TBOX_WAYLAND_FOUND itself lives in the root CMakeLists.txt), so this
-# example is gated on the same combination -- linking against tbox_app_open
-# with either dependency missing would fail at link time, not just be
-# pointless.
+# This demo uses only the public application API and can always be compiled.
+# At runtime it reports when no interactive window backend is available.
+add_executable(tbox_keyboard_demo keyboard_demo.c)
+target_link_libraries(tbox_keyboard_demo PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_compile_definitions(tbox_keyboard_demo PRIVATE
+    TBOX_KEYBOARD_HTML_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/keyboard_demo.html\"
+    TBOX_KEYBOARD_CSS_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/keyboard_demo.css\")
+
+# The older app demo is still built only with both of its platform dependencies.
 if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
     add_executable(tbox_app_demo
         tbox_app.c

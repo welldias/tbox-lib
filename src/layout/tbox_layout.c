@@ -61,7 +61,7 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
         return false;
     }
 
-    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th" };
+    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th", "button" };
     tbox_string_view tag_name            = node->element.tag_name;
     for (size_t i = 0; i < sizeof(text_tags) / sizeof(text_tags[0]); i++) {
         if (tbox_string_view_equal_cstr(tag_name, text_tags[i])) {

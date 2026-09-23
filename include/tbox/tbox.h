@@ -14,6 +14,7 @@ extern "C" {
 #include <tbox/font.h>
 #include <tbox/html_parser.h>
 #include <tbox/html_xpath.h>
+#include <tbox/input.h>
 #include <tbox/layout.h>
 #include <tbox/output.h>
 #include <tbox/render.h>

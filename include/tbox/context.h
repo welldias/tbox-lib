@@ -6,6 +6,7 @@
 
 #include <tbox/font.h>
 #include <tbox/html_parser.h>
+#include <tbox/input.h>
 #include <tbox/image.h>
 #include <tbox/layout.h>
 #include <tbox/render.h>
@@ -20,8 +21,7 @@ extern "C" {
  * open, then per frame: cascade+style -> layout -> render -> display
  * list) and decides when to redo it. It knows nothing about Wayland or
  * any backend -- the platform event loop and presenting the resulting
- * display list is Application's job (tbox_app_open, calling
- * tbox_context_run_frame then tbox_backend_wayland_present). See
+ * display list is Application's job. See
  * ARCHITECTURE.md's "Orchestration / Main Loop" section for the full
  * rationale, including why an earlier draft of that section (owning the
  * event loop) was wrong.
@@ -276,6 +276,14 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding);
  * No-op (returns false) if ctx == NULL, if there is no layout yet, or if
  * nothing is under the point -- same guard as tbox_context_hit_test. */
 bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
+
+/* Keyboard focus belongs to the context, not the window backend. Tab and
+ * Shift+Tab move through visible enabled buttons. Enter and Space activate
+ * the focused button through registered click handlers. Returns true when a
+ * frame should be recomputed. */
+bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event);
+
+const tbox_html_node *tbox_context_focused_node(const tbox_context *ctx);
 
 /* Access to the internal document -- needed for a handler's body to call
  * tbox_html_node_set_attribute, which requires the document's arena, not

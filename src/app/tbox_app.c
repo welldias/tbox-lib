@@ -10,6 +10,8 @@
 #include <tbox/output.h>
 #include <tbox/string_view.h>
 
+#include "output/tbox_window_backend.h"
+
 /* Non-blocking, per ARCHITECTURE.md's "loop não-bloqueante": each
  * tbox_app_step pumps at most this many milliseconds of Wayland events
  * before moving on to click/resize handling and returning -- see
@@ -19,17 +21,23 @@
  * escopo" about vsync), not to wait for something to happen. */
 #define TBOX_APP_POLL_TIMEOUT_MS 0
 
+#ifndef TBOX_HAS_WINDOW_BACKEND
+#define TBOX_HAS_WINDOW_BACKEND 0
+#endif
+
 /* Generous fixed size for tbox_app_dirname's output buffer -- truncated
  * (never overflowed) if an html_path's directory component is longer than
  * this, same truncate-not-reject posture as tbox_image_cache's own path
  * buffers (src/image/tbox_image.c). */
 #define TBOX_APP_PATH_BUF_SIZE 4096
 
+#if TBOX_HAS_WINDOW_BACKEND
 struct tbox_app {
     tbox_font_face_cache *fonts;
+    tbox_font_source *resolver_source;
     tbox_image_cache *images;
     tbox_context *ctx;
-    tbox_backend_wayland *backend;
+    tbox_window_backend *backend;
 
     /* Last size observed by tbox_app_step, used to detect a resize (see
      * tbox_app_step). Deliberately initialized to 0/0 in tbox_app_create,
@@ -51,7 +59,9 @@ struct tbox_app {
      * (!tbox_app_should_close(app))` loop still terminates instead of
      * spinning forever once the connection is gone. */
     bool closed;
+    bool redraw_requested;
 };
+#endif
 
 /* Resolves a "sans-serif" query at the given bold flag through a FRESH
  * tbox_font_source_fontconfig (created, resolved exactly once, and left for
@@ -81,51 +91,12 @@ static tbox_font_source *tbox_app_resolve_font_source(bool bold, const void **ou
     return source;
 }
 
-/* NOVO v12: on-demand resolver handed to tbox_font_face_cache_create so the
- * cache can resolve any (family, bold) pair it hasn't seen yet, the first
- * time tbox_font_face_cache_get is asked for it -- see ARCHITECTURE.md's
- * "Application -- resolução sob demanda + limpeza de duplicação". `userdata`
- * is deliberately ignored (every call site below passes NULL for
- * resolver_userdata; this function carries no state of its own -- no new
- * global/static mutable is introduced by this file).
- *
- * Does exactly what tbox_app_resolve_font_source does per call -- create a
- * fresh tbox_font_source_fontconfig, resolve one query, destroy the source
- * again regardless of outcome -- except it takes a full tbox_font_query
- * (including family) instead of just a bold flag, and is invoked by the
- * cache on demand rather than eagerly at startup. Returns false (without
- * touching out_data/out_size) if the source itself fails to create;
- * otherwise returns whatever tbox_font_source_resolve returns, having
- * already destroyed the source either way. */
+/* The cache copies returned bytes before another resolve. The shared source
+ * remains alive until the cache is destroyed, so the callback's output is
+ * valid during that copy and each resolved font is eventually released. */
 static bool tbox_app_font_resolver(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size) {
-    (void)userdata;
-
-    tbox_font_source *source = tbox_font_source_fontconfig_create();
-    if (source == NULL) {
-        return false;
-    }
-
-    if (!tbox_font_source_resolve(source, query, out_data, out_size)) {
-        tbox_font_source_destroy(source);
-        return false;
-    }
-
-    /* Deliberately NOT destroyed on success: tbox_font_source_fontconfig_resolve
-     * (src/font/tbox_font_source_fontconfig.c) writes *out_data as an ALIAS
-     * into the source's own internal buffer (fc->data), not a copy --
-     * destroying `source` here would free that buffer before
-     * tbox_font_face_cache_get (the caller, in src/font/tbox_font_face_cache.c)
-     * gets to copy it into its own arena right after this function returns,
-     * a genuine use-after-free that corrupted rendered glyphs
-     * non-deterministically (missing/zero-width words) once a real document
-     * put enough allocation traffic between the free and the copy. The cache
-     * resolves each distinct (family, bold) pair at most once per process
-     * (see family_blobs in tbox_font_face_cache.c) -- this leaks at most one
-     * small tbox_font_source per distinct font family actually used by the
-     * document, bounded and tiny, same accepted-debt shape as the font face
-     * cache itself never evicting entries (ARCHITECTURE.md's "Fora de
-     * escopo: limite/eviction do cache de fontes"). */
-    return true;
+    tbox_font_source *source = userdata;
+    return tbox_font_source_resolve(source, query, out_data, out_size);
 }
 
 /* NOVO v12: shared by tbox_app_create_impl and tbox_app_screenshot_from_files
@@ -136,12 +107,10 @@ static bool tbox_app_font_resolver(void *userdata, tbox_font_query query, const 
  * (see the retained comment on tbox_app_resolve_font_source above for why
  * TWO tbox_font_source_fontconfig instances are used, one per bold/non-bold
  * query), builds the font cache with tbox_app_font_resolver wired in as its
- * on-demand resolver (resolver_userdata is NULL -- the resolver needs no
- * state), and destroys both sources before returning -- tbox_font_face_cache_create
- * already copies both byte blobs defensively, so neither source needs to
- * outlive that call. Returns NULL on any failure, cleaning up whatever had
- * already been allocated first; never crashes either way. */
-static tbox_font_face_cache *tbox_app_build_font_cache(void) {
+ * on-demand resolver using a third, retained Fontconfig source. The first
+ * two sources can be destroyed after the cache copies their bytes. The
+ * caller owns the retained source and destroys it after the cache. */
+static tbox_font_face_cache *tbox_app_build_font_cache(tbox_font_source **out_resolver_source) {
     const void *regular_data         = NULL;
     size_t regular_size              = 0;
     tbox_font_source *regular_source = tbox_app_resolve_font_source(false, &regular_data, &regular_size);
@@ -157,12 +126,24 @@ static tbox_font_face_cache *tbox_app_build_font_cache(void) {
         return NULL;
     }
 
-    tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size, tbox_app_font_resolver, NULL);
+    tbox_font_source *resolver_source = tbox_font_source_fontconfig_create();
+    if (resolver_source == NULL) {
+        tbox_font_source_destroy(bold_source);
+        tbox_font_source_destroy(regular_source);
+        return NULL;
+    }
+
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size, tbox_app_font_resolver, resolver_source);
     /* Both sources' bytes are already copied into `fonts` above (or the
      * call failed and there is nothing left to copy from) -- neither source
      * is needed past this point, success or failure alike. */
     tbox_font_source_destroy(bold_source);
     tbox_font_source_destroy(regular_source);
+    if (fonts == NULL) {
+        tbox_font_source_destroy(resolver_source);
+        return NULL;
+    }
+    *out_resolver_source = resolver_source;
     return fonts;
 }
 
@@ -210,8 +191,10 @@ static void tbox_app_dirname(const char *path, char *out, size_t out_size) {
  *
  * Returns NULL on any failure, cleaning up whatever had already been
  * allocated first; never crashes either way. */
+#if TBOX_HAS_WINDOW_BACKEND
 static tbox_app *tbox_app_create_impl(const char *html, const char *css, const char *base_dir, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
-    tbox_font_face_cache *fonts = tbox_app_build_font_cache();
+    tbox_font_source *resolver_source = NULL;
+    tbox_font_face_cache *fonts = tbox_app_build_font_cache(&resolver_source);
     if (fonts == NULL) {
         return NULL;
     }
@@ -219,6 +202,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     tbox_image_cache *images = tbox_image_cache_create(base_dir);
     if (images == NULL) {
         tbox_font_face_cache_destroy(fonts);
+        tbox_font_source_destroy(resolver_source);
         return NULL;
     }
 
@@ -226,33 +210,38 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     if (ctx == NULL) {
         tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
+        tbox_font_source_destroy(resolver_source);
         return NULL;
     }
 
-    tbox_backend_wayland *backend = tbox_backend_wayland_open(width, height, NULL);
+    tbox_window_backend *backend = tbox_window_backend_open(width, height, NULL);
     if (backend == NULL) {
         tbox_context_close(ctx);
         tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
+        tbox_font_source_destroy(resolver_source);
         return NULL;
     }
 
     tbox_app *app = (tbox_app *)malloc(sizeof(tbox_app));
     if (app == NULL) {
-        tbox_backend_wayland_destroy(backend);
+        tbox_window_backend_destroy(backend);
         tbox_context_close(ctx);
         tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
+        tbox_font_source_destroy(resolver_source);
         return NULL;
     }
 
     app->fonts       = fonts;
+    app->resolver_source = resolver_source;
     app->images      = images;
     app->ctx         = ctx;
     app->backend     = backend;
     app->last_width  = 0;
     app->last_height = 0;
     app->closed      = false;
+    app->redraw_requested = false;
 
     return app;
 }
@@ -266,6 +255,7 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
 tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
     return tbox_app_create_impl(html, css, NULL, width, height, true, config);
 }
+#endif
 
 /* NOVO v3: reads `path` fully into a malloc'd, NUL-terminated buffer -- same
  * read-whole-file shape as tests/context/test_context.c's read_file() and
@@ -327,6 +317,7 @@ static char *tbox_app_read_file(const char *path) {
  * tbox_context_open/_with_config, called inside tbox_app_create_impl)
  * already copy whatever they need into their own document/stylesheet
  * arenas, so these buffers don't need to outlive that call. */
+#if TBOX_HAS_WINDOW_BACKEND
 static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const char *css_path, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
     if (html_path == NULL) {
         return NULL;
@@ -365,6 +356,7 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
 tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
     return tbox_app_create_from_files_impl(html_path, css_path, width, height, true, config);
 }
+#endif
 
 /* See <tbox/app.h>'s doc comment. Shares tbox_app_read_file/
  * tbox_app_build_font_cache with the tbox_app_create* family above -- the
@@ -399,7 +391,8 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
 
     bool ok = false;
 
-    tbox_font_face_cache *fonts = tbox_app_build_font_cache();
+    tbox_font_source *resolver_source = NULL;
+    tbox_font_face_cache *fonts = tbox_app_build_font_cache(&resolver_source);
     if (fonts != NULL) {
         tbox_image_cache *images = tbox_image_cache_create(base_dir);
         if (images != NULL) {
@@ -427,11 +420,17 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
             tbox_image_cache_destroy(images);
         }
         tbox_font_face_cache_destroy(fonts);
+        tbox_font_source_destroy(resolver_source);
     }
 
     free(css);
     free(html);
     return ok;
+}
+
+#if TBOX_HAS_WINDOW_BACKEND
+bool tbox_app_backend_available(void) {
+    return true;
 }
 
 tbox_context *tbox_app_context(tbox_app *app) {
@@ -441,25 +440,43 @@ tbox_context *tbox_app_context(tbox_app *app) {
     return app->ctx;
 }
 
+void tbox_app_request_redraw(tbox_app *app) {
+    if (app != NULL) {
+        app->redraw_requested = true;
+    }
+}
+
 void tbox_app_step(tbox_app *app) {
     if (app == NULL) {
         return;
     }
 
-    if (!tbox_backend_wayland_poll(app->backend, TBOX_APP_POLL_TIMEOUT_MS)) {
+    if (!tbox_window_backend_poll(app->backend, TBOX_APP_POLL_TIMEOUT_MS)) {
         /* Connection to the compositor is gone -- see the `closed` field's
          * comment above. There is nothing left to dispatch/redraw. */
         app->closed = true;
         return;
     }
 
-    bool dirty = false;
+    bool dirty = app->redraw_requested;
+    app->redraw_requested = false;
 
-    double click_x = 0.0;
-    double click_y = 0.0;
-    if (tbox_backend_wayland_take_click(app->backend, &click_x, &click_y)) {
-        if (tbox_context_dispatch_click(app->ctx, click_x, click_y)) {
-            dirty = true;
+    tbox_input_event event;
+    while (tbox_window_backend_take_event(app->backend, &event)) {
+        switch (event.kind) {
+        case TBOX_INPUT_POINTER_CLICK: {
+            const tbox_html_node *focus_before = tbox_context_focused_node(app->ctx);
+            bool handled = tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
+            if (handled || tbox_context_focused_node(app->ctx) != focus_before) {
+                dirty = true;
+            }
+            break;
+        }
+        case TBOX_INPUT_KEY:
+            if (tbox_context_dispatch_key(app->ctx, event.data.key)) {
+                dirty = true;
+            }
+            break;
         }
     }
 
@@ -470,14 +487,14 @@ void tbox_app_step(tbox_app *app) {
      * comment in <tbox/context.h>. */
     double pointer_x          = 0.0;
     double pointer_y          = 0.0;
-    bool has_pointer_position = tbox_backend_wayland_pointer_position(app->backend, &pointer_x, &pointer_y);
+    bool has_pointer_position = tbox_window_backend_pointer_position(app->backend, &pointer_x, &pointer_y);
     if (tbox_context_update_hover(app->ctx, has_pointer_position, pointer_x, pointer_y)) {
         dirty = true;
     }
 
     int32_t current_width  = 0;
     int32_t current_height = 0;
-    tbox_backend_wayland_size(app->backend, &current_width, &current_height);
+    tbox_window_backend_size(app->backend, &current_width, &current_height);
     if (current_width != app->last_width || current_height != app->last_height) {
         app->last_width  = current_width;
         app->last_height = current_height;
@@ -487,7 +504,7 @@ void tbox_app_step(tbox_app *app) {
     if (dirty) {
         tbox_display_list list;
         tbox_context_run_frame(app->ctx, (double)app->last_width, (double)app->last_height, &list);
-        tbox_backend_wayland_present(app->backend, &list);
+        tbox_window_backend_present(app->backend, &list);
     }
 }
 
@@ -495,7 +512,7 @@ bool tbox_app_should_close(const tbox_app *app) {
     if (app == NULL) {
         return true;
     }
-    return app->closed || tbox_backend_wayland_should_close(app->backend);
+    return app->closed || tbox_window_backend_should_close(app->backend);
 }
 
 void tbox_app_close(tbox_app *app) {
@@ -503,9 +520,41 @@ void tbox_app_close(tbox_app *app) {
         return;
     }
 
-    tbox_backend_wayland_destroy(app->backend);
+    tbox_window_backend_destroy(app->backend);
     tbox_context_close(app->ctx);
     tbox_image_cache_destroy(app->images);
     tbox_font_face_cache_destroy(app->fonts);
+    tbox_font_source_destroy(app->resolver_source);
     free(app);
 }
+#else
+bool tbox_app_backend_available(void) {
+    return false;
+}
+
+tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height) {
+    (void)html; (void)css; (void)width; (void)height;
+    return NULL;
+}
+
+tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
+    (void)html; (void)css; (void)width; (void)height; (void)config;
+    return NULL;
+}
+
+tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height) {
+    (void)html_path; (void)css_path; (void)width; (void)height;
+    return NULL;
+}
+
+tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
+    (void)html_path; (void)css_path; (void)width; (void)height; (void)config;
+    return NULL;
+}
+
+tbox_context *tbox_app_context(tbox_app *app) { (void)app; return NULL; }
+void tbox_app_request_redraw(tbox_app *app) { (void)app; }
+void tbox_app_step(tbox_app *app) { (void)app; }
+bool tbox_app_should_close(const tbox_app *app) { (void)app; return true; }
+void tbox_app_close(tbox_app *app) { (void)app; }
+#endif
