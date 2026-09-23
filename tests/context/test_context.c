@@ -114,6 +114,13 @@ static bool record_click_stop(tbox_context *ctx, tbox_html_node *node, void *use
     return false;
 }
 
+static void record_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+    (void)ctx;
+    (void)node;
+    (void)value;
+    (*(int *)userdata)++;
+}
+
 /* NOVO v3: shared by the bubbling-order tests -- each handler appends its
  * own tag (e.g. "inner"/"outer") to a fixed-size log so the test can verify
  * not just THAT both fired, but the ORDER they fired in (nearest ancestor
@@ -1509,6 +1516,69 @@ int tbox_test_context_run(void) {
             tbox_html_node_remove((tbox_html_node *)one);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Text inputs share keyboard focus with buttons. Editing operates on
+     * UTF-8 boundaries and updates both the DOM value and rendered text. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='name' value='ab'><input disabled><button>OK</button></div>",
+            "input { width: 180px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 180.0, &list);
+            const tbox_html_node *field = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == field);
+            /* Navigation through an initial HTML value must persist across
+             * frames even before the first text insertion. */
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_LEFT, true, false}));
+            tbox_context_run_frame(ctx, 320.0, 180.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false}));
+            tbox_context_run_frame(ctx, 320.0, 180.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_END, true, false}));
+            TBOX_TEST_ASSERT(changes == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("é", 2)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_LEFT, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("X", 1)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_BACKSPACE, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DELETE, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Z", 1)));
+            TBOX_TEST_ASSERT(changes == 5);
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "Zab"));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("\xff", 1)));
+            tbox_context_run_frame(ctx, 320.0, 180.0, &list);
+            bool painted_value = false, painted_caret = false;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "Zab")) painted_value = true;
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                    list.items[i].rect.width == 1.0 &&
+                    list.items[i].rect.height > 5.0) painted_caret = true;
+            }
+            TBOX_TEST_ASSERT(painted_value && painted_caret);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) != field);
+            bool clicked_field = false;
+            for (int y = 0; y < 180 && !clicked_field; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)y);
+                if (hit != NULL && hit->node == field) {
+                    tbox_context_dispatch_click(ctx, hit->content_box.x + 0.1, hit->content_box.y + 1.0);
+                    clicked_field = true;
+                }
+            }
+            TBOX_TEST_ASSERT(clicked_field && tbox_context_focused_node(ctx) == field);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Q", 1)));
+            value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "QZab"));
             tbox_context_close(ctx);
         }
     }

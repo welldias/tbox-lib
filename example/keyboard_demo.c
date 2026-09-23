@@ -26,17 +26,27 @@ static bool on_button(tbox_context *ctx, tbox_html_node *button, void *userdata)
     return true;
 }
 
+static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view value, void *userdata) {
+    (void)ctx;
+    (void)input;
+    (void)userdata;
+    fputs("Input: ", stdout);
+    fwrite(value.data, 1, value.size, stdout);
+    fputc('\n', stdout);
+}
+
 int main(void) {
     if (!tbox_app_backend_available()) {
         fputs("No interactive window backend in this build\n", stderr);
         return 1;
     }
-    tbox_app *app = tbox_app_create_from_files(TBOX_KEYBOARD_HTML_PATH, TBOX_KEYBOARD_CSS_PATH, 460, 260);
+    tbox_app *app = tbox_app_create_from_files(TBOX_KEYBOARD_HTML_PATH, TBOX_KEYBOARD_CSS_PATH, 460, 380);
     if (app == NULL) {
         fputs("Could not create the window\n", stderr);
         return 1;
     }
     tbox_context_on_click(tbox_app_context(app), "button", 6, on_button, NULL);
+    tbox_context_on_input(tbox_app_context(app), on_input, NULL);
     while (!tbox_app_should_close(app)) {
         tbox_app_step(app);
     }

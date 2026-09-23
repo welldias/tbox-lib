@@ -12,15 +12,18 @@ in C. A JavaScript bridge is a later milestone.
   set of box, text, image, and table layout rules.
 - Software rendering and PNG screenshots without opening a window.
 - Interactive windows on Linux/Wayland with pointer clicks, `:hover`,
-  keyboard focus on buttons, `:focus`, Enter/Space activation, and resize
-  handling. The application can request a redraw after external DOM
+  keyboard focus on buttons and single-line `<input type="text">` fields,
+  `:focus`, Enter/Space button activation, basic UTF-8 text editing (including
+  XKB Compose sequences), and
+  resize handling. The application can request a redraw after external DOM
   mutations with `tbox_app_request_redraw()`.
 - Unit/integration tests for the core pipeline and a separate, optional
   visual comparison tool (`tbox_cmp`).
 
 The supported HTML/CSS subset is defined by the public headers under
 `include/tbox/`; unsupported properties and elements may be ignored. There
-is currently no input editing, scrolling, clipping, flex/grid
+is currently no text selection, IME composition, horizontal input scrolling,
+general scrolling or clipping, flex/grid
 layout, accessibility tree, or Windows/macOS window backend. The library is
 not yet suitable for a complete desktop application.
 
@@ -41,7 +44,8 @@ is unavailable. `tbox_app_backend_available()` checks whether this build can
 create a window. With `TBOX_BUILD_EXAMPLES=ON`, build the keyboard example
 using `cmake --build build --target tbox_keyboard_demo`. Run
 `build/example/tbox_keyboard_demo` on Wayland to try button focus and
-activation with Tab, Shift+Tab, Enter and Space. The example also compiles
+activation with Tab, Shift+Tab, Enter and Space, plus typing into a text
+field with Backspace, Delete, Left, Right, Home and End. The example also compiles
 without Wayland or Fontconfig, but needs both to open a window.
 
 `build/tests/tbox_cmp tests/assets` compares the renderer against image

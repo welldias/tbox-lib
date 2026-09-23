@@ -60,6 +60,10 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
     if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return false;
     }
+    if (tbox_string_view_equal_cstr(node->element.tag_name, "input")) {
+        const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+        return type == NULL || tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("text", 4));
+    }
 
     static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th", "button" };
     tbox_string_view tag_name            = node->element.tag_name;
@@ -789,10 +793,25 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
  * before. */
 static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box) {
     bool is_preformatted = node != NULL && tbox_string_view_equal_cstr(node->element.tag_name, "pre");
+    bool is_input = node != NULL && tbox_string_view_equal_cstr(node->element.tag_name, "input");
 
     tbox_vector words;
     tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
-    if (is_preformatted) {
+    if (is_input) {
+        const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+        const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+        if (value != NULL && value->value.size > 0 && face != NULL) {
+            tbox_layout_word *word = (tbox_layout_word *)tbox_vector_push(&words);
+            word->text = value->value;
+            word->face = face;
+            word->style = style;
+            word->width = tbox_font_measure_text(face, value->value);
+            word->space_width = 0.0;
+            word->image = NULL;
+            word->image_height = 0.0;
+            word->hard_break = false;
+        }
+    } else if (is_preformatted) {
         tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
     } else {
         if (node != NULL) {
@@ -814,7 +833,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
 
     tbox_vector lines;
     tbox_vector_init(&lines, arena, sizeof(tbox_layout_line), 0);
-    tbox_layout_break_lines(word_items, word_count, available_width, is_preformatted, &lines);
+    tbox_layout_break_lines(word_items, word_count, available_width, is_preformatted || is_input, &lines);
 
     tbox_vector runs;
     tbox_vector_init(&runs, arena, sizeof(tbox_layout_text_run), 0);

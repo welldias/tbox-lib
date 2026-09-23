@@ -16,6 +16,7 @@
 #include <linux/input-event-codes.h>
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
+#include <xkbcommon/xkbcommon-compose.h>
 
 #include "xdg-shell-client-protocol.h"
 
@@ -60,6 +61,8 @@ struct tbox_backend_wayland {
     struct xkb_context *xkb_context;
     struct xkb_keymap *xkb_keymap;
     struct xkb_state *xkb_state;
+    struct xkb_compose_table *compose_table;
+    struct xkb_compose_state *compose_state;
 
     int32_t width;
     int32_t height;
@@ -156,19 +159,57 @@ static void tbox_backend_wayland_keyboard_key(void *data, struct wl_keyboard *ke
     case XKB_KEY_KP_Enter: logical_key = TBOX_KEY_ENTER; break;
     case XKB_KEY_space: logical_key = TBOX_KEY_SPACE; break;
     case XKB_KEY_Escape: logical_key = TBOX_KEY_ESCAPE; break;
+    case XKB_KEY_BackSpace: logical_key = TBOX_KEY_BACKSPACE; break;
+    case XKB_KEY_Delete: logical_key = TBOX_KEY_DELETE; break;
+    case XKB_KEY_Left: logical_key = TBOX_KEY_LEFT; break;
+    case XKB_KEY_Right: logical_key = TBOX_KEY_RIGHT; break;
+    case XKB_KEY_Home: logical_key = TBOX_KEY_HOME; break;
+    case XKB_KEY_End: logical_key = TBOX_KEY_END; break;
     default: break;
-    }
-    if (logical_key == TBOX_KEY_UNKNOWN) {
-        return;
     }
     bool shift = xkb_state_mod_name_is_active(backend->xkb_state, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE) > 0;
     if (logical_key == TBOX_KEY_ESCAPE && state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         backend->should_close = true;
     }
-    tbox_backend_wayland_push_event(backend, (tbox_input_event){
-        .kind = TBOX_INPUT_KEY,
-        .data.key = {logical_key, state == WL_KEYBOARD_KEY_STATE_PRESSED, shift || sym == XKB_KEY_ISO_Left_Tab},
-    });
+    if (logical_key != TBOX_KEY_UNKNOWN) {
+        tbox_backend_wayland_push_event(backend, (tbox_input_event){
+            .kind = TBOX_INPUT_KEY,
+            .data.key = {logical_key, state == WL_KEYBOARD_KEY_STATE_PRESSED, shift || sym == XKB_KEY_ISO_Left_Tab},
+        });
+    }
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        bool control = xkb_state_mod_name_is_active(backend->xkb_state, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) > 0;
+        bool alt = xkb_state_mod_name_is_active(backend->xkb_state, XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE) > 0;
+        if (control || alt) return;
+        tbox_input_event text_event = { .kind = TBOX_INPUT_TEXT };
+        int length;
+        if (backend->compose_state != NULL &&
+            xkb_compose_state_feed(backend->compose_state, sym) == XKB_COMPOSE_FEED_ACCEPTED) {
+            enum xkb_compose_status status = xkb_compose_state_get_status(backend->compose_state);
+            if (status == XKB_COMPOSE_COMPOSING) return;
+            if (status == XKB_COMPOSE_CANCELLED) {
+                xkb_compose_state_reset(backend->compose_state);
+                return;
+            }
+            if (status == XKB_COMPOSE_COMPOSED) {
+                length = xkb_compose_state_get_utf8(backend->compose_state,
+                    text_event.data.text.utf8, sizeof(text_event.data.text.utf8));
+                xkb_compose_state_reset(backend->compose_state);
+            } else {
+                length = xkb_state_key_get_utf8(backend->xkb_state, keycode,
+                    text_event.data.text.utf8, sizeof(text_event.data.text.utf8));
+            }
+        } else {
+            length = xkb_state_key_get_utf8(backend->xkb_state, keycode,
+                text_event.data.text.utf8, sizeof(text_event.data.text.utf8));
+        }
+        if (length > 0 && (size_t)length < sizeof(text_event.data.text.utf8) &&
+            (unsigned char)text_event.data.text.utf8[0] >= 0x20 &&
+            (unsigned char)text_event.data.text.utf8[0] != 0x7f) {
+            text_event.data.text.length = (size_t)length;
+            tbox_backend_wayland_push_event(backend, text_event);
+        }
+    }
 }
 
 static void tbox_backend_wayland_keyboard_modifiers(void *data, struct wl_keyboard *keyboard, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {
@@ -194,10 +235,11 @@ static void tbox_backend_wayland_keyboard_enter(void *data, struct wl_keyboard *
 }
 
 static void tbox_backend_wayland_keyboard_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface) {
-    (void)data;
+    tbox_backend_wayland *backend = data;
     (void)keyboard;
     (void)serial;
     (void)surface;
+    if (backend->compose_state != NULL) xkb_compose_state_reset(backend->compose_state);
 }
 
 static void tbox_backend_wayland_keyboard_repeat_info(void *data, struct wl_keyboard *keyboard, int32_t rate, int32_t delay) {
@@ -483,6 +525,12 @@ void tbox_backend_wayland_destroy(tbox_backend_wayland *backend) {
     if (backend->xkb_state != NULL) {
         xkb_state_unref(backend->xkb_state);
     }
+    if (backend->compose_state != NULL) {
+        xkb_compose_state_unref(backend->compose_state);
+    }
+    if (backend->compose_table != NULL) {
+        xkb_compose_table_unref(backend->compose_table);
+    }
     if (backend->xkb_keymap != NULL) {
         xkb_keymap_unref(backend->xkb_keymap);
     }
@@ -611,6 +659,16 @@ tbox_backend_wayland *tbox_backend_wayland_open(int32_t width, int32_t height, c
     if (backend->xkb_context == NULL) {
         tbox_backend_wayland_destroy(backend);
         return NULL;
+    }
+    const char *locale = getenv("LC_ALL");
+    if (locale == NULL || *locale == '\0') locale = getenv("LC_CTYPE");
+    if (locale == NULL || *locale == '\0') locale = getenv("LANG");
+    if (locale == NULL || *locale == '\0') locale = "C";
+    backend->compose_table = xkb_compose_table_new_from_locale(
+        backend->xkb_context, locale, XKB_COMPOSE_COMPILE_NO_FLAGS);
+    if (backend->compose_table != NULL) {
+        backend->compose_state = xkb_compose_state_new(
+            backend->compose_table, XKB_COMPOSE_STATE_NO_FLAGS);
     }
 
     backend->display = wl_display_connect(NULL);

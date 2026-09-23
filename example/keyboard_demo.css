@@ -1,2 +1,4 @@
 button { width: 230px; margin: 8px 0px; background-color: white; }
 button:focus { border: 2px solid blue; background-color: yellow; }
+input { width: 230px; margin: 8px 0px; background-color: white; }
+input:focus { border: 2px solid blue; }

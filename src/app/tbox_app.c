@@ -465,15 +465,20 @@ void tbox_app_step(tbox_app *app) {
     while (tbox_window_backend_take_event(app->backend, &event)) {
         switch (event.kind) {
         case TBOX_INPUT_POINTER_CLICK: {
-            const tbox_html_node *focus_before = tbox_context_focused_node(app->ctx);
-            bool handled = tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
-            if (handled || tbox_context_focused_node(app->ctx) != focus_before) {
-                dirty = true;
-            }
+            tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
+            /* Clicking inside an already focused text field may move its
+             * cursor without changing focus or firing a click handler. */
+            dirty = true;
             break;
         }
         case TBOX_INPUT_KEY:
             if (tbox_context_dispatch_key(app->ctx, event.data.key)) {
+                dirty = true;
+            }
+            break;
+        case TBOX_INPUT_TEXT:
+            if (tbox_context_dispatch_text(app->ctx,
+                    tbox_string_view_make(event.data.text.utf8, event.data.text.length))) {
                 dirty = true;
             }
             break;

@@ -1,6 +1,7 @@
 #include <tbox/context.h>
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,6 +38,13 @@ typedef struct tbox_context_click_binding {
     bool active;
 } tbox_context_click_binding;
 
+typedef struct tbox_text_field {
+    const tbox_html_node *node;
+    char *value;
+    size_t length, capacity, cursor;
+    struct tbox_text_field *next;
+} tbox_text_field;
+
 /* See <tbox/context.h> for why this is opaque rather than a plain/visible
  * struct like tbox_layout_box: frame_arena is a tbox_arena BY VALUE, and
  * tbox_arena's full definition lives in the internal src/base/tbox_arena.h,
@@ -55,10 +63,24 @@ struct tbox_context {
     int next_handler_id;                /* NOVO v3: monotonic counter for tbox_context_on_click's returned handle -- never reused, even after tbox_context_unbind_click removes a binding */
     const tbox_html_node *hovered_node; /* NOVO v3: the node currently under the pointer, or NULL -- a plain struct field with its own lifetime, deliberately NOT part of frame_arena (must survive every tbox_context_run_frame's arena reset so tbox_context_update_hover can compare across frames; see <tbox/context.h>) */
     const tbox_html_node *focused_node;
+    tbox_text_field *text_fields;
+    tbox_context_input_handler input_handler;
+    void *input_userdata;
     tbox_style_table styles; /* last frame's styles, for focus visibility checks */
 };
 
 static bool tbox_context_node_attached(const tbox_context *ctx, const tbox_html_node *node);
+static bool tbox_context_is_text_input(const tbox_html_node *node);
+static tbox_text_field *tbox_context_text_field(tbox_context *ctx, const tbox_html_node *node);
+
+static const tbox_layout_box *tbox_context_find_box(const tbox_layout_box *box, const tbox_html_node *node) {
+    for (; box != NULL; box = box->next_sibling) {
+        if (box->node == node) return box;
+        const tbox_layout_box *child = tbox_context_find_box(box->first_child, node);
+        if (child != NULL) return child;
+    }
+    return NULL;
+}
 
 tbox_ua_style_config tbox_ua_style_config_default(void) {
     tbox_ua_style_config config;
@@ -102,7 +124,7 @@ tbox_ua_style_config tbox_ua_style_config_default(void) {
  * slots (no numeric value in it), so the worst case barely moves --
  * ~1260 -> ~1311 chars, nowhere near 2048 -- checked, buffer size left
  * unchanged) -- sized with headroom rather than computed exactly. */
-#define TBOX_UA_STYLE_CSS_BUFFER_SIZE 2048
+#define TBOX_UA_STYLE_CSS_BUFFER_SIZE 2304
 
 /* NOVO v2: renders the UA stylesheet's CSS text from `config`. The
  * selectors and properties are FIXED, exactly as ARCHITECTURE.md's "CSS
@@ -164,6 +186,8 @@ bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_
         "li { display: block; }\n"
         "button { display: block; border: 1px solid gray; padding: 4px; }\n"
         "button:focus { border: 2px solid blue; }\n"
+        "input { display: block; width: 240px; border: 1px solid gray; padding: 4px; }\n"
+        "input:focus { border: 2px solid blue; }\n"
         "hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"
         "pre { display: block; font-family: monospace; }\n"
         "b, strong { display: inline; font-weight: bold; }\n"
@@ -292,6 +316,9 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     ctx->next_handler_id = 0;
     ctx->hovered_node    = NULL;
     ctx->focused_node    = NULL;
+    ctx->text_fields     = NULL;
+    ctx->input_handler   = NULL;
+    ctx->input_userdata  = NULL;
     ctx->styles          = (tbox_style_table){0};
 
     return ctx;
@@ -304,6 +331,13 @@ tbox_context *tbox_context_open(const char *html, size_t html_length, const char
 void tbox_context_close(tbox_context *ctx) {
     if (ctx == NULL) {
         return;
+    }
+
+    for (tbox_text_field *field = ctx->text_fields; field != NULL;) {
+        tbox_text_field *next = field->next;
+        free(field->value);
+        free(field);
+        field = next;
     }
 
     /* Each binding owns its compiled query's own arena (see
@@ -383,6 +417,36 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     /* tbox_render_build_display_list already treats a NULL root as "empty
      * subtree", producing {NULL, 0} -- no special-casing needed here. */
     *out_list = tbox_render_build_display_list(&ctx->frame_arena, ctx->root);
+    if (tbox_context_is_text_input(ctx->focused_node)) {
+        const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->focused_node);
+        tbox_text_field *field = box != NULL ? tbox_context_text_field(ctx, ctx->focused_node) : NULL;
+        if (field != NULL && box->style != NULL && box->content_box.width > 0) {
+            const tbox_style *style = box->style;
+            const tbox_font_face *face = tbox_font_face_cache_get(
+                ctx->fonts, tbox_string_view_from_cstr(style->font_family),
+                style->font_weight_bold, style->font_italic, style->font_size);
+            if (face != NULL) {
+                double x = box->content_box.x + tbox_font_measure_text(
+                    face, tbox_string_view_make(field->value, field->cursor));
+                double right = box->content_box.x + box->content_box.width - 1.0;
+                if (x > right) x = right;
+                double height = tbox_font_face_line_height(face);
+                if (height > box->content_box.height) height = box->content_box.height;
+                tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena,
+                    (out_list->count + 1) * sizeof(*items));
+                if (items != NULL) {
+                    if (out_list->count > 0) memcpy(items, out_list->items, out_list->count * sizeof(*items));
+                    items[out_list->count] = (tbox_paint_op){
+                        .kind = TBOX_PAINT_FILL_RECT,
+                        .rect = { x, box->content_box.y, 1.0, height },
+                        .color = style->color,
+                    };
+                    out_list->items = items;
+                    out_list->count++;
+                }
+            }
+        }
+    }
 }
 
 /* Recursive part of tbox_context_hit_test.
@@ -533,13 +597,113 @@ static const tbox_html_node *tbox_context_next_node(const tbox_html_node *root, 
     return NULL;
 }
 
+static bool tbox_context_is_text_input(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) {
+        return false;
+    }
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    return type == NULL || tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("text", 4));
+}
+
+static void tbox_context_bind_text_value(tbox_context *ctx, tbox_text_field *field) {
+    /* Keep the DOM view tied to the field's owned buffer. In particular,
+     * bind the initial HTML value before a cursor-only key event arrives. */
+    tbox_html_attribute *attribute = (tbox_html_attribute *)tbox_html_node_get_attribute(
+        field->node, tbox_string_view_make("value", 5));
+    if (attribute == NULL) {
+        tbox_html_node_set_attribute(ctx->document, (tbox_html_node *)field->node,
+                                     tbox_string_view_make("value", 5),
+                                     tbox_string_view_make(field->value, field->length));
+        attribute = (tbox_html_attribute *)tbox_html_node_get_attribute(field->node, tbox_string_view_make("value", 5));
+    }
+    if (attribute != NULL) attribute->value = tbox_string_view_make(field->value, field->length);
+}
+
+static tbox_text_field *tbox_context_text_field(tbox_context *ctx, const tbox_html_node *node) {
+    for (tbox_text_field *field = ctx->text_fields; field != NULL; field = field->next) {
+        if (field->node == node) {
+            const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+            if (attribute != NULL && attribute->value.data != field->value) {
+                if (attribute->value.size == SIZE_MAX) return NULL;
+                char *copy = realloc(field->value, attribute->value.size + 1);
+                if (copy == NULL) return NULL;
+                field->value = copy;
+                field->capacity = attribute->value.size + 1;
+                if (attribute->value.size > 0) {
+                    memcpy(field->value, attribute->value.data, attribute->value.size);
+                }
+                field->length = field->cursor = attribute->value.size;
+                field->value[field->length] = '\0';
+                tbox_context_bind_text_value(ctx, field);
+            }
+            return field;
+        }
+    }
+    const tbox_html_attribute *initial = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+    size_t length = initial != NULL ? initial->value.size : 0;
+    if (length == SIZE_MAX) return NULL;
+    tbox_text_field *field = calloc(1, sizeof(*field));
+    if (field == NULL) return NULL;
+    field->value = malloc(length + 1);
+    if (field->value == NULL) {
+        free(field);
+        return NULL;
+    }
+    if (length > 0) memcpy(field->value, initial->value.data, length);
+    field->value[length] = '\0';
+    field->node = node;
+    field->length = field->cursor = length;
+    field->capacity = length + 1;
+    field->next = ctx->text_fields;
+    ctx->text_fields = field;
+    tbox_context_bind_text_value(ctx, field);
+    return field;
+}
+
+static void tbox_context_sync_text_value(tbox_context *ctx, tbox_text_field *field) {
+    /* The field owns its reusable buffer. The DOM view points at it so
+     * layout and application code see the live value without an arena
+     * allocation for every keystroke. */
+    tbox_context_bind_text_value(ctx, field);
+    if (ctx->input_handler != NULL) {
+        ctx->input_handler(ctx, (tbox_html_node *)field->node,
+                           tbox_string_view_make(field->value, field->length), ctx->input_userdata);
+    }
+}
+
+static size_t tbox_utf8_next(const char *data, size_t length, size_t at) {
+    if (at >= length) return length;
+    size_t width = (unsigned char)data[at] < 0x80 ? 1 :
+                   ((unsigned char)data[at] & 0xe0) == 0xc0 ? 2 :
+                   ((unsigned char)data[at] & 0xf0) == 0xe0 ? 3 :
+                   ((unsigned char)data[at] & 0xf8) == 0xf0 ? 4 : 0;
+    if (width == 0 || width > length - at) return at;
+    for (size_t i = 1; i < width; i++) {
+        if (((unsigned char)data[at + i] & 0xc0) != 0x80) return at;
+    }
+    unsigned char b = (unsigned char)data[at];
+    unsigned char b1 = width > 1 ? (unsigned char)data[at + 1] : 0;
+    if ((width == 2 && b < 0xc2) ||
+        (width == 3 && ((b == 0xe0 && b1 < 0xa0) || (b == 0xed && b1 >= 0xa0))) ||
+        (width == 4 && ((b == 0xf0 && b1 < 0x90) || (b == 0xf4 && b1 >= 0x90) || b > 0xf4))) return at;
+    return at + width;
+}
+
+static size_t tbox_utf8_previous(const char *data, size_t at) {
+    if (at == 0) return 0;
+    at--;
+    while (at > 0 && ((unsigned char)data[at] & 0xc0) == 0x80) at--;
+    return at;
+}
+
 static bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node) {
     if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return false;
     }
 
     tbox_string_view tag = node->element.tag_name;
-    bool control = tbox_string_view_equal_cstr(tag, "button");
+    bool control = tbox_string_view_equal_cstr(tag, "button") || tbox_context_is_text_input(node);
     if (!control || tbox_html_node_get_attribute(node, tbox_string_view_make("disabled", 8)) != NULL) {
         return false;
     }
@@ -668,6 +832,35 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
         }
     }
     tbox_context_set_focus(ctx, focus);
+    if (tbox_context_is_text_input(focus)) {
+        tbox_text_field *field = tbox_context_text_field(ctx, focus);
+        const tbox_layout_box *input_box = tbox_context_find_box(ctx->root, focus);
+        if (field != NULL && input_box != NULL && input_box->style != NULL) {
+            const tbox_style *style = input_box->style;
+            const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
+                tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
+                style->font_italic, style->font_size);
+            if (face != NULL) {
+                double relative_x = x - input_box->content_box.x;
+                size_t best = 0;
+                for (size_t at = 0; at < field->length;) {
+                    size_t next = tbox_utf8_next(field->value, field->length, at);
+                    if (next == at) break;
+                    double advance = tbox_font_measure_text(face,
+                        tbox_string_view_make(field->value, next));
+                    if (relative_x < advance) {
+                        double previous = tbox_font_measure_text(face,
+                            tbox_string_view_make(field->value, at));
+                        best = relative_x - previous < advance - relative_x ? at : next;
+                        break;
+                    }
+                    best = next;
+                    at = next;
+                }
+                field->cursor = best;
+            }
+        }
+    }
     return tbox_context_dispatch_click_node(ctx, box->node);
 }
 
@@ -678,6 +871,41 @@ bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
     if (event.key == TBOX_KEY_TAB) {
         return tbox_context_move_focus(ctx, event.shift);
     }
+    if (tbox_context_is_text_input(ctx->focused_node) &&
+        tbox_context_node_attached(ctx, ctx->focused_node) &&
+        tbox_context_focusable(ctx, ctx->focused_node)) {
+        tbox_text_field *field = tbox_context_text_field(ctx, ctx->focused_node);
+        if (field == NULL) return false;
+        size_t start = field->cursor, end = field->cursor;
+        switch (event.key) {
+        case TBOX_KEY_LEFT:
+            field->cursor = tbox_utf8_previous(field->value, field->cursor);
+            return field->cursor != start;
+        case TBOX_KEY_RIGHT:
+            field->cursor = tbox_utf8_next(field->value, field->length, field->cursor);
+            return field->cursor != start;
+        case TBOX_KEY_HOME:
+            field->cursor = 0;
+            return start != 0;
+        case TBOX_KEY_END:
+            field->cursor = field->length;
+            return start != field->length;
+        case TBOX_KEY_BACKSPACE:
+            start = tbox_utf8_previous(field->value, field->cursor);
+            break;
+        case TBOX_KEY_DELETE:
+            end = tbox_utf8_next(field->value, field->length, field->cursor);
+            break;
+        default:
+            return false;
+        }
+        if (start == end) return false;
+        memmove(field->value + start, field->value + end, field->length - end + 1);
+        field->length -= end - start;
+        field->cursor = start;
+        tbox_context_sync_text_value(ctx, field);
+        return true;
+    }
     if ((event.key == TBOX_KEY_ENTER || event.key == TBOX_KEY_SPACE) &&
         ctx->focused_node != NULL && tbox_context_node_attached(ctx, ctx->focused_node) &&
         tbox_context_focusable(ctx, ctx->focused_node)) {
@@ -687,6 +915,49 @@ bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
         }
     }
     return false;
+}
+
+bool tbox_context_dispatch_text(tbox_context *ctx, tbox_string_view text) {
+    if (ctx == NULL || !tbox_context_is_text_input(ctx->focused_node) ||
+        !tbox_context_node_attached(ctx, ctx->focused_node) ||
+        !tbox_context_focusable(ctx, ctx->focused_node) ||
+        text.data == NULL || text.size == 0) return false;
+    for (size_t i = 0; i < text.size;) {
+        size_t next = tbox_utf8_next(text.data, text.size, i);
+        if (next == i || (unsigned char)text.data[i] < 0x20 ||
+            (unsigned char)text.data[i] == 0x7f ||
+            (next == i + 2 && (unsigned char)text.data[i] == 0xc2 &&
+             (unsigned char)text.data[i + 1] >= 0x80 &&
+             (unsigned char)text.data[i + 1] <= 0x9f)) return false;
+        i = next;
+    }
+    tbox_text_field *field = tbox_context_text_field(ctx, ctx->focused_node);
+    if (field == NULL || text.size > SIZE_MAX - field->length - 1) return false;
+    size_t needed = field->length + text.size + 1;
+    if (needed > field->capacity) {
+        size_t capacity = field->capacity;
+        while (capacity < needed) {
+            if (capacity > SIZE_MAX / 2) { capacity = needed; break; }
+            capacity *= 2;
+        }
+        char *value = realloc(field->value, capacity);
+        if (value == NULL) return false;
+        field->value = value;
+        field->capacity = capacity;
+    }
+    memmove(field->value + field->cursor + text.size,
+            field->value + field->cursor, field->length - field->cursor + 1);
+    memcpy(field->value + field->cursor, text.data, text.size);
+    field->length += text.size;
+    field->cursor += text.size;
+    tbox_context_sync_text_value(ctx, field);
+    return true;
+}
+
+void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata) {
+    if (ctx == NULL) return;
+    ctx->input_handler = handler;
+    ctx->input_userdata = userdata;
 }
 
 const tbox_html_node *tbox_context_focused_node(const tbox_context *ctx) {

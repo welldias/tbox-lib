@@ -278,10 +278,20 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding);
 bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
 
 /* Keyboard focus belongs to the context, not the window backend. Tab and
- * Shift+Tab move through visible enabled buttons. Enter and Space activate
- * the focused button through registered click handlers. Returns true when a
- * frame should be recomputed. */
+ * Shift+Tab move through visible enabled buttons and text inputs. Enter and
+ * Space activate a focused button; editing keys act on a focused text input.
+ * Returns true when a frame should be recomputed. */
 bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event);
+
+/* Inserts committed UTF-8 text at the focused input's cursor. Invalid UTF-8
+ * and control characters are ignored. Text is distinct from key events so
+ * a future backend can deliver composed text through the same API. */
+bool tbox_context_dispatch_text(tbox_context *ctx, tbox_string_view text);
+
+/* Called after the value of an input changes through editing. The value
+ * view is valid through the call and until the next edit of this field. */
+typedef void (*tbox_context_input_handler)(tbox_context *ctx, tbox_html_node *input, tbox_string_view value, void *userdata);
+void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata);
 
 const tbox_html_node *tbox_context_focused_node(const tbox_context *ctx);
 
