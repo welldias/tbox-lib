@@ -167,6 +167,17 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
  * frame has run yet (nothing computed) or nothing is under the point. */
 const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, double y);
 
+/* Scrolls the innermost overflow-y:auto block under (x,y). Returns true
+ * when its offset changed; caller should then request a new frame. */
+bool tbox_context_scroll(tbox_context *ctx, double x, double y, double delta_y);
+
+/* Pointer handling for the visible vertical scrollbar. A press returns true
+ * when the track consumed the event. Drag returns true while the scrollbar
+ * owns the press (and moves the thumb when it was grabbed); release ends it. */
+bool tbox_context_scrollbar_press(tbox_context *ctx, double x, double y);
+bool tbox_context_scrollbar_drag(tbox_context *ctx, double x, double y);
+void tbox_context_scrollbar_release(tbox_context *ctx);
+
 /* v3 -- Interatividade Avançada: real ":hover" support. See
  * ARCHITECTURE.md's "v3 -- Interatividade Avançada" -> "`:hover`" section,
  * both the "Orchestration" block (this function) and the design rationale
@@ -281,28 +292,44 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
  * anchor to the character nearest x. Returns true when the caret moves. */
 bool tbox_context_drag_select(tbox_context *ctx, double x);
 
-/* Borrowed view of the focused input's selected UTF-8 bytes, or an empty
+/* Extends selection in a text control using both pointer coordinates. */
+bool tbox_context_drag_select_at(tbox_context *ctx, double x, double y);
+
+/* Borrowed view of the focused text control's selected UTF-8 bytes, or an empty
  * view when nothing is selected. Valid until the next edit of this field. */
 tbox_string_view tbox_context_selected_text(tbox_context *ctx);
 
 /* Keyboard focus belongs to the context, not the window backend. Tab and
- * Shift+Tab move through visible enabled buttons and text inputs. Enter and
- * Space activate a focused button; editing keys act on a focused text input.
+ * Shift+Tab move through visible enabled buttons, text controls, and selects; the next
+ * frame reveals the newly focused control inside scrollable ancestors.
+ * Enter and
+ * Space activate a focused button; editing keys act on a focused text control.
  * Shift with Left, Right, Home or End extends its selection. Backspace and
  * Delete remove a selection when one exists; Ctrl+A selects all text.
  * Returns true when a frame should be recomputed. */
 bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event);
 
-/* Inserts committed UTF-8 text at the focused input's cursor, replacing its
+/* Inserts committed UTF-8 text at the focused text control's cursor, replacing its
  * selection when one exists. Invalid UTF-8 and control characters are
- * ignored. Text is distinct from key events so
+ * ignored, except newline and tab in a textarea. Text is distinct from key events so
  * a future backend can deliver composed text through the same API. */
 bool tbox_context_dispatch_text(tbox_context *ctx, tbox_string_view text);
 
-/* Called after the value of an input changes through editing. The value
+/* Called after the value of an input or textarea changes through editing. The value
  * view is valid through the call and until the next edit of this field. */
 typedef void (*tbox_context_input_handler)(tbox_context *ctx, tbox_html_node *input, tbox_string_view value, void *userdata);
 void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata);
+
+/* Single-choice <select> controls. The value is the selected <option>'s
+ * value attribute, or its collapsed text if no value attribute exists.
+ * The returned view is borrowed and valid until the next frame or document
+ * mutation. The handler runs only when the user changes the choice. */
+typedef void (*tbox_context_select_handler)(tbox_context *ctx, tbox_html_node *select, tbox_string_view value, void *userdata);
+tbox_string_view tbox_context_select_value(tbox_context *ctx, const tbox_html_node *select);
+/* Chooses the first option with `value`; returns true only if selection
+ * changed. Programmatic changes do not call the selection handler. */
+bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *select, tbox_string_view value);
+void tbox_context_on_select(tbox_context *ctx, tbox_context_select_handler handler, void *userdata);
 
 const tbox_html_node *tbox_context_focused_node(const tbox_context *ctx);
 

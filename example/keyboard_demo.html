@@ -3,11 +3,34 @@
 
 <body>
   <h1>Keyboard and text input</h1>
-  <p>Use Tab and Shift+Tab to move focus. In the field, drag to select or double click to select all. Ctrl+C, Ctrl+X and Ctrl+V use the clipboard. Hold a key to repeat it. A long value scrolls to keep the cursor visible.</p>
+  <p>Use Tab and Shift+Tab to move focus. In the field, drag to select or double click to select all. Ctrl+C, Ctrl+X and
+    Ctrl+V use the clipboard. Hold a key to repeat it. A long value scrolls to keep the cursor visible.</p>
   <input id="name" type="text" value="This long value stays inside its text field">
+  <p>Write several lines below. Enter adds a line; drag or double click to select text:</p>
+  <textarea id="notes" rows="4" cols="30">First line
+Second line</textarea>
+  <p>Choose a mode with the mouse or keyboard:</p>
+  <select id="mode">
+    <option value="basic">Basic</option>
+    <option value="balanced" selected>Balanced</option>
+    <option value="offline" disabled>Offline (unavailable)</option>
+    <option value="advanced">Advanced</option>
+  </select>
+  <p id="choice">Selected: balanced</p>
   <button id="first">First button</button>
   <button id="second">Second button</button>
   <p id="status">No button activated yet.</p>
+  <p>Use Tab and Shift+Tab to move through the list; use the wheel or scrollbar too:</p>
+  <div id="scroll-list">
+    <button id="row-1">Row 1: first item</button>
+    <button id="row-2">Row 2: second item</button>
+    <button id="row-3">Row 3: third item</button>
+    <button id="row-4">Row 4: fourth item</button>
+    <button id="row-5">Row 5: fifth item</button>
+    <button id="row-6">Row 6: sixth item</button>
+    <button id="row-7">Row 7: seventh item</button>
+    <button id="row-8">Row 8: eighth item</button>
+  </div>
 </body>
 
 </html>

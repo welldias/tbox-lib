@@ -18,3 +18,35 @@ input {
 input:focus {
     border: 2px solid blue;
 }
+
+textarea {
+    margin: 8px 0px;
+}
+
+textarea:focus {
+    border: 2px solid blue;
+}
+
+select {
+    width: 230px;
+    margin: 8px 0px;
+    background-color: white;
+}
+
+select:focus {
+    border: 2px solid blue;
+}
+
+#scroll-list {
+    width: 280px;
+    height: 110px;
+    overflow-y: auto;
+    border: 2px solid blue;
+    padding: 4px;
+    background-color: white;
+}
+
+#scroll-list button {
+    width: 250px;
+    margin: 4px 0px;
+}

@@ -21,6 +21,8 @@ typedef enum tbox_key {
     TBOX_KEY_DELETE,
     TBOX_KEY_LEFT,
     TBOX_KEY_RIGHT,
+    TBOX_KEY_UP,
+    TBOX_KEY_DOWN,
     TBOX_KEY_HOME,
     TBOX_KEY_END,
     TBOX_KEY_A,
@@ -39,6 +41,8 @@ typedef struct tbox_key_event {
 typedef enum tbox_input_event_kind {
     TBOX_INPUT_POINTER_CLICK,
     TBOX_INPUT_POINTER_DRAG,
+    TBOX_INPUT_POINTER_RELEASE,
+    TBOX_INPUT_POINTER_SCROLL,
     TBOX_INPUT_KEY,
     TBOX_INPUT_TEXT,
     TBOX_INPUT_PASTE,
@@ -55,6 +59,7 @@ typedef struct tbox_input_event {
     union {
         struct { double x, y; bool double_click; } click;
         struct { double x, y; } drag;
+        struct { double x, y, delta_y; } scroll;
         tbox_key_event key;
         struct { char utf8[32]; size_t length; } text;
         struct { char *utf8; size_t length; } paste; /* receiver frees utf8 */

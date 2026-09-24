@@ -515,6 +515,8 @@ static void tbox_backend_wayland_keyboard_key(void *data, struct wl_keyboard *ke
     case XKB_KEY_Delete: logical_key = TBOX_KEY_DELETE; break;
     case XKB_KEY_Left: logical_key = TBOX_KEY_LEFT; break;
     case XKB_KEY_Right: logical_key = TBOX_KEY_RIGHT; break;
+    case XKB_KEY_Up: logical_key = TBOX_KEY_UP; break;
+    case XKB_KEY_Down: logical_key = TBOX_KEY_DOWN; break;
     case XKB_KEY_Home: logical_key = TBOX_KEY_HOME; break;
     case XKB_KEY_End: logical_key = TBOX_KEY_END; break;
     case XKB_KEY_a:
@@ -534,9 +536,6 @@ static void tbox_backend_wayland_keyboard_key(void *data, struct wl_keyboard *ke
         backend->repeat_composed_text = false;
     }
     bool shift = xkb_state_mod_name_is_active(backend->xkb_state, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE) > 0;
-    if (logical_key == TBOX_KEY_ESCAPE && pressed) {
-        backend->should_close = true;
-    }
     if (logical_key != TBOX_KEY_UNKNOWN) {
         tbox_input_event key_event = {
             .kind = TBOX_INPUT_KEY,
@@ -696,6 +695,9 @@ static void tbox_backend_wayland_pointer_leave(void *data, struct wl_pointer *po
 
     if (surface == backend->surface) {
         backend->pointer_has_focus = false;
+        if (backend->pointer_pressed) {
+            tbox_backend_wayland_push_event(backend, (tbox_input_event){ .kind = TBOX_INPUT_POINTER_RELEASE });
+        }
         backend->pointer_pressed = false;
     }
 }
@@ -725,6 +727,7 @@ static void tbox_backend_wayland_pointer_button(void *data, struct wl_pointer *p
     }
     if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
         backend->pointer_pressed = false;
+        tbox_backend_wayland_push_event(backend, (tbox_input_event){ .kind = TBOX_INPUT_POINTER_RELEASE });
         return;
     }
     if (!backend->pointer_has_focus) return;
@@ -742,16 +745,16 @@ static void tbox_backend_wayland_pointer_button(void *data, struct wl_pointer *p
     });
 }
 
-/* axis/frame/axis_source/axis_stop/axis_discrete carry nothing this backend
- * needs (no scroll/wheel support -- see "Fora de escopo" in
- * ARCHITECTURE.md), but every opcode up to the bound version still needs a
- * real handler slot, same as wl_keyboard's enter/leave/repeat_info above. */
 static void tbox_backend_wayland_pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {
-    (void)data;
     (void)pointer;
     (void)time;
-    (void)axis;
-    (void)value;
+    tbox_backend_wayland *backend = data;
+    if (backend->pointer_has_focus && axis == WL_POINTER_AXIS_VERTICAL_SCROLL) {
+        tbox_backend_wayland_push_event(backend, (tbox_input_event){
+            .kind = TBOX_INPUT_POINTER_SCROLL,
+            .data.scroll = {backend->pointer_x, backend->pointer_y, wl_fixed_to_double(value)},
+        });
+    }
 }
 
 static void tbox_backend_wayland_pointer_frame(void *data, struct wl_pointer *pointer) {

@@ -98,8 +98,17 @@ static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box
  * run whose `image` is non-NULL, TEXT_RUN otherwise), and all of that
  * precedes its children's ops -- see ARCHITECTURE.md's "Render Pipeline"
  * section. */
-static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
+static tbox_rect tbox_render_intersect(tbox_rect a, tbox_rect b) {
+    double x0 = a.x > b.x ? a.x : b.x;
+    double y0 = a.y > b.y ? a.y : b.y;
+    double x1 = a.x + a.width < b.x + b.width ? a.x + a.width : b.x + b.width;
+    double y1 = a.y + a.height < b.y + b.height ? a.y + a.height : b.y + b.height;
+    return (tbox_rect){x0, y0, x1 > x0 ? x1 - x0 : 0.0, y1 > y0 ? y1 - y0 : 0.0};
+}
+
+static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, bool has_clip, tbox_rect clip) {
     for (; box != NULL; box = box->next_sibling) {
+        size_t own_start = items->length;
         /* NOVO (visual fidelity): box-shadow, painted BEFORE the box's own
          * background/border so paint order alone makes them correctly cover
          * the shadow wherever the two overlap -- no explicit clipping
@@ -221,9 +230,18 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
             op->face          = run->font;
             op->image         = NULL;
             op->radius        = 0.0;
-            op->has_clip      = box->node != NULL &&
-                tbox_string_view_equal_cstr(box->node->element.tag_name, "input");
-            if (op->has_clip) op->clip = box->content_box;
+            bool is_select = box->node != NULL &&
+                tbox_string_view_equal_cstr(box->node->element.tag_name, "select");
+            op->has_clip = box->node != NULL &&
+                (tbox_string_view_equal_cstr(box->node->element.tag_name, "input") || is_select ||
+                 tbox_string_view_equal_cstr(box->node->element.tag_name, "textarea"));
+            if (op->has_clip) {
+                op->clip = box->content_box;
+                if (is_select) {
+                    op->clip.width -= 18.0;
+                    if (op->clip.width < 0.0) op->clip.width = 0.0;
+                }
+            }
 
             /* NOVO v13: <del>/<ins> decoration line -- a thin (1px)
              * FILL_RECT spanning the run's width, positioned off its
@@ -242,7 +260,20 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
             }
         }
 
-        tbox_render_walk(box->first_child, items);
+        for (size_t i = own_start; i < items->length; i++) {
+            tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, i);
+            if (has_clip) {
+                op->clip = op->has_clip ? tbox_render_intersect(op->clip, clip) : clip;
+                op->has_clip = true;
+            }
+        }
+        bool child_has_clip = has_clip;
+        tbox_rect child_clip = clip;
+        if (box->style != NULL && box->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO) {
+            child_clip = child_has_clip ? tbox_render_intersect(child_clip, box->padding_box) : box->padding_box;
+            child_has_clip = true;
+        }
+        tbox_render_walk(box->first_child, items, child_has_clip, child_clip);
     }
 }
 
@@ -250,7 +281,7 @@ tbox_display_list tbox_render_build_display_list(tbox_arena *arena, const tbox_l
     tbox_vector items;
     tbox_vector_init(&items, arena, sizeof(tbox_paint_op), 0);
 
-    tbox_render_walk(root, &items);
+    tbox_render_walk(root, &items, false, (tbox_rect){0});
 
     tbox_display_list list;
     list.items = (tbox_paint_op *)items.data;

@@ -78,6 +78,15 @@ static tbox_context *open_cstr(const char *html, const char *css, tbox_font_face
     return tbox_context_open(html, strlen(html), css, strlen(css), fonts, NULL);
 }
 
+static const tbox_layout_box *find_layout_box(const tbox_layout_box *box, const tbox_html_node *node) {
+    for (; box != NULL; box = box->next_sibling) {
+        if (box->node == node) return box;
+        const tbox_layout_box *child = find_layout_box(box->first_child, node);
+        if (child != NULL) return child;
+    }
+    return NULL;
+}
+
 /* Shared by every tbox_context_on_click test below: a click_capture is
  * handed in as `userdata` and a handler fills it in so the test can inspect
  * what fired (or that nothing did) after tbox_context_dispatch_click
@@ -122,6 +131,21 @@ static void record_input(tbox_context *ctx, tbox_html_node *node, tbox_string_vi
     (void)node;
     (void)value;
     (*(int *)userdata)++;
+}
+
+typedef struct select_capture {
+    int count;
+    char value[64];
+} select_capture;
+
+static void record_select(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+    (void)ctx;
+    (void)node;
+    select_capture *capture = userdata;
+    capture->count++;
+    size_t length = value.size < sizeof(capture->value) - 1 ? value.size : sizeof(capture->value) - 1;
+    if (length > 0) memcpy(capture->value, value.data, length);
+    capture->value[length] = '\0';
 }
 
 /* NOVO v3: shared by the bubbling-order tests -- each handler appends its
@@ -1523,6 +1547,183 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* Tab and Shift+Tab reveal controls in a scrollable list. Manual wheel
+     * scrolling after focus stays in place until focus changes again. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div id='list'><button>A</button><button>B</button><button>C</button><button>D</button></div>",
+            "#list { width: 100px; height: 50px; overflow-y: auto; } "
+            "button { width: 70px; margin: 0px; padding: 0px; border: 0px solid black; } "
+            "button:focus { border: 0px solid black; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            const tbox_html_node *first = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            for (int i = 0; i < 3; i++) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+                tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+                const tbox_layout_box *root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
+                while (root_box != NULL && root_box->parent != NULL) root_box = root_box->parent;
+                const tbox_layout_box *focus_box = find_layout_box(root_box, tbox_context_focused_node(ctx));
+                TBOX_TEST_ASSERT(focus_box != NULL && focus_box->parent != NULL);
+                if (focus_box != NULL && focus_box->parent != NULL) {
+                    tbox_rect viewport = focus_box->parent->padding_box;
+                    TBOX_TEST_ASSERT(focus_box->border_box.y >= viewport.y - 0.01);
+                    TBOX_TEST_ASSERT(focus_box->border_box.y + focus_box->border_box.height <=
+                        viewport.y + viewport.height + 0.01);
+                }
+                if (i == 1) TBOX_TEST_ASSERT(!tbox_context_scroll(ctx, 10.0, 10.0, -100.0));
+            }
+            TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 10.0, 10.0, -100.0));
+            tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            TBOX_TEST_ASSERT(!tbox_context_scroll(ctx, 10.0, 10.0, -100.0));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            for (int i = 0; i < 3; i++) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true, false}));
+                tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+                const tbox_layout_box *root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
+                while (root_box != NULL && root_box->parent != NULL) root_box = root_box->parent;
+                const tbox_layout_box *focus_box = find_layout_box(root_box, tbox_context_focused_node(ctx));
+                TBOX_TEST_ASSERT(focus_box != NULL && focus_box->parent != NULL);
+                if (focus_box != NULL && focus_box->parent != NULL) {
+                    tbox_rect viewport = focus_box->parent->padding_box;
+                    TBOX_TEST_ASSERT(focus_box->border_box.y >= viewport.y - 0.01);
+                    TBOX_TEST_ASSERT(focus_box->border_box.y + focus_box->border_box.height <=
+                        viewport.y + viewport.height + 0.01);
+                }
+            }
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == first);
+            TBOX_TEST_ASSERT(!tbox_context_scroll(ctx, 10.0, 10.0, -100.0));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* A single select displays its chosen label while exposing the option
+     * value. Keyboard and mouse choices skip disabled options. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><select id='mode'><option value='a'>Alpha</option>"
+            "<option value='b' label='Bee' selected>Beta</option>"
+            "<option value='x' disabled>Unavailable</option>"
+            "<option>Gamma</option></select><button>Next</button></div>",
+            "select { width: 100px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 160.0, 220.0, &list);
+            const tbox_html_node *select = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *button = select->next_sibling;
+            const tbox_layout_box *root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
+            while (root_box != NULL && root_box->parent != NULL) root_box = root_box->parent;
+            const tbox_layout_box *select_box = find_layout_box(root_box, select);
+            TBOX_TEST_ASSERT(select_box != NULL && select_box->text_run_count == 1);
+            if (select_box != NULL && select_box->text_run_count == 1)
+                TBOX_TEST_ASSERT(string_view_equal_cstr(select_box->text_runs[0].text, "Bee"));
+            TBOX_TEST_ASSERT(find_layout_box(root_box, select->first_child) == NULL);
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
+            select_capture capture = {0};
+            tbox_context_on_select(ctx, record_select, &capture);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == select);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DOWN, true, false, false}));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Gamma"));
+            TBOX_TEST_ASSERT(capture.count == 1 && strcmp(capture.value, "Gamma") == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, false}));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
+            TBOX_TEST_ASSERT(capture.count == 2);
+            tbox_context_run_frame(ctx, 160.0, 220.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DOWN, true, false, false}));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ESCAPE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 2);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DOWN, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 3 && strcmp(capture.value, "Gamma") == 0);
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Gamma"));
+            tbox_context_run_frame(ctx, 160.0, 220.0, &list);
+            root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
+            while (root_box != NULL && root_box->parent != NULL) root_box = root_box->parent;
+            select_box = find_layout_box(root_box, select);
+            TBOX_TEST_ASSERT(select_box != NULL);
+            if (select_box != NULL) {
+                tbox_context_dispatch_click(ctx, select_box->border_box.x + 5.0,
+                    select_box->border_box.y + select_box->border_box.height / 2.0);
+                tbox_context_run_frame(ctx, 160.0, 220.0, &list);
+                tbox_rect popup = {0};
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    if (op->kind == TBOX_PAINT_FILL_RECT && op->color.r == 105 &&
+                        op->color.g == 112 && op->color.b == 122) popup = op->rect;
+                }
+                TBOX_TEST_ASSERT(popup.height > 0.0);
+                if (popup.height > 0.0) {
+                    double row_height = popup.height / 4.0;
+                    tbox_context_dispatch_click(ctx, popup.x + 10.0, popup.y + row_height * 2.5);
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Gamma"));
+                    TBOX_TEST_ASSERT(capture.count == 3);
+                    tbox_context_dispatch_click(ctx, popup.x + 10.0, popup.y + row_height * 0.5);
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "a"));
+                    TBOX_TEST_ASSERT(capture.count == 4 && strcmp(capture.value, "a") == 0);
+                }
+            }
+            TBOX_TEST_ASSERT(tbox_context_select_set_value(ctx, select, tbox_string_view_make("b", 1)));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
+            TBOX_TEST_ASSERT(capture.count == 4);
+            TBOX_TEST_ASSERT(!tbox_context_select_set_value(ctx, select, tbox_string_view_make("missing", 7)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == button);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Longer menus show a bounded number of rows. The wheel changes the
+     * visible slice, and End reveals the last option before confirmation. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<select><option value='1'>One</option><option value='2'>Two</option>"
+            "<option value='3'>Three</option><option value='4'>Four</option>"
+            "<option value='5'>Five</option><option value='6'>Six</option>"
+            "<option value='7'>Seven</option><option value='8'>Eight</option></select>",
+            "select { width: 100px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 140.0, 240.0, &list);
+            const tbox_html_node *select = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            tbox_context_run_frame(ctx, 140.0, 240.0, &list);
+            tbox_rect popup = {0};
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind == TBOX_PAINT_FILL_RECT && op->color.r == 105 &&
+                    op->color.g == 112 && op->color.b == 122) popup = op->rect;
+            }
+            TBOX_TEST_ASSERT(popup.height > 0.0 && popup.height < 200.0);
+            if (popup.height > 0.0) {
+                TBOX_TEST_ASSERT(tbox_context_scroll(ctx, popup.x + 10.0, popup.y + 10.0, 30.0));
+                tbox_context_run_frame(ctx, 140.0, 240.0, &list);
+                bool saw_two_first = false;
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    if (op->kind == TBOX_PAINT_TEXT_RUN && op->rect.y >= popup.y &&
+                        op->rect.y < popup.y + 40.0 && string_view_equal_cstr(op->text, "Two"))
+                        saw_two_first = true;
+                }
+                TBOX_TEST_ASSERT(saw_two_first);
+            }
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_END, true, false, false}));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "1"));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "8"));
+            tbox_context_close(ctx);
+        }
+    }
+
     /* Text inputs share keyboard focus with buttons. Editing operates on
      * UTF-8 boundaries and updates both the DOM value and rendered text. */
     {
@@ -1733,6 +1934,131 @@ int tbox_test_context_run(void) {
         TBOX_TEST_ASSERT(tbox_key_repeat_due(1000000000u, &next, 0) == 0);
         TBOX_TEST_ASSERT(tbox_key_repeat_due(1000000000u, &next, 20) == 8);
         TBOX_TEST_ASSERT(next > 1000000000u);
+    }
+
+    /* A fixed-height list scrolls, clips painting, and blocks clicks on
+     * rows that lie outside its visible padding box. */
+    {
+        const char *html = "<div id='list'><div id='one'></div><div id='two'></div><div id='three'></div></div>";
+        const char *css = "#list { width: 60px; height: 40px; overflow-y: auto; } "
+                          "#one, #two, #three { height: 30px; } "
+                          "#one { background-color: red; } #two { background-color: green; } "
+                          "#three { background-color: blue; }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            uint32_t pixels[80 * 100];
+            for (size_t i = 0; i < 80 * 100; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_context_run_frame(ctx, 80.0, 100.0, &list);
+            tbox_raster_display_list(pixels, 80, 100, &list);
+            TBOX_TEST_ASSERT(pixels[10 * 80 + 10] == 0xFFFF0000u);
+            TBOX_TEST_ASSERT(pixels[45 * 80 + 10] == 0xFFFFFFFFu);
+            TBOX_TEST_ASSERT(pixels[5 * 80 + 55] == 0xFF646E7Au);
+            TBOX_TEST_ASSERT(pixels[35 * 80 + 55] == 0xFFDCE0E6u);
+            const tbox_layout_box *hidden = tbox_context_hit_test(ctx, 10.0, 65.0);
+            TBOX_TEST_ASSERT(hidden == NULL);
+            TBOX_TEST_ASSERT(!tbox_context_scrollbar_press(ctx, 10.0, 10.0));
+            TBOX_TEST_ASSERT(tbox_context_scrollbar_press(ctx, 55.0, 5.0));
+            TBOX_TEST_ASSERT(tbox_context_scrollbar_drag(ctx, 5.0, 100.0));
+            tbox_context_scrollbar_release(ctx);
+            TBOX_TEST_ASSERT(!tbox_context_scrollbar_drag(ctx, 5.0, 0.0));
+            tbox_context_run_frame(ctx, 80.0, 100.0, &list);
+            for (size_t i = 0; i < 80 * 100; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_raster_display_list(pixels, 80, 100, &list);
+            TBOX_TEST_ASSERT(pixels[10 * 80 + 10] == 0xFF0000FFu);
+            TBOX_TEST_ASSERT(pixels[30 * 80 + 55] == 0xFF646E7Au);
+            TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 10.0, 10.0, -100.0));
+            tbox_context_run_frame(ctx, 80.0, 100.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_scrollbar_press(ctx, 55.0, 35.0));
+            TBOX_TEST_ASSERT(tbox_context_scrollbar_drag(ctx, 10.0, 10.0));
+            tbox_context_scrollbar_release(ctx);
+            TBOX_TEST_ASSERT(!tbox_context_scrollbar_drag(ctx, 10.0, 10.0));
+            tbox_context_run_frame(ctx, 80.0, 100.0, &list);
+            for (size_t i = 0; i < 80 * 100; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_raster_display_list(pixels, 80, 100, &list);
+            TBOX_TEST_ASSERT(pixels[10 * 80 + 10] == 0xFF008000u);
+            TBOX_TEST_ASSERT(pixels[5 * 80 + 55] == 0xFFDCE0E6u);
+            TBOX_TEST_ASSERT(pixels[25 * 80 + 55] == 0xFF646E7Au);
+            TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 10.0, 10.0, 100.0));
+            TBOX_TEST_ASSERT(!tbox_context_scroll(ctx, 10.0, 10.0, 100.0));
+            tbox_context_run_frame(ctx, 80.0, 100.0, &list);
+            for (size_t i = 0; i < 80 * 100; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_raster_display_list(pixels, 80, 100, &list);
+            TBOX_TEST_ASSERT(pixels[10 * 80 + 10] == 0xFF0000FFu);
+            TBOX_TEST_ASSERT(pixels[45 * 80 + 10] == 0xFFFFFFFFu);
+            const tbox_layout_box *visible = tbox_context_hit_test(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT(visible != NULL && visible->node != NULL &&
+                tbox_html_node_get_attribute(visible->node, tbox_string_view_make("id", 2)) != NULL &&
+                string_view_equal_cstr(tbox_html_node_get_attribute(visible->node,
+                    tbox_string_view_make("id", 2))->value, "three"));
+            tbox_context_close(ctx);
+        }
+        ctx = open_cstr("<div id='list'><div id='one'></div></div>",
+            "#list { width: 60px; height: 40px; overflow-y: auto; } "
+            "#one { height: 30px; background-color: red; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 80.0, 100.0, &list);
+            TBOX_TEST_ASSERT(!tbox_context_scrollbar_press(ctx, 55.0, 5.0));
+            TBOX_TEST_ASSERT(!tbox_context_scroll(ctx, 10.0, 10.0, 10.0));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Textarea keeps its raw initial text, sizes from rows/cols, and edits
+     * multiple lines inside a clipped, scrollable content box. */
+    {
+        tbox_context *ctx = open_cstr("<textarea rows='2' cols='8'>ab\ncd</textarea>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 160.0, &list);
+            const tbox_html_node *node = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == node);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("X", 1)));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(node->first_child->text.text, "ab\ncd\nX"));
+            tbox_context_run_frame(ctx, 300.0, 160.0, &list);
+            const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT(hit != NULL && hit->node == node);
+            if (hit != NULL) {
+                const tbox_font_face *face = tbox_font_face_cache_get(fonts,
+                    tbox_string_view_make(hit->style->font_family, strlen(hit->style->font_family)),
+                    hit->style->font_weight_bold, hit->style->font_italic, hit->style->font_size);
+                TBOX_TEST_ASSERT(face != NULL);
+                if (face != NULL) {
+                    double expected_width = 8.0 * tbox_font_measure_text(face, tbox_string_view_make("0", 1));
+                    double expected_height = 2.0 * tbox_font_face_line_height(face);
+                    double width_error = hit->content_box.width - expected_width;
+                    double height_error = hit->content_box.height - expected_height;
+                    TBOX_TEST_ASSERT(width_error > -0.01 && width_error < 0.01);
+                    TBOX_TEST_ASSERT(height_error > -0.01 && height_error < 0.01);
+                }
+                TBOX_TEST_ASSERT(hit->text_run_count == 3);
+                TBOX_TEST_ASSERT(hit->scroll_content_height > hit->content_box.height);
+                TBOX_TEST_ASSERT(tbox_context_scroll(ctx, hit->content_box.x + 2.0,
+                    hit->content_box.y + 2.0, -100.0));
+                TBOX_TEST_ASSERT(tbox_context_drag_select_at(ctx, hit->content_box.x,
+                    hit->content_box.y));
+            }
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_selected_text(ctx), "ab\ncd\nX"));
+            tbox_context_close(ctx);
+        }
+        ctx = open_cstr("<textarea rows='5' cols='40'>A</textarea>",
+            "textarea { width: 90px; height: 35px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 160.0, &list);
+            const tbox_layout_box *box = tbox_context_hit_test(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT(box != NULL && box->content_box.width == 90.0 &&
+                box->content_box.height == 35.0);
+            tbox_context_close(ctx);
+        }
     }
 
     tbox_font_face_cache_destroy(fonts);

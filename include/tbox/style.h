@@ -46,6 +46,11 @@ typedef enum tbox_style_display {
     TBOX_STYLE_DISPLAY_NONE,
 } tbox_style_display;
 
+typedef enum tbox_style_overflow_y {
+    TBOX_STYLE_OVERFLOW_Y_VISIBLE,
+    TBOX_STYLE_OVERFLOW_Y_AUTO,
+} tbox_style_overflow_y;
+
 /* NOVO v4: only `solid` is ever painted (see Render Pipeline); `none` and
  * any unsupported keyword both resolve here, indistinguishable from each
  * other and from "no border declared" -- see ARCHITECTURE.md's v4 Style
@@ -104,6 +109,7 @@ typedef struct tbox_style {
      * block until `display` is taught to read a per-tag table. See
      * ARCHITECTURE.md's Style section. */
     tbox_style_display display;
+    tbox_style_overflow_y overflow_y; /* initial: visible; auto clips and scrolls overflowing blocks */
     tbox_style_length width, height; /* initial: AUTO */
     tbox_style_length margin[4];     /* top right bottom left; initial: 0px each */
     tbox_style_length padding[4];    /* top right bottom left; initial: 0px each */
@@ -226,6 +232,8 @@ typedef struct tbox_style {
  * (NOVO v13: `underline`/`line-through`, case-insensitive; any other
  * value/absent falls back to the initial value `NONE`; NOT inheritable --
  * always cascade-or-initial, same posture as `background-color`),
+ * `overflow-y` (`visible` or `auto`; the latter clips descendants and
+ * enables vertical wheel scrolling when content exceeds the box),
  * `vertical-align` (NOVO v13: `sub`/`super`, case-insensitive; any other
  * value/absent falls back to the initial value `BASELINE`; NOT
  * inheritable). Out of scope: `float`, flex/grid, `z-index`, `white-space`

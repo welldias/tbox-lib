@@ -64,6 +64,8 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
         const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
         return type == NULL || tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("text", 4));
     }
+    if (tbox_string_view_equal_cstr(node->element.tag_name, "select") ||
+        tbox_string_view_equal_cstr(node->element.tag_name, "textarea")) return true;
 
     static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th", "button" };
     tbox_string_view tag_name            = node->element.tag_name;
@@ -73,6 +75,18 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
         }
     }
     return false;
+}
+
+static unsigned tbox_layout_textarea_size(const tbox_html_node *node, const char *name, unsigned fallback) {
+    const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr(name));
+    if (attribute == NULL || attribute->value.size == 0) return fallback;
+    unsigned value = 0;
+    for (size_t i = 0; i < attribute->value.size; i++) {
+        char c = attribute->value.data[i];
+        if (c < '0' || c > '9' || value > 10000) return fallback;
+        value = value * 10 + (unsigned)(c - '0');
+    }
+    return value > 0 && value <= 10000 ? value : fallback;
 }
 
 /* ---- NOVO v2: inline formatting context (word wrap + run merging) ---- */
@@ -794,6 +808,8 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
 static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box) {
     bool is_preformatted = node != NULL && tbox_string_view_equal_cstr(node->element.tag_name, "pre");
     bool is_input = node != NULL && tbox_string_view_equal_cstr(node->element.tag_name, "input");
+    bool is_select = node != NULL && (tbox_string_view_equal_cstr(node->element.tag_name, "select") ||
+        tbox_string_view_equal_cstr(node->element.tag_name, "textarea"));
 
     tbox_vector words;
     tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
@@ -811,6 +827,9 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
             word->image_height = 0.0;
             word->hard_break = false;
         }
+    } else if (is_select) {
+        /* The selected label is supplied by Context after layout; option
+         * descendants do not create boxes or contribute to select height. */
     } else if (is_preformatted) {
         tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
     } else {
@@ -1627,6 +1646,13 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     case TBOX_STYLE_LENGTH_AUTO:
     default:
         content_width = container.width - margin_left - margin_right - padding_left - padding_right - 2.0 * effective_border;
+        if (tbox_string_view_equal_cstr(node->element.tag_name, "textarea")) {
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts,
+                tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
+                style->font_italic, style->font_size);
+            if (face != NULL) content_width = tbox_layout_textarea_size(node, "cols", 20) *
+                tbox_font_measure_text(face, tbox_string_view_make("0", 1));
+        }
         break;
     }
 
@@ -1726,6 +1752,16 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
          * lines' heights (or one face's line-height for empty text) -- see
          * tbox_layout_build_text_runs's doc comment. */
         content_height = tbox_layout_build_text_runs(arena, node, node->first_child, NULL, style, styles, fonts, images, content_x, content_y, content_width, box);
+        if (tbox_string_view_equal_cstr(node->element.tag_name, "textarea")) {
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts,
+                tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
+                style->font_italic, style->font_size);
+            if (style->height.kind == TBOX_STYLE_LENGTH_PX) content_height = style->height.value;
+            else if (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)
+                content_height = style->height.value / 100.0 * container.height;
+            else if (face != NULL) content_height = tbox_layout_textarea_size(node, "rows", 2) *
+                tbox_font_face_line_height(face);
+        }
     } else if (is_table) {
         /* NOVO (table support): a <table>'s content_height is ALWAYS the
          * summed row heights, same "content always dictates height,
@@ -1803,6 +1839,7 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
             .height_definite = height_definite,
         };
         double children_total_height = tbox_layout_build_children(arena, node, styles, fonts, images, children_container, content_y, box, context_for_children, style);
+        box->scroll_content_height = children_total_height;
         if (!height_definite) {
             content_height = children_total_height;
         }

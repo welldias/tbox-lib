@@ -67,8 +67,8 @@ typedef struct tbox_paint_op {
      * box-shadow). */
     double radius;
 
-    /* Optional text clipping rectangle. Used by single-line inputs so a
-     * long value cannot paint over the border or neighboring controls. */
+    /* Optional paint clip, applied to every op kind. Input text and the
+     * descendants of overflow-y:auto blocks use it. */
     bool has_clip;
     tbox_rect clip;
 } tbox_paint_op;
@@ -101,7 +101,7 @@ typedef struct tbox_display_list {
  * under text/images -- and only then its first_child and the rest of the
  * next_sibling chain, recursively, in the same order. See
  * ARCHITECTURE.md's "Render Pipeline" section (no stacking contexts,
- * general clipping; input text alone uses `clip` below).
+ * clipping of scroll containers and input text via `clip` below).
  *
  * This never calls into <tbox/font.h>: a run's `font` pointer is only
  * copied into the resulting paint op's `face`, never dereferenced -- Output

@@ -467,6 +467,10 @@ void tbox_app_step(tbox_app *app) {
     while (tbox_window_backend_take_event(app->backend, &event)) {
         switch (event.kind) {
         case TBOX_INPUT_POINTER_CLICK: {
+            if (tbox_context_scrollbar_press(app->ctx, event.data.click.x, event.data.click.y)) {
+                dirty = true;
+                break;
+            }
             tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
             if (event.data.click.double_click) {
                 tbox_context_dispatch_key(app->ctx,
@@ -478,7 +482,16 @@ void tbox_app_step(tbox_app *app) {
             break;
         }
         case TBOX_INPUT_POINTER_DRAG:
-            if (tbox_context_drag_select(app->ctx, event.data.drag.x)) dirty = true;
+            if (tbox_context_scrollbar_drag(app->ctx, event.data.drag.x, event.data.drag.y))
+                dirty = true;
+            else if (tbox_context_drag_select_at(app->ctx, event.data.drag.x, event.data.drag.y)) dirty = true;
+            break;
+        case TBOX_INPUT_POINTER_RELEASE:
+            tbox_context_scrollbar_release(app->ctx);
+            break;
+        case TBOX_INPUT_POINTER_SCROLL:
+            if (tbox_context_scroll(app->ctx, event.data.scroll.x, event.data.scroll.y,
+                    event.data.scroll.delta_y)) dirty = true;
             break;
         case TBOX_INPUT_KEY:
             if (event.data.key.pressed && event.data.key.control &&
@@ -499,6 +512,8 @@ void tbox_app_step(tbox_app *app) {
             }
             if (tbox_context_dispatch_key(app->ctx, event.data.key)) {
                 dirty = true;
+            } else if (event.data.key.pressed && event.data.key.key == TBOX_KEY_ESCAPE) {
+                app->closed = true;
             }
             break;
         case TBOX_INPUT_TEXT:
@@ -510,12 +525,23 @@ void tbox_app_step(tbox_app *app) {
         case TBOX_INPUT_PASTE:
             if (app->paste_target != NULL &&
                 app->paste_target == tbox_context_focused_node(app->ctx)) {
+                const tbox_html_node *target = app->paste_target;
+                bool multiline = target->type == TBOX_HTML_NODE_ELEMENT &&
+                    target->element.tag_name.size == 8 &&
+                    memcmp(target->element.tag_name.data, "textarea", 8) == 0;
+                size_t output = 0;
                 for (size_t i = 0; i < event.data.paste.length; i++) {
-                    char *ch = &event.data.paste.utf8[i];
-                    if (*ch == '\r' || *ch == '\n' || *ch == '\t' || *ch == '\0') *ch = ' ';
+                    char ch = event.data.paste.utf8[i];
+                    if (multiline) {
+                        if (ch == '\r') {
+                            if (i + 1 < event.data.paste.length && event.data.paste.utf8[i + 1] == '\n') i++;
+                            ch = '\n';
+                        } else if (ch == '\0') ch = ' ';
+                    } else if (ch == '\r' || ch == '\n' || ch == '\t' || ch == '\0') ch = ' ';
+                    event.data.paste.utf8[output++] = ch;
                 }
                 if (tbox_context_dispatch_text(app->ctx,
-                        tbox_string_view_make(event.data.paste.utf8, event.data.paste.length))) dirty = true;
+                        tbox_string_view_make(event.data.paste.utf8, output))) dirty = true;
             }
             app->paste_target = NULL;
             free(event.data.paste.utf8);

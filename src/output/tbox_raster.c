@@ -102,7 +102,7 @@ void tbox_raster_fill_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffe
  * (after clamping) degenerates to a plain call to tbox_raster_fill_rect, so
  * every other codepath in this file that already produces a correct plain
  * rectangle keeps doing so unchanged. */
-void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, double radius, tbox_css_rgba color) {
+static void tbox_raster_fill_rounded_rect_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, double radius, tbox_css_rgba color, bool has_clip, tbox_rect clip) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || rect.width <= 0.0 || rect.height <= 0.0 || color.a == 0) {
         return;
     }
@@ -115,7 +115,7 @@ void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32
         radius = 0.0;
     }
 
-    if (radius <= 0.0) {
+    if (radius <= 0.0 && !has_clip) {
         tbox_raster_fill_rect(pixels, buffer_width, buffer_height, rect, color);
         return;
     }
@@ -136,6 +136,14 @@ void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32
     }
     if (y1 > buffer_height) {
         y1 = buffer_height;
+    }
+    if (has_clip) {
+        int32_t cx0 = (int32_t)floor(clip.x), cy0 = (int32_t)floor(clip.y);
+        int32_t cx1 = (int32_t)floor(clip.x + clip.width), cy1 = (int32_t)floor(clip.y + clip.height);
+        if (x0 < cx0) x0 = cx0;
+        if (y0 < cy0) y0 = cy0;
+        if (x1 > cx1) x1 = cx1;
+        if (y1 > cy1) y1 = cy1;
     }
 
     double alpha     = color.a / 255.0;
@@ -170,6 +178,10 @@ void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32
             row[x] = tbox_raster_blend_pixel(row[x], color, alpha);
         }
     }
+}
+
+void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, double radius, tbox_css_rgba color) {
+    tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, rect, radius, color, false, (tbox_rect){0});
 }
 
 static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color, bool has_clip, tbox_rect clip) {
@@ -261,7 +273,7 @@ void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer
  * non-positive buffer_width/buffer_height, a non-positive
  * dest_rect.width/height, or a resize failure (allocation failure, treated
  * as a no-op rather than a crash), skips painting entirely. */
-void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image) {
+static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image, bool has_clip, tbox_rect clip) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || image == NULL || image->pixels == NULL || dest_rect.width <= 0.0 || dest_rect.height <= 0.0) {
         return;
     }
@@ -311,6 +323,14 @@ void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_he
     if (y1 > buffer_height) {
         y1 = buffer_height;
     }
+    if (has_clip) {
+        int32_t cx0 = (int32_t)floor(clip.x), cy0 = (int32_t)floor(clip.y);
+        int32_t cx1 = (int32_t)floor(clip.x + clip.width), cy1 = (int32_t)floor(clip.y + clip.height);
+        if (x0 < cx0) x0 = cx0;
+        if (y0 < cy0) y0 = cy0;
+        if (x1 > cx1) x1 = cx1;
+        if (y1 > cy1) y1 = cy1;
+    }
 
     for (int32_t y = y0; y < y1; y++) {
         const unsigned char *source_row = sample_pixels + (size_t)(y - origin_y) * (size_t)sample_width * 4;
@@ -331,6 +351,10 @@ void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_he
     free(resized);
 }
 
+void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image) {
+    tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, false, (tbox_rect){0});
+}
+
 void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list) {
     if (list == NULL) {
         return;
@@ -341,16 +365,24 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
         switch (op->kind) {
         case TBOX_PAINT_FILL_RECT:
             if (op->radius > 0.0) {
-                tbox_raster_fill_rounded_rect(pixels, buffer_width, buffer_height, op->rect, op->radius, op->color);
+                tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, op->rect, op->radius, op->color, op->has_clip, op->clip);
             } else {
-                tbox_raster_fill_rect(pixels, buffer_width, buffer_height, op->rect, op->color);
+                tbox_rect rect = op->rect;
+                if (op->has_clip) {
+                    double x0 = rect.x > op->clip.x ? rect.x : op->clip.x;
+                    double y0 = rect.y > op->clip.y ? rect.y : op->clip.y;
+                    double x1 = rect.x + rect.width < op->clip.x + op->clip.width ? rect.x + rect.width : op->clip.x + op->clip.width;
+                    double y1 = rect.y + rect.height < op->clip.y + op->clip.height ? rect.y + rect.height : op->clip.y + op->clip.height;
+                    rect = (tbox_rect){x0, y0, x1 - x0, y1 - y0};
+                }
+                if (rect.width > 0.0 && rect.height > 0.0) tbox_raster_fill_rect(pixels, buffer_width, buffer_height, rect, op->color);
             }
             break;
         case TBOX_PAINT_TEXT_RUN:
             tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0});
             break;
         case TBOX_PAINT_IMAGE:
-            tbox_raster_image(pixels, buffer_width, buffer_height, op->rect, op->image);
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->has_clip, op->clip);
             break;
         }
     }

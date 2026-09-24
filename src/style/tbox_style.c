@@ -621,6 +621,11 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     /* display: v0's initial value is BLOCK, not CSS2.1's spec-correct
      * `inline` -- see the comment on tbox_style.display in style.h. */
     style.display                                     = TBOX_STYLE_DISPLAY_BLOCK;
+    style.overflow_y = TBOX_STYLE_OVERFLOW_Y_VISIBLE;
+    const tbox_css_resolved_declaration *overflow_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("overflow-y"));
+    if (overflow_decl != NULL && tbox_string_view_equal_ascii_ci(tbox_style_trim(overflow_decl->value), tbox_string_view_from_cstr("auto"))) {
+        style.overflow_y = TBOX_STYLE_OVERFLOW_Y_AUTO;
+    }
     const tbox_css_resolved_declaration *display_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("display"));
     if (display_decl != NULL) {
         tbox_style_display parsed;

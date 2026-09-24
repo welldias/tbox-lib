@@ -65,6 +65,7 @@ typedef struct tbox_layout_box {
     const tbox_style *style;
 
     tbox_rect margin_box, border_box, padding_box, content_box;
+    double scroll_content_height; /* laid-out children extent before viewport clipping */
 
     /* Text runs, for the Render Pipeline's TEXT_RUN paint ops (see
      * ARCHITECTURE.md's "Render Pipeline" section). Populated only for a

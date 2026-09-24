@@ -12,19 +12,25 @@ in C. A JavaScript bridge is a later milestone.
   set of box, text, image, and table layout rules.
 - Software rendering and PNG screenshots without opening a window.
 - Interactive windows on Linux/Wayland with pointer clicks, `:hover`,
-  keyboard focus on buttons and single-line `<input type="text">` fields,
+  keyboard focus on buttons, single-line `<input type="text">` fields, and
+  single-choice `<select>` controls with `<option>` entries, and multiline
+  `<textarea>` controls with `rows` and `cols`,
   `:focus`, Enter/Space button activation, UTF-8 text editing and selection
   (keyboard, mouse drag, double click, Ctrl+A, and XKB Compose sequences),
   Ctrl+C/Ctrl+X/Ctrl+V through the Wayland clipboard, keyboard repeat using
-  the compositor's settings, horizontal input scrolling, and
-  resize handling. The application can request a redraw after external DOM
+  the compositor's settings, horizontal input scrolling, vertical scrolling
+  and clipping for `overflow-y: auto` blocks, visible scrollbars with
+  draggable thumbs and page clicks, automatic reveal of controls focused
+  with Tab or Shift+Tab, and resize handling. The application
+  can request a redraw after external DOM
   mutations with `tbox_app_request_redraw()`.
 - Unit/integration tests for the core pipeline and a separate, optional
   visual comparison tool (`tbox_cmp`).
 
 The supported HTML/CSS subset is defined by the public headers under
 `include/tbox/`; unsupported properties and elements may be ignored. There
-is currently no IME composition, general scrolling or clipping, flex/grid
+is currently no multi-select, `<select size>`, `<optgroup>`, IME composition,
+horizontal container scrolling, flex/grid
 layout, accessibility tree, or Windows/macOS window backend. The library is
 not yet suitable for a complete desktop application.
 
@@ -51,6 +57,18 @@ Left, Right, Home or End to select text; Ctrl+A or a double click selects it
 all, and dragging selects a range. Ctrl+C, Ctrl+X, and Ctrl+V use the system
 clipboard. Holding a
 key repeats according to the Wayland compositor's configured rate and delay.
+A fixed-height list below the form scrolls with the mouse wheel. Drag its
+scrollbar thumb or click the track to move a page at a time. Tab and Shift+Tab
+move through its buttons and scroll the focused one into view.
+The select control supports direct child `<option>` elements, mouse choice,
+Up/Down/Home/End, Enter/Space to
+open or confirm, and Escape to dismiss. Its value is available through
+`tbox_context_select_value()` or `tbox_context_on_select()`; applications can
+set it with `tbox_context_select_set_value()`.
+The textarea reads its initial value from the text between its tags. Enter
+inserts a new line; Up/Down move between visual lines. Long text wraps and
+scrolls inside the control. `rows` and `cols` set its initial size, while
+explicit CSS width and height take precedence.
 A repeat rate of zero disables repetition; until the compositor sends its
 settings, repetition stays disabled.
 The example also compiles
