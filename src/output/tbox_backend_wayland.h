@@ -18,6 +18,8 @@ bool tbox_backend_wayland_should_close(const tbox_backend_wayland *backend);
 void tbox_backend_wayland_size(const tbox_backend_wayland *backend, int32_t *width, int32_t *height);
 bool tbox_backend_wayland_take_event(tbox_backend_wayland *backend, tbox_input_event *event);
 bool tbox_backend_wayland_pointer_position(const tbox_backend_wayland *backend, double *x, double *y);
+bool tbox_backend_wayland_clipboard_copy(tbox_backend_wayland *backend, const char *text, size_t length, uint32_t serial);
+bool tbox_backend_wayland_clipboard_paste(tbox_backend_wayland *backend);
 void tbox_backend_wayland_present(tbox_backend_wayland *backend, const tbox_display_list *list);
 
 #endif

@@ -13,8 +13,10 @@ in C. A JavaScript bridge is a later milestone.
 - Software rendering and PNG screenshots without opening a window.
 - Interactive windows on Linux/Wayland with pointer clicks, `:hover`,
   keyboard focus on buttons and single-line `<input type="text">` fields,
-  `:focus`, Enter/Space button activation, basic UTF-8 text editing (including
-  XKB Compose sequences), and
+  `:focus`, Enter/Space button activation, UTF-8 text editing and selection
+  (keyboard, mouse drag, double click, Ctrl+A, and XKB Compose sequences),
+  Ctrl+C/Ctrl+X/Ctrl+V through the Wayland clipboard, keyboard repeat using
+  the compositor's settings, horizontal input scrolling, and
   resize handling. The application can request a redraw after external DOM
   mutations with `tbox_app_request_redraw()`.
 - Unit/integration tests for the core pipeline and a separate, optional
@@ -22,8 +24,7 @@ in C. A JavaScript bridge is a later milestone.
 
 The supported HTML/CSS subset is defined by the public headers under
 `include/tbox/`; unsupported properties and elements may be ignored. There
-is currently no text selection, IME composition, horizontal input scrolling,
-general scrolling or clipping, flex/grid
+is currently no IME composition, general scrolling or clipping, flex/grid
 layout, accessibility tree, or Windows/macOS window backend. The library is
 not yet suitable for a complete desktop application.
 
@@ -45,7 +46,14 @@ create a window. With `TBOX_BUILD_EXAMPLES=ON`, build the keyboard example
 using `cmake --build build --target tbox_keyboard_demo`. Run
 `build/example/tbox_keyboard_demo` on Wayland to try button focus and
 activation with Tab, Shift+Tab, Enter and Space, plus typing into a text
-field with Backspace, Delete, Left, Right, Home and End. The example also compiles
+field with Backspace, Delete, Left, Right, Home and End. Hold Shift with
+Left, Right, Home or End to select text; Ctrl+A or a double click selects it
+all, and dragging selects a range. Ctrl+C, Ctrl+X, and Ctrl+V use the system
+clipboard. Holding a
+key repeats according to the Wayland compositor's configured rate and delay.
+A repeat rate of zero disables repetition; until the compositor sends its
+settings, repetition stays disabled.
+The example also compiles
 without Wayland or Fontconfig, but needs both to open a window.
 
 `build/tests/tbox_cmp tests/assets` compares the renderer against image

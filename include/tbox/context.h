@@ -277,14 +277,25 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding);
  * nothing is under the point -- same guard as tbox_context_hit_test. */
 bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
 
+/* Extends the focused text input's selection from the last click or keyboard
+ * anchor to the character nearest x. Returns true when the caret moves. */
+bool tbox_context_drag_select(tbox_context *ctx, double x);
+
+/* Borrowed view of the focused input's selected UTF-8 bytes, or an empty
+ * view when nothing is selected. Valid until the next edit of this field. */
+tbox_string_view tbox_context_selected_text(tbox_context *ctx);
+
 /* Keyboard focus belongs to the context, not the window backend. Tab and
  * Shift+Tab move through visible enabled buttons and text inputs. Enter and
  * Space activate a focused button; editing keys act on a focused text input.
+ * Shift with Left, Right, Home or End extends its selection. Backspace and
+ * Delete remove a selection when one exists; Ctrl+A selects all text.
  * Returns true when a frame should be recomputed. */
 bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event);
 
-/* Inserts committed UTF-8 text at the focused input's cursor. Invalid UTF-8
- * and control characters are ignored. Text is distinct from key events so
+/* Inserts committed UTF-8 text at the focused input's cursor, replacing its
+ * selection when one exists. Invalid UTF-8 and control characters are
+ * ignored. Text is distinct from key events so
  * a future backend can deliver composed text through the same API. */
 bool tbox_context_dispatch_text(tbox_context *ctx, tbox_string_view text);
 

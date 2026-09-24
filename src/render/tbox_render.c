@@ -19,6 +19,7 @@ static void tbox_render_push_fill_rect(tbox_vector *items, tbox_rect rect, tbox_
     op->face          = NULL;
     op->image         = NULL;
     op->radius        = 0.0;
+    op->has_clip      = false;
 }
 
 /* NOVO (visual fidelity): same as tbox_render_push_fill_rect above, but
@@ -45,6 +46,7 @@ static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rec
     op->face          = NULL;
     op->image         = NULL;
     op->radius        = radius;
+    op->has_clip      = false;
 }
 
 /* NOVO (visual fidelity): approximates `box-shadow`'s blur with a handful
@@ -185,6 +187,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
                 op->face          = NULL;
                 op->image         = run->image;
                 op->radius        = 0.0;
+                op->has_clip      = false;
                 continue;
             }
 
@@ -218,6 +221,9 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items) {
             op->face          = run->font;
             op->image         = NULL;
             op->radius        = 0.0;
+            op->has_clip      = box->node != NULL &&
+                tbox_string_view_equal_cstr(box->node->element.tag_name, "input");
+            if (op->has_clip) op->clip = box->content_box;
 
             /* NOVO v13: <del>/<ins> decoration line -- a thin (1px)
              * FILL_RECT spanning the run's width, positioned off its

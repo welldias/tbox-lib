@@ -18,6 +18,8 @@ bool tbox_window_backend_should_close(const tbox_window_backend *window);
 void tbox_window_backend_size(const tbox_window_backend *window, int32_t *width, int32_t *height);
 bool tbox_window_backend_take_event(tbox_window_backend *window, tbox_input_event *event);
 bool tbox_window_backend_pointer_position(const tbox_window_backend *window, double *x, double *y);
+bool tbox_window_backend_clipboard_copy(tbox_window_backend *window, const char *text, size_t length, uint32_t serial);
+bool tbox_window_backend_clipboard_paste(tbox_window_backend *window);
 void tbox_window_backend_present(tbox_window_backend *window, const tbox_display_list *list);
 
 #endif

@@ -2,6 +2,7 @@
 #define TBOX_RENDER_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 #include <tbox/font.h>
 #include <tbox/image.h>
@@ -65,6 +66,11 @@ typedef struct tbox_paint_op {
      * pipeline (background, border, mark highlight, text-decoration,
      * box-shadow). */
     double radius;
+
+    /* Optional text clipping rectangle. Used by single-line inputs so a
+     * long value cannot paint over the border or neighboring controls. */
+    bool has_clip;
+    tbox_rect clip;
 } tbox_paint_op;
 
 typedef struct tbox_display_list {
@@ -95,7 +101,7 @@ typedef struct tbox_display_list {
  * under text/images -- and only then its first_child and the rest of the
  * next_sibling chain, recursively, in the same order. See
  * ARCHITECTURE.md's "Render Pipeline" section (no stacking contexts,
- * clipping).
+ * general clipping; input text alone uses `clip` below).
  *
  * This never calls into <tbox/font.h>: a run's `font` pointer is only
  * copied into the resulting paint op's `face`, never dereferenced -- Output

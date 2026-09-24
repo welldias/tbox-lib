@@ -1,10 +1,13 @@
 #include <tbox/context.h>
+#include <tbox/output.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "context/tbox_context_hit_test.h"
+#include "output/tbox_key_repeat.h"
+#include "output/tbox_pointer_click.h"
 #include "test_support.h"
 
 /* NOVO v12 (Tarefa 3): forward declaration for tbox_ua_style_generate_css,
@@ -1479,7 +1482,7 @@ int tbox_test_context_run(void) {
             click_capture_reset(&capture);
             TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#one", 4, record_click, &capture) >= 0);
 
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
             tbox_context_run_frame(ctx, 320.0, 200.0, &list);
             bool focus_painted = false;
@@ -1490,15 +1493,15 @@ int tbox_test_context_run(void) {
                 }
             }
             TBOX_TEST_ASSERT_MSG(focus_painted, ":focus must reach CSS painting");
-            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, false, false}));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false}));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, false, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
             TBOX_TEST_ASSERT(capture.call_count == 1 && capture.node == one);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
             TBOX_TEST_ASSERT(capture.call_count == 2);
 
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
             tbox_context_run_frame(ctx, 320.0, 200.0, &list);
             bool clicked_two = false;
@@ -1511,10 +1514,10 @@ int tbox_test_context_run(void) {
                 }
             }
             TBOX_TEST_ASSERT_MSG(clicked_two, "pointer click must focus a rendered button without a handler");
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
             tbox_html_node_remove((tbox_html_node *)one);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
             tbox_context_close(ctx);
         }
@@ -1533,23 +1536,23 @@ int tbox_test_context_run(void) {
             const tbox_html_node *field = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
             int changes = 0;
             tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == field);
             /* Navigation through an initial HTML value must persist across
              * frames even before the first text insertion. */
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_LEFT, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_LEFT, true, false, false}));
             tbox_context_run_frame(ctx, 320.0, 180.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false}));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false, false}));
             tbox_context_run_frame(ctx, 320.0, 180.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_END, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_END, true, false, false}));
             TBOX_TEST_ASSERT(changes == 0);
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("é", 2)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_LEFT, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_LEFT, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("X", 1)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_BACKSPACE, true, false}));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DELETE, true, false}));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_BACKSPACE, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DELETE, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Z", 1)));
             TBOX_TEST_ASSERT(changes == 5);
             const tbox_html_attribute *value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
@@ -1565,7 +1568,7 @@ int tbox_test_context_run(void) {
                     list.items[i].rect.height > 5.0) painted_caret = true;
             }
             TBOX_TEST_ASSERT(painted_value && painted_caret);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) != field);
             bool clicked_field = false;
             for (int y = 0; y < 180 && !clicked_field; y++) {
@@ -1581,6 +1584,155 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "QZab"));
             tbox_context_close(ctx);
         }
+    }
+
+    /* Selection operates on UTF-8 boundaries and replaces or deletes the
+     * selected range with a single input notification per edit. */
+    {
+        tbox_context *ctx = open_cstr("<input value='aébc'>", "input { width: 60px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 200.0, 80.0, &list);
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, true, false}));
+            tbox_context_run_frame(ctx, 200.0, 80.0, &list);
+            bool highlighted = false;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                    list.items[i].color.r == 130 && list.items[i].rect.width > 0.0)
+                    highlighted = true;
+            }
+            TBOX_TEST_ASSERT(highlighted);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Z", 1)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_BACKSPACE, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_END, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_LEFT, true, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DELETE, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_LEFT, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Q", 1)));
+            const tbox_html_node *field = tbox_context_focused_node(ctx);
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "QZ"));
+            TBOX_TEST_ASSERT(changes == 4);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("!", 1)));
+            value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "!"));
+            TBOX_TEST_ASSERT(changes == 5);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Input text is clipped even before focus. Once focused, its origin
+     * scrolls left to keep the caret visible, while the clip stays fixed. */
+    {
+        tbox_context *ctx = open_cstr("<input value='abcdefghijklmnopqrstuvwxyz'>",
+            "input { width: 40px; border: 1px solid black; padding: 2px; background-color: white; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 80.0, &list);
+            const tbox_paint_op *text_op = NULL;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN) text_op = &list.items[i];
+            }
+            TBOX_TEST_ASSERT(text_op != NULL && text_op->has_clip && text_op->clip.width == 40.0);
+            tbox_rect input_clip = text_op != NULL ? text_op->clip : (tbox_rect){0};
+            uint32_t pixels[300 * 80];
+            for (size_t i = 0; i < 300 * 80; i++) pixels[i] = 0xffffffffu;
+            tbox_raster_display_list(pixels, 300, 80, &list);
+            if (text_op != NULL) {
+                int outside_x = (int)(text_op->clip.x + text_op->clip.width + 5.0);
+                for (int y = (int)text_op->clip.y; y < (int)(text_op->clip.y + text_op->clip.height); y++)
+                    TBOX_TEST_ASSERT(pixels[y * 300 + outside_x] == 0xffffffffu);
+            }
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            tbox_context_run_frame(ctx, 300.0, 80.0, &list);
+            bool scrolled = false, caret_inside = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind == TBOX_PAINT_TEXT_RUN && op->has_clip)
+                    scrolled = op->rect.x < op->clip.x;
+                if (op->kind == TBOX_PAINT_FILL_RECT && op->rect.width == 1.0 &&
+                    text_op != NULL && op->rect.x >= input_clip.x &&
+                    op->rect.x < input_clip.x + input_clip.width)
+                    caret_inside = true;
+            }
+            TBOX_TEST_ASSERT(scrolled && caret_inside);
+            for (size_t i = 0; i < 300 * 80; i++) pixels[i] = 0xffffffffu;
+            tbox_raster_display_list(pixels, 300, 80, &list);
+            int outside_x = (int)(input_clip.x + input_clip.width + 5.0);
+            for (int y = (int)input_clip.y; y < (int)(input_clip.y + input_clip.height); y++)
+                TBOX_TEST_ASSERT(pixels[y * 300 + outside_x] == 0xffffffffu);
+            tbox_context_dispatch_click(ctx, input_clip.x + 2.0, input_clip.y + 2.0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("!", 1)));
+            const tbox_html_node *field = tbox_context_focused_node(ctx);
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && value->value.size == 27 && value->value.data[0] == 'a');
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Mouse drag preserves its click anchor across UTF-8 characters. The
+     * selected bytes can be copied before cut and inserted again on paste. */
+    {
+        tbox_context *ctx = open_cstr("<input value='aébc'>", "input { width: 100px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 200.0, 80.0, &list);
+            const tbox_layout_box *box = NULL;
+            for (int y = 0; y < 80 && box == NULL; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)y);
+                if (hit != NULL && hit->node != NULL &&
+                    string_view_equal_cstr(hit->node->element.tag_name, "input")) box = hit;
+            }
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                tbox_context_dispatch_click(ctx, box->content_box.x + 70.0, box->content_box.y + 2.0);
+                TBOX_TEST_ASSERT(tbox_context_drag_select(ctx, box->content_box.x - 20.0));
+                tbox_string_view selected = tbox_context_selected_text(ctx);
+                TBOX_TEST_ASSERT(string_view_equal_cstr(selected, "aébc"));
+                char copied[6];
+                if (selected.size == 5) memcpy(copied, selected.data, 5);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx,
+                    (tbox_key_event){TBOX_KEY_DELETE, true, false, false}));
+                const tbox_html_node *field = tbox_context_focused_node(ctx);
+                const tbox_html_attribute *value = tbox_html_node_get_attribute(field,
+                    tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && value->value.size == 0);
+                if (selected.size == 5)
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make(copied, 5)));
+                value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "aébc"));
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    TBOX_TEST_ASSERT(tbox_pointer_is_double_click(1200, 1000, 12.0, 9.0, 10.0, 10.0));
+    TBOX_TEST_ASSERT(!tbox_pointer_is_double_click(1500, 1000, 12.0, 9.0, 10.0, 10.0));
+    TBOX_TEST_ASSERT(!tbox_pointer_is_double_click(1200, 1000, 20.0, 9.0, 10.0, 10.0));
+
+    /* Monotonic scheduler: initial delay, configured rate, disabled repeat,
+     * and bounded catch-up after a slow frame. */
+    {
+        uint64_t next = 400000000u;
+        TBOX_TEST_ASSERT(tbox_key_repeat_due(399000000u, &next, 20) == 0);
+        TBOX_TEST_ASSERT(tbox_key_repeat_due(400000000u, &next, 20) == 1);
+        TBOX_TEST_ASSERT(tbox_key_repeat_due(449000000u, &next, 20) == 0);
+        TBOX_TEST_ASSERT(tbox_key_repeat_due(450000000u, &next, 20) == 1);
+        TBOX_TEST_ASSERT(tbox_key_repeat_due(1000000000u, &next, 0) == 0);
+        TBOX_TEST_ASSERT(tbox_key_repeat_due(1000000000u, &next, 20) == 8);
+        TBOX_TEST_ASSERT(next > 1000000000u);
     }
 
     tbox_font_face_cache_destroy(fonts);

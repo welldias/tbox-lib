@@ -60,6 +60,7 @@ struct tbox_app {
      * spinning forever once the connection is gone. */
     bool closed;
     bool redraw_requested;
+    const tbox_html_node *paste_target;
 };
 #endif
 
@@ -242,6 +243,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     app->last_height = 0;
     app->closed      = false;
     app->redraw_requested = false;
+    app->paste_target = NULL;
 
     return app;
 }
@@ -466,12 +468,35 @@ void tbox_app_step(tbox_app *app) {
         switch (event.kind) {
         case TBOX_INPUT_POINTER_CLICK: {
             tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
+            if (event.data.click.double_click) {
+                tbox_context_dispatch_key(app->ctx,
+                    (tbox_key_event){TBOX_KEY_A, true, false, true});
+            }
             /* Clicking inside an already focused text field may move its
              * cursor without changing focus or firing a click handler. */
             dirty = true;
             break;
         }
+        case TBOX_INPUT_POINTER_DRAG:
+            if (tbox_context_drag_select(app->ctx, event.data.drag.x)) dirty = true;
+            break;
         case TBOX_INPUT_KEY:
+            if (event.data.key.pressed && event.data.key.control &&
+                (event.data.key.key == TBOX_KEY_C || event.data.key.key == TBOX_KEY_X)) {
+                tbox_string_view selected = tbox_context_selected_text(app->ctx);
+                if (selected.size > 0 && tbox_window_backend_clipboard_copy(app->backend,
+                        selected.data, selected.size, event.serial) &&
+                    event.data.key.key == TBOX_KEY_X) {
+                    if (tbox_context_dispatch_key(app->ctx,
+                            (tbox_key_event){TBOX_KEY_DELETE, true, false, false})) dirty = true;
+                }
+                break;
+            }
+            if (event.data.key.pressed && event.data.key.control && event.data.key.key == TBOX_KEY_V) {
+                app->paste_target = tbox_window_backend_clipboard_paste(app->backend) ?
+                    tbox_context_focused_node(app->ctx) : NULL;
+                break;
+            }
             if (tbox_context_dispatch_key(app->ctx, event.data.key)) {
                 dirty = true;
             }
@@ -481,6 +506,19 @@ void tbox_app_step(tbox_app *app) {
                     tbox_string_view_make(event.data.text.utf8, event.data.text.length))) {
                 dirty = true;
             }
+            break;
+        case TBOX_INPUT_PASTE:
+            if (app->paste_target != NULL &&
+                app->paste_target == tbox_context_focused_node(app->ctx)) {
+                for (size_t i = 0; i < event.data.paste.length; i++) {
+                    char *ch = &event.data.paste.utf8[i];
+                    if (*ch == '\r' || *ch == '\n' || *ch == '\t' || *ch == '\0') *ch = ' ';
+                }
+                if (tbox_context_dispatch_text(app->ctx,
+                        tbox_string_view_make(event.data.paste.utf8, event.data.paste.length))) dirty = true;
+            }
+            app->paste_target = NULL;
+            free(event.data.paste.utf8);
             break;
         }
     }

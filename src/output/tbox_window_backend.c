@@ -19,6 +19,8 @@ typedef struct tbox_window_backend_ops {
     void (*size)(const void *impl, int32_t *width, int32_t *height);
     bool (*take_event)(void *impl, tbox_input_event *event);
     bool (*pointer_position)(const void *impl, double *x, double *y);
+    bool (*clipboard_copy)(void *impl, const char *text, size_t length, uint32_t serial);
+    bool (*clipboard_paste)(void *impl);
     void (*present)(void *impl, const tbox_display_list *list);
 } tbox_window_backend_ops;
 
@@ -34,11 +36,14 @@ static bool wayland_should_close(const void *impl) { return tbox_backend_wayland
 static void wayland_size(const void *impl, int32_t *width, int32_t *height) { tbox_backend_wayland_size(impl, width, height); }
 static bool wayland_take_event(void *impl, tbox_input_event *event) { return tbox_backend_wayland_take_event(impl, event); }
 static bool wayland_pointer_position(const void *impl, double *x, double *y) { return tbox_backend_wayland_pointer_position(impl, x, y); }
+static bool wayland_clipboard_copy(void *impl, const char *text, size_t length, uint32_t serial) { return tbox_backend_wayland_clipboard_copy(impl, text, length, serial); }
+static bool wayland_clipboard_paste(void *impl) { return tbox_backend_wayland_clipboard_paste(impl); }
 static void wayland_present(void *impl, const tbox_display_list *list) { tbox_backend_wayland_present(impl, list); }
 
 static const tbox_window_backend_ops wayland_ops = {
     wayland_destroy, wayland_poll, wayland_should_close, wayland_size,
-    wayland_take_event, wayland_pointer_position, wayland_present
+    wayland_take_event, wayland_pointer_position, wayland_clipboard_copy,
+    wayland_clipboard_paste, wayland_present
 };
 #endif
 
@@ -92,6 +97,14 @@ bool tbox_window_backend_take_event(tbox_window_backend *window, tbox_input_even
 
 bool tbox_window_backend_pointer_position(const tbox_window_backend *window, double *x, double *y) {
     return window != NULL && window->ops->pointer_position(window->impl, x, y);
+}
+
+bool tbox_window_backend_clipboard_copy(tbox_window_backend *window, const char *text, size_t length, uint32_t serial) {
+    return window != NULL && window->ops->clipboard_copy(window->impl, text, length, serial);
+}
+
+bool tbox_window_backend_clipboard_paste(tbox_window_backend *window) {
+    return window != NULL && window->ops->clipboard_paste(window->impl);
 }
 
 void tbox_window_backend_present(tbox_window_backend *window, const tbox_display_list *list) {

@@ -41,7 +41,8 @@ typedef struct tbox_context_click_binding {
 typedef struct tbox_text_field {
     const tbox_html_node *node;
     char *value;
-    size_t length, capacity, cursor;
+    size_t length, capacity, cursor, anchor;
+    double scroll_x;
     struct tbox_text_field *next;
 } tbox_text_field;
 
@@ -426,23 +427,61 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
                 ctx->fonts, tbox_string_view_from_cstr(style->font_family),
                 style->font_weight_bold, style->font_italic, style->font_size);
             if (face != NULL) {
-                double x = box->content_box.x + tbox_font_measure_text(
-                    face, tbox_string_view_make(field->value, field->cursor));
-                double right = box->content_box.x + box->content_box.width - 1.0;
-                if (x > right) x = right;
+                double cursor_x = tbox_font_measure_text(face,
+                    tbox_string_view_make(field->value, field->cursor));
+                double visible_width = box->content_box.width - 1.0;
+                if (visible_width < 0.0) visible_width = 0.0;
+                if (cursor_x < field->scroll_x) field->scroll_x = cursor_x;
+                if (cursor_x > field->scroll_x + visible_width)
+                    field->scroll_x = cursor_x - visible_width;
+                double text_width = tbox_font_measure_text(face,
+                    tbox_string_view_make(field->value, field->length));
+                double max_scroll = text_width - visible_width;
+                if (max_scroll < 0.0) max_scroll = 0.0;
+                if (field->scroll_x > max_scroll) field->scroll_x = max_scroll;
+                double x = box->content_box.x + cursor_x - field->scroll_x;
                 double height = tbox_font_face_line_height(face);
                 if (height > box->content_box.height) height = box->content_box.height;
                 tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena,
-                    (out_list->count + 1) * sizeof(*items));
+                    (out_list->count + 2) * sizeof(*items));
                 if (items != NULL) {
-                    if (out_list->count > 0) memcpy(items, out_list->items, out_list->count * sizeof(*items));
-                    items[out_list->count] = (tbox_paint_op){
+                    size_t count = 0;
+                    for (size_t i = 0; i < out_list->count; i++) {
+                        tbox_paint_op op = out_list->items[i];
+                        bool input_text = op.kind == TBOX_PAINT_TEXT_RUN &&
+                            op.has_clip && op.clip.x == box->content_box.x &&
+                            op.clip.y == box->content_box.y &&
+                            op.text.data != NULL && box->text_run_count > 0 &&
+                            op.text.data == box->text_runs[0].text.data;
+                        if (input_text) {
+                            op.rect.x -= field->scroll_x;
+                            if (field->anchor != field->cursor) {
+                                size_t start = field->anchor < field->cursor ? field->anchor : field->cursor;
+                                size_t end = field->anchor > field->cursor ? field->anchor : field->cursor;
+                                double left = box->content_box.x - field->scroll_x +
+                                    tbox_font_measure_text(face, tbox_string_view_make(field->value, start));
+                                double right = box->content_box.x - field->scroll_x +
+                                    tbox_font_measure_text(face, tbox_string_view_make(field->value, end));
+                                if (left < box->content_box.x) left = box->content_box.x;
+                                if (right > box->content_box.x + box->content_box.width)
+                                    right = box->content_box.x + box->content_box.width;
+                                if (right > left) items[count++] = (tbox_paint_op){
+                                    .kind = TBOX_PAINT_FILL_RECT,
+                                    .rect = { left, box->content_box.y, right - left, height },
+                                    .color = { 130, 175, 235, 255 },
+                                };
+                            }
+                        }
+                        items[count++] = op;
+                    }
+                    double caret_width = box->content_box.width < 1.0 ? box->content_box.width : 1.0;
+                    items[count++] = (tbox_paint_op){
                         .kind = TBOX_PAINT_FILL_RECT,
-                        .rect = { x, box->content_box.y, 1.0, height },
+                        .rect = { x, box->content_box.y, caret_width, height },
                         .color = style->color,
                     };
                     out_list->items = items;
-                    out_list->count++;
+                    out_list->count = count;
                 }
             }
         }
@@ -633,7 +672,8 @@ static tbox_text_field *tbox_context_text_field(tbox_context *ctx, const tbox_ht
                 if (attribute->value.size > 0) {
                     memcpy(field->value, attribute->value.data, attribute->value.size);
                 }
-                field->length = field->cursor = attribute->value.size;
+                field->length = field->cursor = field->anchor = attribute->value.size;
+                field->scroll_x = 0.0;
                 field->value[field->length] = '\0';
                 tbox_context_bind_text_value(ctx, field);
             }
@@ -653,7 +693,7 @@ static tbox_text_field *tbox_context_text_field(tbox_context *ctx, const tbox_ht
     if (length > 0) memcpy(field->value, initial->value.data, length);
     field->value[length] = '\0';
     field->node = node;
-    field->length = field->cursor = length;
+    field->length = field->cursor = field->anchor = length;
     field->capacity = length + 1;
     field->next = ctx->text_fields;
     ctx->text_fields = field;
@@ -695,6 +735,26 @@ static size_t tbox_utf8_previous(const char *data, size_t at) {
     at--;
     while (at > 0 && ((unsigned char)data[at] & 0xc0) == 0x80) at--;
     return at;
+}
+
+static size_t tbox_context_cursor_at_x(const tbox_text_field *field, const tbox_layout_box *box,
+                                       const tbox_font_face *face, double x) {
+    double relative_x = x - box->content_box.x + field->scroll_x;
+    size_t best = 0;
+    for (size_t at = 0; at < field->length;) {
+        size_t next = tbox_utf8_next(field->value, field->length, at);
+        if (next == at) break;
+        double advance = tbox_font_measure_text(face,
+            tbox_string_view_make(field->value, next));
+        if (relative_x < advance) {
+            double previous = tbox_font_measure_text(face,
+                tbox_string_view_make(field->value, at));
+            return relative_x - previous < advance - relative_x ? at : next;
+        }
+        best = next;
+        at = next;
+    }
+    return best;
 }
 
 static bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node) {
@@ -841,27 +901,44 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
                 tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
                 style->font_italic, style->font_size);
             if (face != NULL) {
-                double relative_x = x - input_box->content_box.x;
-                size_t best = 0;
-                for (size_t at = 0; at < field->length;) {
-                    size_t next = tbox_utf8_next(field->value, field->length, at);
-                    if (next == at) break;
-                    double advance = tbox_font_measure_text(face,
-                        tbox_string_view_make(field->value, next));
-                    if (relative_x < advance) {
-                        double previous = tbox_font_measure_text(face,
-                            tbox_string_view_make(field->value, at));
-                        best = relative_x - previous < advance - relative_x ? at : next;
-                        break;
-                    }
-                    best = next;
-                    at = next;
-                }
+                size_t best = tbox_context_cursor_at_x(field, input_box, face, x);
                 field->cursor = best;
+                field->anchor = best;
             }
         }
     }
     return tbox_context_dispatch_click_node(ctx, box->node);
+}
+
+bool tbox_context_drag_select(tbox_context *ctx, double x) {
+    if (ctx == NULL || !tbox_context_is_text_input(ctx->focused_node) ||
+        !tbox_context_node_attached(ctx, ctx->focused_node) ||
+        !tbox_context_focusable(ctx, ctx->focused_node)) return false;
+    tbox_text_field *field = tbox_context_text_field(ctx, ctx->focused_node);
+    const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->focused_node);
+    if (field == NULL || box == NULL || box->style == NULL) return false;
+    const tbox_style *style = box->style;
+    const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
+        tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
+        style->font_italic, style->font_size);
+    if (face == NULL) return false;
+    size_t cursor = tbox_context_cursor_at_x(field, box, face, x);
+    if (cursor == field->cursor) return false;
+    field->cursor = cursor;
+    return true;
+}
+
+tbox_string_view tbox_context_selected_text(tbox_context *ctx) {
+    if (ctx == NULL || !tbox_context_is_text_input(ctx->focused_node) ||
+        !tbox_context_node_attached(ctx, ctx->focused_node) ||
+        !tbox_context_focusable(ctx, ctx->focused_node))
+        return tbox_string_view_make(NULL, 0);
+    tbox_text_field *field = tbox_context_text_field(ctx, ctx->focused_node);
+    if (field == NULL || field->anchor == field->cursor)
+        return tbox_string_view_make(NULL, 0);
+    size_t start = field->anchor < field->cursor ? field->anchor : field->cursor;
+    size_t end = field->anchor > field->cursor ? field->anchor : field->cursor;
+    return tbox_string_view_make(field->value + start, end - start);
 }
 
 bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
@@ -876,33 +953,57 @@ bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
         tbox_context_focusable(ctx, ctx->focused_node)) {
         tbox_text_field *field = tbox_context_text_field(ctx, ctx->focused_node);
         if (field == NULL) return false;
+        if (event.control && event.key == TBOX_KEY_A) {
+            bool changed = field->anchor != 0 || field->cursor != field->length;
+            field->anchor = 0;
+            field->cursor = field->length;
+            return changed;
+        }
         size_t start = field->cursor, end = field->cursor;
+        size_t old_anchor = field->anchor;
         switch (event.key) {
         case TBOX_KEY_LEFT:
-            field->cursor = tbox_utf8_previous(field->value, field->cursor);
-            return field->cursor != start;
+            if (!event.shift && field->anchor != field->cursor)
+                field->cursor = field->anchor < field->cursor ? field->anchor : field->cursor;
+            else
+                field->cursor = tbox_utf8_previous(field->value, field->cursor);
+            break;
         case TBOX_KEY_RIGHT:
-            field->cursor = tbox_utf8_next(field->value, field->length, field->cursor);
-            return field->cursor != start;
+            if (!event.shift && field->anchor != field->cursor)
+                field->cursor = field->anchor > field->cursor ? field->anchor : field->cursor;
+            else
+                field->cursor = tbox_utf8_next(field->value, field->length, field->cursor);
+            break;
         case TBOX_KEY_HOME:
             field->cursor = 0;
-            return start != 0;
+            break;
         case TBOX_KEY_END:
             field->cursor = field->length;
-            return start != field->length;
+            break;
         case TBOX_KEY_BACKSPACE:
-            start = tbox_utf8_previous(field->value, field->cursor);
+            if (field->anchor != field->cursor) {
+                start = field->anchor < field->cursor ? field->anchor : field->cursor;
+                end = field->anchor > field->cursor ? field->anchor : field->cursor;
+            } else start = tbox_utf8_previous(field->value, field->cursor);
             break;
         case TBOX_KEY_DELETE:
-            end = tbox_utf8_next(field->value, field->length, field->cursor);
+            if (field->anchor != field->cursor) {
+                start = field->anchor < field->cursor ? field->anchor : field->cursor;
+                end = field->anchor > field->cursor ? field->anchor : field->cursor;
+            } else end = tbox_utf8_next(field->value, field->length, field->cursor);
             break;
         default:
             return false;
         }
+        if (event.key == TBOX_KEY_LEFT || event.key == TBOX_KEY_RIGHT ||
+            event.key == TBOX_KEY_HOME || event.key == TBOX_KEY_END) {
+            if (!event.shift) field->anchor = field->cursor;
+            return field->cursor != start || field->anchor != old_anchor;
+        }
         if (start == end) return false;
         memmove(field->value + start, field->value + end, field->length - end + 1);
         field->length -= end - start;
-        field->cursor = start;
+        field->cursor = field->anchor = start;
         tbox_context_sync_text_value(ctx, field);
         return true;
     }
@@ -932,8 +1033,12 @@ bool tbox_context_dispatch_text(tbox_context *ctx, tbox_string_view text) {
         i = next;
     }
     tbox_text_field *field = tbox_context_text_field(ctx, ctx->focused_node);
-    if (field == NULL || text.size > SIZE_MAX - field->length - 1) return false;
-    size_t needed = field->length + text.size + 1;
+    if (field == NULL) return false;
+    size_t start = field->anchor < field->cursor ? field->anchor : field->cursor;
+    size_t end = field->anchor > field->cursor ? field->anchor : field->cursor;
+    size_t remaining = field->length - (end - start);
+    if (text.size > SIZE_MAX - remaining - 1) return false;
+    size_t needed = remaining + text.size + 1;
     if (needed > field->capacity) {
         size_t capacity = field->capacity;
         while (capacity < needed) {
@@ -945,11 +1050,11 @@ bool tbox_context_dispatch_text(tbox_context *ctx, tbox_string_view text) {
         field->value = value;
         field->capacity = capacity;
     }
-    memmove(field->value + field->cursor + text.size,
-            field->value + field->cursor, field->length - field->cursor + 1);
-    memcpy(field->value + field->cursor, text.data, text.size);
-    field->length += text.size;
-    field->cursor += text.size;
+    memmove(field->value + start + text.size,
+            field->value + end, field->length - end + 1);
+    memcpy(field->value + start, text.data, text.size);
+    field->length = remaining + text.size;
+    field->cursor = field->anchor = start + text.size;
     tbox_context_sync_text_value(ctx, field);
     return true;
 }
