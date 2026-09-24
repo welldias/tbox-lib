@@ -75,9 +75,13 @@ The example also compiles
 without Wayland or Fontconfig, but needs both to open a window.
 
 `build/tests/tbox_cmp tests/assets` compares the renderer against image
-references when OpenCV and Fontconfig are installed. Its current fixtures
-include unsupported features, so a `DIFFERENT` result is diagnostic rather
-than a test failure.
+references when OpenCV and Fontconfig are installed. It reports SSIM for
+diagnosis and uses local content, edge, and color checks for its verdict,
+allowing small glyph and position differences. Annotated images are written
+to the temporary directory printed at startup. Its current fixtures include
+unsupported features, so a `DIFFERENT` result is diagnostic rather than a
+test failure. The former optional SSIM threshold is accepted with a warning
+and no longer affects the verdict.
 
 ## Roadmap
 

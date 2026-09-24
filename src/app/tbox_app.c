@@ -79,7 +79,8 @@ static tbox_font_source *tbox_app_resolve_font_source(bool bold, const void **ou
     }
 
     tbox_font_query query = {
-        .family = tbox_string_view_make("sans-serif", strlen("sans-serif")),
+        // .family = tbox_string_view_make("sans-serif", strlen("sans-serif")),
+        .family = tbox_string_view_make("serif", strlen("serif")),
         .bold   = bold,
         .italic = false,
     };
@@ -195,7 +196,7 @@ static void tbox_app_dirname(const char *path, char *out, size_t out_size) {
 #if TBOX_HAS_WINDOW_BACKEND
 static tbox_app *tbox_app_create_impl(const char *html, const char *css, const char *base_dir, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
     tbox_font_source *resolver_source = NULL;
-    tbox_font_face_cache *fonts = tbox_app_build_font_cache(&resolver_source);
+    tbox_font_face_cache *fonts       = tbox_app_build_font_cache(&resolver_source);
     if (fonts == NULL) {
         return NULL;
     }
@@ -234,16 +235,16 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
         return NULL;
     }
 
-    app->fonts       = fonts;
-    app->resolver_source = resolver_source;
-    app->images      = images;
-    app->ctx         = ctx;
-    app->backend     = backend;
-    app->last_width  = 0;
-    app->last_height = 0;
-    app->closed      = false;
+    app->fonts            = fonts;
+    app->resolver_source  = resolver_source;
+    app->images           = images;
+    app->ctx              = ctx;
+    app->backend          = backend;
+    app->last_width       = 0;
+    app->last_height      = 0;
+    app->closed           = false;
     app->redraw_requested = false;
-    app->paste_target = NULL;
+    app->paste_target     = NULL;
 
     return app;
 }
@@ -394,7 +395,7 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
     bool ok = false;
 
     tbox_font_source *resolver_source = NULL;
-    tbox_font_face_cache *fonts = tbox_app_build_font_cache(&resolver_source);
+    tbox_font_face_cache *fonts       = tbox_app_build_font_cache(&resolver_source);
     if (fonts != NULL) {
         tbox_image_cache *images = tbox_image_cache_create(base_dir);
         if (images != NULL) {
@@ -460,7 +461,7 @@ void tbox_app_step(tbox_app *app) {
         return;
     }
 
-    bool dirty = app->redraw_requested;
+    bool dirty            = app->redraw_requested;
     app->redraw_requested = false;
 
     tbox_input_event event;
@@ -473,8 +474,7 @@ void tbox_app_step(tbox_app *app) {
             }
             tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
             if (event.data.click.double_click) {
-                tbox_context_dispatch_key(app->ctx,
-                    (tbox_key_event){TBOX_KEY_A, true, false, true});
+                tbox_context_dispatch_key(app->ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true });
             }
             /* Clicking inside an already focused text field may move its
              * cursor without changing focus or firing a click handler. */
@@ -484,30 +484,27 @@ void tbox_app_step(tbox_app *app) {
         case TBOX_INPUT_POINTER_DRAG:
             if (tbox_context_scrollbar_drag(app->ctx, event.data.drag.x, event.data.drag.y))
                 dirty = true;
-            else if (tbox_context_drag_select_at(app->ctx, event.data.drag.x, event.data.drag.y)) dirty = true;
+            else if (tbox_context_drag_select_at(app->ctx, event.data.drag.x, event.data.drag.y))
+                dirty = true;
             break;
         case TBOX_INPUT_POINTER_RELEASE:
             tbox_context_scrollbar_release(app->ctx);
             break;
         case TBOX_INPUT_POINTER_SCROLL:
-            if (tbox_context_scroll(app->ctx, event.data.scroll.x, event.data.scroll.y,
-                    event.data.scroll.delta_y)) dirty = true;
+            if (tbox_context_scroll(app->ctx, event.data.scroll.x, event.data.scroll.y, event.data.scroll.delta_y))
+                dirty = true;
             break;
         case TBOX_INPUT_KEY:
-            if (event.data.key.pressed && event.data.key.control &&
-                (event.data.key.key == TBOX_KEY_C || event.data.key.key == TBOX_KEY_X)) {
+            if (event.data.key.pressed && event.data.key.control && (event.data.key.key == TBOX_KEY_C || event.data.key.key == TBOX_KEY_X)) {
                 tbox_string_view selected = tbox_context_selected_text(app->ctx);
-                if (selected.size > 0 && tbox_window_backend_clipboard_copy(app->backend,
-                        selected.data, selected.size, event.serial) &&
-                    event.data.key.key == TBOX_KEY_X) {
-                    if (tbox_context_dispatch_key(app->ctx,
-                            (tbox_key_event){TBOX_KEY_DELETE, true, false, false})) dirty = true;
+                if (selected.size > 0 && tbox_window_backend_clipboard_copy(app->backend, selected.data, selected.size, event.serial) && event.data.key.key == TBOX_KEY_X) {
+                    if (tbox_context_dispatch_key(app->ctx, (tbox_key_event){ TBOX_KEY_DELETE, true, false, false }))
+                        dirty = true;
                 }
                 break;
             }
             if (event.data.key.pressed && event.data.key.control && event.data.key.key == TBOX_KEY_V) {
-                app->paste_target = tbox_window_backend_clipboard_paste(app->backend) ?
-                    tbox_context_focused_node(app->ctx) : NULL;
+                app->paste_target = tbox_window_backend_clipboard_paste(app->backend) ? tbox_context_focused_node(app->ctx) : NULL;
                 break;
             }
             if (tbox_context_dispatch_key(app->ctx, event.data.key)) {
@@ -517,31 +514,30 @@ void tbox_app_step(tbox_app *app) {
             }
             break;
         case TBOX_INPUT_TEXT:
-            if (tbox_context_dispatch_text(app->ctx,
-                    tbox_string_view_make(event.data.text.utf8, event.data.text.length))) {
+            if (tbox_context_dispatch_text(app->ctx, tbox_string_view_make(event.data.text.utf8, event.data.text.length))) {
                 dirty = true;
             }
             break;
         case TBOX_INPUT_PASTE:
-            if (app->paste_target != NULL &&
-                app->paste_target == tbox_context_focused_node(app->ctx)) {
+            if (app->paste_target != NULL && app->paste_target == tbox_context_focused_node(app->ctx)) {
                 const tbox_html_node *target = app->paste_target;
-                bool multiline = target->type == TBOX_HTML_NODE_ELEMENT &&
-                    target->element.tag_name.size == 8 &&
-                    memcmp(target->element.tag_name.data, "textarea", 8) == 0;
-                size_t output = 0;
+                bool multiline               = target->type == TBOX_HTML_NODE_ELEMENT && target->element.tag_name.size == 8 && memcmp(target->element.tag_name.data, "textarea", 8) == 0;
+                size_t output                = 0;
                 for (size_t i = 0; i < event.data.paste.length; i++) {
                     char ch = event.data.paste.utf8[i];
                     if (multiline) {
                         if (ch == '\r') {
-                            if (i + 1 < event.data.paste.length && event.data.paste.utf8[i + 1] == '\n') i++;
+                            if (i + 1 < event.data.paste.length && event.data.paste.utf8[i + 1] == '\n')
+                                i++;
                             ch = '\n';
-                        } else if (ch == '\0') ch = ' ';
-                    } else if (ch == '\r' || ch == '\n' || ch == '\t' || ch == '\0') ch = ' ';
+                        } else if (ch == '\0')
+                            ch = ' ';
+                    } else if (ch == '\r' || ch == '\n' || ch == '\t' || ch == '\0')
+                        ch = ' ';
                     event.data.paste.utf8[output++] = ch;
                 }
-                if (tbox_context_dispatch_text(app->ctx,
-                        tbox_string_view_make(event.data.paste.utf8, output))) dirty = true;
+                if (tbox_context_dispatch_text(app->ctx, tbox_string_view_make(event.data.paste.utf8, output)))
+                    dirty = true;
             }
             app->paste_target = NULL;
             free(event.data.paste.utf8);
@@ -602,28 +598,54 @@ bool tbox_app_backend_available(void) {
 }
 
 tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height) {
-    (void)html; (void)css; (void)width; (void)height;
+    (void)html;
+    (void)css;
+    (void)width;
+    (void)height;
     return NULL;
 }
 
 tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
-    (void)html; (void)css; (void)width; (void)height; (void)config;
+    (void)html;
+    (void)css;
+    (void)width;
+    (void)height;
+    (void)config;
     return NULL;
 }
 
 tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height) {
-    (void)html_path; (void)css_path; (void)width; (void)height;
+    (void)html_path;
+    (void)css_path;
+    (void)width;
+    (void)height;
     return NULL;
 }
 
 tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
-    (void)html_path; (void)css_path; (void)width; (void)height; (void)config;
+    (void)html_path;
+    (void)css_path;
+    (void)width;
+    (void)height;
+    (void)config;
     return NULL;
 }
 
-tbox_context *tbox_app_context(tbox_app *app) { (void)app; return NULL; }
-void tbox_app_request_redraw(tbox_app *app) { (void)app; }
-void tbox_app_step(tbox_app *app) { (void)app; }
-bool tbox_app_should_close(const tbox_app *app) { (void)app; return true; }
-void tbox_app_close(tbox_app *app) { (void)app; }
+tbox_context *tbox_app_context(tbox_app *app) {
+    (void)app;
+    return NULL;
+}
+void tbox_app_request_redraw(tbox_app *app) {
+    (void)app;
+}
+void tbox_app_step(tbox_app *app) {
+    (void)app;
+}
+bool tbox_app_should_close(const tbox_app *app) {
+    (void)app;
+    return true;
+}
+void tbox_app_close(tbox_app *app) {
+    (void)app;
+}
 #endif
