@@ -115,6 +115,9 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
         case TBOX_CSS_ATTR_EXISTS:
             return true;
         case TBOX_CSS_ATTR_EQUALS:
+            if (tbox_string_view_equal_cstr(node->element.tag_name, "input") &&
+                tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("type", 4)))
+                return tbox_string_view_equal_ascii_ci(attribute->value, item->attribute_value);
             return tbox_string_view_equal(attribute->value, item->attribute_value);
         case TBOX_CSS_ATTR_INCLUDES:
             return tbox_css_selector_token_list_contains(attribute->value, item->attribute_value);
@@ -138,6 +141,15 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
         }
         if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("focus", 5))) {
             return node == tbox_css_selector_focused_node;
+        }
+        if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("checked", 7))) {
+            if (node->type != TBOX_HTML_NODE_ELEMENT ||
+                !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+            const tbox_html_attribute *type = tbox_css_selector_find_attribute(node, tbox_string_view_make("type", 4));
+            return type != NULL &&
+                   (tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("checkbox", 8)) ||
+                    tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("radio", 5))) &&
+                   tbox_css_selector_find_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
         }
         return false;
     }

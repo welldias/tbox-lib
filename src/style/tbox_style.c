@@ -582,19 +582,25 @@ static tbox_style_length tbox_style_resolve_length_property(const tbox_css_compu
  * declaration (author OR the UA stylesheet) still wins outright, which is
  * exactly what calling this ONLY when `tbox_style_resolve_length_property`
  * already came back AUTO (no cascade declaration won) already guarantees,
- * with zero cascade/specificity machinery of its own. `<img>`-only, and
+ * with zero cascade/specificity machinery of its own. Applies to `<img>` and
+ * `<input type="image">`, and is
  * deliberately narrow: the first place Style reads a plain HTML attribute
  * for anything beyond `style`/`class`/`id` (see tbox_style_resolve's own
  * `(void)node` comment below, still true for every OTHER property). Returns
- * AUTO (a no-op override) unless `node` is an ELEMENT `<img>` with a
+ * AUTO (a no-op override) unless `node` is an image element with a
  * `name`-named attribute (e.g. `name == "width"`) whose value parses as a
  * bare number via tbox_style_parse_number (e.g. "100" -- not "100px", real
  * HTML doesn't allow a unit here). */
 static tbox_style_length tbox_style_resolve_img_dimension_attribute(const tbox_html_node *node, const char *name) {
     tbox_style_length result = { TBOX_STYLE_LENGTH_AUTO, 0.0 };
-    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("img"))) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT) {
         return result;
     }
+    bool is_img = tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("img"));
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("type"));
+    bool is_image_input = tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("input")) &&
+        type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_from_cstr("image"));
+    if (!is_img && !is_image_input) return result;
 
     const tbox_html_attribute *attr = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr(name));
     if (attr == NULL) {
@@ -610,7 +616,7 @@ static tbox_style_length tbox_style_resolve_img_dimension_attribute(const tbox_h
 }
 
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed) {
-    /* `node` is used below ONLY by width/height's `<img>` HTML-attribute
+    /* `node` is used below by width/height's image HTML-attribute
      * fallback (tbox_style_resolve_img_dimension_attribute) -- every other
      * property here is still a pure function of `computed`/`parent_style`,
      * unchanged from v0's original "kept in the signature for per-tag

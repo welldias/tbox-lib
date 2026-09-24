@@ -94,6 +94,9 @@ int tbox_test_font_run(void) {
     TBOX_TEST_ASSERT(face != NULL);
 
     if (face != NULL) {
+        TBOX_TEST_ASSERT(tbox_font_face_has_glyph(face, 'A'));
+        TBOX_TEST_ASSERT(!tbox_font_face_has_glyph(face, 0x2713));
+
         /* 2: measuring an empty string is 0. */
         double empty_width = tbox_font_measure_text(face, tbox_string_view_make("", 0));
         TBOX_TEST_ASSERT(empty_width == 0.0);

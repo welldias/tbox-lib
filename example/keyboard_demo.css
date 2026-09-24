@@ -9,6 +9,11 @@ button:focus {
     background-color: yellow;
 }
 
+body {
+    height: 760px;
+    overflow-y: auto;
+}
+
 input {
     width: 230px;
     margin: 8px 0px;
@@ -17,6 +22,57 @@ input {
 
 input:focus {
     border: 2px solid blue;
+}
+
+input[type=checkbox] {
+    width: 12px;
+    height: 12px;
+    padding: 0px;
+    margin: 8px 0px;
+}
+
+input[type=radio] {
+    width: 12px;
+    height: 12px;
+    padding: 0px;
+    margin: 8px 0px;
+    border-radius: 7px;
+}
+
+input[type=range] {
+    width: 160px;
+    height: 20px;
+    padding: 0px;
+    margin: 8px 0px;
+}
+
+input[type=color] {
+    width: 48px;
+    height: 24px;
+    padding: 2px;
+    margin: 8px 0px;
+}
+
+input[type=date] {
+    width: 120px;
+    margin: 8px 0px;
+}
+
+input[type=datetime-local] {
+    width: 175px;
+    margin: 8px 0px;
+}
+
+input[type=time], input[type=week] {
+    width: 120px;
+    margin: 8px 0px;
+}
+
+input[type=file] {
+    width: 240px;
+    height: 24px;
+    padding: 2px;
+    margin: 8px 0px;
 }
 
 textarea {

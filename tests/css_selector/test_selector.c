@@ -291,5 +291,25 @@ int tbox_test_css_selector_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* HTML input type is an ASCII case-insensitive enumerated attribute;
+     * ordinary attribute values remain case-sensitive. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><input type='CHECKBOX'><input type='button'></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *checkbox = root->first_child->first_child;
+        tbox_css_selector_node_set set = select_cstr(root, "input[type=checkbox]");
+        TBOX_TEST_ASSERT(set.count == 1 && set.items[0] == checkbox);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_css_selector_node_set checked = select_cstr(root, "input:checked");
+        TBOX_TEST_ASSERT(checked.count == 0);
+        tbox_css_selector_node_set_destroy(&checked);
+        tbox_html_node_set_attribute(doc, (tbox_html_node *)checkbox,
+                                     tbox_string_view_make("checked", 7), tbox_string_view_make(NULL, 0));
+        checked = select_cstr(root, "input:checked");
+        TBOX_TEST_ASSERT(checked.count == 1 && checked.items[0] == checkbox);
+        tbox_css_selector_node_set_destroy(&checked);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

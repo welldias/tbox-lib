@@ -9,6 +9,7 @@
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
+#include "html_parser/tbox_html_entities.h"
 
 /* v0's fallback style for an ELEMENT node missing from `styles` -- should
  * not normally happen (the Style layer resolves every ELEMENT node), but
@@ -43,6 +44,27 @@ static const tbox_style *tbox_layout_style_or_default(const tbox_style_table *st
     return style != NULL ? style : &tbox_layout_default_style;
 }
 
+static bool tbox_layout_is_hidden_input(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("hidden", 6));
+}
+
+static bool tbox_layout_is_image_input(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("image", 5));
+}
+
+static bool tbox_layout_is_password_input(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("password", 8));
+}
+
 /* The fixed tag-name list that gets text-box treatment (see
  * ARCHITECTURE.md's "Layout Tree" section) -- checked by plain byte-exact
  * comparison since tbox_html_node tag names are already lowercase ASCII.
@@ -62,7 +84,22 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
     }
     if (tbox_string_view_equal_cstr(node->element.tag_name, "input")) {
         const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
-        return type == NULL || tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("text", 4));
+        return type == NULL ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("text", 4)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("email", 5)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("number", 6)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("password", 8)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("search", 6)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("tel", 3)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("url", 3)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("button", 6)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("reset", 5)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("submit", 6)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("date", 4)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("time", 4)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("week", 4)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("month", 5)) ||
+               tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("datetime-local", 14));
     }
     if (tbox_string_view_equal_cstr(node->element.tag_name, "select") ||
         tbox_string_view_equal_cstr(node->element.tag_name, "textarea")) return true;
@@ -75,6 +112,48 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
         }
     }
     return false;
+}
+
+static bool tbox_layout_is_checked_checkbox(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    return type != NULL &&
+           tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("checkbox", 8)) &&
+           tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
+}
+
+static void tbox_layout_build_checkbox_checkmark(tbox_arena *arena, const tbox_html_node *node,
+                                                  const tbox_style *style, tbox_font_face_cache *fonts,
+                                                  tbox_layout_box *box) {
+    if (!tbox_layout_is_checked_checkbox(node) || fonts == NULL) return;
+
+    tbox_string_view entity = tbox_string_view_make("&checkmark;", 11);
+    tbox_string_view checkmark = tbox_html_decode_entities(arena, entity);
+    if (checkmark.size != 3) return;
+
+    double size = box->content_box.height;
+    if (size > 14.0) size = 14.0;
+    if (size <= 0.0) return;
+    const tbox_font_face *face = tbox_font_face_cache_get(fonts,
+        tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
+        style->font_italic, size);
+    if (!tbox_font_face_has_glyph(face, 0x2713))
+        face = tbox_font_face_cache_get(fonts, tbox_string_view_make("DejaVu Sans", 11),
+                                        false, false, size);
+    if (!tbox_font_face_has_glyph(face, 0x2713)) return;
+
+    double width = tbox_font_measure_text(face, checkmark);
+    double line_height = tbox_font_face_line_height(face);
+    tbox_layout_text_run *run = tbox_arena_alloc_zero(arena, sizeof(*run));
+    run->rect = (tbox_rect){box->content_box.x + (box->content_box.width - width) / 2.0,
+                            box->content_box.y + (box->content_box.height - line_height) / 2.0,
+                            width, line_height};
+    run->text = checkmark;
+    run->font = face;
+    run->style = style;
+    box->text_runs = run;
+    box->text_run_count = 1;
 }
 
 static unsigned tbox_layout_textarea_size(const tbox_html_node *node, const char *name, unsigned fallback) {
@@ -325,6 +404,7 @@ static bool tbox_layout_has_img_child(const tbox_html_node *node) {
  * behavior identical to before. */
 static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_vector *words) {
     for (const tbox_html_node *child = first_sibling; child != end_exclusive; child = child->next_sibling) {
+        if (tbox_layout_is_hidden_input(child)) continue;
         /* NOVO v11: a <br> child forces a line break -- checked BEFORE the
          * TEXT branch below and independently of the `display == INLINE`
          * gate an ELEMENT child otherwise needs (see ARCHITECTURE.md): <br>
@@ -815,13 +895,36 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
     tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
     if (is_input) {
         const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+        const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+        tbox_string_view label = value != NULL ? value->value :
+            type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("reset", 5)) ?
+                tbox_string_view_make("Reset", 5) :
+            type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("submit", 6)) ?
+                tbox_string_view_make("Submit", 6) : tbox_string_view_make(NULL, 0);
         const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
-        if (value != NULL && value->value.size > 0 && face != NULL) {
+        if (label.size > 0 && face != NULL) {
+            tbox_string_view display = label;
+            if (tbox_layout_is_password_input(node)) {
+                bool bullet = tbox_font_face_has_glyph(face, 0x2022);
+                size_t count = 0;
+                for (size_t i = 0; i < label.size; i++)
+                    if (((unsigned char)label.data[i] & 0xc0) != 0x80) count++;
+                size_t unit = bullet ? 3 : 1;
+                display = tbox_string_view_make(NULL, 0);
+                char *masked = count <= SIZE_MAX / unit ? tbox_arena_alloc(arena, count * unit) : NULL;
+                if (masked != NULL) {
+                    for (size_t i = 0; i < count; i++) {
+                        if (bullet) memcpy(masked + i * unit, "\xe2\x80\xa2", 3);
+                        else masked[i] = '*';
+                    }
+                    display = tbox_string_view_make(masked, count * unit);
+                }
+            }
             tbox_layout_word *word = (tbox_layout_word *)tbox_vector_push(&words);
-            word->text = value->value;
+            word->text = display;
             word->face = face;
             word->style = style;
-            word->width = tbox_font_measure_text(face, value->value);
+            word->width = tbox_font_measure_text(face, display);
             word->space_width = 0.0;
             word->image = NULL;
             word->image_height = 0.0;
@@ -1036,6 +1139,7 @@ static bool tbox_layout_is_inline_run_trigger(tbox_arena *arena, const tbox_html
     }
 
     if (child->type == TBOX_HTML_NODE_ELEMENT) {
+        if (tbox_layout_is_hidden_input(child)) return false;
         const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
         bool is_out_of_flow            = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED);
         return child_style->display == TBOX_STYLE_DISPLAY_INLINE && !is_out_of_flow;
@@ -1059,6 +1163,8 @@ static const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *ru
         if (node->type != TBOX_HTML_NODE_ELEMENT) {
             continue; /* TEXT (any content), COMMENT, DOCTYPE: transparent */
         }
+
+        if (tbox_layout_is_hidden_input(node)) continue;
 
         const tbox_style *node_style = tbox_layout_style_or_default(styles, node);
         if (node_style->display == TBOX_STYLE_DISPLAY_NONE) {
@@ -1509,7 +1615,7 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
         }
 
         const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
-        if (child_style->display == TBOX_STYLE_DISPLAY_NONE) {
+        if (tbox_layout_is_hidden_input(child) || child_style->display == TBOX_STYLE_DISPLAY_NONE) {
             child = child->next_sibling;
             continue;
         }
@@ -1585,6 +1691,17 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
 static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count) {
     const tbox_style *style = tbox_layout_style_or_default(styles, node);
     bool is_text_tag        = tbox_layout_is_text_tag(node);
+    bool is_image_input     = tbox_layout_is_image_input(node);
+    const tbox_html_attribute *image_src = is_image_input ?
+        tbox_html_node_get_attribute(node, tbox_string_view_make("src", 3)) : NULL;
+    const tbox_image *input_image = image_src != NULL ? tbox_image_cache_get(images, image_src->value) : NULL;
+    const tbox_html_attribute *image_alt = is_image_input && input_image == NULL ?
+        tbox_html_node_get_attribute(node, tbox_string_view_make("alt", 3)) : NULL;
+    tbox_string_view fallback_text = image_alt != NULL ?
+        tbox_string_collapse_whitespace(arena, image_alt->value) : tbox_string_view_make(NULL, 0);
+    const tbox_font_face *fallback_face = fallback_text.size > 0 ?
+        tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family),
+                                 style->font_weight_bold, style->font_italic, style->font_size) : NULL;
 
     /* NOVO (table support): dispatched by TAG NAME, not style->display --
      * <table>/<tr> already default to the v0 BLOCK fallback (correct for
@@ -1646,6 +1763,17 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     case TBOX_STYLE_LENGTH_AUTO:
     default:
         content_width = container.width - margin_left - margin_right - padding_left - padding_right - 2.0 * effective_border;
+        if (is_image_input) {
+            content_width = input_image != NULL ? (double)input_image->width :
+                fallback_face != NULL ? tbox_font_measure_text(fallback_face, fallback_text) : 16.0;
+            if (input_image != NULL && input_image->height > 0) {
+                if (style->height.kind == TBOX_STYLE_LENGTH_PX)
+                    content_width = style->height.value * input_image->width / input_image->height;
+                else if (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)
+                    content_width = (style->height.value / 100.0 * container.height) *
+                                    input_image->width / input_image->height;
+            }
+        }
         if (tbox_string_view_equal_cstr(node->element.tag_name, "textarea")) {
             const tbox_font_face *face = tbox_font_face_cache_get(fonts,
                 tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
@@ -1743,7 +1871,15 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     }
 
     double content_height;
-    if (is_text_tag) {
+    if (is_image_input) {
+        content_height = input_image != NULL ? (double)input_image->height :
+            fallback_face != NULL ? tbox_font_face_line_height(fallback_face) : 16.0;
+        if (style->height.kind == TBOX_STYLE_LENGTH_PX) content_height = style->height.value;
+        else if (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)
+            content_height = style->height.value / 100.0 * container.height;
+        else if (input_image != NULL && input_image->width > 0)
+            content_height = content_width * input_image->height / input_image->width;
+    } else if (is_text_tag) {
         /* Text-tag leaf: no child boxes even though the DOM node may have
          * element descendants (e.g. <b> inside a <p>) -- those only
          * contribute words to this box's own text_runs (NOVO v2, real
@@ -1878,6 +2014,19 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     box->margin_box.width  = box->border_box.width + margin_left + margin_right;
     box->margin_box.height = box->border_box.height + margin_top + margin_bottom;
 
+    if (is_image_input && (input_image != NULL || fallback_face != NULL)) {
+        tbox_layout_text_run *run = tbox_arena_alloc_zero(arena, sizeof(*run));
+        run->rect = box->content_box;
+        run->text = fallback_text;
+        run->font = fallback_face;
+        run->style = style;
+        run->image = input_image;
+        box->text_runs = run;
+        box->text_run_count = 1;
+    }
+
+    tbox_layout_build_checkbox_checkmark(arena, node, style, fonts, box);
+
     return box;
 }
 
@@ -1908,7 +2057,8 @@ tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root
         return NULL;
     }
 
-    if (tbox_layout_style_or_default(styles, element)->display == TBOX_STYLE_DISPLAY_NONE) {
+    if (tbox_layout_is_hidden_input(element) ||
+        tbox_layout_style_or_default(styles, element)->display == TBOX_STYLE_DISPLAY_NONE) {
         return NULL;
     }
 

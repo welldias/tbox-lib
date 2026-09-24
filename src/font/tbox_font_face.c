@@ -109,6 +109,10 @@ double tbox_font_face_ascent(const tbox_font_face *face) {
     return face->ft_face->size->metrics.ascender / 64.0;
 }
 
+bool tbox_font_face_has_glyph(const tbox_font_face *face, uint32_t codepoint) {
+    return face != NULL && FT_Get_Char_Index(face->ft_face, (FT_ULong)codepoint) != 0;
+}
+
 double tbox_font_measure_text(const tbox_font_face *face, tbox_string_view text) {
     if (face == NULL || text.size == 0) {
         return 0.0;

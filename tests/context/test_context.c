@@ -1,9 +1,11 @@
 #include <tbox/context.h>
+#include <tbox/image.h>
 #include <tbox/output.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "context/tbox_context_hit_test.h"
 #include "output/tbox_key_repeat.h"
@@ -87,6 +89,12 @@ static const tbox_layout_box *find_layout_box(const tbox_layout_box *box, const 
     return NULL;
 }
 
+static const tbox_layout_box *find_context_box(const tbox_context *ctx, const tbox_html_node *node) {
+    const tbox_layout_box *root = tbox_context_hit_test(ctx, 10.0, 10.0);
+    while (root != NULL && root->parent != NULL) root = root->parent;
+    return find_layout_box(root, node);
+}
+
 /* Shared by every tbox_context_on_click test below: a click_capture is
  * handed in as `userdata` and a handler fills it in so the test can inspect
  * what fired (or that nothing did) after tbox_context_dispatch_click
@@ -131,6 +139,96 @@ static void record_input(tbox_context *ctx, tbox_html_node *node, tbox_string_vi
     (void)node;
     (void)value;
     (*(int *)userdata)++;
+}
+
+typedef struct color_capture {
+    int count;
+    char value[8];
+    const tbox_html_node *node;
+} color_capture;
+
+static void record_color_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+    (void)ctx;
+    color_capture *capture = userdata;
+    capture->count++;
+    capture->node = node;
+    if (value.size == 7) memcpy(capture->value, value.data, 7);
+    capture->value[7] = '\0';
+}
+
+typedef struct date_capture {
+    int count;
+    char value[11];
+    const tbox_html_node *node;
+} date_capture;
+
+typedef struct month_capture {
+    int count;
+    char value[8];
+    const tbox_html_node *node;
+} month_capture;
+
+typedef struct submit_capture {
+    int count;
+    const tbox_html_node *form;
+    const tbox_html_node *submitter;
+} submit_capture;
+
+static void record_submit(tbox_context *ctx, tbox_html_node *form,
+                          tbox_html_node *submitter, void *userdata) {
+    (void)ctx;
+    submit_capture *capture = userdata;
+    capture->count++;
+    capture->form = form;
+    capture->submitter = submitter;
+}
+
+static void record_month_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+    (void)ctx;
+    month_capture *capture = userdata;
+    capture->count++;
+    capture->node = node;
+    if (value.size == 7) memcpy(capture->value, value.data, 7);
+    capture->value[7] = '\0';
+}
+
+static void record_date_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+    (void)ctx;
+    date_capture *capture = userdata;
+    capture->count++;
+    capture->node = node;
+    if (value.size == 10) memcpy(capture->value, value.data, 10);
+    capture->value[10] = '\0';
+}
+
+typedef struct datetime_capture {
+    int count;
+    char value[17];
+    const tbox_html_node *node;
+} datetime_capture;
+
+static void record_datetime_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+    (void)ctx;
+    datetime_capture *capture = userdata;
+    capture->count++;
+    capture->node = node;
+    if (value.size == 16) memcpy(capture->value, value.data, 16);
+    capture->value[16] = '\0';
+}
+
+typedef struct checkbox_capture {
+    int count;
+    bool checked;
+    const tbox_html_node *node;
+} checkbox_capture;
+
+static bool record_checkbox_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)ctx;
+    checkbox_capture *capture = userdata;
+    capture->count++;
+    capture->checked = tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
+    capture->node = node;
+    return true;
 }
 
 typedef struct select_capture {
@@ -1720,6 +1818,1291 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "1"));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "8"));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* An input button paints its value, shares button activation, and cannot
+     * be edited. A disabled button neither takes focus nor dispatches clicks. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='action' type='BUTTON' value='Run'>"
+            "<input id='empty' type='button'>"
+            "<input id='blank' type='button' value=''>"
+            "<input id='disabled' type='button' value='Off' disabled></div>",
+            "input { width: 60px; } input:focus { background-color: rgb(255, 0, 0); }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            const tbox_html_node *action = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *empty = action->next_sibling;
+            const tbox_html_node *blank = empty->next_sibling;
+            const tbox_html_node *disabled = blank->next_sibling;
+            bool painted_run = false, painted_off = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind != TBOX_PAINT_TEXT_RUN) continue;
+                if (string_view_equal_cstr(op->text, "Run"))
+                    painted_run = op->has_clip && op->clip.width == 60.0;
+                if (string_view_equal_cstr(op->text, "Off")) painted_off = true;
+                TBOX_TEST_ASSERT(!string_view_equal_cstr(op->text, "Button"));
+            }
+            TBOX_TEST_ASSERT(painted_run && painted_off);
+
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input", 5, record_click, &capture) >= 0);
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            bool focus_painted = false;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                    list.items[i].color.r == 255 && list.items[i].color.g == 0 && list.items[i].color.b == 0)
+                    focus_painted = true;
+            }
+            TBOX_TEST_ASSERT(focus_painted);
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("X", 1)));
+            TBOX_TEST_ASSERT(changes == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.call_count == 2 && capture.node == action);
+
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == empty);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == blank);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
+
+            bool clicked_action = false, clicked_disabled = false;
+            for (int y = 0; y < 180; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, (double)y);
+                if (hit != NULL && hit->node == action && !clicked_action) {
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, 10.0, (double)y));
+                    clicked_action = true;
+                }
+                if (hit != NULL && hit->node == disabled && !clicked_disabled) {
+                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, 10.0, (double)y));
+                    clicked_disabled = true;
+                }
+            }
+            TBOX_TEST_ASSERT(clicked_action && clicked_disabled);
+            TBOX_TEST_ASSERT(capture.call_count == 3 && capture.node == action);
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == NULL);
+
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)action,
+                                         tbox_string_view_make("value", 5), tbox_string_view_make("Go", 2));
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            bool painted_go = false, painted_old = false;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind != TBOX_PAINT_TEXT_RUN) continue;
+                if (string_view_equal_cstr(list.items[i].text, "Go")) painted_go = true;
+                if (string_view_equal_cstr(list.items[i].text, "Run")) painted_old = true;
+            }
+            TBOX_TEST_ASSERT(painted_go && !painted_old);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Image inputs render decoded pixels at their requested size and use the
+     * button click path. A failed image load shows alt text. */
+    {
+        tbox_image_cache *images = tbox_image_cache_create(TBOX_TEST_ASSETS_DIR);
+        TBOX_TEST_ASSERT(images != NULL);
+        if (images != NULL) {
+            const char *html =
+                "<div><input id='image-action' type='IMAGE' src='yellow.png' alt='Send' width='32' height='20'>"
+                "<input id='broken' type='image' src='missing.png' alt='Fallback'>"
+                "<input id='disabled' type='image' src='yellow.png' width='24' height='16' disabled>"
+                "<input id='scaled' type='image' src='yellow.png' width='30'></div>";
+            const char *css = "#scaled { width: 40px; }";
+            tbox_context *ctx = tbox_context_open(html, strlen(html), css, strlen(css), fonts, images);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx != NULL) {
+                tbox_display_list list;
+                tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+                const tbox_html_node *action = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+                const tbox_html_node *broken = action->next_sibling;
+                const tbox_html_node *disabled = broken->next_sibling;
+                const tbox_html_node *scaled = disabled->next_sibling;
+                const tbox_layout_box *box = find_context_box(ctx, action);
+                TBOX_TEST_ASSERT(box != NULL);
+                if (box != NULL) {
+                    TBOX_TEST_ASSERT(box->content_box.width == 32.0 && box->content_box.height == 20.0);
+                    bool painted_image = false;
+                    for (size_t i = 0; i < list.count; i++)
+                        if (list.items[i].kind == TBOX_PAINT_IMAGE &&
+                            list.items[i].rect.x == box->content_box.x &&
+                            list.items[i].rect.y == box->content_box.y &&
+                            list.items[i].rect.width == 32.0 && list.items[i].rect.height == 20.0)
+                            painted_image = true;
+                    TBOX_TEST_ASSERT(painted_image);
+                }
+                bool painted_alt = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                        string_view_equal_cstr(list.items[i].text, "Fallback")) painted_alt = true;
+                TBOX_TEST_ASSERT(painted_alt);
+                const tbox_layout_box *scaled_box = find_context_box(ctx, scaled);
+                TBOX_TEST_ASSERT(scaled_box != NULL);
+                if (scaled_box != NULL)
+                    TBOX_TEST_ASSERT(scaled_box->content_box.width == 40.0 &&
+                                     scaled_box->content_box.height == 40.0);
+
+                click_capture capture;
+                click_capture_reset(&capture);
+                TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#image-action", 13, record_click, &capture) >= 0);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+                TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+                TBOX_TEST_ASSERT(capture.call_count == 2 && capture.node == action);
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("x", 1)));
+                if (box != NULL)
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
+                TBOX_TEST_ASSERT(capture.call_count == 3);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+                TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == broken);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+                TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == scaled);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+                TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
+                const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+                TBOX_TEST_ASSERT(disabled_box != NULL);
+                if (disabled_box != NULL)
+                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, disabled_box->border_box.x + 2.0,
+                        disabled_box->border_box.y + 2.0));
+                TBOX_TEST_ASSERT(capture.call_count == 3);
+                tbox_context_close(ctx);
+            }
+            tbox_image_cache_destroy(images);
+        }
+    }
+
+    /* Checkbox state is the presence of the checked attribute. User toggles
+     * update it before click handlers run, and repaint the indicator. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='off' type='CHECKBOX'><input id='on' type='checkbox' checked>"
+            "<input id='disabled' type='checkbox' checked disabled><button>Next</button></div>",
+            "input:checked { background-color: yellow; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            const tbox_html_node *off = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *on = off->next_sibling;
+            const tbox_html_node *disabled = on->next_sibling;
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(off, tbox_string_view_make("checked", 7)) == NULL);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(on, tbox_string_view_make("checked", 7)) != NULL);
+
+            tbox_rect off_content = {0};
+            bool found_off = false, found_disabled = false;
+            for (int y = 0; y < 180; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, (double)y);
+                if (hit != NULL && hit->node == off) {
+                    off_content = hit->content_box;
+                    found_off = true;
+                }
+                if (hit != NULL && hit->node == disabled) found_disabled = true;
+            }
+            TBOX_TEST_ASSERT(found_off && found_disabled);
+            TBOX_TEST_ASSERT(off_content.width == 12.0 && off_content.height == 12.0);
+
+            checkbox_capture capture = {0};
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=checkbox]", 20,
+                                                   record_checkbox_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == off);
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 1 && capture.node == off && capture.checked);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(off, tbox_string_view_make("checked", 7)) != NULL);
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            bool painted_check = false, painted_checked_background = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind != TBOX_PAINT_FILL_RECT) continue;
+                if (op->rect.x >= off_content.x && op->rect.x < off_content.x + off_content.width &&
+                    op->rect.y >= off_content.y && op->rect.y < off_content.y + off_content.height &&
+                    op->rect.width == 1.5 && op->rect.height == 1.5) painted_check = true;
+                if (op->color.r == 255 && op->color.g == 255 && op->color.b == 0 &&
+                    op->rect.x <= off_content.x && op->rect.y <= off_content.y &&
+                    op->rect.x + op->rect.width >= off_content.x + off_content.width &&
+                    op->rect.y + op->rect.height >= off_content.y + off_content.height)
+                    painted_checked_background = true;
+            }
+            TBOX_TEST_ASSERT(painted_check && painted_checked_background);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 2 && !capture.checked);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(off, tbox_string_view_make("checked", 7)) == NULL);
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            painted_check = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind == TBOX_PAINT_FILL_RECT && op->rect.x >= off_content.x &&
+                    op->rect.x < off_content.x + off_content.width && op->rect.y >= off_content.y &&
+                    op->rect.y < off_content.y + off_content.height &&
+                    op->rect.width == 1.5 && op->rect.height == 1.5) painted_check = true;
+            }
+            TBOX_TEST_ASSERT(!painted_check);
+
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == on);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 3 && capture.node == on && !capture.checked);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == disabled->next_sibling);
+
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            bool clicked_off = false, clicked_disabled = false;
+            for (int y = 0; y < 180; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, (double)y);
+                if (hit != NULL && hit->node == off && !clicked_off) {
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, 10.0, (double)y));
+                    clicked_off = true;
+                }
+                if (hit != NULL && hit->node == disabled && !clicked_disabled) {
+                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, 10.0, (double)y));
+                    clicked_disabled = true;
+                }
+            }
+            TBOX_TEST_ASSERT(clicked_off && clicked_disabled);
+            TBOX_TEST_ASSERT(capture.count == 4 && capture.node == off && capture.checked);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(disabled, tbox_string_view_make("checked", 7)) != NULL);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Radio selection is exclusive within each named group. The selected
+     * control paints a centered dot and matches :checked. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='a' type='RADIO' name='choice'>"
+            "<input id='b' type='radio' name='choice' checked>"
+            "<input id='c' type='radio' name='other' checked>"
+            "<input id='off' type='radio' name='choice' disabled></div>",
+            "input:checked { background-color: yellow; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            const tbox_html_node *a = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *b = a->next_sibling;
+            const tbox_html_node *c = b->next_sibling;
+            const tbox_html_node *disabled = c->next_sibling;
+            const tbox_layout_box *a_box = find_context_box(ctx, a);
+            const tbox_layout_box *b_box = find_context_box(ctx, b);
+            TBOX_TEST_ASSERT(a_box != NULL && b_box != NULL);
+            if (a_box != NULL) TBOX_TEST_ASSERT(a_box->content_box.width == 12.0 && a_box->content_box.height == 12.0);
+            bool painted_dot = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                    list.items[i].radius == 3.0) painted_dot = true;
+            TBOX_TEST_ASSERT(painted_dot);
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=radio]", 17, record_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == a);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.call_count == 1 && capture.node == a);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(a, tbox_string_view_make("checked", 7)) != NULL);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(b, tbox_string_view_make("checked", 7)) == NULL);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(c, tbox_string_view_make("checked", 7)) != NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(a, tbox_string_view_make("checked", 7)) != NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == b);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(a, tbox_string_view_make("checked", 7)) == NULL);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(b, tbox_string_view_make("checked", 7)) != NULL);
+            tbox_context_run_frame(ctx, 160.0, 180.0, &list);
+            const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+            TBOX_TEST_ASSERT(disabled_box != NULL);
+            if (disabled_box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                    disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(b, tbox_string_view_make("checked", 7)) != NULL);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Range inputs normalize to a step, paint a track and thumb, and update
+     * by keyboard, click, and pointer drag. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='level' type='RANGE' min='10' max='30' step='5' value='17'>"
+            "<input id='default-range' type='range'>"
+            "<input type='range' disabled value='40'></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 200.0, &list);
+            const tbox_html_node *level = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *default_range = level->next_sibling;
+            const tbox_html_node *disabled = default_range->next_sibling;
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(level, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "15"));
+            value = tbox_html_node_get_attribute(default_range, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "50"));
+            const tbox_layout_box *box = find_context_box(ctx, level);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) TBOX_TEST_ASSERT(box->content_box.width == 160.0 && box->content_box.height == 20.0);
+            bool painted_thumb = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].radius == 7.0)
+                    painted_thumb = true;
+            TBOX_TEST_ASSERT(painted_thumb);
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == level);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false, false}));
+            value = tbox_html_node_get_attribute(level, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "20"));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false, false}));
+            value = tbox_html_node_get_attribute(level, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "10"));
+            if (box != NULL) {
+                double x = box->content_box.x + box->content_box.width / 2.0;
+                double y = box->content_box.y + box->content_box.height / 2.0;
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, y));
+                value = tbox_html_node_get_attribute(level, tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "20"));
+                TBOX_TEST_ASSERT(tbox_context_range_drag(ctx, box->content_box.x + box->content_box.width, y));
+                value = tbox_html_node_get_attribute(level, tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "30"));
+                tbox_context_range_release(ctx);
+                TBOX_TEST_ASSERT(!tbox_context_range_drag(ctx, x, y));
+            }
+            TBOX_TEST_ASSERT(changes == 4);
+            tbox_context_run_frame(ctx, 320.0, 200.0, &list);
+            const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+            TBOX_TEST_ASSERT(disabled_box != NULL);
+            if (disabled_box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                    disabled_box->content_box.x + 8.0, disabled_box->content_box.y + 8.0));
+            TBOX_TEST_ASSERT(changes == 4);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* A reset input restores the original state of controls in its form,
+     * including retained select state, without changing another form. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><form><input id='name' value='start'><input id='check' type='checkbox' checked>"
+            "<input id='radio-a' type='radio' name='group' checked>"
+            "<input id='radio-b' type='radio' name='group'>"
+            "<input id='slider' type='range' value='20'>"
+            "<textarea>Initial</textarea><select><option value='one' selected>One</option>"
+            "<option value='two'>Two</option></select><input id='reset' type='RESET'></form>"
+            "<form><input id='other' value='keep'></form></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 500.0, &list);
+            const tbox_html_node *form = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *name = form->first_child;
+            const tbox_html_node *check = name->next_sibling;
+            const tbox_html_node *radio_a = check->next_sibling;
+            const tbox_html_node *radio_b = radio_a->next_sibling;
+            const tbox_html_node *slider = radio_b->next_sibling;
+            const tbox_html_node *textarea = slider->next_sibling;
+            const tbox_html_node *select = textarea->next_sibling;
+            const tbox_html_node *reset = select->next_sibling;
+            const tbox_html_node *other = form->next_sibling->first_child;
+            bool label_painted = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "Reset")) label_painted = true;
+            TBOX_TEST_ASSERT(label_painted);
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)name,
+                tbox_string_view_make("value", 5), tbox_string_view_make("changed", 7));
+            tbox_html_node_remove_attribute((tbox_html_node *)check, tbox_string_view_make("checked", 7));
+            tbox_html_node_remove_attribute((tbox_html_node *)radio_a, tbox_string_view_make("checked", 7));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)radio_b,
+                tbox_string_view_make("checked", 7), tbox_string_view_make(NULL, 0));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)slider,
+                tbox_string_view_make("value", 5), tbox_string_view_make("80", 2));
+            tbox_html_node_set_text_content(tbox_context_document(ctx), (tbox_html_node *)textarea,
+                tbox_string_view_make("Changed", 7));
+            TBOX_TEST_ASSERT(tbox_context_select_set_value(ctx, select, tbox_string_view_make("two", 3)));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)other,
+                tbox_string_view_make("value", 5), tbox_string_view_make("outside", 7));
+            tbox_context_run_frame(ctx, 320.0, 500.0, &list);
+            const tbox_layout_box *reset_box = find_context_box(ctx, reset);
+            TBOX_TEST_ASSERT(reset_box != NULL);
+            if (reset_box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx,
+                    reset_box->border_box.x + 5.0, reset_box->border_box.y + 5.0));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(name, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "start"));
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(check, tbox_string_view_make("checked", 7)) != NULL);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(radio_a, tbox_string_view_make("checked", 7)) != NULL);
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(radio_b, tbox_string_view_make("checked", 7)) == NULL);
+            value = tbox_html_node_get_attribute(slider, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "20"));
+            TBOX_TEST_ASSERT(textarea->first_child != NULL &&
+                string_view_equal_cstr(textarea->first_child->text.text, "Initial"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "one"));
+            value = tbox_html_node_get_attribute(other, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "outside"));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Submit inputs expose a form callback by click or keyboard; Enter in a
+     * single-line field submits the form without an explicit submitter. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><form><input id='query' type='search' value='abc'>"
+            "<input id='send' type='SUBMIT'><input id='off' type='submit' disabled></form>"
+            "<input id='outside' type='submit'></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 200.0, &list);
+            const tbox_html_node *form = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *query = form->first_child;
+            const tbox_html_node *send = query->next_sibling;
+            const tbox_html_node *disabled = send->next_sibling;
+            bool painted_submit = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "Submit")) painted_submit = true;
+            TBOX_TEST_ASSERT(painted_submit);
+            submit_capture capture = {0};
+            tbox_context_on_submit(ctx, record_submit, &capture);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == query);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 1 && capture.form == form && capture.submitter == NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == send);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 2 && capture.submitter == send);
+            const tbox_layout_box *send_box = find_context_box(ctx, send);
+            TBOX_TEST_ASSERT(send_box != NULL);
+            if (send_box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx,
+                    send_box->border_box.x + 5.0, send_box->border_box.y + 5.0));
+            TBOX_TEST_ASSERT(capture.count == 3 && capture.submitter == send);
+            const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+            TBOX_TEST_ASSERT(disabled_box != NULL);
+            if (disabled_box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                    disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+            TBOX_TEST_ASSERT(capture.count == 3);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Search inputs edit like text fields and expose a pointer/Escape clear. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='query' type='SEARCH' value='find me'>"
+            "<input type='search' value='off' disabled></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 150.0, &list);
+            const tbox_html_node *query = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_layout_box *box = find_context_box(ctx, query);
+            TBOX_TEST_ASSERT(box != NULL);
+            bool painted_clear = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                    list.items[i].color.r == 245 && list.items[i].rect.width == 16.0)
+                    painted_clear = true;
+            TBOX_TEST_ASSERT(painted_clear);
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == query);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("new query", 9)));
+            if (box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx,
+                    box->content_box.x + box->content_box.width - 8.0,
+                    box->content_box.y + box->content_box.height / 2.0));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(query, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && value->value.size == 0 && changes == 2);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("again", 5)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ESCAPE, true, false, false}));
+            value = tbox_html_node_get_attribute(query, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && value->value.size == 0 && changes == 4);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Tel uses ordinary text editing; URL validation checks absolute URLs. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input type='tel' value='+55 85 1234'><input type='url' value='https://example.org/a' required>"
+            "<input type='url' value='relative/path'><input type='url' value='mailto:a@example.org'>"
+            "<input type='url' required></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 500.0, 200.0, &list);
+            const tbox_html_node *tel = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *url = tel->next_sibling;
+            TBOX_TEST_ASSERT(tbox_context_url_valid(url));
+            TBOX_TEST_ASSERT(!tbox_context_url_valid(url->next_sibling));
+            TBOX_TEST_ASSERT(tbox_context_url_valid(url->next_sibling->next_sibling));
+            TBOX_TEST_ASSERT(!tbox_context_url_valid(url->next_sibling->next_sibling->next_sibling));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == tel);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("#", 1)));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(tel, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "+55 85 1234#"));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Time values are normalized; the picker enforces bounds and exposes
+     * hours/minutes through keyboard controls. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input type='time' value='09:30' min='09:00' max='11:00'>"
+            "<input type='time' value='25:99'></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 220.0, &list);
+            const tbox_html_node *input = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_attribute *invalid = tbox_html_node_get_attribute(input->next_sibling,
+                tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(invalid != NULL && invalid->value.size == 0);
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == input);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(input, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "10:31") && changes == 1);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* ISO week stepping crosses calendar years without skipping week 53. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input type='week' value='2020-W53' min='2020-W52' max='2021-W02'>"
+            "<input type='week' value='2021-W53'></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 250.0, &list);
+            const tbox_html_node *input = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_attribute *invalid = tbox_html_node_get_attribute(input->next_sibling,
+                tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(invalid != NULL && invalid->value.size == 0);
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == input);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(input, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2021-W01") && changes == 1);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* A color input paints its #RRGGBB value and edits all three channels
+     * through its popup. Disabled controls do not open or take focus. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='chosen' type='COLOR' value='#123456'>"
+            "<input id='invalid' type='color' value='wrong'>"
+            "<input id='disabled' type='color' disabled></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 240.0, 220.0, &list);
+            const tbox_html_node *chosen = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *invalid = chosen->next_sibling;
+            const tbox_html_node *disabled = invalid->next_sibling;
+            tbox_rect chosen_rect = {0}, invalid_rect = {0};
+            bool found_chosen = false, found_invalid = false, found_disabled = false;
+            for (int y = 0; y < 220; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)y);
+                if (hit == NULL) continue;
+                if (hit->node == chosen) { chosen_rect = hit->content_box; found_chosen = true; }
+                if (hit->node == invalid) { invalid_rect = hit->content_box; found_invalid = true; }
+                if (hit->node == disabled) found_disabled = true;
+            }
+            TBOX_TEST_ASSERT(found_chosen && found_invalid && found_disabled);
+            TBOX_TEST_ASSERT(chosen_rect.width == 48.0 && chosen_rect.height == 24.0);
+            bool painted_chosen = false, painted_invalid = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind != TBOX_PAINT_FILL_RECT) continue;
+                if (op->rect.x == chosen_rect.x && op->rect.y == chosen_rect.y &&
+                    op->rect.width == chosen_rect.width && op->rect.height == chosen_rect.height)
+                    painted_chosen = op->color.r == 0x12 && op->color.g == 0x34 && op->color.b == 0x56;
+                if (op->rect.x == invalid_rect.x && op->rect.y == invalid_rect.y &&
+                    op->rect.width == invalid_rect.width && op->rect.height == invalid_rect.height)
+                    painted_invalid = op->color.r == 0 && op->color.g == 0 && op->color.b == 0;
+            }
+            TBOX_TEST_ASSERT(painted_chosen && painted_invalid);
+
+            color_capture capture = {0};
+            tbox_context_on_input(ctx, record_color_input, &capture);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == chosen);
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("x", 1)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 1 && capture.node == chosen && strcmp(capture.value, "#133456") == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, true, false}));
+            TBOX_TEST_ASSERT(strcmp(capture.value, "#1d3456") == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DOWN, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_HOME, true, false, false}));
+            TBOX_TEST_ASSERT(strcmp(capture.value, "#1d0056") == 0);
+            tbox_context_run_frame(ctx, 240.0, 220.0, &list);
+            const tbox_layout_box *chosen_box = NULL;
+            for (int y = 0; y < 220 && chosen_box == NULL; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)y);
+                if (hit != NULL && hit->node == chosen) chosen_box = hit;
+            }
+            TBOX_TEST_ASSERT(chosen_box != NULL);
+            if (chosen_box != NULL) {
+                double popup_x = chosen_box->border_box.x;
+                double popup_y = chosen_box->border_box.y + chosen_box->border_box.height;
+                TBOX_TEST_ASSERT(tbox_context_color_drag(ctx, popup_x + 210.0, popup_y + 73.0));
+                TBOX_TEST_ASSERT(strcmp(capture.value, "#1d00ff") == 0);
+            }
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ESCAPE, true, false, false}));
+            TBOX_TEST_ASSERT(!tbox_context_color_drag(ctx, 100.0, 100.0));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == invalid);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == chosen);
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)chosen,
+                tbox_string_view_make("value", 5), tbox_string_view_make("#abcdef", 7));
+            tbox_context_run_frame(ctx, 240.0, 220.0, &list);
+            bool painted_programmatic = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind == TBOX_PAINT_FILL_RECT && op->color.r == 0xab &&
+                    op->color.g == 0xcd && op->color.b == 0xef) painted_programmatic = true;
+            }
+            TBOX_TEST_ASSERT(painted_programmatic);
+            chosen_box = NULL;
+            for (int y = 0; y < 220 && chosen_box == NULL; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)y);
+                if (hit != NULL && hit->node == chosen) chosen_box = hit;
+            }
+            TBOX_TEST_ASSERT(chosen_box != NULL);
+            if (chosen_box != NULL) {
+                double x = chosen_box->border_box.x + 5.0;
+                double y = chosen_box->border_box.y + 5.0;
+                int previous_changes = capture.count;
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, y));
+                TBOX_TEST_ASSERT(capture.count == previous_changes);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, y));
+                TBOX_TEST_ASSERT(!tbox_context_color_drag(ctx, x + 210.0, y + 20.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, y));
+                tbox_context_run_frame(ctx, 240.0, 220.0, &list);
+                chosen_box = NULL;
+                for (int scan_y = 0; scan_y < 220 && chosen_box == NULL; scan_y++) {
+                    const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)scan_y);
+                    if (hit != NULL && hit->node == chosen) chosen_box = hit;
+                }
+                TBOX_TEST_ASSERT(chosen_box != NULL);
+                if (chosen_box != NULL) {
+                    double popup_x = chosen_box->border_box.x;
+                    double popup_y = chosen_box->border_box.y + chosen_box->border_box.height;
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 210.0, popup_y + 20.0));
+                    TBOX_TEST_ASSERT(capture.count == previous_changes + 1);
+                    TBOX_TEST_ASSERT(strcmp(capture.value, "#ffcdef") == 0);
+                }
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx,
+                    (tbox_key_event){TBOX_KEY_ESCAPE, true, false, false}));
+            }
+            bool clicked_disabled = false;
+            for (int y = 0; y < 220 && !clicked_disabled; y++) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)y);
+                if (hit != NULL && hit->node == disabled) {
+                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, 12.0, (double)y));
+                    clicked_disabled = true;
+                }
+            }
+            TBOX_TEST_ASSERT(clicked_disabled && tbox_context_focused_node(ctx) == NULL);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Date inputs expose a calendar and commit only valid ISO dates within
+     * min/max. Navigation crosses leap days and mouse cells use the same value. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='date' type='DATE' value='2024-02-28' min='2024-02-29' max='2024-03-02'>"
+            "<input type='date' disabled><button>Next</button>"
+            "<input type='date' value='2023-02-29'></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 340.0, &list);
+            const tbox_html_node *date = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *disabled = date->next_sibling;
+            const tbox_html_node *invalid = disabled->next_sibling->next_sibling;
+            const tbox_html_attribute *invalid_value = tbox_html_node_get_attribute(invalid,
+                tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(invalid_value != NULL && invalid_value->value.size == 0);
+            const tbox_layout_box *box = find_context_box(ctx, date);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) TBOX_TEST_ASSERT(box->content_box.width == 120.0);
+            bool painted = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "2024-02-28")) painted = true;
+            TBOX_TEST_ASSERT(painted);
+            date_capture capture = {0};
+            tbox_context_on_input(ctx, record_date_input, &capture);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == date);
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("2025", 4)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, false}));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DOWN, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 1 && capture.node == date &&
+                strcmp(capture.value, "2024-03-01") == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == disabled->next_sibling);
+            tbox_context_run_frame(ctx, 320.0, 340.0, &list);
+            box = find_context_box(ctx, date);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                double x = box->border_box.x + 5.0;
+                double y = box->border_box.y + 5.0;
+                double popup_x = box->border_box.x;
+                double popup_y = box->border_box.y + box->border_box.height;
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, y));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 29.0, popup_y + 94.0));
+                TBOX_TEST_ASSERT(capture.count == 1);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 209.0, popup_y + 70.0));
+                TBOX_TEST_ASSERT(capture.count == 2 && strcmp(capture.value, "2024-03-02") == 0);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, y));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 20.0, popup_y + 19.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 149.0, popup_y + 166.0));
+                TBOX_TEST_ASSERT(capture.count == 3 && strcmp(capture.value, "2024-02-29") == 0);
+            }
+            tbox_context_run_frame(ctx, 320.0, 340.0, &list);
+            const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+            TBOX_TEST_ASSERT(disabled_box != NULL);
+            if (disabled_box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                    disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == NULL);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Month inputs keep YYYY-MM values and choose from a twelve-month grid. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='month' type='MONTH' value='2024-02' min='2024-03' max='2024-05'>"
+            "<input type='month' disabled><input type='month' value='2024-13'></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 340.0, &list);
+            const tbox_html_node *month = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *disabled = month->next_sibling;
+            const tbox_html_node *invalid = disabled->next_sibling;
+            const tbox_html_attribute *invalid_value = tbox_html_node_get_attribute(invalid,
+                tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(invalid_value != NULL && invalid_value->value.size == 0);
+            const tbox_layout_box *box = find_context_box(ctx, month);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) TBOX_TEST_ASSERT(box->content_box.width == 100.0);
+            bool painted_value = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "2024-02")) painted_value = true;
+            TBOX_TEST_ASSERT(painted_value);
+            month_capture capture = {0};
+            tbox_context_on_input(ctx, record_month_input, &capture);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == month);
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("2025", 4)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            tbox_context_run_frame(ctx, 320.0, 340.0, &list);
+            bool painted_march = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "Mar")) painted_march = true;
+            TBOX_TEST_ASSERT(painted_march);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DOWN, true, false, false}));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 1 && capture.node == month &&
+                strcmp(capture.value, "2024-03") == 0);
+            tbox_context_run_frame(ctx, 320.0, 340.0, &list);
+            box = find_context_box(ctx, month);
+            if (box != NULL) {
+                double popup_x = box->border_box.x;
+                double popup_y = box->border_box.y + box->border_box.height;
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 5.0,
+                    box->border_box.y + 5.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 76.0, popup_y + 50.0));
+                TBOX_TEST_ASSERT(capture.count == 1);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 20.0, popup_y + 88.0));
+                TBOX_TEST_ASSERT(capture.count == 2 && strcmp(capture.value, "2024-05") == 0);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 5.0,
+                    box->border_box.y + 5.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 20.0, popup_y + 19.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 20.0, popup_y + 88.0));
+                TBOX_TEST_ASSERT(capture.count == 2);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 214.0, popup_y + 19.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 20.0, popup_y + 88.0));
+                TBOX_TEST_ASSERT(capture.count == 2);
+            }
+            tbox_context_run_frame(ctx, 320.0, 340.0, &list);
+            const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+            TBOX_TEST_ASSERT(disabled_box != NULL);
+            if (disabled_box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                    disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Datetime-local combines calendar selection and hour/minute changes.
+     * Boundary times are checked before confirmation. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='when' type='DATETIME-LOCAL' value='2024-02-29T12:30' "
+            "min='2024-02-29T12:00' max='2024-03-01T18:00'>"
+            "<input type='datetime-local' value='2024-02-30T10:00'>"
+            "<input type='datetime-local' disabled></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 360.0, 440.0, &list);
+            const tbox_html_node *when = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *invalid = when->next_sibling;
+            const tbox_html_node *disabled = invalid->next_sibling;
+            const tbox_html_attribute *invalid_value = tbox_html_node_get_attribute(invalid,
+                tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(invalid_value != NULL && invalid_value->value.size == 0);
+            const tbox_layout_box *box = find_context_box(ctx, when);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) TBOX_TEST_ASSERT(box->content_box.width == 175.0);
+            bool painted = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "2024-02-29T12:30")) painted = true;
+            TBOX_TEST_ASSERT(painted);
+
+            datetime_capture capture = {0};
+            tbox_context_on_input(ctx, record_datetime_input, &capture);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == when);
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("x", 1)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_SPACE, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, true, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_RIGHT, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            TBOX_TEST_ASSERT(capture.count == 1 && capture.node == when &&
+                strcmp(capture.value, "2024-03-01T13:31") == 0);
+
+            tbox_context_run_frame(ctx, 360.0, 440.0, &list);
+            box = find_context_box(ctx, when);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                double popup_x = box->border_box.x;
+                double popup_y = box->border_box.y + box->border_box.height;
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 5.0, box->border_box.y + 5.0));
+                TBOX_TEST_ASSERT(tbox_context_datetime_drag(ctx, popup_x + 180.0, popup_y + 228.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 200.0, popup_y + 284.0));
+                TBOX_TEST_ASSERT(capture.count == 1);
+                TBOX_TEST_ASSERT(tbox_context_datetime_drag(ctx, popup_x + 40.0, popup_y + 228.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 180.0, popup_y + 254.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 200.0, popup_y + 284.0));
+                TBOX_TEST_ASSERT(capture.count == 2 && strcmp(capture.value, "2024-03-01T00:59") == 0);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 5.0, box->border_box.y + 5.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 20.0, popup_y + 19.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 149.0, popup_y + 166.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 200.0, popup_y + 284.0));
+                TBOX_TEST_ASSERT(capture.count == 2);
+                TBOX_TEST_ASSERT(tbox_context_datetime_drag(ctx, popup_x + 113.0, popup_y + 228.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 200.0, popup_y + 284.0));
+                TBOX_TEST_ASSERT(capture.count == 3 && strcmp(capture.value, "2024-02-29T12:59") == 0);
+            }
+            TBOX_TEST_ASSERT(!tbox_context_datetime_drag(ctx, 100.0, 100.0));
+            tbox_context_run_frame(ctx, 360.0, 440.0, &list);
+            const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+            TBOX_TEST_ASSERT(disabled_box != NULL);
+            if (disabled_box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                    disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == NULL);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Email inputs edit like text controls and expose current validity,
+     * including required and comma-separated multiple addresses. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='mail' type='EMAIL' value='a@example.com' required>"
+            "<input id='multi' type='email' multiple value='a@b, c.d+tag@example.org'>"
+            "<input id='empty' type='email'><input id='bad' type='email' value='x@-bad'>"
+            "<input id='disabled' type='email' value='off@example.com' disabled></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 320.0, &list);
+            const tbox_html_node *mail = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *multi = mail->next_sibling;
+            const tbox_html_node *empty = multi->next_sibling;
+            const tbox_html_node *bad = empty->next_sibling;
+            const tbox_html_node *disabled = bad->next_sibling;
+            TBOX_TEST_ASSERT(tbox_context_email_valid(mail));
+            TBOX_TEST_ASSERT(tbox_context_email_valid(multi));
+            TBOX_TEST_ASSERT(tbox_context_email_valid(empty));
+            TBOX_TEST_ASSERT(!tbox_context_email_valid(bad));
+            TBOX_TEST_ASSERT(!tbox_context_email_valid(NULL));
+            TBOX_TEST_ASSERT(!tbox_context_email_valid(mail->parent));
+            bool painted_mail = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "a@example.com")) painted_mail = true;
+            TBOX_TEST_ASSERT(painted_mail);
+
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            click_capture clicks;
+            click_capture_reset(&clicks);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=email]", 17,
+                record_click, &clicks) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == mail);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make(".net", 4)));
+            TBOX_TEST_ASSERT(changes == 1 && tbox_context_email_valid(mail));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("\n", 1)));
+            TBOX_TEST_ASSERT(changes == 1);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("bad@@example", 12)));
+            TBOX_TEST_ASSERT(changes == 2 && !tbox_context_email_valid(mail));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("new@example.com", 15)));
+            TBOX_TEST_ASSERT(changes == 3 && tbox_context_email_valid(mail));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)mail,
+                tbox_string_view_make("value", 5), tbox_string_view_make("", 0));
+            TBOX_TEST_ASSERT(!tbox_context_email_valid(mail));
+            tbox_context_run_frame(ctx, 320.0, 320.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == multi);
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)multi,
+                tbox_string_view_make("value", 5), tbox_string_view_make("a@b, nope", 9));
+            TBOX_TEST_ASSERT(!tbox_context_email_valid(multi));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)multi,
+                tbox_string_view_make("value", 5), tbox_string_view_make("a@b, x@y", 8));
+            TBOX_TEST_ASSERT(tbox_context_email_valid(multi));
+            tbox_context_run_frame(ctx, 320.0, 320.0, &list);
+            const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+            TBOX_TEST_ASSERT(disabled_box != NULL);
+            if (disabled_box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                    disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+            TBOX_TEST_ASSERT(clicks.call_count == 0);
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == NULL);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Number inputs accept numeric editing, expose constraint validity, and
+     * step on Up/Down without exceeding min or max. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='quantity' type='NUMBER' value='1.5' min='1' max='3' step='0.5'>"
+            "<input type='number' disabled value='2'>"
+            "<input id='required-number' type='number' required min='2'>"
+            "<input id='any-step' type='number' value='1.25' step='any'>"
+            "<input id='invalid-number' type='number' value='word'></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 300.0, &list);
+            const tbox_html_node *quantity = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *disabled = quantity->next_sibling;
+            const tbox_html_node *required = disabled->next_sibling;
+            const tbox_html_node *any = required->next_sibling;
+            const tbox_html_node *invalid = any->next_sibling;
+            const tbox_layout_box *box = find_context_box(ctx, quantity);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) TBOX_TEST_ASSERT(box->content_box.width == 120.0);
+            TBOX_TEST_ASSERT(tbox_context_number_valid(quantity));
+            TBOX_TEST_ASSERT(!tbox_context_number_valid(required));
+            TBOX_TEST_ASSERT(tbox_context_number_valid(any));
+            TBOX_TEST_ASSERT(!tbox_context_number_valid(NULL));
+            const tbox_html_attribute *invalid_value = tbox_html_node_get_attribute(invalid,
+                tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(invalid_value != NULL && invalid_value->value.size == 0);
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == quantity);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("2.25", 4)));
+            TBOX_TEST_ASSERT(!tbox_context_number_valid(quantity));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("abc", 3)));
+            TBOX_TEST_ASSERT(changes == 1);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, false}));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(quantity, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2.5"));
+            TBOX_TEST_ASSERT(tbox_context_number_valid(quantity));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, false}));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DOWN, true, false, false}));
+            TBOX_TEST_ASSERT(changes == 4);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("1e2", 3)));
+            TBOX_TEST_ASSERT(!tbox_context_number_valid(quantity));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == required);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_UP, true, false, false}));
+            value = tbox_html_node_get_attribute(required, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2"));
+            TBOX_TEST_ASSERT(tbox_context_number_valid(required));
+            tbox_context_run_frame(ctx, 320.0, 300.0, &list);
+            const tbox_layout_box *required_box = find_context_box(ctx, required);
+            TBOX_TEST_ASSERT(required_box != NULL);
+            if (required_box != NULL) {
+                double spinner_x = required_box->content_box.x + required_box->content_box.width - 8.0;
+                double spinner_y = required_box->content_box.y + required_box->content_box.height / 4.0;
+                bool painted_spinner = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                        list.items[i].color.r == 238 &&
+                        list.items[i].rect.x == required_box->content_box.x + required_box->content_box.width - 16.0)
+                        painted_spinner = true;
+                TBOX_TEST_ASSERT(painted_spinner);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, spinner_x, spinner_y));
+                value = tbox_html_node_get_attribute(required, tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "3"));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, spinner_x,
+                    required_box->content_box.y + required_box->content_box.height * 0.75));
+                value = tbox_html_node_get_attribute(required, tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2"));
+            }
+            const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+            TBOX_TEST_ASSERT(disabled_box != NULL);
+            if (disabled_box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                    disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Password values remain in the DOM while rendering one mask glyph per
+     * Unicode character; selected secrets are not exposed to the clipboard. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><input id='secret' type='PASSWORD' value='séc'>"
+            "<input type='password' disabled value='off'><button>Next</button></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 180.0, &list);
+            const tbox_html_node *secret = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(secret, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "séc"));
+            bool painted_secret = false, painted_mask = false;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind != TBOX_PAINT_TEXT_RUN) continue;
+                if (string_view_equal_cstr(list.items[i].text, "séc")) painted_secret = true;
+                if (string_view_equal_cstr(list.items[i].text, "•••") ||
+                    string_view_equal_cstr(list.items[i].text, "***")) painted_mask = true;
+            }
+            TBOX_TEST_ASSERT(!painted_secret && painted_mask);
+            int changes = 0;
+            tbox_context_on_input(ctx, record_input, &changes);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == secret);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_A, true, false, true}));
+            TBOX_TEST_ASSERT(tbox_context_selected_text(ctx).size == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Z", 1)));
+            value = tbox_html_node_get_attribute(secret, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "Z"));
+            TBOX_TEST_ASSERT(changes == 1);
+            tbox_context_run_frame(ctx, 320.0, 180.0, &list);
+            painted_secret = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "Z")) painted_secret = true;
+            TBOX_TEST_ASSERT(!painted_secret);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == secret->next_sibling->next_sibling);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* File inputs ignore HTML-provided paths, browse the local directory only
+     * after activation, and expose the user-selected path separately. */
+    {
+        char original_directory[4096];
+        bool have_directory = getcwd(original_directory, sizeof(original_directory)) != NULL;
+        TBOX_TEST_ASSERT(have_directory);
+        bool entered_assets = have_directory && chdir(TBOX_TEST_ASSETS_DIR) == 0;
+        TBOX_TEST_ASSERT(entered_assets);
+        if (entered_assets) {
+            tbox_context *ctx = open_cstr(
+                "<div><input id='upload' type='FILE' value='/etc/passwd'>"
+                "<input id='off' type='file' disabled></div>", "", fonts);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx != NULL) {
+                tbox_display_list list;
+                tbox_context_run_frame(ctx, 380.0, 360.0, &list);
+                const tbox_html_node *upload = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+                const tbox_html_node *disabled = upload->next_sibling;
+                const tbox_html_attribute *initial = tbox_html_node_get_attribute(upload,
+                    tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(initial != NULL && initial->value.size == 0);
+                TBOX_TEST_ASSERT(tbox_context_file_path(ctx, upload).size == 0);
+                int changes = 0;
+                tbox_context_on_input(ctx, record_input, &changes);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+                TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == upload);
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("/tmp/file", 9)));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_END, true, false, false}));
+                tbox_context_run_frame(ctx, 380.0, 360.0, &list);
+                bool showed_file = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                        string_view_equal_cstr(list.items[i].text, "yellow.png")) showed_file = true;
+                TBOX_TEST_ASSERT(showed_file);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+                TBOX_TEST_ASSERT(changes == 1);
+                const tbox_html_attribute *selected = tbox_html_node_get_attribute(upload,
+                    tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(selected != NULL && string_view_equal_cstr(selected->value, "yellow.png"));
+                char expected_path[4096];
+                int expected_length = snprintf(expected_path, sizeof(expected_path), "%s/yellow.png", TBOX_TEST_ASSETS_DIR);
+                TBOX_TEST_ASSERT(expected_length > 0 && (size_t)expected_length < sizeof(expected_path));
+                TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_file_path(ctx, upload), expected_path));
+
+                tbox_context_run_frame(ctx, 380.0, 360.0, &list);
+                bool painted_selection = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                        string_view_equal_cstr(list.items[i].text, "yellow.png")) painted_selection = true;
+                TBOX_TEST_ASSERT(painted_selection);
+                const tbox_layout_box *box = find_context_box(ctx, upload);
+                TBOX_TEST_ASSERT(box != NULL);
+                if (box != NULL) {
+                    double popup_x = box->border_box.x;
+                    double popup_y = box->border_box.y + box->border_box.height;
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 5.0, box->border_box.y + 5.0));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_BACKSPACE, true, false, false}));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_DOWN, true, false, false}));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+                    TBOX_TEST_ASSERT(tbox_context_scroll(ctx, popup_x + 20.0, popup_y + 100.0, 1.0));
+                    TBOX_TEST_ASSERT(!tbox_context_scrollbar_press(ctx, popup_x + 20.0, popup_y + 100.0));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_END, true, false, false}));
+                    tbox_context_run_frame(ctx, 380.0, 360.0, &list);
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 20.0, popup_y + 222.0));
+                    TBOX_TEST_ASSERT(changes == 2);
+                }
+                tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)upload,
+                    tbox_string_view_make("value", 5), tbox_string_view_make("", 0));
+                TBOX_TEST_ASSERT(tbox_context_file_path(ctx, upload).size == 0);
+                tbox_context_run_frame(ctx, 380.0, 360.0, &list);
+                bool painted_empty = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                        string_view_equal_cstr(list.items[i].text, "No file chosen")) painted_empty = true;
+                TBOX_TEST_ASSERT(painted_empty);
+                const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
+                TBOX_TEST_ASSERT(disabled_box != NULL);
+                if (disabled_box != NULL)
+                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx,
+                        disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+                TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == NULL);
+                tbox_context_close(ctx);
+            }
+            TBOX_TEST_ASSERT(chdir(original_directory) == 0);
+        }
+    }
+
+    /* Hidden inputs keep their DOM value, but have no layout box or focus,
+     * even when author CSS tries to make them visible. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><button id='first'>First</button>"
+            "<input id='secret' type='HIDDEN' value='token'>"
+            "<button id='second'>Second</button>"
+            "<p>Before <input id='inline-secret' type='hidden' value='inline'> after</p></div>",
+            "#secret { display: block; width: 300px; height: 100px; } "
+            "#inline-secret { display: inline; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            const tbox_html_node *container = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            const tbox_html_node *first = container->first_child;
+            const tbox_html_node *secret = first->next_sibling;
+            const tbox_html_node *second = secret->next_sibling;
+            const tbox_html_node *inline_secret = second->next_sibling->first_child->next_sibling;
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(secret, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "token"));
+            TBOX_TEST_ASSERT(find_context_box(ctx, secret) == NULL);
+            TBOX_TEST_ASSERT(find_context_box(ctx, inline_secret) == NULL);
+            const tbox_layout_box *first_box = find_context_box(ctx, first);
+            const tbox_layout_box *second_box = find_context_box(ctx, second);
+            TBOX_TEST_ASSERT(first_box != NULL && second_box != NULL);
+            if (first_box != NULL && second_box != NULL)
+                TBOX_TEST_ASSERT(second_box->margin_box.y == first_box->margin_box.y + first_box->margin_box.height);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == first);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == second);
+            tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)secret,
+                tbox_string_view_make("value", 5), tbox_string_view_make("updated", 7));
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            value = tbox_html_node_get_attribute(secret, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "updated"));
+            TBOX_TEST_ASSERT(find_context_box(ctx, secret) == NULL);
+            tbox_context_close(ctx);
+        }
+
+        ctx = open_cstr("<input type='hidden' value='root-token'>",
+                        "input { display: block; width: 100px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 200.0, &list);
+            TBOX_TEST_ASSERT(list.count == 0);
+            TBOX_TEST_ASSERT(tbox_context_hit_test(ctx, 10.0, 10.0) == NULL);
+            const tbox_html_node *secret = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(secret, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "root-token"));
             tbox_context_close(ctx);
         }
     }

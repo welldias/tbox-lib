@@ -281,12 +281,31 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding);
  * Interatividade Avançada" -> "Bubbling completo + stopPropagation +
  * desregistro de handler" for the full rationale.
  *
- * Still returns true if at least one handler fired (the caller --
+ * A click on an enabled input type=checkbox toggles its `checked` attribute
+ * before handlers run. A disabled input does not dispatch
+ * click handlers. A color input opens its RGB picker; clicks inside the
+ * picker adjust a channel. Date, datetime-local, and month inputs open a picker;
+ * choosing a day or month, or confirming date and time, updates the value.
+ * A reset input restores the initial values of controls in its form.
+ * Returns true if a handler fired, a checkbox changed,
+ * or a picker handled the click (the caller --
  * Application today, a script engine's event loop tomorrow -- should treat
  * that the same as a resize: a reason to redo the compute pipeline).
  * No-op (returns false) if ctx == NULL, if there is no layout yet, or if
  * nothing is under the point -- same guard as tbox_context_hit_test. */
 bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
+
+/* Adjusts an open input type=color RGB slider during a pointer drag.
+ * Returns true when the color changed and a new frame is needed. */
+bool tbox_context_color_drag(tbox_context *ctx, double x, double y);
+
+/* Adjusts a pressed range input while the pointer is dragged. */
+bool tbox_context_range_drag(tbox_context *ctx, double x, double y);
+void tbox_context_range_release(tbox_context *ctx);
+
+/* Adjusts an open datetime-local picker hour or minute bar during a pointer drag.
+ * Returns true when the displayed selection changed. */
+bool tbox_context_datetime_drag(tbox_context *ctx, double x, double y);
 
 /* Extends the focused text input's selection from the last click or keyboard
  * anchor to the character nearest x. Returns true when the caret moves. */
@@ -300,10 +319,15 @@ bool tbox_context_drag_select_at(tbox_context *ctx, double x, double y);
 tbox_string_view tbox_context_selected_text(tbox_context *ctx);
 
 /* Keyboard focus belongs to the context, not the window backend. Tab and
- * Shift+Tab move through visible enabled buttons, text controls, and selects; the next
+ * Shift+Tab move through visible enabled buttons (including input type=button),
+ * checkboxes, color, date, datetime-local, month, file, and image inputs, text controls (including
+ * email and number inputs), and selects; the next
  * frame reveals the newly focused control inside scrollable ancestors.
- * Enter and
- * Space activate a focused button; editing keys act on a focused text control.
+ * Enter and Space activate a focused button through click handlers. Space
+ * toggles a focused checkbox and runs its click handlers. Enter or Space
+ * opens a focused color input's RGB picker, a calendar input's popup, or the
+ * file picker; editing
+ * keys act on a focused text control. Up/Down steps a focused number input.
  * Shift with Left, Right, Home or End extends its selection. Backspace and
  * Delete remove a selection when one exists; Ctrl+A selects all text.
  * Returns true when a frame should be recomputed. */
@@ -315,7 +339,36 @@ bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event);
  * a future backend can deliver composed text through the same API. */
 bool tbox_context_dispatch_text(tbox_context *ctx, tbox_string_view text);
 
-/* Called after the value of an input or textarea changes through editing. The value
+/* Checks an input type=email's current value. Empty values are valid unless
+ * `required` is present; `multiple` accepts comma-separated addresses.
+ * Returns false for other elements. */
+bool tbox_context_email_valid(const tbox_html_node *input);
+
+/** Checks a URL input's required state and basic absolute URL syntax. */
+bool tbox_context_url_valid(const tbox_html_node *input);
+
+/* Checks a number input's value against numeric syntax, required, min, max,
+ * and step. Empty values are valid unless required is present. */
+bool tbox_context_number_valid(const tbox_html_node *input);
+
+/* Called when a form is submitted by an input type=submit or Enter in a
+ * single-line field. `submitter` is NULL for Enter in a field. The library
+ * does not navigate or send a network request; the application reads values
+ * from the form's DOM controls. */
+typedef void (*tbox_context_submit_handler)(tbox_context *ctx, tbox_html_node *form,
+                                             tbox_html_node *submitter, void *userdata);
+void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata);
+
+/* Absolute path chosen by the user for input type=file, or an empty view.
+ * The value attribute contains only the file name. The path is owned by the
+ * context and remains valid until a new selection, clearing the value, or
+ * closing the context. */
+tbox_string_view tbox_context_file_path(tbox_context *ctx, const tbox_html_node *input);
+
+/* Called after the value of an input or textarea changes through editing, or
+ * when the user changes an input type=color, type=date, type=datetime-local,
+ * type=month, or type=file through its picker. For a file input, value is the file name.
+ * The value
  * view is valid through the call and until the next edit of this field. */
 typedef void (*tbox_context_input_handler)(tbox_context *ctx, tbox_html_node *input, tbox_string_view value, void *userdata);
 void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata);

@@ -154,6 +154,18 @@ void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *
     node->element.attribute_count = new_count;
 }
 
+bool tbox_html_node_remove_attribute(tbox_html_node *node, tbox_string_view name) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT) return false;
+    for (size_t i = 0; i < node->element.attribute_count; i++) {
+        if (!tbox_string_view_equal_ascii_ci(node->element.attributes[i].name, name)) continue;
+        for (size_t j = i + 1; j < node->element.attribute_count; j++)
+            node->element.attributes[j - 1] = node->element.attributes[j];
+        node->element.attribute_count--;
+        return true;
+    }
+    return false;
+}
+
 void tbox_html_node_set_text_content(tbox_html_document *document, tbox_html_node *node, tbox_string_view text) {
     if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return;

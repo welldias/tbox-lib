@@ -6,9 +6,13 @@
   <p>Use Tab and Shift+Tab to move focus. In the field, drag to select or double click to select all. Ctrl+C, Ctrl+X and
     Ctrl+V use the clipboard. Hold a key to repeat it. A long value scrolls to keep the cursor visible.</p>
   <input id="name" type="text" value="This long value stays inside its text field">
+  <p>Enter a password:</p>
+  <input id="account-password" type="password" value="">
+  <p id="password-status">Password length: 0</p>
   <p>Write several lines below. Enter adds a line; drag or double click to select text:</p>
   <textarea id="notes" rows="4" cols="30">First line
 Second line</textarea>
+
   <p>Choose a mode with the mouse or keyboard:</p>
   <select id="mode">
     <option value="basic">Basic</option>
@@ -19,7 +23,61 @@ Second line</textarea>
   <p id="choice">Selected: balanced</p>
   <button id="first">First button</button>
   <button id="second">Second button</button>
+  <input id="input-button" type="button" value="Input button">
+  <input id="image-button" type="image" src="../tests/assets/yellow.png" alt="Image button" width="48" height="28">
+  <input id="toggle" type="checkbox" checked>
+  <p id="toggle-status">Checkbox: checked</p>
+  <p>Choose one radio option:</p>
+  <input id="radio-a" type="radio" name="plan" value="basic" checked>
+  <input id="radio-b" type="radio" name="plan" value="advanced">
+  <p id="radio-status">Radio: basic</p>
+  <p>Adjust a range:</p>
+  <input id="volume-range" type="range" min="0" max="100" step="5" value="50">
+  <p id="range-status">Range: 50</p>
+  <p>Pick a color with the mouse or keyboard:</p>
+  <input id="favorite-color" type="color" value="#3366cc">
+  <p id="color-status">Color: #3366cc</p>
+  <p>Pick a date with the mouse or keyboard:</p>
+  <input id="meeting-date" type="date" value="2026-09-24" min="2026-01-01" max="2027-12-31">
+  <p id="date-status">Date: 2026-09-24</p>
+  <p>Pick a local date and time:</p>
+  <input id="meeting-time" type="datetime-local" value="2026-09-24T14:30"
+         min="2026-09-24T09:00" max="2026-09-25T18:00">
+  <p id="time-status">Date and time: 2026-09-24T14:30</p>
+  <p>Choose a month:</p>
+  <input id="billing-month" type="month" value="2026-09" min="2026-01" max="2027-12">
+  <p id="month-status">Month: 2026-09</p>
+  <p>Choose a time:</p>
+  <input id="clock-time" type="time" value="14:30" min="09:00" max="18:00">
+  <p>Choose an ISO week:</p>
+  <input id="work-week" type="week" value="2026-W39" min="2026-W01" max="2027-W52">
+  <p>Enter an email address:</p>
+  <input id="contact-email" type="email" value="person@example.com" required>
+  <p id="email-status">Email: valid</p>
+  <p>Enter a quantity or use Up/Down to change it:</p>
+  <input id="quantity" type="number" value="2" min="0" max="10" step="0.5">
+  <p id="number-status">Number: valid</p>
+  <p>Enter a phone number and a URL:</p>
+  <input id="contact-tel" type="tel" value="+55 85 1234-5678">
+  <input id="contact-url" type="url" value="https://example.org" required>
+  <p id="url-status">URL: valid</p>
+  <p>Choose a local file:</p>
+  <input id="attachment" type="file">
+  <input id="form-token" type="hidden" value="demo-token">
+  <p id="file-status">No file chosen</p>
   <p id="status">No button activated yet.</p>
+  <form>
+    <p>Change these controls, then restore them:</p>
+    <input id="reset-field" type="text" value="Original text">
+    <input id="reset-check" type="checkbox" checked>
+    <input id="reset-control" type="reset" value="Restore form">
+  </form>
+  <form>
+    <p>Search and submit with Enter or the button:</p>
+    <input id="search-query" type="search" value="tbox">
+    <input id="search-submit" type="submit" value="Search">
+  </form>
+  <p id="submit-status">No form submitted yet.</p>
   <p>Use Tab and Shift+Tab to move through the list; use the wheel or scrollbar too:</p>
   <div id="scroll-list">
     <button id="row-1">Row 1: first item</button>

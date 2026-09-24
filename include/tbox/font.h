@@ -122,6 +122,11 @@ double tbox_font_face_line_height(const tbox_font_face *face);
  * baseline-relative, not line-top-relative). */
 double tbox_font_face_ascent(const tbox_font_face *face);
 
+/* True when the face contains a drawable glyph for `codepoint` (not the
+ * font's missing-glyph replacement). Useful before selecting a font for
+ * symbols such as U+2713 CHECK MARK. */
+bool tbox_font_face_has_glyph(const tbox_font_face *face, uint32_t codepoint);
+
 /* v0: the sum of each codepoint's advance width, decoded from `text` as
  * UTF-8, with no kerning and no shaping (no ligatures, no bidi/complex
  * reordering) -- enough for simple single-line Latin text. Real shaping

@@ -1,8 +1,11 @@
 #include <tbox/render.h>
 
+#include <tbox/css_cascade.h>
+
 #include <stddef.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 
 /* Pushes one FILL_RECT of `color` covering `rect` onto `items` -- shared by
@@ -20,6 +23,37 @@ static void tbox_render_push_fill_rect(tbox_vector *items, tbox_rect rect, tbox_
     op->image         = NULL;
     op->radius        = 0.0;
     op->has_clip      = false;
+}
+
+static bool tbox_render_checked_checkbox(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    return type != NULL &&
+           tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("checkbox", 8)) &&
+           tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
+}
+
+static bool tbox_render_checked_radio(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("radio", 5)) &&
+        tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
+}
+
+static bool tbox_render_color_input(const tbox_html_node *node, tbox_css_rgba *out_color) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    if (type == NULL || !tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("color", 5)))
+        return false;
+    *out_color = (tbox_css_rgba){0, 0, 0, 255};
+    const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+    if (value != NULL && value->value.size == 7)
+        tbox_css_hex_to_rgba(value->value, out_color);
+    out_color->a = 255;
+    return true;
 }
 
 /* NOVO (visual fidelity): same as tbox_render_push_fill_rect above, but
@@ -174,6 +208,37 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 tbox_render_push_fill_rect(items, (tbox_rect){ border_box.x, padding_box.y + padding_box.height, border_box.width, (border_box.y + border_box.height) - (padding_box.y + padding_box.height) }, border_color);
                 tbox_render_push_fill_rect(items, (tbox_rect){ border_box.x, padding_box.y, padding_box.x - border_box.x, padding_box.height }, border_color);
                 tbox_render_push_fill_rect(items, (tbox_rect){ padding_box.x + padding_box.width, padding_box.y, (border_box.x + border_box.width) - (padding_box.x + padding_box.width), padding_box.height }, border_color);
+            }
+        }
+
+        tbox_css_rgba input_color;
+        if (tbox_render_color_input(box->node, &input_color))
+            tbox_render_push_fill_rect(items, box->content_box, input_color);
+
+        if (box->style != NULL && tbox_render_checked_radio(box->node)) {
+            tbox_rect content = box->content_box;
+            double side = content.width < content.height ? content.width : content.height;
+            side *= 0.5;
+            if (side > 0.0) {
+                tbox_rect dot = {content.x + (content.width - side) / 2.0,
+                                 content.y + (content.height - side) / 2.0, side, side};
+                tbox_render_push_fill_rect_rounded(items, dot, side / 2.0, box->style->color);
+            }
+        }
+
+        /* Layout supplies the U+2713 text run when a suitable font exists.
+         * Keep the small geometric mark for embedded fonts without it. */
+        if (box->style != NULL && box->text_run_count == 0 && tbox_render_checked_checkbox(box->node)) {
+            tbox_rect content = box->content_box;
+            double side = content.width < content.height ? content.width : content.height;
+            double unit = side / 8.0;
+            if (unit > 0.0) {
+                double x = content.x + (content.width - side) / 2.0;
+                double y = content.y + (content.height - side) / 2.0;
+                const unsigned char pixels[][2] = {{1, 4}, {2, 5}, {3, 6}, {4, 5}, {5, 4}, {6, 3}};
+                for (size_t i = 0; i < sizeof(pixels) / sizeof(pixels[0]); i++)
+                    tbox_render_push_fill_rect(items, (tbox_rect){x + pixels[i][0] * unit,
+                        y + pixels[i][1] * unit, unit, unit}, box->style->color);
             }
         }
 

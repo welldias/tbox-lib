@@ -119,6 +119,11 @@ tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_
  * not addressed preemptively here. A no-op if `node` isn't an ELEMENT. */
 void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, tbox_string_view value);
 
+/* Removes an attribute by case-insensitive name. Returns true only when an
+ * attribute was present. The document arena retains its storage until the
+ * document is destroyed, as with other DOM mutations. */
+bool tbox_html_node_remove_attribute(tbox_html_node *node, tbox_string_view name);
+
 /* Linear search over node->element.attributes for `name`
  * (case-insensitive). Returns NULL if `node` isn't an ELEMENT or the
  * attribute doesn't exist -- same return pattern as

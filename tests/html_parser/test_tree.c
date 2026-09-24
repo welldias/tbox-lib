@@ -829,5 +829,26 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Removing a boolean attribute must preserve the others and allow it
+     * to be set again, which checkbox toggling relies on. */
+    {
+        tbox_html_document *doc = parse_cstr("<input id='choice' checked disabled>");
+        tbox_html_node *input = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(tbox_html_node_remove_attribute(input, tbox_string_view_make("CHECKED", 7)));
+        TBOX_TEST_ASSERT(tbox_html_node_get_attribute(input, tbox_string_view_make("checked", 7)) == NULL);
+        TBOX_TEST_ASSERT(tbox_html_node_get_attribute(input, tbox_string_view_make("disabled", 8)) != NULL);
+        TBOX_TEST_ASSERT(!tbox_html_node_remove_attribute(input, tbox_string_view_make("checked", 7)));
+        tbox_html_node_set_attribute(doc, input, tbox_string_view_make("checked", 7), tbox_string_view_make(NULL, 0));
+        TBOX_TEST_ASSERT(tbox_html_node_get_attribute(input, tbox_string_view_make("checked", 7)) != NULL);
+        tbox_html_document_destroy(doc);
+    }
+
+    {
+        tbox_html_document *doc = parse_cstr("<p>&checkmark;</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "\xE2\x9C\x93"));
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

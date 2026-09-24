@@ -484,11 +484,18 @@ void tbox_app_step(tbox_app *app) {
         case TBOX_INPUT_POINTER_DRAG:
             if (tbox_context_scrollbar_drag(app->ctx, event.data.drag.x, event.data.drag.y))
                 dirty = true;
+            else if (tbox_context_color_drag(app->ctx, event.data.drag.x, event.data.drag.y))
+                dirty = true;
+            else if (tbox_context_range_drag(app->ctx, event.data.drag.x, event.data.drag.y))
+                dirty = true;
+            else if (tbox_context_datetime_drag(app->ctx, event.data.drag.x, event.data.drag.y))
+                dirty = true;
             else if (tbox_context_drag_select_at(app->ctx, event.data.drag.x, event.data.drag.y))
                 dirty = true;
             break;
         case TBOX_INPUT_POINTER_RELEASE:
             tbox_context_scrollbar_release(app->ctx);
+            tbox_context_range_release(app->ctx);
             break;
         case TBOX_INPUT_POINTER_SCROLL:
             if (tbox_context_scroll(app->ctx, event.data.scroll.x, event.data.scroll.y, event.data.scroll.delta_y))

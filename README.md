@@ -12,7 +12,14 @@ in C. A JavaScript bridge is a later milestone.
   set of box, text, image, and table layout rules.
 - Software rendering and PNG screenshots without opening a window.
 - Interactive windows on Linux/Wayland with pointer clicks, `:hover`,
-  keyboard focus on buttons, single-line `<input type="text">` fields, and
+  keyboard focus on buttons, `<input type="button">`, `<input type="checkbox">`,
+  `<input type="color">`, `<input type="date">`, and
+  `<input type="datetime-local">`, `<input type="file">`, `<input type="image">`,
+  `<input type="month">`, `<input type="radio">`, `<input type="range">`,
+  `<input type="reset">`, `<input type="submit">`, `<input type="time">`,
+  and `<input type="week">` controls, single-line `<input type="email">`,
+  `<input type="number">`, `<input type="password">`, `<input type="search">`,
+  `<input type="tel">`, `<input type="text">`, and `<input type="url">` fields, and
   single-choice `<select>` controls with `<option>` entries, and multiline
   `<textarea>` controls with `rows` and `cols`,
   `:focus`, Enter/Space button activation, UTF-8 text editing and selection
@@ -60,6 +67,84 @@ key repeats according to the Wayland compositor's configured rate and delay.
 A fixed-height list below the form scrolls with the mouse wheel. Drag its
 scrollbar thumb or click the track to move a page at a time. Tab and Shift+Tab
 move through its buttons and scroll the focused one into view.
+An `<input type="button" value="Label">` displays its value as the label and
+activates `tbox_context_on_click()` handlers with a mouse click, Enter, or
+Space. A disabled input button does not activate.
+An `<input type="checkbox">` toggles with a mouse click or Space. Its live
+state is the presence of `checked` in the DOM; click handlers run after the
+toggle and can read it with `tbox_html_node_get_attribute()`. Use
+`tbox_html_node_set_attribute()` and `tbox_html_node_remove_attribute()` to
+change it programmatically. The `:checked` selector styles checked controls.
+Disabled checkboxes do not activate.
+An `<input type="radio" name="choice">` is selected with a click or Space.
+Selecting it clears `checked` from other radios with the same `name` in the
+same form; `:checked` reflects the live state. Disabled radios do not activate.
+An `<input type="range">` shows a slider. Click or drag the thumb, use arrow
+keys to change by `step`, or use Home/End for the limits. Its value is kept in
+the DOM and reported through `tbox_context_on_input()`; defaults are 0–100.
+An `<input type="reset">` inside a `<form>` restores the form's initial input,
+textarea, and select state with a click, Enter, or Space. Its `value` is the
+label, defaulting to “Reset”.
+An `<input type="submit">` activates the enclosing form with a click, Enter,
+or Space. Register `tbox_context_on_submit()` to receive the form and the
+submit button. Enter in a single-line field also submits its form, with a
+null submitter. Its default label is “Submit”.
+An `<input type="search">` edits like a text field and has a clear button;
+Escape clears its value while focused. Changes call `tbox_context_on_input()`.
+An `<input type="color" value="#3366cc">` shows a color swatch. Click it or
+press Enter/Space while focused to open the RGB picker. Click or drag a channel
+bar to change its value; Up/Down select a channel, Left/Right adjust it, Home/End
+set its limits, and Escape closes the picker. Changes update the `value`
+attribute as lowercase `#rrggbb` and call `tbox_context_on_input()`.
+An `<input type="date" value="2026-09-24">` shows its ISO date and opens a
+calendar with a mouse click or Enter/Space. Click a day or move with the arrow
+keys and confirm with Enter/Space; Shift+Left/Right changes month, Home/End
+moves to the first/last day, and Escape closes it. `min` and `max` restrict
+selectable dates. A selection updates `value` as `YYYY-MM-DD` and calls
+`tbox_context_on_input()`.
+An `<input type="datetime-local" value="2026-09-24T14:30">` uses the same
+calendar, with hour and minute bars and an OK button. Click or drag the bars,
+or use Shift+Up/Down for hours and Ctrl+Up/Down for minutes while the picker is
+open. Enter/Space confirms; `min` and `max` include the time. The stored value
+uses `YYYY-MM-DDTHH:MM` with no timezone conversion.
+An `<input type="month" value="2026-09">` opens a grid of twelve months.
+Arrow keys move by one or four months, Shift+Left/Right changes the year,
+Home/End selects January/December, and Enter/Space confirms. A click on a
+month selects it directly. `min` and `max` use `YYYY-MM`; changes update the
+DOM `value` and call `tbox_context_on_input()`.
+An `<input type="time" value="14:30">` opens hour and minute bars. Use the
+mouse, or Up/Down for hours and Ctrl+Up/Down for minutes; Enter confirms.
+`min` and `max` accept `HH:MM` values. Invalid initial values are cleared.
+An `<input type="week" value="2026-W39">` opens a calendar and selects ISO
+weeks. Click a day to choose its week; Left/Right and Up/Down move by one or
+four weeks. `min` and `max` accept `YYYY-Www` values. The selected week is
+stored in the DOM and reported through `tbox_context_on_input()`.
+An `<input type="email">` edits like a single-line text field. Its live
+`value` is available through the DOM and `tbox_context_on_input()`;
+`tbox_context_email_valid()` checks ASCII address syntax, `required`, and
+addresses separated by commas when `multiple` is present.
+An `<input type="number">` accepts decimal numbers, including exponent
+notation. Up/Down or the small arrow buttons change the value by `step`
+(default 1); Shift+Up/Down changes it by ten steps. `min` and `max` limit stepping. The live `value` is in the DOM,
+and `tbox_context_number_valid()` checks syntax, `required`, bounds, and step.
+An `<input type="password">` edits like a text field but displays one mask
+glyph per character. Its actual value remains available in the DOM and input
+callback. Clipboard copy and cut do not expose the selected password.
+An `<input type="tel">` edits as a single-line text field without imposing a
+phone-number format. An `<input type="url">` also edits as text;
+`tbox_context_url_valid()` checks `required` and basic absolute URL syntax.
+An `<input type="file">` opens an in-app picker rooted at the process's current
+directory. Choose one file by mouse or keyboard; folders can be opened and
+the list scrolled. Its `value` attribute contains the selected file name,
+while `tbox_context_file_path()` returns the absolute path. Selection calls
+`tbox_context_on_input()` with the file name. The current picker selects one
+file; `multiple` and `accept` filtering are not implemented yet.
+An `<input type="hidden">` keeps its `value` in the DOM without occupying
+space, painting, receiving pointer clicks, or joining keyboard focus order.
+An `<input type="image" src="button.png" alt="Send">` displays the image at
+its intrinsic size or the size set by `width` and `height`. It activates
+`tbox_context_on_click()` handlers with a click, Enter, or Space. If the image
+cannot be loaded, its `alt` text is shown. Disabled image inputs do not activate.
 The select control supports direct child `<option>` elements, mouse choice,
 Up/Down/Home/End, Enter/Space to
 open or confirm, and Escape to dismiss. Its value is available through

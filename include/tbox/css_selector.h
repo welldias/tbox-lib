@@ -21,12 +21,14 @@ extern "C" {
  * tbox_css_simple_selector_kind is supported except a reduced subset of
  * PSEUDO: "first-child" and "last-child" are evaluated (both purely
  * structural, computed from prev_sibling/next_sibling). "hover" and
- * "focus" match the nodes provided by the context. Other unsupported
+ * "focus" match the nodes provided by the context. "checked" matches a
+ * checked input type=checkbox. Other unsupported
  * pseudo-classes or pseudo-elements never match. ID and
  * CLASS simple selectors compare case-sensitively (per CSS2.1); TYPE, the
  * "id"/"class" attribute lookup itself, and ATTRIBUTE names compare
  * case-insensitively (tag/attribute names are already lowercased by
- * tbox_html_parse); ATTRIBUTE and ID values compare byte-exact. */
+ * tbox_html_parse); ATTRIBUTE and ID values compare byte-exact, except an
+ * input's `type` attribute, whose value compares ASCII case-insensitively. */
 
 /* Opaque: owns the arena backing the compiled selector-group's AST. */
 typedef struct tbox_css_selector_query tbox_css_selector_query;
@@ -116,7 +118,8 @@ bool tbox_css_selector_matches(const tbox_css_selector *selector, const tbox_htm
 /* Defines the node currently under the pointer (or NULL for none) for
  * subsequent tbox_css_selector_matches calls to evaluate a simple selector
  * PSEUDO named "hover" -- matches iff `node == hovered` (pointer equality);
- * :focus matches the focused node set by the context. Other unsupported
+ * :focus matches the focused node set by the context; :checked reads a
+ * checkbox's checked attribute. Other unsupported
  * pseudo-classes/pseudo-elements remain "never matches", as
  * documented above (only first-child/last-child are structural and already
  * worked). Backed by a single file-static global (this library is already
