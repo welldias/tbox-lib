@@ -109,8 +109,8 @@ typedef enum tbox_style_text_decoration {
     TBOX_STYLE_TEXT_DECORATION_OVERLINE,
 } tbox_style_text_decoration;
 
-/* Baseline/sub/super apply to inline text; top/middle/bottom position
- * content in table cells. */
+/* Baseline/sub/super/text-top/text-bottom/<length> apply to inline text;
+ * top/middle/bottom position content in table cells. */
 typedef enum tbox_style_vertical_align {
     TBOX_STYLE_VERTICAL_ALIGN_BASELINE, /* initial */
     TBOX_STYLE_VERTICAL_ALIGN_SUB,
@@ -118,6 +118,9 @@ typedef enum tbox_style_vertical_align {
     TBOX_STYLE_VERTICAL_ALIGN_TOP,
     TBOX_STYLE_VERTICAL_ALIGN_MIDDLE,
     TBOX_STYLE_VERTICAL_ALIGN_BOTTOM,
+    TBOX_STYLE_VERTICAL_ALIGN_TEXT_TOP,    /* top edge on the block's font ascent */
+    TBOX_STYLE_VERTICAL_ALIGN_TEXT_BOTTOM, /* bottom edge on the block's font descent */
+    TBOX_STYLE_VERTICAL_ALIGN_LENGTH,      /* raised by vertical_align_length */
 } tbox_style_vertical_align;
 
 typedef enum tbox_style_caption_side {
@@ -198,8 +201,15 @@ typedef struct tbox_style {
     tbox_style_text_decoration text_decoration;
     tbox_css_rgba text_decoration_color; /* initial: current text color */
     double text_decoration_thickness;    /* px; initial: 1 */
+    /* Inheritable. AUTO keeps the default underline position; PX is the
+     * distance from the baseline to the underline's top edge. */
+    tbox_style_length text_underline_offset;
     /* NOVO v13: `vertical-align`. NOT inheritable; initial value BASELINE. */
     tbox_style_vertical_align vertical_align;
+    /* Only meaningful for VERTICAL_ALIGN_LENGTH: PX, or PERCENT of the
+     * element's own line-height, resolved by the Layout Tree. Positive
+     * values raise the text. */
+    tbox_style_length vertical_align_length;
     tbox_style_caption_side caption_side;
     bool border_collapse;
     double border_spacing_x, border_spacing_y;
@@ -218,6 +228,11 @@ typedef struct tbox_style {
      * nothing. */
     double box_shadow_offset_x, box_shadow_offset_y, box_shadow_blur; /* px; initial 0.0 */
     tbox_css_rgba box_shadow_color;                                  /* initial transparent */
+    /* Form control colors, both inheritable. Alpha 0 means `auto` (the
+     * initial value), which paints with the element's own `color` --
+     * same "alpha 0 means absent" convention as box_shadow_color. */
+    tbox_css_rgba accent_color; /* checked checkbox mark and radio dot */
+    tbox_css_rgba caret_color;  /* text insertion caret */
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
@@ -286,7 +301,17 @@ typedef struct tbox_style {
  * `vertical-align` (`sub`/`super` for inline text and `top`/`middle`/
  * `bottom` for table cells; NOT inheritable), `caption-side` (`top`/`bottom`),
  * `border-collapse` (`separate`/`collapse`), and nonnegative one/two-value
- * `border-spacing` in px/em (all three table properties inherit).
+ * `border-spacing` in px/em (all three table properties inherit),
+ * `inset` (1-4 values onto top/right/bottom/left) and the logical
+ * `margin-`/`padding-`/`inset-` `block`/`inline` shorthands and
+ * `-start`/`-end` longhands (left-to-right: block = top/bottom, inline =
+ * left/right; normal cascade precedence against the physical properties),
+ * `font-weight: bolder|lighter` (bold/regular), `overflow: clip` (as
+ * `hidden`) and `scroll` (as `auto`), `border-style: hidden` (as `none`),
+ * the `text-decoration` shorthand with line/color/thickness plus the
+ * `text-decoration-line` longhand, `text-underline-offset` (px/em/%,
+ * inheritable), `vertical-align: text-top|text-bottom|<length>|<percent>`,
+ * and inheritable `accent-color`/`caret-color`.
  * Out of scope: `float`, flex/grid, `z-index`, other white-space modes. */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 

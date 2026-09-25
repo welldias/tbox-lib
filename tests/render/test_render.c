@@ -973,6 +973,53 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* text-underline-offset moves the underline to baseline + offset. */
+    {
+        tbox_style box_style = tbox_test_render_default_style();
+        tbox_layout_box box  = tbox_test_render_default_box(&box_style);
+        tbox_style run_style = tbox_test_render_default_style();
+        run_style.text_decoration = TBOX_STYLE_TEXT_DECORATION_UNDERLINE;
+        run_style.text_decoration_thickness = 1.0;
+        run_style.text_underline_offset = (tbox_style_length){TBOX_STYLE_LENGTH_PX, 6.0};
+        tbox_layout_text_run run = { 0 };
+        run.rect  = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("ins");
+        run.font  = font;
+        run.style = &run_style;
+        box.text_runs      = &run;
+        box.text_run_count = 1;
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 2);
+        if (list.count == 2)
+            TBOX_TEST_ASSERT(list.items[1].rect.y == run.rect.y + tbox_font_face_ascent(font) + 6.0);
+        tbox_arena_destroy(&arena);
+    }
+
+    /* accent-color paints a checked radio's dot; auto falls back to color. */
+    {
+        const char *html = "<input type=radio checked>";
+        tbox_html_document *doc = tbox_html_parse(html, strlen(html));
+        const tbox_html_node *input = tbox_html_document_root(doc)->first_child;
+        for (int accent = 0; accent < 2; accent++) {
+            tbox_style style = tbox_test_render_default_style();
+            style.color = (tbox_css_rgba){1, 2, 3, 255};
+            if (accent) style.accent_color = (tbox_css_rgba){200, 100, 50, 255};
+            tbox_layout_box box = tbox_test_render_default_box(&style);
+            box.node = input;
+            box.content_box = (tbox_rect){0, 0, 12, 12};
+            tbox_arena arena = tbox_arena_create(0);
+            tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+            TBOX_TEST_ASSERT(list.count == 1);
+            if (list.count == 1) {
+                unsigned char expected_r = accent ? 200 : 1;
+                TBOX_TEST_ASSERT(list.items[0].color.r == expected_r);
+            }
+            tbox_arena_destroy(&arena);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
     tbox_font_face_destroy(bold_font);
     tbox_font_face_destroy(font);
     free(font_data);

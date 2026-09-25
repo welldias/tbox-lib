@@ -1882,6 +1882,44 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* vertical-align lengths raise the run; text-top/text-bottom line a
+     * smaller run's top/bottom up with the block font's own run. */
+    {
+        const char *css[] = {
+            "span { display: inline; vertical-align: 4px; }",
+            "span { display: inline; vertical-align: -0.5em; }",
+            "span { display: inline; font-size: 8px; vertical-align: text-top; }",
+            "span { display: inline; font-size: 8px; vertical-align: text-bottom; }",
+        };
+        for (size_t i = 0; i < sizeof(css) / sizeof(css[0]); i++) {
+            tbox_html_document *doc    = parse_html_cstr("<p>Normal <span>alto</span></p>");
+            const tbox_html_node *root = tbox_html_document_root(doc);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css[i]);
+
+            tbox_arena arena               = tbox_arena_create(0);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+
+            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+            TBOX_TEST_ASSERT(box != NULL && box->text_run_count == 2);
+            if (box != NULL && box->text_run_count == 2) {
+                const tbox_layout_text_run *plain = &box->text_runs[0];
+                const tbox_layout_text_run *span = &box->text_runs[1];
+                double extra = span->rect.y - plain->rect.y;
+                if (i == 0) TBOX_TEST_ASSERT(tbox_test_double_approx_equal(extra, -4.0));
+                if (i == 1) TBOX_TEST_ASSERT(tbox_test_double_approx_equal(extra, 8.0));
+                if (i == 2) TBOX_TEST_ASSERT(tbox_test_double_approx_equal(extra, 0.0));
+                if (i == 3) TBOX_TEST_ASSERT(tbox_test_double_approx_equal(
+                    span->rect.y + tbox_font_face_line_height(span->font),
+                    plain->rect.y + tbox_font_face_line_height(plain->font)));
+            }
+
+            tbox_arena_destroy(&arena);
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
     /* 53: NOVO v13 regression -- <p>um<br>dois</p>, all text sharing ONE
      * face/style (no <small>/<sub>/<sup>/<mark> anywhere): every run's
      * rect.y stays EXACTLY `line_y` (zero baseline-alignment offset, zero

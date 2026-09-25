@@ -2520,7 +2520,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
                     items[count++] = (tbox_paint_op){
                         .kind = TBOX_PAINT_FILL_RECT,
                         .rect = { x, box->content_box.y, caret_width, height },
-                        .color = style->color,
+                        .color = style->caret_color.a != 0 ? style->caret_color : style->color,
                         .has_clip = true, .clip = input_clip,
                     };
                     out_list->items = items;
@@ -2581,7 +2581,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
                         tbox_string_view_make(field->value + field->lines[row].start, offset), style->letter_spacing);
                     items[count++] = (tbox_paint_op){.kind = TBOX_PAINT_FILL_RECT,
                         .rect = {x, box->content_box.y + row * line_height - field->scroll_y, 1.0, line_height},
-                        .color = style->color, .has_clip = true, .clip = clip};
+                        .color = style->caret_color.a != 0 ? style->caret_color : style->color, .has_clip = true, .clip = clip};
                     out_list->items = items;
                     out_list->count = count;
                 }

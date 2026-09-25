@@ -35,6 +35,11 @@ static bool tbox_render_checked_checkbox(const tbox_html_node *node) {
            tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
 }
 
+/* `accent-color: auto` (alpha 0) paints form marks in the text color. */
+static tbox_css_rgba tbox_render_accent_color(const tbox_style *style) {
+    return style->accent_color.a != 0 ? style->accent_color : style->color;
+}
+
 static bool tbox_render_checked_radio(const tbox_html_node *node) {
     if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
         !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
@@ -264,7 +269,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
             if (side > 0.0) {
                 tbox_rect dot = {content.x + (content.width - side) / 2.0,
                                  content.y + (content.height - side) / 2.0, side, side};
-                tbox_render_push_fill_rect_rounded(items, dot, side / 2.0, box->style->color);
+                tbox_render_push_fill_rect_rounded(items, dot, side / 2.0, tbox_render_accent_color(box->style));
             }
         }
 
@@ -280,7 +285,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 const unsigned char pixels[][2] = {{1, 4}, {2, 5}, {3, 6}, {4, 5}, {5, 4}, {6, 3}};
                 for (size_t i = 0; i < sizeof(pixels) / sizeof(pixels[0]); i++)
                     tbox_render_push_fill_rect(items, (tbox_rect){x + pixels[i][0] * unit,
-                        y + pixels[i][1] * unit, unit, unit}, box->style->color);
+                        y + pixels[i][1] * unit, unit, unit}, tbox_render_accent_color(box->style));
             }
         }
 
@@ -335,7 +340,8 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
             tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
             op->kind          = TBOX_PAINT_TEXT_RUN;
             op->rect          = run->rect;
-            op->color         = run->style->color; /* NOVO v13: per-run color (run->style, never NULL), replacing the one shared box->style->color -- see ARCHITECTURE.md's "v13" section */
+            op->color         = tbox_render_checked_checkbox(box->node) ?
+                tbox_render_accent_color(run->style) : run->style->color; /* NOVO v13: per-run color (run->style, never NULL), replacing the one shared box->style->color -- see ARCHITECTURE.md's "v13" section */
             op->text          = run->text;
             op->face          = run->font;
             op->letter_spacing = run->style->letter_spacing;
@@ -368,8 +374,10 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
              * TEXT_RUN, same color as the text. */
             if (run->style->text_decoration != TBOX_STYLE_TEXT_DECORATION_NONE) {
                 double baseline = run->rect.y + tbox_font_face_ascent(run->font);
+                double underline_offset = run->style->text_underline_offset.kind == TBOX_STYLE_LENGTH_PX ?
+                    run->style->text_underline_offset.value : 2.0;
                 double line_y = run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE
-                    ? baseline + 2.0
+                    ? baseline + underline_offset
                     : run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_OVERLINE
                         ? baseline - tbox_font_face_ascent(run->font)
                         : baseline - tbox_font_face_ascent(run->font) * 0.3;

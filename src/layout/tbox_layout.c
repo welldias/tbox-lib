@@ -621,13 +621,34 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
  * magnitude), not a real OpenType `subs`/`sups` table lookup -- out of scope,
  * see ARCHITECTURE.md's v13 "Fora de escopo". Positive moves DOWN (`sub`),
  * negative moves UP (`super`), matching this project's y-down coordinate
- * space. */
-static double tbox_layout_vertical_align_offset(const tbox_style *style) {
+ * space.
+ *
+ * `text-top`/`text-bottom` align the run's top/bottom edge with the
+ * ascent/descent of `block_face` -- the text box's own font, standing in for
+ * the parent's (inline elements have no box of their own to take it from).
+ * `run_ascent`/`run_height` are the run's own extent, the same values
+ * tbox_layout_build_line_runs already uses for baseline alignment. A length
+ * raises the run by that many px; a percentage is of the run's own used
+ * line-height. The line box's height is not grown for any of these, same
+ * simplification as `sub`/`super`. */
+static double tbox_layout_vertical_align_offset(const tbox_style *style, const tbox_font_face *run_face,
+                                                double run_ascent, double run_height,
+                                                const tbox_font_face *block_face) {
     switch (style->vertical_align) {
     case TBOX_STYLE_VERTICAL_ALIGN_SUB:
         return 0.15 * style->font_size;
     case TBOX_STYLE_VERTICAL_ALIGN_SUPER:
         return -0.35 * style->font_size;
+    case TBOX_STYLE_VERTICAL_ALIGN_TEXT_TOP:
+        return block_face != NULL ? run_ascent - tbox_font_face_ascent(block_face) : 0.0;
+    case TBOX_STYLE_VERTICAL_ALIGN_TEXT_BOTTOM:
+        return block_face != NULL ? run_ascent - run_height + tbox_font_face_line_height(block_face) -
+            tbox_font_face_ascent(block_face) : 0.0;
+    case TBOX_STYLE_VERTICAL_ALIGN_LENGTH:
+        if (style->vertical_align_length.kind == TBOX_STYLE_LENGTH_PERCENT)
+            return run_face != NULL ? -tbox_layout_style_line_height(style, run_face) *
+                style->vertical_align_length.value / 100.0 : 0.0;
+        return -style->vertical_align_length.value;
     case TBOX_STYLE_VERTICAL_ALIGN_BASELINE:
     default:
         return 0.0;
@@ -661,7 +682,7 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style) {
  * run's own reduced size -- a deliberate simplification, see
  * ARCHITECTURE.md. `run->style` is set to the SAME style that decided
  * `run_face`, for the reasons above. */
-static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, tbox_vector *runs) {
+static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, tbox_vector *runs) {
     double cursor_x                  = 0.0;
     double run_start_x               = 0.0;
     double run_end_x                 = 0.0;
@@ -697,7 +718,8 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
                 run->rect.x               = content_x + run_start_x;
                 double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
-                run->rect.y               = line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style);
+                run->rect.y               = line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
+                    run_is_image ? run_image_height : tbox_font_face_line_height(run_face), block_face);
                 run->rect.width           = run_end_x - run_start_x;
                 run->rect.height          = run_is_image ? run_image_height : line->height;
                 run->text                 = tbox_string_builder_finish(&run_builder);
@@ -727,7 +749,8 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
         tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
         run->rect.x               = content_x + run_start_x;
         double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
-        run->rect.y               = line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style);
+        run->rect.y               = line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
+            run_is_image ? run_image_height : tbox_font_face_line_height(run_face), block_face);
         run->rect.width           = run_end_x - run_start_x;
         run->rect.height          = run_is_image ? run_image_height : line->height;
         run->text                 = tbox_string_builder_finish(&run_builder);
@@ -1088,6 +1111,9 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
     size_t line_count                  = tbox_vector_length(&lines);
     const tbox_layout_line *line_items = (const tbox_layout_line *)lines.data;
 
+    const tbox_font_face *block_face = tbox_font_face_cache_get(fonts,
+        tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
+        style->font_italic, style->font_size);
     double cumulative_y = content_y;
     double total_height = 0.0;
     for (size_t li = 0; li < line_count; li++) {
@@ -1095,7 +1121,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
 
         size_t runs_before = tbox_vector_length(&runs);
         tbox_layout_build_line_runs(arena, word_items, line, cumulative_y,
-            content_x + (li == 0 ? indent : 0.0), &runs);
+            content_x + (li == 0 ? indent : 0.0), block_face, &runs);
         if (style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS &&
             style->white_space_nowrap && style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN &&
             !is_input && !is_select) {

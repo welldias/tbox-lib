@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #f7f5f0;
+            color: #2f3441;
+            font-size: 16px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        h3 {
+            margin-top: 14px;
+            margin-bottom: 6px;
+        }
+
+        p {
+            margin: 0;
+        }
+
+        .frame {
+            position: relative;
+            width: 300px;
+            height: 70px;
+            background: #dde6f0;
+            border: 1px solid #5b7590;
+        }
+
+        .inset {
+            position: absolute;
+            inset: 10px 20px auto auto;
+            width: 120px;
+            height: 24px;
+            background: #f0b86e;
+        }
+
+        .inset-logical {
+            position: absolute;
+            inset-block-end: 8px;
+            inset-inline-start: 16px;
+            width: 80px;
+            height: 20px;
+            background: #6ea8f0;
+        }
+
+        .logical {
+            width: 220px;
+            margin-block: 6px 10px;
+            margin-inline-start: 40px;
+            padding-block: 4px;
+            padding-inline: 16px 4px;
+            background: #cfe3c6;
+            border: 1px solid #5f8b52;
+        }
+
+        .bold-parent {
+            font-weight: bold;
+        }
+
+        .lighter {
+            font-weight: lighter;
+        }
+
+        .bolder {
+            font-weight: bolder;
+        }
+
+        .box {
+            width: 300px;
+            height: 38px;
+            margin-bottom: 6px;
+            background: #e9e1f3;
+            border: 1px solid #7a5f99;
+        }
+
+        .clip {
+            overflow: clip;
+        }
+
+        .scroll {
+            overflow-y: scroll;
+        }
+
+        .hidden-border {
+            border: 3px solid #b44;
+            border-style: hidden;
+        }
+
+        .deco-short {
+            text-decoration: underline #d9480f 2px;
+        }
+
+        .deco-line {
+            text-decoration: underline;
+            text-decoration-line: line-through;
+            text-decoration-color: #1c7ed6;
+        }
+
+        .deco-over {
+            text-decoration: overline currentColor 3px;
+            color: #2b8a3e;
+        }
+
+        .offset {
+            text-decoration: underline;
+            text-underline-offset: 6px;
+        }
+
+        .small {
+            font-size: 10px;
+            color: #c2255c;
+        }
+
+        .text-top {
+            vertical-align: text-top;
+        }
+
+        .text-bottom {
+            vertical-align: text-bottom;
+        }
+
+        .raise {
+            vertical-align: 6px;
+        }
+
+        .lower {
+            vertical-align: -0.4em;
+        }
+
+        .accent input {
+            margin-bottom: 4px;
+        }
+
+        .accent {
+            accent-color: #e8590c;
+        }
+
+        .caret {
+            width: 200px;
+            caret-color: #e03131;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Level 1 style properties</h2>
+
+    <h3>inset and logical inset</h3>
+    <div class="frame">
+        <div class="inset"></div>
+        <div class="inset-logical"></div>
+    </div>
+
+    <h3>Logical margin and padding</h3>
+    <div class="logical">
+        <p>margin-inline-start: 40px; padding-inline: 16px 4px</p>
+    </div>
+
+    <h3>font-weight: bolder / lighter</h3>
+    <p>Regular <span class="bolder">bolder</span> regular</p>
+    <p class="bold-parent">Bold <span class="lighter">lighter</span> bold</p>
+
+    <h3>overflow: clip / overflow-y: scroll</h3>
+    <div class="box clip">
+        <p>overflow: clip hides the second line of this text, which is long enough to wrap around.</p>
+    </div>
+    <div class="box scroll">
+        <p>overflow-y: scroll behaves as auto, so this long text can be scrolled vertically.</p>
+    </div>
+
+    <h3>border-style: hidden</h3>
+    <div class="box hidden-border">
+        <p>The 3px red border is hidden.</p>
+    </div>
+
+    <h3>text-decoration and text-underline-offset</h3>
+    <p><span class="deco-short">underline #d9480f 2px</span></p>
+    <p><span class="deco-line">text-decoration-line: line-through</span></p>
+    <p><span class="deco-over">overline currentColor 3px</span></p>
+    <p><span class="offset">text-underline-offset: 6px</span></p>
+
+    <h3>vertical-align</h3>
+    <p>Base <span class="small text-top">text-top</span> base <span class="small text-bottom">text-bottom</span>
+        base</p>
+    <p>Base <span class="raise">+6px</span> base <span class="lower">-0.4em</span> base</p>
+
+    <h3>accent-color and caret-color</h3>
+    <div class="accent">
+        <input type="checkbox" checked>
+        <input type="radio" checked>
+    </div>
+    <input class="caret" value="Focus to see a red caret">
+</body>
+
+</html>

@@ -1320,5 +1320,142 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* inset expands to the four offsets; physical longhands follow cascade
+     * order against it. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { inset: 1px 2px 3px; left: 9px; }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.offset[0].kind == TBOX_STYLE_LENGTH_PX && style.offset[0].value == 1.0);
+        TBOX_TEST_ASSERT(style.offset[1].value == 2.0 && style.offset[2].value == 3.0);
+        TBOX_TEST_ASSERT(style.offset[3].value == 9.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { left: 9px; inset: auto; }");
+        style = resolve_node(sheet, div, NULL);
+        for (int i = 0; i < 4; i++) TBOX_TEST_ASSERT(style.offset[i].kind == TBOX_STYLE_LENGTH_AUTO);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Logical margin/padding/inset map onto physical sides, left-to-right. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { margin: 1px; margin-inline: 4px 6px; margin-block-end: 8px;"
+            " padding-block: 2px; padding-inline-start: 3px; padding: 5px; padding-inline-end: 7px;"
+            " inset-block-start: 10px; inset-inline: 1em; font-size: 10px; }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.margin[0].value == 1.0 && style.margin[1].value == 6.0);
+        TBOX_TEST_ASSERT(style.margin[2].value == 8.0 && style.margin[3].value == 4.0);
+        TBOX_TEST_ASSERT(style.padding[0].value == 5.0 && style.padding[1].value == 7.0);
+        TBOX_TEST_ASSERT(style.padding[2].value == 5.0 && style.padding[3].value == 5.0);
+        TBOX_TEST_ASSERT(style.offset[0].value == 10.0 && style.offset[2].kind == TBOX_STYLE_LENGTH_AUTO);
+        TBOX_TEST_ASSERT(style.offset[1].value == 10.0 && style.offset[3].value == 10.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { padding-inline: -1px; margin-block: 1px 2px 3px; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.padding[1].value == 0.0 && style.padding[3].value == 0.0);
+        TBOX_TEST_ASSERT(style.margin[0].value == 0.0 && style.margin[2].value == 0.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* bolder/lighter, overflow clip/scroll and border-style hidden. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { font-weight: bolder; overflow: clip; border: 2px hidden red; }"
+            " p { font-weight: lighter; overflow-y: scroll; border: 1px solid; border-style: hidden;"
+            " outline: 1px hidden red; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.font_weight_bold && !child.font_weight_bold);
+        TBOX_TEST_ASSERT(parent.overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN);
+        TBOX_TEST_ASSERT(child.overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO);
+        TBOX_TEST_ASSERT(parent.border_style == TBOX_STYLE_BORDER_STYLE_NONE && parent.border_width == 2.0);
+        TBOX_TEST_ASSERT(child.border_style == TBOX_STYLE_BORDER_STYLE_NONE);
+        TBOX_TEST_ASSERT(child.outline_style == TBOX_STYLE_BORDER_STYLE_NONE);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* text-decoration shorthand with color/thickness, its longhands and
+     * text-underline-offset. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { color: blue; text-decoration: underline red 3px; text-underline-offset: 4px; }"
+            " p { text-decoration-color: currentColor; text-decoration: overline wavy 0.5em;"
+            " text-decoration-line: line-through; font-size: 10px; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE);
+        TBOX_TEST_ASSERT(rgba_eq(parent.text_decoration_color, (tbox_css_rgba){255, 0, 0, 255}));
+        TBOX_TEST_ASSERT(parent.text_decoration_thickness == 3.0);
+        TBOX_TEST_ASSERT(parent.text_underline_offset.kind == TBOX_STYLE_LENGTH_PX &&
+                         parent.text_underline_offset.value == 4.0);
+        TBOX_TEST_ASSERT(child.text_decoration == TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH);
+        TBOX_TEST_ASSERT(rgba_eq(child.text_decoration_color, (tbox_css_rgba){0, 0, 255, 255}));
+        TBOX_TEST_ASSERT(child.text_decoration_thickness == 5.0);
+        TBOX_TEST_ASSERT(child.text_underline_offset.value == 4.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { text-decoration: none; text-underline-offset: 50%; font-size: 10px; }");
+        parent = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent.text_decoration == TBOX_STYLE_TEXT_DECORATION_NONE);
+        TBOX_TEST_ASSERT(parent.text_underline_offset.kind == TBOX_STYLE_LENGTH_PX &&
+                         parent.text_underline_offset.value == 5.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* vertical-align text-top/text-bottom and lengths. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const char *css[] = {"div { vertical-align: text-top; }", "div { vertical-align: TEXT-BOTTOM; }",
+                             "div { vertical-align: -3px; }", "div { vertical-align: 0.5em; font-size: 10px; }",
+                             "div { vertical-align: 50%; }", "div { vertical-align: 3; }"};
+        for (size_t i = 0; i < sizeof(css) / sizeof(css[0]); i++) {
+            tbox_css_stylesheet *sheet = parse_css_cstr(css[i]);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            if (i == 0) TBOX_TEST_ASSERT(style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_TEXT_TOP);
+            if (i == 1) TBOX_TEST_ASSERT(style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_TEXT_BOTTOM);
+            if (i == 2) TBOX_TEST_ASSERT(style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_LENGTH &&
+                                         style.vertical_align_length.value == -3.0);
+            if (i == 3) TBOX_TEST_ASSERT(style.vertical_align_length.kind == TBOX_STYLE_LENGTH_PX &&
+                                         style.vertical_align_length.value == 5.0);
+            if (i == 4) TBOX_TEST_ASSERT(style.vertical_align_length.kind == TBOX_STYLE_LENGTH_PERCENT &&
+                                         style.vertical_align_length.value == 50.0);
+            if (i == 5) TBOX_TEST_ASSERT(style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BASELINE);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* accent-color and caret-color inherit; auto is stored as alpha 0. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { accent-color: red; caret-color: blue; } p { caret-color: auto; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(rgba_eq(parent.accent_color, (tbox_css_rgba){255, 0, 0, 255}));
+        TBOX_TEST_ASSERT(rgba_eq(parent.caret_color, (tbox_css_rgba){0, 0, 255, 255}));
+        TBOX_TEST_ASSERT(rgba_eq(child.accent_color, parent.accent_color));
+        TBOX_TEST_ASSERT(child.caret_color.a == 0);
+        tbox_style root = resolve_node(sheet, p, NULL);
+        TBOX_TEST_ASSERT(root.accent_color.a == 0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

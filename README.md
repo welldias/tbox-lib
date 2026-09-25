@@ -95,6 +95,18 @@ It does not override `white-space: nowrap` or the preserved lines in `<pre>`.
 keeping it visible; descendants can use `pointer-events: auto` to receive
 pointer events again. Keyboard focus is unaffected.
 
+`inset` sets `top`, `right`, `bottom`, and `left` with one to four values.
+Logical `margin-block`, `margin-inline`, `padding-block`, `padding-inline`,
+`inset-block`, `inset-inline`, and their `-start`/`-end` longhands map to
+physical sides for left-to-right text. `font-weight` accepts `bolder` and
+`lighter`; `overflow: clip` acts as `hidden` and `overflow: scroll` as
+`auto`; `border-style: hidden` hides the border. `text-decoration` accepts a
+line, color, and thickness together (`underline red 2px`), alongside
+`text-decoration-line` and `text-underline-offset`. `vertical-align` also
+accepts `text-top`, `text-bottom`, lengths, and percentages of the
+line-height. `accent-color` colors checked checkboxes and radio buttons, and
+`caret-color` colors the text insertion caret.
+
 ## Build and checks
 
 ```sh
