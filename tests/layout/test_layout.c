@@ -1,6 +1,7 @@
 #include <tbox/layout.h>
 
 #include <tbox/image.h>
+#include <tbox/render.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -78,6 +79,28 @@ static char *read_file(const char *path, size_t *out_size) {
 static bool string_view_equal_cstr(tbox_string_view view, const char *cstr) {
     size_t len = strlen(cstr);
     return view.size == len && (len == 0 || memcmp(view.data, cstr, len) == 0);
+}
+
+static const tbox_layout_box *find_box_for_node(const tbox_layout_box *box, const tbox_html_node *node) {
+    for (; box != NULL; box = box->next_sibling) {
+        if (box->node == node) return box;
+        const tbox_layout_box *child = find_box_for_node(box->first_child, node);
+        if (child != NULL) return child;
+    }
+    return NULL;
+}
+
+static const tbox_html_node *find_html_id(const tbox_html_node *node, const char *id) {
+    for (; node != NULL; node = node->next_sibling) {
+        if (node->type == TBOX_HTML_NODE_ELEMENT) {
+            const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node,
+                tbox_string_view_make("id", 2));
+            if (attribute != NULL && string_view_equal_cstr(attribute->value, id)) return node;
+        }
+        const tbox_html_node *found = find_html_id(node->first_child, id);
+        if (found != NULL) return found;
+    }
+    return NULL;
 }
 
 /* NOVO v12 (Tarefa 5): test-only resolver state/callback, same pattern as
@@ -2384,6 +2407,26 @@ int tbox_test_layout_run(void) {
                 tbox_html_document_destroy(doc);
             }
 
+            /* Percentage max-width on an inline image uses the text box's
+             * available width; min-width wins when both limits conflict. */
+            {
+                tbox_html_document *doc = parse_html_cstr("<div><img src='black.png'></div>");
+                const tbox_html_node *root = tbox_html_document_root(doc);
+                tbox_css_stylesheet *sheet = parse_css_cstr(
+                    "div { width: 100px; } img { display: inline; max-width: 50%; min-width: 60px; }");
+                tbox_arena arena = tbox_arena_create(0);
+                tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+                tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+                const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, images, 800.0, 600.0);
+                const tbox_layout_box *anon = layout != NULL ? layout->first_child : NULL;
+                TBOX_TEST_ASSERT(anon != NULL && anon->text_run_count == 1);
+                if (anon != NULL && anon->text_run_count == 1)
+                    TBOX_TEST_ASSERT(tbox_test_double_approx_equal(anon->text_runs[0].rect.width, 60.0));
+                tbox_arena_destroy(&arena);
+                tbox_css_stylesheet_destroy(sheet);
+                tbox_html_document_destroy(doc);
+            }
+
             tbox_image_cache_destroy(images);
         }
     }
@@ -2488,11 +2531,54 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
-    /* 4: a row's own height is the MAX of its cells' margin_box.height --
-     * forced here by squeezing the table narrow enough that the long
-     * multi-word cell wraps across several lines while the short
-     * single-word cell (never force-split mid-word, see D4) stays on one
-     * line regardless of how little width its own column gets. */
+    /* The long ragged row and wide final header must leave enough room for
+     * styled inline words in the middle column. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<table><tr><th>Name</th><th>Role</th><th>Years Years Years</th></tr>"
+            "<tr><td>Alice</td><td id='role'>Senior <b>Backend</b> Engineer</td><td>5</td></tr>"
+            "<tr><td>Carol -- ragged row, só esta célula (sem Role/Years)</td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "table { width: 500px; border: 1px solid black; }"
+            "th, td { border: 1px solid gray; padding: 4px; }"
+            "th { font-weight: bold; text-align: center; }"
+            "b { display: inline; font-weight: bold; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table table = tbox_style_resolve_tree(&arena, root, &source, 1);
+        tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *role = find_box_for_node(table_box, find_html_id(root, "role"));
+        TBOX_TEST_ASSERT(role != NULL && role->text_run_count == 3);
+        if (role != NULL && role->text_run_count == 3) {
+            TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(role->text_runs[0].text, "Senior") &&
+                string_view_equal_cstr(role->text_runs[1].text, "Backend"),
+                "the first two role runs must be Senior and Backend");
+            TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(role->text_runs[0].rect.y, role->text_runs[1].rect.y),
+                "Senior and Backend must fit on the same line");
+            TBOX_TEST_ASSERT_MSG(role->text_runs[2].rect.y > role->text_runs[1].rect.y,
+                "Engineer may wrap to the next line");
+        }
+        TBOX_TEST_ASSERT(table_box != NULL && table_box->first_child != NULL);
+        if (table_box != NULL && table_box->first_child != NULL) {
+            tbox_layout_box *header = table_box->first_child;
+            tbox_layout_box *years = header->last_child;
+            TBOX_TEST_ASSERT(years != NULL && years->text_run_count > 0);
+            if (years != NULL && years->text_run_count > 0) {
+                for (size_t i = 0; i < years->text_run_count; i++) {
+                    tbox_layout_text_run *run = &years->text_runs[i];
+                    TBOX_TEST_ASSERT_MSG(run->rect.x + run->rect.width <= years->content_box.x + years->content_box.width + 1e-6,
+                        "each Years run must fit inside its own cell");
+                }
+            }
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 4: a wrapping cell sets the row height, and the short cell's border
+     * stretches to the same bottom edge while its text stays on one line. */
     {
         tbox_html_document *doc    = parse_html_cstr("<table style=\"width:100px;\"><tr><td>Short</td><td>This is a much longer piece of text with many separate words that will wrap across several lines when squeezed into a narrow column</td></tr></table>");
         const tbox_html_node *root = tbox_html_document_root(doc);
@@ -2510,8 +2596,9 @@ int tbox_test_layout_run(void) {
             tbox_layout_box *cell2   = cell1 != NULL ? cell1->next_sibling : NULL;
             TBOX_TEST_ASSERT(cell1 != NULL && cell2 != NULL);
             if (cell1 != NULL && cell2 != NULL) {
-                TBOX_TEST_ASSERT_MSG(cell2->margin_box.height > cell1->margin_box.height, "the long-text cell must wrap across more lines, growing taller than the short-text cell");
-                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(row_box->content_box.height, cell2->margin_box.height), "the row's own height must be the MAX of its cells' heights");
+                TBOX_TEST_ASSERT_MSG(cell2->text_run_count > 1 && cell2->text_runs[cell2->text_run_count - 1].rect.y > cell2->text_runs[0].rect.y, "the long-text cell must wrap across multiple lines");
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(cell1->border_box.y + cell1->border_box.height, cell2->border_box.y + cell2->border_box.height), "both cells' borders must reach the same row bottom");
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(row_box->content_box.height, cell2->margin_box.height), "the row's own height must match its cells' stretched height");
             }
         }
 
@@ -2611,6 +2698,381 @@ int tbox_test_layout_run(void) {
         tbox_layout_box *table_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT_MSG(table_box != NULL && table_box->first_child == NULL, "a table with only empty rows (no cells anywhere) must produce zero row boxes, never crash");
 
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Explicit sections, columns, caption and merged cells share one grid. */
+    {
+        const char *html = "<table id='t'><caption id='cap'>Totals</caption>"
+            "<colgroup id='cg'><col id='c1'><col id='c2'></colgroup>"
+            "<thead id='head'><tr><th>A</th><th>B</th><th>C</th></tr></thead>"
+            "<tbody id='body'><tr><td id='tall' rowspan='2'>X</td>"
+            "<td id='wide' colspan='2'>Y</td></tr>"
+            "<tr><td id='lower'>Z</td><td>Q</td></tr></tbody>"
+            "<tfoot id='foot'><tr><td colspan='3'>End</td></tr></tfoot></table>";
+        tbox_html_document *doc = parse_html_cstr(html);
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "table { width: 300px; border-collapse: collapse; border: 1px solid black; caption-side: bottom; }"
+            "#c1 { width: 60px; background-color: red; } #c2 { width: 120px; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *table_box = find_box_for_node(layout, find_html_id(root, "t"));
+        const tbox_layout_box *caption = find_box_for_node(layout, find_html_id(root, "cap"));
+        const tbox_layout_box *head = find_box_for_node(layout, find_html_id(root, "head"));
+        const tbox_layout_box *body = find_box_for_node(layout, find_html_id(root, "body"));
+        const tbox_layout_box *foot = find_box_for_node(layout, find_html_id(root, "foot"));
+        const tbox_layout_box *col1 = find_box_for_node(layout, find_html_id(root, "c1"));
+        const tbox_layout_box *col2 = find_box_for_node(layout, find_html_id(root, "c2"));
+        const tbox_layout_box *tall = find_box_for_node(layout, find_html_id(root, "tall"));
+        const tbox_layout_box *wide = find_box_for_node(layout, find_html_id(root, "wide"));
+        const tbox_layout_box *lower = find_box_for_node(layout, find_html_id(root, "lower"));
+        TBOX_TEST_ASSERT(table_box != NULL && caption != NULL && head != NULL && body != NULL && foot != NULL);
+        TBOX_TEST_ASSERT(col1 != NULL && col2 != NULL && tall != NULL && wide != NULL && lower != NULL);
+        if (table_box != NULL && caption != NULL && head != NULL && body != NULL && foot != NULL &&
+            col1 != NULL && col2 != NULL && tall != NULL && wide != NULL && lower != NULL) {
+            TBOX_TEST_ASSERT(head->border_box.y < body->border_box.y && body->border_box.y < foot->border_box.y);
+            TBOX_TEST_ASSERT(caption->border_box.y >= foot->border_box.y + foot->border_box.height);
+            TBOX_TEST_ASSERT(col2->border_box.width > col1->border_box.width);
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(wide->border_box.x, col2->border_box.x));
+            TBOX_TEST_ASSERT(wide->border_box.width > col2->border_box.width);
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(lower->border_box.x, wide->border_box.x));
+            TBOX_TEST_ASSERT(tall->border_box.height > wide->border_box.height);
+            TBOX_TEST_ASSERT(table_box->table_edge_count > 0 && table_box->table_suppress_border);
+            tbox_display_list display = tbox_render_build_display_list(&arena, layout);
+            bool painted_column = false, painted_grid_edge = false;
+            for (size_t op = 0; op < display.count; op++) {
+                if (display.items[op].kind != TBOX_PAINT_FILL_RECT) continue;
+                if (display.items[op].color.r == 255 && display.items[op].color.g == 0 &&
+                    display.items[op].rect.x == col1->border_box.x &&
+                    display.items[op].rect.width == col1->border_box.width) painted_column = true;
+                if (display.items[op].color.r == 0 && display.items[op].color.g == 0 &&
+                    display.items[op].color.b == 0 && display.items[op].rect.height == 1.0)
+                    painted_grid_edge = true;
+            }
+            TBOX_TEST_ASSERT(painted_column && painted_grid_edge);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Separate border spacing and block content inside a cell. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<table id='t'><tbody><tr><td id='blocks'><div>First</div><p>Second</p></td>"
+            "<td id='short'>Short</td></tr></tbody></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "table { width: 300px; border-spacing: 6px 8px; }"
+            "#short { vertical-align: bottom; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *table_box = find_box_for_node(layout, find_html_id(root, "t"));
+        const tbox_layout_box *blocks = find_box_for_node(layout, find_html_id(root, "blocks"));
+        const tbox_layout_box *short_cell = find_box_for_node(layout, find_html_id(root, "short"));
+        TBOX_TEST_ASSERT(table_box != NULL && blocks != NULL && short_cell != NULL);
+        if (table_box != NULL && blocks != NULL && short_cell != NULL) {
+            TBOX_TEST_ASSERT(blocks->first_child != NULL && blocks->first_child->next_sibling != NULL);
+            TBOX_TEST_ASSERT(blocks->border_box.x >= table_box->content_box.x + 6.0);
+            TBOX_TEST_ASSERT(short_cell->border_box.x >= blocks->border_box.x + blocks->border_box.width + 6.0);
+            TBOX_TEST_ASSERT(short_cell->text_run_count > 0);
+            if (short_cell->text_run_count > 0)
+                TBOX_TEST_ASSERT(short_cell->text_runs[0].rect.y > blocks->border_box.y);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* A zero rowspan stops at its section; hidden rows and cells occupy no grid slots. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<table><tbody><tr><td id='span' rowspan='0'>A</td><td>B</td></tr>"
+            "<tr id='hidden'><td>Ignored</td></tr>"
+            "<tr><td id='hidden-cell'>Skip</td><td id='next'>C</td></tr></tbody>"
+            "<tfoot><tr><td id='foot'>D</td></tr></tfoot></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("#hidden, #hidden-cell { display: none; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *span = find_box_for_node(layout, find_html_id(root, "span"));
+        const tbox_layout_box *next = find_box_for_node(layout, find_html_id(root, "next"));
+        const tbox_layout_box *foot = find_box_for_node(layout, find_html_id(root, "foot"));
+        TBOX_TEST_ASSERT(find_box_for_node(layout, find_html_id(root, "hidden")) == NULL);
+        TBOX_TEST_ASSERT(find_box_for_node(layout, find_html_id(root, "hidden-cell")) == NULL);
+        TBOX_TEST_ASSERT(span != NULL && next != NULL && foot != NULL);
+        if (span != NULL && next != NULL && foot != NULL) {
+            TBOX_TEST_ASSERT(next->border_box.x > span->border_box.x);
+            TBOX_TEST_ASSERT(span->border_box.y + span->border_box.height <= foot->border_box.y);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Direct rows remain direct DOM children and align with explicit groups. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<table><colgroup id='group' span='2'></colgroup>"
+            "<tr><td id='a'>A</td><td>A2</td></tr>"
+            "<tbody><tr><td id='b'>B</td><td>B2</td></tr></tbody>"
+            "<tr><td id='c'>C</td><td>C2</td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *a_node = find_html_id(root, "a");
+        TBOX_TEST_ASSERT(a_node != NULL && a_node->parent != NULL &&
+            a_node->parent->parent != NULL && tbox_string_view_equal_cstr(a_node->parent->parent->element.tag_name, "table"));
+        tbox_css_stylesheet *sheet = parse_css_cstr("#group { width: 80px; background-color: yellow; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *a = find_box_for_node(layout, a_node);
+        const tbox_layout_box *b = find_box_for_node(layout, find_html_id(root, "b"));
+        const tbox_layout_box *c = find_box_for_node(layout, find_html_id(root, "c"));
+        const tbox_layout_box *group = find_box_for_node(layout, find_html_id(root, "group"));
+        TBOX_TEST_ASSERT(a != NULL && b != NULL && c != NULL && group != NULL);
+        if (a != NULL && b != NULL && c != NULL && group != NULL) {
+            TBOX_TEST_ASSERT(a->border_box.y < b->border_box.y && b->border_box.y < c->border_box.y);
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(a->border_box.x, b->border_box.x) &&
+                tbox_test_double_approx_equal(b->border_box.x, c->border_box.x));
+            TBOX_TEST_ASSERT(group->border_box.width >= 160.0);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* nowrap keeps a whole line even when its measured text exceeds width;
+     * normal restores wrapping on a descendant. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div id='outer'><p id='nowrap'>one two three four</p>"
+            "<p id='normal'>one two three four</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "#outer { white-space: nowrap; } p { width: 55px; }"
+            "#normal { white-space: normal; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 300.0, 200.0);
+        const tbox_layout_box *nowrap_box = find_box_for_node(layout, find_html_id(root, "nowrap"));
+        const tbox_layout_box *normal_box = find_box_for_node(layout, find_html_id(root, "normal"));
+        TBOX_TEST_ASSERT(nowrap_box != NULL && normal_box != NULL);
+        if (nowrap_box != NULL && normal_box != NULL) {
+            TBOX_TEST_ASSERT(nowrap_box->text_run_count == 1);
+            TBOX_TEST_ASSERT(normal_box->text_run_count > 1);
+            TBOX_TEST_ASSERT(normal_box->content_box.height > nowrap_box->content_box.height);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Indentation consumes first-line width; word spacing moves both the
+     * measured line break and the painted start of following words. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><p id='plain'>one two three</p><p id='spaced'>one two three</p>"
+            "<p id='indented'>one two three</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "p { width: 100px; white-space: nowrap; }"
+            "#spaced { word-spacing: 10px; } #indented { text-indent: 20px; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 300.0, 200.0);
+        const tbox_layout_box *plain = find_box_for_node(layout, find_html_id(root, "plain"));
+        const tbox_layout_box *spaced = find_box_for_node(layout, find_html_id(root, "spaced"));
+        const tbox_layout_box *indented = find_box_for_node(layout, find_html_id(root, "indented"));
+        TBOX_TEST_ASSERT(plain != NULL && spaced != NULL && indented != NULL);
+        if (plain != NULL && spaced != NULL && indented != NULL) {
+            TBOX_TEST_ASSERT(plain->text_run_count == 1);
+            TBOX_TEST_ASSERT(spaced->text_run_count == 3);
+            if (spaced->text_run_count == 3) {
+                double gap = spaced->text_runs[1].rect.x -
+                    (spaced->text_runs[0].rect.x + spaced->text_runs[0].rect.width);
+                TBOX_TEST_ASSERT(gap > 10.0);
+            }
+            TBOX_TEST_ASSERT(indented->text_run_count == 1);
+            if (indented->text_run_count == 1)
+                TBOX_TEST_ASSERT(tbox_test_double_approx_equal(indented->text_runs[0].rect.x,
+                    indented->content_box.x + 20.0));
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><p id='plain'>one two</p><p id='indented'>one two</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "p { width: 65px; } #indented { text-indent: 20px; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 300.0, 200.0);
+        const tbox_layout_box *plain = find_box_for_node(layout, find_html_id(root, "plain"));
+        const tbox_layout_box *indented = find_box_for_node(layout, find_html_id(root, "indented"));
+        TBOX_TEST_ASSERT(plain != NULL && indented != NULL);
+        if (plain != NULL && indented != NULL) {
+            TBOX_TEST_ASSERT(plain->text_run_count == 1);
+            TBOX_TEST_ASSERT(indented->text_run_count == 2);
+            if (indented->text_run_count == 2)
+                TBOX_TEST_ASSERT(indented->text_runs[1].rect.y > indented->text_runs[0].rect.y);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Width constraints apply before children are laid out. Percentages use
+     * the containing block, and min-width wins if it exceeds max-width. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div id='host'><p id='max'>Text</p><p id='min'>Text</p>"
+            "<p id='percent'>Text</p><p id='conflict'>Text</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "#host { width: 200px; }"
+            "#max { width: 180px; max-width: 100px; }"
+            "#min { width: 20px; min-width: 80px; }"
+            "#percent { max-width: 50%; }"
+            "#conflict { width: 50px; min-width: 120px; max-width: 80px; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 400.0, 300.0);
+        const tbox_layout_box *max = find_box_for_node(layout, find_html_id(root, "max"));
+        const tbox_layout_box *min = find_box_for_node(layout, find_html_id(root, "min"));
+        const tbox_layout_box *percent = find_box_for_node(layout, find_html_id(root, "percent"));
+        const tbox_layout_box *conflict = find_box_for_node(layout, find_html_id(root, "conflict"));
+        TBOX_TEST_ASSERT(max != NULL && min != NULL && percent != NULL && conflict != NULL);
+        if (max != NULL && min != NULL && percent != NULL && conflict != NULL) {
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(max->content_box.width, 100.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(min->content_box.width, 80.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(percent->content_box.width, 100.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(conflict->content_box.width, 120.0));
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* A table's max-width limits the grid, while a column's min-width is
+     * included before cell positions are assigned. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<table id='grid'><colgroup><col id='first'><col></colgroup>"
+            "<tr><td id='a'>A</td><td id='b'>B</td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "#grid { width: 200px; max-width: 120px; }"
+            "#first { min-width: 80px; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 400.0, 300.0);
+        const tbox_layout_box *grid = find_box_for_node(layout, find_html_id(root, "grid"));
+        const tbox_layout_box *a = find_box_for_node(layout, find_html_id(root, "a"));
+        const tbox_layout_box *b = find_box_for_node(layout, find_html_id(root, "b"));
+        TBOX_TEST_ASSERT(grid != NULL && a != NULL && b != NULL);
+        if (grid != NULL && a != NULL && b != NULL) {
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(grid->content_box.width, 120.0));
+            TBOX_TEST_ASSERT(a->border_box.width >= 80.0);
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(b->border_box.x,
+                a->border_box.x + a->border_box.width));
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Plain direct-row tables also grow to satisfy a cell's min-width. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<table id='grid'><tr><td id='a'>A</td><td id='b'>B</td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "#grid { width: 60px; } #a { min-width: 80px; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 400.0, 300.0);
+        const tbox_layout_box *grid = find_box_for_node(layout, find_html_id(root, "grid"));
+        const tbox_layout_box *a = find_box_for_node(layout, find_html_id(root, "a"));
+        const tbox_layout_box *b = find_box_for_node(layout, find_html_id(root, "b"));
+        TBOX_TEST_ASSERT(grid != NULL && a != NULL && b != NULL);
+        if (grid != NULL && a != NULL && b != NULL) {
+            TBOX_TEST_ASSERT(a->content_box.width >= 80.0);
+            TBOX_TEST_ASSERT(grid->content_box.width >=
+                a->border_box.width + b->border_box.width);
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(b->border_box.x,
+                a->border_box.x + a->border_box.width));
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Border-box dimensions include padding and border; line-height and
+     * letter-spacing affect both line geometry and measured run width. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><p id='sized'>Hi</p><p id='line'>one<br>two</p>"
+            "<p id='spaced'>WWW</p><p id='ellip'>ABCDEFGHIJKLM</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "#sized { box-sizing: border-box; width: 120px; height: 40px;"
+            " padding: 10px; border: 2px solid black; }"
+            "#line { line-height: 30px; }"
+            "#spaced { letter-spacing: 4px; }"
+            "#ellip { width: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 300.0, 300.0);
+        const tbox_layout_box *sized = find_box_for_node(layout, find_html_id(root, "sized"));
+        const tbox_layout_box *line = find_box_for_node(layout, find_html_id(root, "line"));
+        const tbox_layout_box *spaced = find_box_for_node(layout, find_html_id(root, "spaced"));
+        const tbox_layout_box *ellip = find_box_for_node(layout, find_html_id(root, "ellip"));
+        TBOX_TEST_ASSERT(sized != NULL && line != NULL && spaced != NULL && ellip != NULL);
+        if (sized != NULL && line != NULL && spaced != NULL && ellip != NULL) {
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(sized->border_box.width, 120.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(sized->border_box.height, 40.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(sized->content_box.width, 96.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(sized->content_box.height, 16.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(line->content_box.height, 60.0));
+            TBOX_TEST_ASSERT(line->text_run_count == 2);
+            if (line->text_run_count == 2)
+                TBOX_TEST_ASSERT(tbox_test_double_approx_equal(
+                    line->text_runs[1].rect.y - line->text_runs[0].rect.y, 30.0));
+            TBOX_TEST_ASSERT(spaced->text_run_count == 1);
+            if (spaced->text_run_count == 1)
+                TBOX_TEST_ASSERT(tbox_test_double_approx_equal(spaced->text_runs[0].rect.width,
+                    tbox_font_measure_text_spaced(spaced->text_runs[0].font,
+                        spaced->text_runs[0].text, 4.0)));
+            TBOX_TEST_ASSERT(ellip->text_run_count > 0);
+            if (ellip->text_run_count > 0) {
+                const tbox_layout_text_run *last = &ellip->text_runs[ellip->text_run_count - 1];
+                TBOX_TEST_ASSERT(string_view_equal_cstr(last->text, "\xe2\x80\xa6") ||
+                    string_view_equal_cstr(last->text, "..."));
+                TBOX_TEST_ASSERT(last->rect.x + last->rect.width <=
+                    ellip->content_box.x + ellip->content_box.width + 1e-6);
+            }
+        }
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);

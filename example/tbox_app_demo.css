@@ -654,8 +654,7 @@ body {
 /* <table> demo (table-support version, see the HTML comment above .v-table
  * in tbox_app_demo.html for what the fixture proves). .v-table gives the
  * whole grid a border + light background so it's trivially visible;
- * .v-table-cell gives every <td>/<th> its own border (border-collapse is
- * out of scope, see that same HTML comment) -- th's bold/centered default
+ * .v-table-cell gives every <td>/<th> its own separate border -- th's bold/centered default
  * and every cell's 4px padding both already come from the UA stylesheet
  * (tbox_ua_style_generate_css), no author CSS needed for those two. */
 .v-table {
@@ -668,3 +667,45 @@ body {
 .v-table-cell {
     border: 1px solid gray;
 }
+
+.v-table-grid {
+    width: 500px;
+    margin: 16px 0px;
+    border: 1px solid black;
+    border-collapse: collapse;
+}
+
+.v-table-grid caption {
+    caption-side: top;
+    padding: 4px;
+    font-weight: bold;
+}
+
+.v-table-grid th, .v-table-grid td {
+    border: 1px solid gray;
+    padding: 4px;
+    vertical-align: middle;
+}
+
+.v-table-grid thead, .v-table-grid tfoot {
+    background-color: whitesmoke;
+}
+
+.v-table-grid-name { width: 120px; background-color: #fff5e9; }
+.v-table-grid-role { width: 240px; }
+
+.v-style-demo { margin: 16px 0px; }
+.v-style-demo p { margin: 4px 0px; }
+.v-style-weight { font-weight: 700; }
+.v-style-regular { font-weight: 400; }
+.v-style-italic { font-style: italic; }
+.v-style-roman { font-style: normal; }
+.v-style-nowrap { width: 320px; white-space: nowrap; overflow-y: hidden; }
+.v-style-decoration {
+    color: navy;
+    text-decoration: underline;
+    text-decoration-color: crimson;
+    text-decoration-thickness: 3px;
+}
+.v-style-overflow { width: 320px; height: 30px; overflow-y: hidden; background-color: whitesmoke; }
+.v-style-border { width: 320px; border-width: 2px; border-style: solid; border-color: teal; }

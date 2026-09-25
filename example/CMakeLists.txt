@@ -141,6 +141,11 @@ target_compile_definitions(tbox_keyboard_demo PRIVATE
     TBOX_KEYBOARD_HTML_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/keyboard_demo.html\"
     TBOX_KEYBOARD_CSS_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/keyboard_demo.css\")
 
+add_executable(tbox_assets_showrun assets_showrun.c)
+target_link_libraries(tbox_assets_showrun PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_compile_definitions(tbox_assets_showrun PRIVATE
+    TBOX_SHOWRUN_ASSETS_DIR=\"${PROJECT_SOURCE_DIR}/tests/assets\")
+
 # The older app demo is still built only with both of its platform dependencies.
 if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
     add_executable(tbox_app_demo

@@ -3,6 +3,7 @@
 #include <tbox/image.h>
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -44,6 +45,8 @@ static const tbox_style *tbox_layout_style_or_default(const tbox_style_table *st
     return style != NULL ? style : &tbox_layout_default_style;
 }
 
+static double tbox_layout_constrain_width(const tbox_style *style, double width, double base, double edges);
+
 static bool tbox_layout_is_hidden_input(const tbox_html_node *node) {
     if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
         !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
@@ -75,9 +78,8 @@ static bool tbox_layout_is_password_input(const tbox_html_node *node) {
  * with no new code of its own; only its CONTAINING BLOCK differs (a
  * column's own width, not its row's full width -- see
  * tbox_layout_build_table_row_children). Same pre-existing consequence
- * every other text tag already has: a table cell never builds child BOXES
- * of its own, so a <table> nested inside a <td>/<th> is silently dropped,
- * same as a <div> nested inside a <p> already is. */
+ * every other text tag already has. Cells with block children take the
+ * normal container path instead, so their nested block boxes are retained. */
 static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
     if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return false;
@@ -104,7 +106,7 @@ static bool tbox_layout_is_text_tag(const tbox_html_node *node) {
     if (tbox_string_view_equal_cstr(node->element.tag_name, "select") ||
         tbox_string_view_equal_cstr(node->element.tag_name, "textarea")) return true;
 
-    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th", "button" };
+    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th", "caption", "button" };
     tbox_string_view tag_name            = node->element.tag_name;
     for (size_t i = 0; i < sizeof(text_tags) / sizeof(text_tags[0]); i++) {
         if (tbox_string_view_equal_cstr(tag_name, text_tags[i])) {
@@ -265,8 +267,8 @@ static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapse
             entry->text             = word;
             entry->face             = face;
             entry->style            = style;
-            entry->width            = tbox_font_measure_text(face, word);
-            entry->space_width      = tbox_font_measure_text(face, space);
+            entry->width            = tbox_font_measure_text_spaced(face, word, style->letter_spacing);
+            entry->space_width      = tbox_font_measure_text_spaced(face, space, style->letter_spacing) + style->word_spacing;
             entry->image            = NULL;
             entry->image_height     = 0.0;
             entry->hard_break       = false;
@@ -307,11 +309,10 @@ static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face
  * OWN resolved tbox_style -- already includes the `<img width/height>`
  * attribute fallback, see tbox_style_resolve_img_dimension_attribute in
  * src/style/tbox_style.c) falling back to the image's intrinsic pixel
- * dimensions on any axis left AUTO or PERCENT (percent is deliberately
- * treated the same as auto here -- resolving it against a containing-block
- * width would need `available_width` threaded all the way into word
- * collection for a case this project's own fixtures never exercise; see
- * ARCHITECTURE.md). A missing `src`, or a `src` tbox_image_cache_get can't
+ * dimensions on any axis left AUTO or PERCENT (percentage `width` keeps its
+ * existing intrinsic-size fallback in this inline path). Its measured width
+ * is then constrained by min/max-width against `containing_width`. A missing
+ * `src`, or a `src` tbox_image_cache_get can't
  * decode (bad path, corrupt/unsupported file), falls back to the `alt`
  * attribute's text -- pushed as an ORDINARY text word (tbox_layout_push_words,
  * in `img_style`'s own face/color) rather than an image word, same fallback
@@ -337,7 +338,7 @@ static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face
  * and for the alt-text case (so the fallback text picks up the img
  * element's own resolved `color`, exactly like any other inline text
  * would). */
-static void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node *img_node, const tbox_style *img_style, const tbox_font_face *context_face, tbox_image_cache *images, tbox_vector *words) {
+static void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node *img_node, const tbox_style *img_style, const tbox_font_face *context_face, tbox_image_cache *images, double containing_width, tbox_vector *words) {
     const tbox_html_attribute *src_attr = tbox_html_node_get_attribute(img_node, tbox_string_view_make("src", 3));
     const tbox_image *image             = src_attr != NULL ? tbox_image_cache_get(images, src_attr->value) : NULL;
 
@@ -352,13 +353,14 @@ static void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node 
 
     double width  = img_style->width.kind == TBOX_STYLE_LENGTH_PX ? img_style->width.value : (double)image->width;
     double height = img_style->height.kind == TBOX_STYLE_LENGTH_PX ? img_style->height.value : (double)image->height;
+    width = tbox_layout_constrain_width(img_style, width, containing_width, 0.0);
 
     tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
     entry->text             = tbox_string_view_make(NULL, 0);
     entry->face             = context_face;
     entry->style             = img_style;
     entry->width             = width;
-    entry->space_width       = context_face != NULL ? tbox_font_measure_text(context_face, tbox_string_view_make(" ", 1)) : 0.0;
+    entry->space_width       = context_face != NULL ? tbox_font_measure_text_spaced(context_face, tbox_string_view_make(" ", 1), img_style->letter_spacing) + img_style->word_spacing : 0.0;
     entry->image              = image;
     entry->image_height       = height;
     entry->hard_break          = false;
@@ -402,7 +404,7 @@ static bool tbox_layout_has_img_child(const tbox_html_node *node) {
  * children. The only pre-v14 call site (inside tbox_layout_build_text_runs,
  * for a real text-tag element) passes (node->first_child, NULL, ...) --
  * behavior identical to before. */
-static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_vector *words) {
+static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, tbox_vector *words) {
     for (const tbox_html_node *child = first_sibling; child != end_exclusive; child = child->next_sibling) {
         if (tbox_layout_is_hidden_input(child)) continue;
         /* NOVO v11: a <br> child forces a line break -- checked BEFORE the
@@ -426,7 +428,7 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
             if (tbox_string_view_equal_cstr(child->element.tag_name, "img")) {
                 const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
-                tbox_layout_push_image_word(arena, child, child_style, face, images, words);
+                tbox_layout_push_image_word(arena, child, child_style, face, images, containing_width, words);
             } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE) {
                 if (tbox_layout_has_img_child(child)) {
                     for (const tbox_html_node *grandchild = child->first_child; grandchild != NULL; grandchild = grandchild->next_sibling) {
@@ -437,7 +439,7 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
                         } else if (grandchild->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(grandchild->element.tag_name, "img")) {
                             const tbox_style *img_style = tbox_layout_style_or_default(styles, grandchild);
                             const tbox_font_face *face  = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
-                            tbox_layout_push_image_word(arena, grandchild, img_style, face, images, words);
+                            tbox_layout_push_image_word(arena, grandchild, img_style, face, images, containing_width, words);
                         }
                         /* else: skipped -- bounded one-level extension, no deeper nesting */
                     }
@@ -498,21 +500,33 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
  * contribution, unlike a font face's ascent/line-height (which differ by
  * the descent + any line gap). This is exact, not an approximation, for
  * the one vertical-align this project supports on a replaced element. */
+static double tbox_layout_style_line_height(const tbox_style *style, const tbox_font_face *face) {
+    if (style->line_height_kind == TBOX_STYLE_LINE_HEIGHT_NUMBER)
+        return style->font_size * style->line_height_value;
+    if (style->line_height_kind == TBOX_STYLE_LINE_HEIGHT_PX)
+        return style->line_height_value;
+    return tbox_font_face_line_height(face);
+}
+
 static double tbox_layout_word_line_height(const tbox_layout_word *word) {
-    return word->image != NULL ? word->image_height : tbox_font_face_line_height(word->face);
+    return word->image != NULL ? word->image_height :
+        tbox_layout_style_line_height(word->style, word->face);
 }
 
 static double tbox_layout_word_ascent(const tbox_layout_word *word) {
-    return word->image != NULL ? word->image_height : tbox_font_face_ascent(word->face);
+    if (word->image != NULL) return word->image_height;
+    double leading = (tbox_layout_style_line_height(word->style, word->face) -
+        tbox_font_face_line_height(word->face)) / 2.0;
+    return tbox_font_face_ascent(word->face) + leading;
 }
 
-static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, bool no_wrap, tbox_vector *lines) {
+static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, double first_line_indent, bool no_wrap, tbox_vector *lines) {
     if (word_count == 0) {
         return;
     }
 
     size_t line_start = 0;
-    double line_width = 0.0;
+    double line_width = first_line_indent;
 
     for (size_t i = 0; i < word_count; i++) {
         if (words[i].hard_break) {
@@ -544,7 +558,7 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
             continue;
         }
 
-        double prospective = (i == line_start) ? words[i].width : line_width + words[i].space_width + words[i].width;
+        double prospective = (i == line_start) ? line_width + words[i].width : line_width + words[i].space_width + words[i].width;
 
         if (!no_wrap && i > line_start && prospective > available_width) {
             double height = 0.0;
@@ -672,7 +686,7 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
          * `<mark>` word already gets today via the `style` mismatch, just
          * unconditional here since an image's face/style are otherwise
          * ordinary values that could otherwise coincidentally match. */
-        bool new_run = !have_run || word->face != run_face || word->style != run_style || word->image != NULL || run_is_image;
+        bool new_run = !have_run || word->face != run_face || word->style != run_style || word->image != NULL || run_is_image || word->style->word_spacing != 0.0;
         if (new_run) {
             if (have_run) {
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
@@ -716,6 +730,57 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
         run->style                = run_style;
         run->image                = run_is_image ? run_image : NULL;
     }
+}
+
+static size_t tbox_layout_previous_codepoint(tbox_string_view text) {
+    size_t at = text.size;
+    if (at == 0) return 0;
+    at--;
+    while (at > 0 && ((unsigned char)text.data[at] & 0xc0) == 0x80) at--;
+    return at;
+}
+
+static void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_x,
+                                       double available_width, const tbox_style *style,
+                                       const tbox_font_face *face, const tbox_layout_line *line,
+                                       double line_y) {
+    if (runs->length == first || face == NULL) return;
+    tbox_layout_text_run *items = (tbox_layout_text_run *)runs->data;
+    tbox_layout_text_run *last = &items[runs->length - 1];
+    double right = content_x + available_width;
+    if (last->rect.x + last->rect.width <= right) return;
+
+    tbox_string_view ellipsis = tbox_font_face_has_glyph(face, 0x2026) ?
+        tbox_string_view_make("\xe2\x80\xa6", 3) : tbox_string_view_make("...", 3);
+    double glyph_width = tbox_font_measure_text_spaced(face, ellipsis, style->letter_spacing);
+    double limit = right - glyph_width;
+    while (runs->length > first) {
+        items = (tbox_layout_text_run *)runs->data;
+        last = &items[runs->length - 1];
+        if (last->image != NULL || last->rect.x >= limit) {
+            runs->length--;
+            continue;
+        }
+        while (last->text.size > 0 && last->rect.x +
+               tbox_font_measure_text_spaced(last->font, last->text,
+                   last->style->letter_spacing) > limit) {
+            last->text.size = tbox_layout_previous_codepoint(last->text);
+        }
+        if (last->text.size == 0) {
+            runs->length--;
+            continue;
+        }
+        last->rect.width = tbox_font_measure_text_spaced(last->font, last->text,
+            last->style->letter_spacing);
+        break;
+    }
+    tbox_layout_text_run *mark = (tbox_layout_text_run *)tbox_vector_push(runs);
+    mark->rect = (tbox_rect){right - glyph_width > content_x ? right - glyph_width : content_x,
+        line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height};
+    mark->text = ellipsis;
+    mark->font = face;
+    mark->style = style;
+    mark->image = NULL;
 }
 
 /* NOVO v8: prepends the <li> marker word (bullet or number), if any, as the
@@ -815,7 +880,7 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
     }
 
     static const tbox_string_view space = { " ", 1 };
-    double space_width                  = tbox_font_measure_text(face, space);
+    double space_width                  = tbox_font_measure_text_spaced(face, space, style->letter_spacing) + style->word_spacing;
 
     tbox_string_view text = tbox_html_node_text_content(arena, node);
 
@@ -832,7 +897,7 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
         entry->text             = line;
         entry->face             = face;
         entry->style            = style;
-        entry->width            = tbox_font_measure_text(face, line);
+        entry->width            = tbox_font_measure_text_spaced(face, line, style->letter_spacing);
         entry->space_width      = space_width;
         entry->image            = NULL;
         entry->image_height     = 0.0;
@@ -924,7 +989,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
             word->text = display;
             word->face = face;
             word->style = style;
-            word->width = tbox_font_measure_text(face, display);
+            word->width = tbox_font_measure_text_spaced(face, display, style->letter_spacing);
             word->space_width = 0.0;
             word->image = NULL;
             word->image_height = 0.0;
@@ -939,7 +1004,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         if (node != NULL) {
             tbox_layout_push_list_marker(arena, node, style, fonts, &words);
         }
-        tbox_layout_collect_words(arena, first_sibling, end_exclusive, style, styles, fonts, images, &words);
+        tbox_layout_collect_words(arena, first_sibling, end_exclusive, style, styles, fonts, images, available_width, &words);
     }
 
     size_t word_count = tbox_vector_length(&words);
@@ -948,14 +1013,18 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         box->text_run_count = 0;
 
         const tbox_font_face *own_face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
-        return own_face != NULL ? tbox_font_face_line_height(own_face) : 0.0;
+        return own_face != NULL ? tbox_layout_style_line_height(style, own_face) : 0.0;
     }
 
     const tbox_layout_word *word_items = (const tbox_layout_word *)words.data;
 
     tbox_vector lines;
     tbox_vector_init(&lines, arena, sizeof(tbox_layout_line), 0);
-    tbox_layout_break_lines(word_items, word_count, available_width, is_preformatted || is_input, &lines);
+    double indent = style->text_indent.kind == TBOX_STYLE_LENGTH_PX ? style->text_indent.value :
+        style->text_indent.kind == TBOX_STYLE_LENGTH_PERCENT ?
+        available_width * style->text_indent.value / 100.0 : 0.0;
+    tbox_layout_break_lines(word_items, word_count, available_width, indent,
+        is_preformatted || is_input || style->white_space_nowrap, &lines);
 
     tbox_vector runs;
     tbox_vector_init(&runs, arena, sizeof(tbox_layout_text_run), 0);
@@ -969,7 +1038,17 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         const tbox_layout_line *line = &line_items[li];
 
         size_t runs_before = tbox_vector_length(&runs);
-        tbox_layout_build_line_runs(arena, word_items, line, cumulative_y, content_x, &runs);
+        tbox_layout_build_line_runs(arena, word_items, line, cumulative_y,
+            content_x + (li == 0 ? indent : 0.0), &runs);
+        if (style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS &&
+            style->white_space_nowrap && style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN &&
+            !is_input && !is_select) {
+            const tbox_font_face *face = tbox_font_face_cache_get(fonts,
+                tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
+                style->font_italic, style->font_size);
+            tbox_layout_ellipsize_line(&runs, runs_before, content_x, available_width,
+                style, face, line, cumulative_y);
+        }
         size_t runs_after = tbox_vector_length(&runs);
 
         if (style->text_align != TBOX_STYLE_TEXT_ALIGN_LEFT && runs_after > runs_before) {
@@ -1015,6 +1094,24 @@ static double tbox_layout_resolve_edge(tbox_style_length length, double percent_
     default:
         return 0.0;
     }
+}
+
+/* Constraints apply to content width; a minimum wins if it exceeds the
+ * maximum. Percentages use the containing block's width. */
+static double tbox_layout_constrain_width(const tbox_style *style, double width, double base, double edges) {
+    if (style->max_width.kind != TBOX_STYLE_LENGTH_AUTO) {
+        double maximum = tbox_layout_resolve_edge(style->max_width, base);
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) maximum -= edges;
+        if (maximum < 0.0) maximum = 0.0;
+        if (width > maximum) width = maximum;
+    }
+    if (style->min_width.kind != TBOX_STYLE_LENGTH_AUTO) {
+        double minimum = tbox_layout_resolve_edge(style->min_width, base);
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) minimum -= edges;
+        if (minimum < 0.0) minimum = 0.0;
+        if (width < minimum) width = minimum;
+    }
+    return width;
 }
 
 /* NOVO v4: resolves one (primary, opposite) pair of `position: relative`
@@ -1248,10 +1345,8 @@ static tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const
     return box;
 }
 
-/* ---- NOVO (table support): <table>/<tr>/<th>/<td> -- see ARCHITECTURE.md's
- * table-support section for the full column algorithm rationale. Direct
- * children only: a <tr> must be a direct child of <table>, a <th>/<td> a
- * direct child of <tr> -- no <thead>/<tbody>/<tfoot>, out of scope. ---- */
+/* Original direct-row table path, retained for the existing simple tables.
+ * The extended grid path below handles sections, spans, captions and cols. */
 
 /* Counts `table_node`'s columns: the MAX, across every direct <tr> child,
  * of that row's own direct <th>/<td> element-child count. A ragged table
@@ -1279,25 +1374,15 @@ static size_t tbox_layout_table_column_count(const tbox_html_node *table_node) {
     return max_count;
 }
 
-/* Fills `out_widths[0..column_count)` with each column's own width, summing
- * to EXACTLY `content_width` (the table's own already-resolved content
- * width -- same "AUTO always fills the container" rule, D4, every other
- * block box already has). Two passes: first, for every cell, its "natural"
- * width -- its own flattened text content (tbox_html_node_text_content,
- * same "fold nested markup into one plain-text measurement" approximation
- * already used for an inline child's own text, see
- * tbox_layout_collect_words) measured at the cell's own resolved face, plus
- * its own padding/border -- and the MAX natural width per column across
- * every row; then a single uniform scale so the per-column maxes sum to
- * exactly `content_width`. A per-cell explicit `width` is NOT consulted
- * (only measured text) -- documented scope limitation, same class as images
- * not preserving aspect ratio on a single explicit axis. Falls back to an
- * equal share per column if every cell measured a natural width of 0 (e.g.
- * every cell is empty), avoiding a divide-by-zero in the scale step. This
- * is a deliberate simplification of CSS2.1's real automatic table layout
- * algorithm (separate min-content/max-content tracking per column, only
- * growing proportionally past the sum of max-contents) -- out of scope. */
-static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, size_t column_count, double content_width, double *out_widths) {
+static double tbox_layout_table_longest_word(const tbox_font_face *face, tbox_string_view text, double letter_spacing);
+static void tbox_layout_table_shift_y(tbox_layout_box *box, double amount);
+
+/* Approximate auto table layout with the minimum (longest word) and maximum
+ * (unwrapped text) width of each column. Interpolating between those limits
+ * lets a long, wrapping cell use available room without taking it from
+ * columns whose contents already fit. */
+static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, size_t column_count, double *content_width, double *out_widths) {
+    double *min_widths = tbox_arena_alloc_zero(arena, sizeof(double) * column_count);
     for (size_t i = 0; i < column_count; i++) {
         out_widths[i] = 0.0;
     }
@@ -1317,20 +1402,55 @@ static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbo
             }
 
             const tbox_style *cell_style = tbox_layout_style_or_default(styles, cell);
-            double padding_left          = tbox_layout_resolve_edge(cell_style->padding[3], content_width);
-            double padding_right         = tbox_layout_resolve_edge(cell_style->padding[1], content_width);
+            double padding_left          = tbox_layout_resolve_edge(cell_style->padding[3], *content_width);
+            double padding_right         = tbox_layout_resolve_edge(cell_style->padding[1], *content_width);
             double effective_border      = (cell_style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID) ? cell_style->border_width : 0.0;
 
-            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(cell_style->font_family), cell_style->font_weight_bold, cell_style->font_italic, cell_style->font_size);
             double text_width          = 0.0;
-            if (face != NULL) {
+            double word_width          = 0.0;
+            tbox_vector words;
+            tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+            tbox_layout_collect_words(arena, cell->first_child, NULL, cell_style, styles, fonts, images, *content_width, &words);
+            if (words.length > 0) {
+                double line_width = 0.0;
+                bool first_word = true;
+                for (size_t i = 0; i < words.length; i++) {
+                    const tbox_layout_word *word = tbox_vector_at(&words, i);
+                    if (word->hard_break) {
+                        if (line_width > text_width) text_width = line_width;
+                        line_width = 0.0;
+                        first_word = true;
+                        continue;
+                    }
+                    if (!first_word) line_width += word->space_width;
+                    line_width += word->width;
+                    if (word->width > word_width) word_width = word->width;
+                    first_word = false;
+                }
+                if (line_width > text_width) text_width = line_width;
+            } else {
+                const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(cell_style->font_family), cell_style->font_weight_bold, cell_style->font_italic, cell_style->font_size);
                 tbox_string_view text = tbox_html_node_text_content(arena, cell);
-                text_width             = tbox_font_measure_text(face, text);
+                if (face != NULL) {
+                    text_width = tbox_font_measure_text_spaced(face, text, cell_style->letter_spacing);
+                    word_width = tbox_layout_table_longest_word(face, text, cell_style->letter_spacing);
+                }
             }
 
-            double natural_width = text_width + padding_left + padding_right + 2.0 * effective_border;
+            double edges = padding_left + padding_right + 2.0 * effective_border;
+            double natural_width = text_width + edges;
+            double minimum_width = word_width + edges;
+            if (cell_style->min_width.kind != TBOX_STYLE_LENGTH_AUTO) {
+                double css_min = tbox_layout_resolve_edge(cell_style->min_width, *content_width) +
+                    (cell_style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? 0.0 : edges);
+                if (minimum_width < css_min) minimum_width = css_min;
+                if (natural_width < css_min) natural_width = css_min;
+            }
             if (natural_width > out_widths[column_index]) {
                 out_widths[column_index] = natural_width;
+            }
+            if (minimum_width > min_widths[column_index]) {
+                min_widths[column_index] = minimum_width;
             }
 
             column_index++;
@@ -1338,21 +1458,31 @@ static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbo
     }
 
     double total_natural = 0.0;
+    double total_minimum = 0.0;
     for (size_t i = 0; i < column_count; i++) {
         total_natural += out_widths[i];
+        total_minimum += min_widths[i];
     }
+    if (*content_width < total_minimum) *content_width = total_minimum;
 
     if (total_natural <= 0.0) {
-        double equal_share = content_width / (double)column_count;
+        double equal_share = *content_width / (double)column_count;
         for (size_t i = 0; i < column_count; i++) {
             out_widths[i] = equal_share;
         }
         return;
     }
 
-    double scale = content_width / total_natural;
-    for (size_t i = 0; i < column_count; i++) {
-        out_widths[i] *= scale;
+    if (*content_width >= total_minimum && *content_width < total_natural) {
+        double fraction = (*content_width - total_minimum) / (total_natural - total_minimum);
+        for (size_t i = 0; i < column_count; i++) {
+            out_widths[i] = min_widths[i] + fraction * (out_widths[i] - min_widths[i]);
+        }
+    } else {
+        double scale = *content_width / total_natural;
+        for (size_t i = 0; i < column_count; i++) {
+            out_widths[i] *= scale;
+        }
     }
 }
 
@@ -1365,10 +1495,8 @@ static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbo
  * then tbox_layout_build_text_runs for wrapped text) every other text tag
  * already uses, just called with `container.width = column_widths[i]`
  * instead of the row's own full width. Returns the row's own content
- * height: the MAX of every cell's margin_box.height -- a row's height is
- * dictated by its tallest cell; shorter cells keep their own natural
- * height (no cross-cell vertical stretch to fill the row -- documented
- * simplification, same class as images not preserving aspect ratio). */
+ * height: the MAX of every cell's margin_box.height. All cell borders and
+ * backgrounds then extend to that height, as in a browser table row. */
 static double tbox_layout_build_table_row_children(tbox_arena *arena, const tbox_html_node *row_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, const double *column_widths, size_t column_count, tbox_layout_box *row_box, tbox_layout_positioned_context positioned_context) {
     double max_height          = 0.0;
     double cursor_x            = content_x;
@@ -1416,6 +1544,22 @@ static double tbox_layout_build_table_row_children(tbox_arena *arena, const tbox
         column_index++;
     }
 
+    for (tbox_layout_box *cell_box = row_box->first_child; cell_box != NULL; cell_box = cell_box->next_sibling) {
+        double growth = max_height - cell_box->margin_box.height;
+        if (growth <= 0.0) continue;
+        const tbox_style *style = cell_box->style;
+        double align = style->vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BOTTOM ? growth :
+            style->vertical_align == TBOX_STYLE_VERTICAL_ALIGN_MIDDLE ? growth / 2.0 : 0.0;
+        for (size_t run = 0; run < cell_box->text_run_count; run++)
+            cell_box->text_runs[run].rect.y += align;
+        for (tbox_layout_box *child = cell_box->first_child; child != NULL; child = child->next_sibling)
+            tbox_layout_table_shift_y(child, align);
+        cell_box->margin_box.height += growth;
+        cell_box->border_box.height += growth;
+        cell_box->padding_box.height += growth;
+        cell_box->content_box.height += growth;
+    }
+
     return max_height;
 }
 
@@ -1431,14 +1575,14 @@ static double tbox_layout_build_table_row_children(tbox_arena *arena, const tbox
  * `column_widths`/`column_count` through its trailing parameters so IT
  * takes the "table row" branch (see that function's dispatch). Returns the
  * table's own content height: the sum of every row's margin_box.height. */
-static double tbox_layout_build_table_children(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double content_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context) {
+static double tbox_layout_build_table_children(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double *content_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context) {
     size_t column_count = tbox_layout_table_column_count(table_node);
     if (column_count == 0) {
         return 0.0;
     }
 
     double *column_widths = (double *)tbox_arena_alloc(arena, sizeof(double) * column_count);
-    tbox_layout_table_compute_column_widths(arena, table_node, styles, fonts, column_count, content_width, column_widths);
+    tbox_layout_table_compute_column_widths(arena, table_node, styles, fonts, images, column_count, content_width, column_widths);
 
     double cursor_y           = content_y;
     tbox_layout_box *previous = NULL;
@@ -1456,7 +1600,7 @@ static double tbox_layout_build_table_children(tbox_arena *arena, const tbox_htm
         tbox_layout_containing_block row_container = {
             .x               = content_x,
             .y               = content_y,
-            .width           = content_width,
+            .width           = *content_width,
             .height          = 0.0,
             .height_definite = false,
         };
@@ -1475,6 +1619,472 @@ static double tbox_layout_build_table_children(tbox_arena *arena, const tbox_htm
     }
 
     return cursor_y - content_y;
+}
+
+/* The extended table path keeps a small, explicit cell grid. The original
+ * path above remains in use for plain direct-row tables. */
+#define TBOX_TABLE_MAX_COLUMNS 1000
+typedef struct tbox_table_row {
+    const tbox_html_node *node, *group;
+    size_t group_id;
+    tbox_layout_box *box;
+    double height, y;
+} tbox_table_row;
+
+typedef struct tbox_table_cell {
+    const tbox_html_node *node;
+    tbox_layout_box *box;
+    size_t row, column, rows, columns;
+} tbox_table_cell;
+
+typedef struct tbox_table_column {
+    const tbox_html_node *node, *group;
+    double min_width, width, x;
+} tbox_table_column;
+
+static bool tbox_layout_tag(const tbox_html_node *node, const char *name) {
+    return node != NULL && node->type == TBOX_HTML_NODE_ELEMENT &&
+        tbox_string_view_equal_cstr(node->element.tag_name, name);
+}
+
+static bool tbox_layout_table_section(const tbox_html_node *node) {
+    return tbox_layout_tag(node, "thead") || tbox_layout_tag(node, "tbody") ||
+        tbox_layout_tag(node, "tfoot");
+}
+
+static bool tbox_layout_table_cell_node(const tbox_html_node *node) {
+    return tbox_layout_tag(node, "td") || tbox_layout_tag(node, "th");
+}
+
+static size_t tbox_layout_table_span(const tbox_html_node *node, const char *name, bool zero_valid) {
+    const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr(name));
+    if (attribute == NULL || attribute->value.size == 0) return 1;
+    size_t value = 0;
+    for (size_t i = 0; i < attribute->value.size; i++) {
+        char c = attribute->value.data[i];
+        if (c < '0' || c > '9') return 1;
+        value = value * 10 + (size_t)(c - '0');
+        if (value > TBOX_TABLE_MAX_COLUMNS) return TBOX_TABLE_MAX_COLUMNS;
+    }
+    return value == 0 && !zero_valid ? 1 : value;
+}
+
+static double tbox_layout_table_css_width(const tbox_style *style, double base) {
+    double width = 0.0;
+    if (style->width.kind == TBOX_STYLE_LENGTH_PX) width = style->width.value;
+    if (style->width.kind == TBOX_STYLE_LENGTH_PERCENT) {
+        width = base * style->width.value / 100.0;
+    }
+    width = tbox_layout_constrain_width(style, width, base, 0.0);
+    return width > 0.0 ? width : 0.0;
+}
+
+static void tbox_layout_table_append(tbox_layout_box *parent, tbox_layout_box *child) {
+    child->parent = parent;
+    if (parent->last_child != NULL) parent->last_child->next_sibling = child;
+    else parent->first_child = child;
+    parent->last_child = child;
+}
+
+static tbox_layout_box *tbox_layout_table_box(tbox_arena *arena, const tbox_html_node *node,
+                                               const tbox_style_table *styles, tbox_rect rect) {
+    tbox_layout_box *box = tbox_arena_alloc_zero(arena, sizeof(*box));
+    box->node = node;
+    box->style = tbox_layout_style_or_default(styles, node);
+    box->margin_box = box->border_box = box->padding_box = box->content_box = rect;
+    return box;
+}
+
+static void tbox_layout_table_shift_y(tbox_layout_box *box, double amount) {
+    box->margin_box.y += amount;
+    box->border_box.y += amount;
+    box->padding_box.y += amount;
+    box->content_box.y += amount;
+    for (size_t i = 0; i < box->text_run_count; i++) box->text_runs[i].rect.y += amount;
+    for (tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
+        tbox_layout_table_shift_y(child, amount);
+}
+
+static bool tbox_layout_table_extended(const tbox_html_node *table, const tbox_style_table *styles) {
+    const tbox_style *style = tbox_layout_style_or_default(styles, table);
+    if (style->border_collapse || style->border_spacing_x > 0.0 || style->border_spacing_y > 0.0) return true;
+    for (const tbox_html_node *child = table->first_child; child != NULL; child = child->next_sibling) {
+        if (tbox_layout_table_section(child) || tbox_layout_tag(child, "caption") ||
+            tbox_layout_tag(child, "col") || tbox_layout_tag(child, "colgroup")) return true;
+        if (!tbox_layout_tag(child, "tr")) continue;
+        if (tbox_layout_style_or_default(styles, child)->display == TBOX_STYLE_DISPLAY_NONE) return true;
+        for (const tbox_html_node *cell = child->first_child; cell != NULL; cell = cell->next_sibling)
+            if (tbox_layout_table_cell_node(cell) &&
+                (tbox_html_node_get_attribute(cell, tbox_string_view_make("colspan", 7)) != NULL ||
+                 tbox_html_node_get_attribute(cell, tbox_string_view_make("rowspan", 7)) != NULL ||
+                 tbox_layout_style_or_default(styles, cell)->display == TBOX_STYLE_DISPLAY_NONE ||
+                 tbox_layout_style_or_default(styles, cell)->width.kind != TBOX_STYLE_LENGTH_AUTO)) return true;
+    }
+    return false;
+}
+
+static void tbox_layout_table_choose_border(const tbox_style *style, double *width, tbox_css_rgba *color) {
+    if (style != NULL && style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID &&
+        style->border_width >= *width && style->border_width > 0.0) {
+        *width = style->border_width;
+        *color = style->border_color;
+    }
+}
+
+static double tbox_layout_table_longest_word(const tbox_font_face *face, tbox_string_view text, double letter_spacing) {
+    double longest = 0.0;
+    for (size_t start = 0; start < text.size;) {
+        while (start < text.size && (text.data[start] == ' ' || text.data[start] == '\t' ||
+            text.data[start] == '\n' || text.data[start] == '\r')) start++;
+        size_t end = start;
+        while (end < text.size && text.data[end] != ' ' && text.data[end] != '\t' &&
+            text.data[end] != '\n' && text.data[end] != '\r') end++;
+        if (end > start) {
+            double width = tbox_font_measure_text_spaced(face, tbox_string_view_make(text.data + start, end - start), letter_spacing);
+            if (width > longest) longest = width;
+        }
+        start = end;
+    }
+    return longest;
+}
+
+static double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node *table,
+    const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images,
+    double x, double y, double *table_width, tbox_layout_box *table_box,
+    tbox_layout_positioned_context positioned_context) {
+    const tbox_style *table_style = table_box->style;
+    bool collapse = table_style->border_collapse;
+    double sx = collapse ? 0.0 : table_style->border_spacing_x;
+    double sy = collapse ? 0.0 : table_style->border_spacing_y;
+    tbox_vector rows, cells;
+    tbox_vector_init(&rows, arena, sizeof(tbox_table_row), 0);
+    tbox_vector_init(&cells, arena, sizeof(tbox_table_cell), 0);
+    tbox_table_column *columns = tbox_arena_alloc_zero(arena,
+        sizeof(*columns) * TBOX_TABLE_MAX_COLUMNS);
+    if (columns == NULL) return 0.0;
+    size_t declared = 0, group_id = 0;
+    const tbox_html_node *caption = NULL;
+    for (const tbox_html_node *child = table->first_child; child != NULL; child = child->next_sibling) {
+        if (child->type != TBOX_HTML_NODE_ELEMENT) continue;
+        if (tbox_layout_style_or_default(styles, child)->display == TBOX_STYLE_DISPLAY_NONE) continue;
+        if (tbox_layout_tag(child, "caption")) {
+            if (caption == NULL) caption = child;
+        } else if (tbox_layout_tag(child, "col") && declared < TBOX_TABLE_MAX_COLUMNS) {
+            size_t span = tbox_layout_table_span(child, "span", false);
+            for (size_t i = 0; i < span && declared < TBOX_TABLE_MAX_COLUMNS; i++)
+                columns[declared++] = (tbox_table_column){.node = child};
+        } else if (tbox_layout_tag(child, "colgroup")) {
+            size_t before = declared;
+            for (const tbox_html_node *col = child->first_child; col != NULL; col = col->next_sibling) {
+                if (!tbox_layout_tag(col, "col") ||
+                    tbox_layout_style_or_default(styles, col)->display == TBOX_STYLE_DISPLAY_NONE) continue;
+                size_t span = tbox_layout_table_span(col, "span", false);
+                for (size_t i = 0; i < span && declared < TBOX_TABLE_MAX_COLUMNS; i++)
+                    columns[declared++] = (tbox_table_column){.node = col, .group = child};
+            }
+            if (declared == before) {
+                size_t span = tbox_layout_table_span(child, "span", false);
+                for (size_t i = 0; i < span && declared < TBOX_TABLE_MAX_COLUMNS; i++)
+                    columns[declared++] = (tbox_table_column){.group = child};
+            }
+        } else if (tbox_layout_tag(child, "tr")) {
+            *(tbox_table_row *)tbox_vector_push(&rows) =
+                (tbox_table_row){.node = child, .group_id = group_id};
+        } else if (tbox_layout_table_section(child)) {
+            group_id++;
+            for (const tbox_html_node *row = child->first_child; row != NULL; row = row->next_sibling) {
+                if (tbox_layout_tag(row, "tr") &&
+                    tbox_layout_style_or_default(styles, row)->display != TBOX_STYLE_DISPLAY_NONE)
+                    *(tbox_table_row *)tbox_vector_push(&rows) =
+                        (tbox_table_row){.node = row, .group = child, .group_id = group_id};
+            }
+            group_id++;
+        }
+    }
+    size_t occupied_until[TBOX_TABLE_MAX_COLUMNS] = {0};
+    size_t column_count = declared;
+    size_t previous_group = SIZE_MAX;
+    for (size_t r = 0; r < rows.length; r++) {
+        tbox_table_row *row = tbox_vector_at(&rows, r);
+        if (row->group_id != previous_group) {
+            memset(occupied_until, 0, sizeof(occupied_until));
+            previous_group = row->group_id;
+        }
+        size_t group_end = r + 1;
+        while (group_end < rows.length &&
+            ((tbox_table_row *)tbox_vector_at(&rows, group_end))->group_id == row->group_id) group_end++;
+        size_t cursor = 0;
+        for (const tbox_html_node *cell = row->node->first_child; cell != NULL; cell = cell->next_sibling) {
+            if (!tbox_layout_table_cell_node(cell) ||
+                tbox_layout_style_or_default(styles, cell)->display == TBOX_STYLE_DISPLAY_NONE) continue;
+            size_t span = tbox_layout_table_span(cell, "colspan", false);
+            while (cursor < TBOX_TABLE_MAX_COLUMNS) {
+                if (cursor + span > TBOX_TABLE_MAX_COLUMNS) span = TBOX_TABLE_MAX_COLUMNS - cursor;
+                bool free = span > 0;
+                for (size_t i = 0; i < span; i++)
+                    if (occupied_until[cursor + i] > r) { free = false; break; }
+                if (free) break;
+                cursor++;
+            }
+            if (cursor >= TBOX_TABLE_MAX_COLUMNS || span == 0) break;
+            size_t rowspan = tbox_layout_table_span(cell, "rowspan", true);
+            if (rowspan == 0 || rowspan > group_end - r) rowspan = group_end - r;
+            for (size_t i = 0; i < span; i++) occupied_until[cursor + i] = r + rowspan;
+            *(tbox_table_cell *)tbox_vector_push(&cells) =
+                (tbox_table_cell){.node = cell, .row = r, .column = cursor,
+                                  .rows = rowspan, .columns = span};
+            if (cursor + span > column_count) column_count = cursor + span;
+            cursor += span;
+        }
+    }
+    for (size_t c = 0; c < column_count; c++) {
+        tbox_table_column *col = &columns[c];
+        if (col->group != NULL)
+            col->min_width = tbox_layout_table_css_width(tbox_layout_style_or_default(styles, col->group), *table_width);
+        if (col->node != NULL) {
+            double width = tbox_layout_table_css_width(tbox_layout_style_or_default(styles, col->node), *table_width);
+            if (width > 0.0) col->min_width = width;
+        }
+    }
+    for (size_t i = 0; i < cells.length; i++) {
+        tbox_table_cell *cell = tbox_vector_at(&cells, i);
+        const tbox_style *style = tbox_layout_style_or_default(styles, cell->node);
+        double css_width = tbox_layout_table_css_width(style, *table_width);
+        double edges = tbox_layout_resolve_edge(style->padding[1], *table_width) +
+            tbox_layout_resolve_edge(style->padding[3], *table_width) +
+            (style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID ? 2.0 * style->border_width : 0.0);
+        double minimum = 0.0;
+        const tbox_font_face *face = tbox_font_face_cache_get(fonts,
+            tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
+            style->font_italic, style->font_size);
+        if (face != NULL) {
+            double natural = tbox_layout_table_longest_word(face,
+                tbox_html_node_text_content(arena, cell->node), style->letter_spacing);
+            minimum = natural;
+        }
+        minimum += edges;
+        double css_outer = css_width +
+            (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? 0.0 : edges);
+        if (css_outer > minimum) minimum = css_outer;
+        double current = sx * (cell->columns - 1);
+        for (size_t c = cell->column; c < cell->column + cell->columns; c++) current += columns[c].min_width;
+        if (minimum > current) {
+            double each = (minimum - current) / cell->columns;
+            for (size_t c = cell->column; c < cell->column + cell->columns; c++) columns[c].min_width += each;
+        }
+    }
+    double minimum_total = sx * (column_count + 1);
+    for (size_t c = 0; c < column_count; c++) minimum_total += columns[c].min_width;
+    if (minimum_total > *table_width) *table_width = minimum_total;
+    double extra = *table_width - minimum_total;
+    for (size_t c = 0; c < column_count; c++) {
+        columns[c].width = columns[c].min_width + (column_count > 0 ? extra / column_count : 0.0);
+        columns[c].x = x + sx;
+        if (c > 0) columns[c].x = columns[c - 1].x + columns[c - 1].width + sx;
+    }
+    tbox_layout_box *caption_box = NULL;
+    double caption_height = 0.0;
+    if (caption != NULL) {
+        tbox_layout_containing_block container = {
+            .x = x, .y = y, .width = *table_width, .height = 0.0, .height_definite = false};
+        caption_box = tbox_layout_build_element(arena, caption, styles, fonts, images,
+            container, y, positioned_context, NULL, 0);
+        caption_height = caption_box->margin_box.height;
+    }
+    for (size_t i = 0; i < cells.length; i++) {
+        tbox_table_cell *cell = tbox_vector_at(&cells, i);
+        double width = sx * (cell->columns - 1);
+        for (size_t c = cell->column; c < cell->column + cell->columns; c++) width += columns[c].width;
+        tbox_layout_containing_block container = {
+            .x = columns[cell->column].x, .y = 0.0, .width = width,
+            .height = 0.0, .height_definite = false};
+        /* The non-null marker asks build_element to fit the cell into the grid
+         * even when CSS width supplied its earlier column constraint. */
+        cell->box = tbox_layout_build_element(arena, cell->node, styles, fonts, images,
+            container, 0.0, positioned_context, &width, 0);
+        if (cell->rows == 1) {
+            tbox_table_row *row = tbox_vector_at(&rows, cell->row);
+            if (cell->box->margin_box.height > row->height) row->height = cell->box->margin_box.height;
+        }
+        if (collapse) cell->box->table_suppress_border = true;
+    }
+    for (size_t i = 0; i < cells.length; i++) {
+        tbox_table_cell *cell = tbox_vector_at(&cells, i);
+        if (cell->rows == 1) continue;
+        double available = sy * (cell->rows - 1);
+        for (size_t r = cell->row; r < cell->row + cell->rows; r++)
+            available += ((tbox_table_row *)tbox_vector_at(&rows, r))->height;
+        if (cell->box->margin_box.height > available) {
+            double increment = (cell->box->margin_box.height - available) / cell->rows;
+            for (size_t r = cell->row; r < cell->row + cell->rows; r++)
+                ((tbox_table_row *)tbox_vector_at(&rows, r))->height += increment;
+        }
+    }
+    double grid_top = y + (caption_box != NULL && caption_box->style->caption_side == TBOX_STYLE_CAPTION_TOP ?
+        caption_height : 0.0);
+    double cursor_y = grid_top + sy;
+    for (size_t r = 0; r < rows.length; r++) {
+        tbox_table_row *row = tbox_vector_at(&rows, r);
+        row->y = cursor_y;
+        row->box = tbox_layout_table_box(arena, row->node, styles,
+            (tbox_rect){x + sx, cursor_y, *table_width - 2.0 * sx, row->height});
+        if (collapse) row->box->table_suppress_border = true;
+        cursor_y += row->height + sy;
+    }
+    double grid_height = rows.length > 0 ? cursor_y - grid_top : 0.0;
+    for (size_t i = 0; i < cells.length; i++) {
+        tbox_table_cell *cell = tbox_vector_at(&cells, i);
+        tbox_table_row *row = tbox_vector_at(&rows, cell->row);
+        double target = sy * (cell->rows - 1);
+        for (size_t r = cell->row; r < cell->row + cell->rows; r++)
+            target += ((tbox_table_row *)tbox_vector_at(&rows, r))->height;
+        double growth = target - cell->box->margin_box.height;
+        if (growth < 0.0) growth = 0.0;
+        tbox_layout_table_shift_y(cell->box, row->y);
+        const tbox_style *style = cell->box->style;
+        double align = style->vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BOTTOM ? growth :
+            style->vertical_align == TBOX_STYLE_VERTICAL_ALIGN_MIDDLE ? growth / 2.0 : 0.0;
+        for (size_t run = 0; run < cell->box->text_run_count; run++)
+            cell->box->text_runs[run].rect.y += align;
+        for (tbox_layout_box *child = cell->box->first_child; child != NULL; child = child->next_sibling)
+            tbox_layout_table_shift_y(child, align);
+        cell->box->margin_box.height += growth;
+        cell->box->border_box.height += growth;
+        cell->box->padding_box.height += growth;
+        cell->box->content_box.height += growth;
+        tbox_layout_table_append(row->box, cell->box);
+    }
+    /* Column backgrounds are laid out before rows so ordinary paint order
+     * puts them beneath row and cell backgrounds. */
+    for (size_t c = 0; c < column_count;) {
+        const tbox_html_node *group = columns[c].group;
+        size_t end = c + 1;
+        while (group != NULL && end < column_count && columns[end].group == group) end++;
+        tbox_layout_box *parent = table_box;
+        if (group != NULL) {
+            double width = columns[end - 1].x + columns[end - 1].width - columns[c].x;
+            tbox_layout_box *group_box = tbox_layout_table_box(arena, group, styles,
+                (tbox_rect){columns[c].x, grid_top, width, grid_height});
+            group_box->table_suppress_border = true;
+            tbox_layout_table_append(table_box, group_box);
+            parent = group_box;
+        }
+        for (size_t index = c; index < end; index++) {
+            if (columns[index].node == NULL) continue;
+            tbox_layout_box *col_box = tbox_layout_table_box(arena, columns[index].node, styles,
+                (tbox_rect){columns[index].x, grid_top, columns[index].width, grid_height});
+            col_box->table_suppress_border = true;
+            tbox_layout_table_append(parent, col_box);
+        }
+        c = end;
+    }
+    if (caption_box != NULL && caption_box->style->caption_side == TBOX_STYLE_CAPTION_TOP)
+        tbox_layout_table_append(table_box, caption_box);
+    tbox_layout_box *group_box = NULL;
+    const tbox_html_node *last_group = NULL;
+    for (size_t r = 0; r < rows.length; r++) {
+        tbox_table_row *row = tbox_vector_at(&rows, r);
+        if (row->group != last_group) {
+            group_box = NULL;
+            last_group = row->group;
+        }
+        if (row->group != NULL && group_box == NULL) {
+            group_box = tbox_layout_table_box(arena, row->group, styles,
+                (tbox_rect){x + sx, row->y, *table_width - 2.0 * sx, 0.0});
+            if (collapse) group_box->table_suppress_border = true;
+            tbox_layout_table_append(table_box, group_box);
+        }
+        tbox_layout_table_append(group_box != NULL ? group_box : table_box, row->box);
+        if (group_box != NULL) group_box->margin_box.height = group_box->border_box.height =
+            group_box->padding_box.height = group_box->content_box.height =
+            row->y + row->height - group_box->content_box.y;
+    }
+    if (caption_box != NULL && caption_box->style->caption_side == TBOX_STYLE_CAPTION_BOTTOM) {
+        tbox_layout_table_shift_y(caption_box, grid_height);
+        tbox_layout_table_append(table_box, caption_box);
+    }
+    if (collapse && rows.length > 0 && column_count > 0 &&
+        rows.length <= SIZE_MAX / (column_count * sizeof(tbox_table_cell *))) {
+        tbox_table_cell **grid = tbox_arena_alloc_zero(arena,
+            sizeof(*grid) * rows.length * column_count);
+        if (grid != NULL) {
+            for (size_t i = 0; i < cells.length; i++) {
+                tbox_table_cell *cell = tbox_vector_at(&cells, i);
+                for (size_t r = cell->row; r < cell->row + cell->rows; r++)
+                    for (size_t c = cell->column; c < cell->column + cell->columns; c++)
+                        grid[r * column_count + c] = cell;
+            }
+            tbox_vector edges;
+            tbox_vector_init(&edges, arena, sizeof(tbox_table_edge), 0);
+            for (size_t r = 0; r < rows.length; r++) {
+                const tbox_table_row *row = tbox_vector_at(&rows, r);
+                for (size_t c = 0; c <= column_count; c++) {
+                    tbox_table_cell *left = c > 0 ? grid[r * column_count + c - 1] : NULL;
+                    tbox_table_cell *right = c < column_count ? grid[r * column_count + c] : NULL;
+                    if (left != NULL && left == right) continue;
+                    double width = 0.0;
+                    tbox_css_rgba color = {0, 0, 0, 255};
+                    if (c == 0 || c == column_count) {
+                        tbox_layout_table_choose_border(table_style, &width, &color);
+                        if (row->group != NULL)
+                            tbox_layout_table_choose_border(tbox_layout_style_or_default(styles, row->group),
+                                &width, &color);
+                        tbox_layout_table_choose_border(row->box->style, &width, &color);
+                    }
+                    if (left != NULL) tbox_layout_table_choose_border(left->box->style, &width, &color);
+                    if (right != NULL) tbox_layout_table_choose_border(right->box->style, &width, &color);
+                    if (width <= 0.0) continue;
+                    double boundary = c == column_count ?
+                        columns[c - 1].x + columns[c - 1].width : columns[c].x;
+                    *(tbox_table_edge *)tbox_vector_push(&edges) = (tbox_table_edge){
+                        .rect = {boundary - width / 2.0, row->y, width, row->height}, .color = color};
+                }
+            }
+            for (size_t r = 0; r <= rows.length; r++) {
+                for (size_t c = 0; c < column_count; c++) {
+                    tbox_table_cell *above = r > 0 ? grid[(r - 1) * column_count + c] : NULL;
+                    tbox_table_cell *below = r < rows.length ? grid[r * column_count + c] : NULL;
+                    if (above != NULL && above == below) continue;
+                    double width = 0.0;
+                    tbox_css_rgba color = {0, 0, 0, 255};
+                    if (r == 0 || r == rows.length)
+                        tbox_layout_table_choose_border(table_style, &width, &color);
+                    if (r > 0) {
+                        const tbox_table_row *row = tbox_vector_at(&rows, r - 1);
+                        tbox_layout_table_choose_border(row->box->style, &width, &color);
+                        if (r == rows.length || row->group !=
+                            ((tbox_table_row *)tbox_vector_at(&rows, r))->group)
+                            if (row->group != NULL)
+                                tbox_layout_table_choose_border(tbox_layout_style_or_default(styles, row->group),
+                                    &width, &color);
+                    }
+                    if (r < rows.length) {
+                        const tbox_table_row *row = tbox_vector_at(&rows, r);
+                        tbox_layout_table_choose_border(row->box->style, &width, &color);
+                        if (r == 0 || row->group !=
+                            ((tbox_table_row *)tbox_vector_at(&rows, r - 1))->group)
+                            if (row->group != NULL)
+                                tbox_layout_table_choose_border(tbox_layout_style_or_default(styles, row->group),
+                                    &width, &color);
+                    }
+                    if (above != NULL) tbox_layout_table_choose_border(above->box->style, &width, &color);
+                    if (below != NULL) tbox_layout_table_choose_border(below->box->style, &width, &color);
+                    if (width <= 0.0) continue;
+                    double boundary = r == rows.length ?
+                        ((tbox_table_row *)tbox_vector_at(&rows, r - 1))->y +
+                        ((tbox_table_row *)tbox_vector_at(&rows, r - 1))->height :
+                        ((tbox_table_row *)tbox_vector_at(&rows, r))->y;
+                    *(tbox_table_edge *)tbox_vector_push(&edges) = (tbox_table_edge){
+                        .rect = {columns[c].x, boundary - width / 2.0, columns[c].width, width},
+                        .color = color};
+                }
+            }
+            table_box->table_suppress_border = true;
+            table_box->table_edges = edges.data;
+            table_box->table_edge_count = edges.length;
+        }
+    }
+    return grid_height + caption_height;
 }
 
 /* Walks `node`'s children (NOVO v14: TEXT children are no longer always
@@ -1691,6 +2301,17 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
 static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count) {
     const tbox_style *style = tbox_layout_style_or_default(styles, node);
     bool is_text_tag        = tbox_layout_is_text_tag(node);
+    if (tbox_layout_table_cell_node(node)) {
+        for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+            if (child->type != TBOX_HTML_NODE_ELEMENT) continue;
+            if (tbox_layout_tag(child, "div") || tbox_layout_tag(child, "p") ||
+                tbox_layout_tag(child, "table") || tbox_layout_tag(child, "ul") ||
+                tbox_layout_tag(child, "ol") || tbox_layout_tag(child, "section")) {
+                is_text_tag = false;
+                break;
+            }
+        }
+    }
     bool is_image_input     = tbox_layout_is_image_input(node);
     const tbox_html_attribute *image_src = is_image_input ?
         tbox_html_node_get_attribute(node, tbox_string_view_make("src", 3)) : NULL;
@@ -1713,7 +2334,7 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
      * any other way (there is none, today) would fall through to the
      * generic container branch below instead. */
     bool is_table     = node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "table");
-    bool is_table_row = row_column_widths != NULL;
+    bool is_table_row = row_column_widths != NULL && row_column_count > 0 && tbox_layout_tag(node, "tr");
 
     /* NOVO v5: RELATIVE/ABSOLUTE/FIXED/STICKY all count as "positioned" for
      * being a containing block (see tbox_layout_positioned_context), but
@@ -1741,12 +2362,13 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     double padding_bottom = tbox_layout_resolve_edge(style->padding[2], container.width);
     double padding_left   = tbox_layout_resolve_edge(style->padding[3], container.width);
 
-    /* NOVO v4: `border` occupies space exactly like padding does (there is
-     * no `box-sizing: border-box` -- see ARCHITECTURE.md) -- but only when
+    /* NOVO v4: `border` occupies space exactly like padding does, but only when
      * `border-style: solid` actually applies; a declared border-width/color
      * without `solid` (or with the initial `none`) occupies zero space,
      * same as not declaring `border` at all. */
     double effective_border = (style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID) ? style->border_width : 0.0;
+    double horizontal_edges = padding_left + padding_right + 2.0 * effective_border;
+    double vertical_edges = padding_top + padding_bottom + 2.0 * effective_border;
 
     /* Width: the same rule for every node, text-tag or not -- see
      * ARCHITECTURE.md's clarification that measured text never resizes the
@@ -1755,22 +2377,27 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     double content_width;
     switch (style->width.kind) {
     case TBOX_STYLE_LENGTH_PX:
-        content_width = style->width.value;
+        content_width = style->width.value -
+            (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? horizontal_edges : 0.0);
         break;
     case TBOX_STYLE_LENGTH_PERCENT:
-        content_width = style->width.value / 100.0 * container.width;
+        content_width = style->width.value / 100.0 * container.width -
+            (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? horizontal_edges : 0.0);
         break;
     case TBOX_STYLE_LENGTH_AUTO:
     default:
-        content_width = container.width - margin_left - margin_right - padding_left - padding_right - 2.0 * effective_border;
+        content_width = container.width - margin_left - margin_right - horizontal_edges;
         if (is_image_input) {
             content_width = input_image != NULL ? (double)input_image->width :
                 fallback_face != NULL ? tbox_font_measure_text(fallback_face, fallback_text) : 16.0;
             if (input_image != NULL && input_image->height > 0) {
                 if (style->height.kind == TBOX_STYLE_LENGTH_PX)
-                    content_width = style->height.value * input_image->width / input_image->height;
+                    content_width = (style->height.value -
+                        (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? vertical_edges : 0.0)) *
+                        input_image->width / input_image->height;
                 else if (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)
-                    content_width = (style->height.value / 100.0 * container.height) *
+                    content_width = (style->height.value / 100.0 * container.height -
+                        (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? vertical_edges : 0.0)) *
                                     input_image->width / input_image->height;
             }
         }
@@ -1783,6 +2410,15 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         }
         break;
     }
+    if (row_column_widths != NULL && row_column_count == 0 && tbox_layout_table_cell_node(node))
+        content_width = container.width - margin_left - margin_right - padding_left - padding_right -
+            2.0 * effective_border;
+    if (content_width < 0.0) content_width = 0.0;
+    /* Grid cells take their final width from the column algorithm, where
+     * min-width is included as a column constraint. Clamping a cell alone
+     * would leave gaps or overlap its neighbors. */
+    if (!is_table_row && !tbox_layout_table_cell_node(node))
+        content_width = tbox_layout_constrain_width(style, content_width, container.width, horizontal_edges);
 
     double content_x;
     double content_y;
@@ -1810,9 +2446,8 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
          * margin_box.height up front, which is only knowable ahead of the
          * children/text pass when style->height is itself definite (PX, or a
          * PERCENT against an already-definite container) AND this isn't a
-         * text tag (a text tag ignores style->height entirely -- its height
-         * always comes from laid-out text, see tbox_layout_build_text_runs
-         * below -- so it can never be "known early" for this purpose).
+         * text tag (its text layout is completed below, so the height is
+         * not used for early absolute-position calculations).
          * Otherwise -- both AUTO, or the genuinely circular
          * top:auto+bottom:defined+height:auto case -- falls back to the
          * containing block's own origin, the simplification documented in
@@ -1831,6 +2466,9 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
                 double early_content_height = (style->height.kind == TBOX_STYLE_LENGTH_PX)
                     ? style->height.value
                     : style->height.value / 100.0 * container.height;
+                if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+                    early_content_height = early_content_height > vertical_edges ?
+                        early_content_height - vertical_edges : 0.0;
                 double early_border_box_height = early_content_height + padding_top + padding_bottom + 2.0 * effective_border;
                 margin_box_height              = early_border_box_height + margin_top + margin_bottom;
             }
@@ -1879,6 +2517,10 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
             content_height = style->height.value / 100.0 * container.height;
         else if (input_image != NULL && input_image->width > 0)
             content_height = content_width * input_image->height / input_image->width;
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX &&
+            (style->height.kind == TBOX_STYLE_LENGTH_PX ||
+             (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)))
+            content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
     } else if (is_text_tag) {
         /* Text-tag leaf: no child boxes even though the DOM node may have
          * element descendants (e.g. <b> inside a <p>) -- those only
@@ -1897,6 +2539,16 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
                 content_height = style->height.value / 100.0 * container.height;
             else if (face != NULL) content_height = tbox_layout_textarea_size(node, "rows", 2) *
                 tbox_font_face_line_height(face);
+            if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX &&
+                (style->height.kind == TBOX_STYLE_LENGTH_PX ||
+                 (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)))
+                content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
+        } else if (style->height.kind == TBOX_STYLE_LENGTH_PX ||
+                   (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)) {
+            content_height = style->height.kind == TBOX_STYLE_LENGTH_PX ? style->height.value :
+                style->height.value / 100.0 * container.height;
+            if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+                content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
         }
     } else if (is_table) {
         /* NOVO (table support): a <table>'s content_height is ALWAYS the
@@ -1905,7 +2557,11 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
          * has above -- no PX/PERCENT `height` branch, no positioned-context
          * threading for descendants (a `position: absolute` box inside a
          * table resolving against the table itself is out of scope). */
-        content_height = tbox_layout_build_table_children(arena, node, styles, fonts, images, content_x, content_y, content_width, box, positioned_context);
+        content_height = tbox_layout_table_extended(node, styles) ?
+            tbox_layout_build_table_extended(arena, node, styles, fonts, images,
+                content_x, content_y, &content_width, box, positioned_context) :
+            tbox_layout_build_table_children(arena, node, styles, fonts, images,
+                content_x, content_y, &content_width, box, positioned_context);
     } else if (is_table_row) {
         /* NOVO (table support): same posture as the <table> branch above --
          * content always dictates a row's height. */
@@ -1923,11 +2579,15 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         switch (style->height.kind) {
         case TBOX_STYLE_LENGTH_PX:
             content_height  = style->height.value;
+            if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+                content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
             height_definite = true;
             break;
         case TBOX_STYLE_LENGTH_PERCENT:
             if (container.height_definite) {
                 content_height  = style->height.value / 100.0 * container.height;
+                if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+                    content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
                 height_definite = true;
             } else {
                 content_height = 0.0; /* placeholder; replaced by the children sum below */

@@ -145,13 +145,18 @@ static int tbox_css_cascade_rank(tbox_css_origin origin, bool important) {
     return rank[origin][important ? 1 : 0];
 }
 
+int tbox_css_cascade_priority_compare(const tbox_css_resolved_declaration *a,
+                                      const tbox_css_resolved_declaration *b) {
+    int rank_a = tbox_css_cascade_rank(a->origin, a->important);
+    int rank_b = tbox_css_cascade_rank(b->origin, b->important);
+    if (rank_a != rank_b) return rank_a > rank_b ? 1 : -1;
+    int specificity = tbox_css_cascade_specificity_compare(a->specificity, b->specificity);
+    if (specificity != 0) return specificity;
+    return (a->source_order > b->source_order) - (a->source_order < b->source_order);
+}
+
 static bool tbox_css_cascade_wins_or_ties(const tbox_css_resolved_declaration *candidate, const tbox_css_resolved_declaration *existing) {
-    int candidate_rank = tbox_css_cascade_rank(candidate->origin, candidate->important);
-    int existing_rank  = tbox_css_cascade_rank(existing->origin, existing->important);
-    if (candidate_rank != existing_rank) {
-        return candidate_rank > existing_rank;
-    }
-    return tbox_css_cascade_specificity_compare(candidate->specificity, existing->specificity) >= 0;
+    return tbox_css_cascade_priority_compare(candidate, existing) >= 0;
 }
 
 /* Shared "does a winner already exist for this property? does the candidate
@@ -222,6 +227,7 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
 
     tbox_vector winners;
     tbox_vector_init(&winners, &scratch, sizeof(tbox_css_resolved_declaration), 0);
+    size_t source_order = 0;
 
     for (size_t src = 0; src < source_count; src++) {
         const tbox_css_stylesheet *stylesheet = sources[src].stylesheet;
@@ -264,6 +270,7 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
                 candidate.property    = declaration->property;
                 candidate.value       = tbox_css_cascade_strip_important(declaration->value, &candidate.important);
                 candidate.specificity = best_specificity;
+                candidate.source_order = source_order++;
 
                 tbox_css_cascade_offer(&winners, &candidate);
             }
@@ -308,6 +315,7 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
                         candidate.property    = tbox_css_cascade_copy_view(&scratch, declaration->property);
                         candidate.value       = tbox_css_cascade_copy_view(&scratch, tbox_css_cascade_strip_important(declaration->value, &candidate.important));
                         candidate.specificity = (tbox_css_specificity){ 0, 0, 0 };
+                        candidate.source_order = source_order++;
 
                         tbox_css_cascade_offer(&winners, &candidate);
                     }

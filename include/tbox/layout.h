@@ -15,11 +15,9 @@ extern "C" {
  *
  * Builds a box tree from the DOM + resolved styles and computes each box's
  * geometry (position and size, in px relative to the viewport) per a
- * deliberately simplified CSS2.1 block formatting context: only normal
- * flow, block-level boxes stacked vertically, no floats/positioning/
- * flexbox/tables -- but, as of v2, a REAL inline formatting context inside
- * the fixed text tags (h1-h6, p): see ARCHITECTURE.md's "Layout Tree"
- * section for the full v2 scope and rationale. */
+ * deliberately simplified CSS2.1 block formatting context with inline text,
+ * images, positioned boxes and a table grid. Flexbox, grid and floats remain
+ * unsupported. */
 
 typedef struct tbox_rect {
     double x, y, width, height;
@@ -66,6 +64,9 @@ typedef struct tbox_layout_box {
 
     tbox_rect margin_box, border_box, padding_box, content_box;
     double scroll_content_height; /* laid-out children extent before viewport clipping */
+    bool table_suppress_border;       /* collapsed tables paint shared edges once */
+    struct tbox_table_edge *table_edges;
+    size_t table_edge_count;
 
     /* Text runs, for the Render Pipeline's TEXT_RUN paint ops (see
      * ARCHITECTURE.md's "Render Pipeline" section). Populated only for a
@@ -81,6 +82,11 @@ typedef struct tbox_layout_box {
 
     struct tbox_layout_box *parent, *first_child, *last_child, *next_sibling;
 } tbox_layout_box;
+
+typedef struct tbox_table_edge {
+    tbox_rect rect;
+    tbox_css_rgba color;
+} tbox_table_edge;
 
 /* Builds the layout tree rooted at `root` (either a TBOX_HTML_NODE_DOCUMENT,
  * treated as transparent -- the single box built is for its first ELEMENT

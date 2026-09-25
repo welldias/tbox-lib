@@ -106,6 +106,47 @@ static bool tbox_style_parse_length(tbox_string_view raw, double font_size, tbox
     return false;
 }
 
+static bool tbox_style_parse_spacing_length(tbox_string_view raw, double font_size, tbox_style_length *out) {
+    if (raw.size == 1 && raw.data[0] == '0') {
+        *out = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 0.0 };
+        return true;
+    }
+    return tbox_style_parse_length(raw, font_size, out);
+}
+
+static bool tbox_style_parse_border_width(tbox_string_view raw, double font_size, double *out) {
+    tbox_string_view value = tbox_style_trim(raw);
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("thin"))) {
+        *out = 1.0;
+        return true;
+    }
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("medium"))) {
+        *out = 3.0;
+        return true;
+    }
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("thick"))) {
+        *out = 5.0;
+        return true;
+    }
+    tbox_style_length length;
+    if (tbox_style_parse_spacing_length(value, font_size, &length) &&
+        length.kind == TBOX_STYLE_LENGTH_PX && length.value >= 0.0) {
+        *out = length.value;
+        return true;
+    }
+    return false;
+}
+
+static bool tbox_style_parse_edge_color(tbox_string_view raw, tbox_css_rgba current_color,
+                                        tbox_css_rgba *out) {
+    tbox_string_view value = tbox_style_trim(raw);
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("currentcolor"))) {
+        *out = current_color;
+        return true;
+    }
+    return tbox_css_color_parse(value, out);
+}
+
 /* NOVO v2: resolves `font-size` per ARCHITECTURE.md's Style section --
  * "<number>px" (absolute), "<number>em" (parent_font_size * number), or
  * "<number>%" (parent_font_size * number / 100). Anything else (absent,
@@ -191,13 +232,7 @@ static bool tbox_style_parse_text_align(tbox_string_view raw, tbox_style_text_al
     return false;
 }
 
-/* NOVO v13: resolves `text-decoration` per ARCHITECTURE.md's v13 Style
- * section -- same two-branch pattern as tbox_style_resolve_position/the
- * `border` block above: only looks at `computed`, never at `parent_style`
- * (text-decoration is not inheritable). Recognizes the case-insensitive
- * keywords `underline`/`line-through`; anything else -- absent, unparsable,
- * or any other keyword (e.g. `overline`, out of scope) -- falls back to the
- * initial value NONE. */
+/* Text decoration is not inherited. Recognize one line at a time. */
 static tbox_style_text_decoration tbox_style_resolve_text_decoration(const tbox_css_computed_style *computed) {
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-decoration"));
     if (decl != NULL) {
@@ -206,17 +241,14 @@ static tbox_style_text_decoration tbox_style_resolve_text_decoration(const tbox_
             return TBOX_STYLE_TEXT_DECORATION_UNDERLINE;
         } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("line-through"))) {
             return TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("overline"))) {
+            return TBOX_STYLE_TEXT_DECORATION_OVERLINE;
         }
     }
     return TBOX_STYLE_TEXT_DECORATION_NONE;
 }
 
-/* NOVO v13: resolves `vertical-align` per ARCHITECTURE.md's v13 Style
- * section -- same two-branch, not-inheritable pattern as
- * tbox_style_resolve_text_decoration above. Recognizes the case-insensitive
- * keywords `sub`/`super`; anything else -- absent, unparsable, or any other
- * keyword (e.g. `top`/`middle`/`bottom`, out of scope) -- falls back to the
- * initial value BASELINE. */
+/* Resolves supported inline and table-cell vertical alignment keywords. */
 static tbox_style_vertical_align tbox_style_resolve_vertical_align(const tbox_css_computed_style *computed) {
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("vertical-align"));
     if (decl != NULL) {
@@ -225,6 +257,12 @@ static tbox_style_vertical_align tbox_style_resolve_vertical_align(const tbox_cs
             return TBOX_STYLE_VERTICAL_ALIGN_SUB;
         } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("super"))) {
             return TBOX_STYLE_VERTICAL_ALIGN_SUPER;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("top"))) {
+            return TBOX_STYLE_VERTICAL_ALIGN_TOP;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("middle"))) {
+            return TBOX_STYLE_VERTICAL_ALIGN_MIDDLE;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("bottom"))) {
+            return TBOX_STYLE_VERTICAL_ALIGN_BOTTOM;
         }
     }
     return TBOX_STYLE_VERTICAL_ALIGN_BASELINE;
@@ -329,7 +367,7 @@ static bool tbox_style_split_box_shorthand(tbox_string_view text, tbox_string_vi
  * single token failing to parse as a <length> -- leaves `out` untouched, so
  * the caller can pre-fill it with the initial value (0px on every side)
  * before calling this. */
-static bool tbox_style_resolve_box_shorthand(const tbox_css_computed_style *computed, const char *property, double font_size, tbox_style_length out[4]) {
+static bool tbox_style_resolve_box_shorthand(const tbox_css_computed_style *computed, const char *property, double font_size, bool allow_auto, tbox_style_length out[4]) {
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(property));
     if (decl == NULL) {
         return false;
@@ -343,7 +381,8 @@ static bool tbox_style_resolve_box_shorthand(const tbox_css_computed_style *comp
 
     tbox_style_length parsed[4];
     for (size_t i = 0; i < count; i++) {
-        if (!tbox_style_parse_length(tokens[i], font_size, &parsed[i])) {
+        if (!tbox_style_parse_spacing_length(tokens[i], font_size, &parsed[i]) ||
+            (!allow_auto && (parsed[i].kind == TBOX_STYLE_LENGTH_AUTO || parsed[i].value < 0.0))) {
             return false;
         }
     }
@@ -371,21 +410,39 @@ static bool tbox_style_resolve_box_shorthand(const tbox_css_computed_style *comp
     return true;
 }
 
-/* NOVO v4: parses the `border` shorthand per ARCHITECTURE.md's v4 Style
- * section -- splits on whitespace into up to 3 tokens (order-free, each
- * optional), classifying each token by the first rule that accepts it:
- * (1) ends in "px" and the rest parses as a number -> border_width; (2)
- * case-insensitive "solid"/"none" -> border_style; (3) otherwise, tries
- * tbox_css_color_parse -> border_color. A token matching none of the three
+static void tbox_style_resolve_box_edges(const tbox_css_computed_style *computed, const char *property,
+                                         const char *const longhands[4], double font_size,
+                                         bool allow_auto, tbox_style_length out[4]) {
+    const tbox_css_resolved_declaration *shorthand = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr(property));
+    bool shorthand_valid = tbox_style_resolve_box_shorthand(computed, property, font_size, allow_auto, out);
+    if (!shorthand_valid) shorthand = NULL;
+    for (int i = 0; i < 4; i++) {
+        const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed,
+            tbox_string_view_from_cstr(longhands[i]));
+        if (decl == NULL || (shorthand != NULL &&
+            tbox_css_cascade_priority_compare(decl, shorthand) <= 0)) continue;
+        tbox_style_length parsed;
+        if (tbox_style_parse_spacing_length(tbox_style_trim(decl->value), font_size, &parsed) &&
+            (allow_auto || parsed.kind != TBOX_STYLE_LENGTH_AUTO) &&
+            (allow_auto || parsed.value >= 0.0)) out[i] = parsed;
+    }
+}
+
+/* Parses uniform `border` and `outline` shorthands. Tokens are classified as
+ * a nonnegative px/em/keyword width, solid/none style, or color (including
+ * currentColor). A token matching none of the three
  * is silently ignored -- it never invalidates the other tokens, nor the
  * declaration as a whole (same robustness posture as the rest of Style/CSS
  * Parser). `out_width`/`out_style`/`out_color` are only written when their
  * respective token classifies successfully; on entry they already hold the
- * caller's initial values. Returns whether a `border` declaration was found
+ * caller's initial values. Returns whether a declaration was found
  * at all (false when absent, callers just keep the pre-filled initial
  * values). */
-static bool tbox_style_resolve_border(const tbox_css_computed_style *computed, double *out_width, tbox_style_border_style *out_style, tbox_css_rgba *out_color) {
-    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("border"));
+static bool tbox_style_resolve_border(const tbox_css_computed_style *computed, const char *property,
+                                      double font_size, tbox_css_rgba current_color,
+                                      double *out_width, tbox_style_border_style *out_style, tbox_css_rgba *out_color) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(property));
     if (decl == NULL) {
         return false;
     }
@@ -407,19 +464,25 @@ static bool tbox_style_resolve_border(const tbox_css_computed_style *computed, d
 
         double width;
         tbox_css_rgba color;
-        if (token.size > 2 && tbox_string_view_equal_ascii_ci(tbox_string_view_make(token.data + token.size - 2, 2), tbox_string_view_from_cstr("px")) && tbox_style_parse_number(tbox_string_view_make(token.data, token.size - 2), &width)) {
+        if (tbox_style_parse_border_width(token, font_size, &width)) {
             *out_width = width;
         } else if (tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("solid"))) {
             *out_style = TBOX_STYLE_BORDER_STYLE_SOLID;
         } else if (tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("none"))) {
             *out_style = TBOX_STYLE_BORDER_STYLE_NONE;
-        } else if (tbox_css_color_parse(token, &color)) {
+        } else if (tbox_style_parse_edge_color(token, current_color, &color)) {
             *out_color = color;
         }
         /* else: unrecognized token, ignored -- keep scanning. */
     }
 
     return true;
+}
+
+static bool tbox_style_border_longhand_wins(const tbox_css_resolved_declaration *longhand,
+                                            const tbox_css_resolved_declaration *shorthand) {
+    return longhand != NULL && (shorthand == NULL ||
+        tbox_css_cascade_priority_compare(longhand, shorthand) > 0);
 }
 
 /* NOVO (visual fidelity): `border-radius` -- a single, uniform px length.
@@ -494,7 +557,7 @@ static bool tbox_style_resolve_box_shadow(const tbox_css_computed_style *compute
 
     double offsets[3];
     int offset_count = 0;
-    bool have_color   = false;
+    bool have_color  = false;
     tbox_css_rgba color;
 
     size_t i = 0;
@@ -596,11 +659,11 @@ static tbox_style_length tbox_style_resolve_img_dimension_attribute(const tbox_h
     if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT) {
         return result;
     }
-    bool is_img = tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("img"));
+    bool is_img                     = tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("img"));
     const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("type"));
-    bool is_image_input = tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("input")) &&
-        type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_from_cstr("image"));
-    if (!is_img && !is_image_input) return result;
+    bool is_image_input             = tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("input")) && type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_from_cstr("image"));
+    if (!is_img && !is_image_input)
+        return result;
 
     const tbox_html_attribute *attr = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr(name));
     if (attr == NULL) {
@@ -626,11 +689,50 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
 
     /* display: v0's initial value is BLOCK, not CSS2.1's spec-correct
      * `inline` -- see the comment on tbox_style.display in style.h. */
-    style.display                                     = TBOX_STYLE_DISPLAY_BLOCK;
+    style.display    = TBOX_STYLE_DISPLAY_BLOCK;
     style.overflow_y = TBOX_STYLE_OVERFLOW_Y_VISIBLE;
+    style.box_sizing = TBOX_STYLE_BOX_SIZING_CONTENT_BOX;
+    style.visibility_hidden = parent_style != NULL && parent_style->visibility_hidden;
+    style.text_overflow = TBOX_STYLE_TEXT_OVERFLOW_CLIP;
+
+    const tbox_css_resolved_declaration *sizing_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("box-sizing"));
+    if (sizing_decl != NULL && tbox_string_view_equal_ascii_ci(tbox_style_trim(sizing_decl->value),
+        tbox_string_view_from_cstr("border-box"))) style.box_sizing = TBOX_STYLE_BOX_SIZING_BORDER_BOX;
+    const tbox_css_resolved_declaration *visibility_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("visibility"));
+    if (visibility_decl != NULL) {
+        tbox_string_view value = tbox_style_trim(visibility_decl->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("hidden")))
+            style.visibility_hidden = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("visible")))
+            style.visibility_hidden = false;
+    }
+    const tbox_css_resolved_declaration *text_overflow_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("text-overflow"));
+    if (text_overflow_decl != NULL && tbox_string_view_equal_ascii_ci(tbox_style_trim(text_overflow_decl->value),
+        tbox_string_view_from_cstr("ellipsis"))) style.text_overflow = TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS;
+
     const tbox_css_resolved_declaration *overflow_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("overflow-y"));
-    if (overflow_decl != NULL && tbox_string_view_equal_ascii_ci(tbox_style_trim(overflow_decl->value), tbox_string_view_from_cstr("auto"))) {
-        style.overflow_y = TBOX_STYLE_OVERFLOW_Y_AUTO;
+    const tbox_css_resolved_declaration *overflow_short = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("overflow"));
+    if (overflow_short != NULL && (overflow_decl == NULL ||
+        tbox_css_cascade_priority_compare(overflow_short, overflow_decl) > 0))
+        overflow_decl = overflow_short;
+    if (overflow_decl != NULL) {
+        tbox_string_view value = tbox_style_trim(overflow_decl->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("auto")))
+            style.overflow_y = TBOX_STYLE_OVERFLOW_Y_AUTO;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("hidden")))
+            style.overflow_y = TBOX_STYLE_OVERFLOW_Y_HIDDEN;
+    }
+    style.white_space_nowrap = parent_style != NULL && parent_style->white_space_nowrap;
+    const tbox_css_resolved_declaration *white_space = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("white-space"));
+    if (white_space != NULL) {
+        tbox_string_view value = tbox_style_trim(white_space->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("nowrap")))
+            style.white_space_nowrap = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")))
+            style.white_space_nowrap = false;
     }
     const tbox_css_resolved_declaration *display_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("display"));
     if (display_decl != NULL) {
@@ -648,9 +750,58 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
      * (NOVO v8) resolve contra este mesmo `style.font_size`. */
     double parent_font_size = (parent_style != NULL) ? parent_style->font_size : 16.0;
     style.font_size         = tbox_style_resolve_font_size(computed, parent_font_size);
+    style.line_height_kind = parent_style != NULL ? parent_style->line_height_kind :
+        TBOX_STYLE_LINE_HEIGHT_NORMAL;
+    style.line_height_value = parent_style != NULL ? parent_style->line_height_value : 0.0;
+    const tbox_css_resolved_declaration *line_height_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("line-height"));
+    if (line_height_decl != NULL) {
+        tbox_string_view value = tbox_style_trim(line_height_decl->value);
+        double multiplier;
+        tbox_style_length length = {TBOX_STYLE_LENGTH_AUTO, 0.0};
+        bool has_length = tbox_style_parse_spacing_length(value, style.font_size, &length);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal"))) {
+            style.line_height_kind = TBOX_STYLE_LINE_HEIGHT_NORMAL;
+            style.line_height_value = 0.0;
+        } else if (tbox_style_parse_number(value, &multiplier) && multiplier >= 0.0) {
+            style.line_height_kind = TBOX_STYLE_LINE_HEIGHT_NUMBER;
+            style.line_height_value = multiplier;
+        } else if (has_length &&
+                   length.kind == TBOX_STYLE_LENGTH_PX && length.value >= 0.0) {
+            style.line_height_kind = TBOX_STYLE_LINE_HEIGHT_PX;
+            style.line_height_value = length.value;
+        } else if (has_length && length.kind == TBOX_STYLE_LENGTH_PERCENT && length.value >= 0.0) {
+            style.line_height_kind = TBOX_STYLE_LINE_HEIGHT_PX;
+            style.line_height_value = style.font_size * length.value / 100.0;
+        }
+    }
+    style.letter_spacing = parent_style != NULL ? parent_style->letter_spacing : 0.0;
+    const tbox_css_resolved_declaration *letter_spacing_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("letter-spacing"));
+    if (letter_spacing_decl != NULL) {
+        tbox_string_view value = tbox_style_trim(letter_spacing_decl->value);
+        tbox_style_length length;
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")))
+            style.letter_spacing = 0.0;
+        else if (tbox_style_parse_spacing_length(value, style.font_size, &length) &&
+                 length.kind == TBOX_STYLE_LENGTH_PX) style.letter_spacing = length.value;
+    }
 
     style.width  = tbox_style_resolve_length_property(computed, "width", style.font_size);
     style.height = tbox_style_resolve_length_property(computed, "height", style.font_size);
+    style.min_width = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
+    style.max_width = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
+    const tbox_css_resolved_declaration *min_width_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("min-width"));
+    const tbox_css_resolved_declaration *max_width_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("max-width"));
+    tbox_style_length width_limit;
+    if (min_width_decl != NULL && tbox_style_parse_spacing_length(min_width_decl->value,
+        style.font_size, &width_limit) && width_limit.kind != TBOX_STYLE_LENGTH_AUTO &&
+        width_limit.value >= 0.0) style.min_width = width_limit;
+    if (max_width_decl != NULL && tbox_style_parse_spacing_length(max_width_decl->value,
+        style.font_size, &width_limit) && width_limit.kind != TBOX_STYLE_LENGTH_AUTO &&
+        width_limit.value >= 0.0) style.max_width = width_limit;
     if (style.width.kind == TBOX_STYLE_LENGTH_AUTO) {
         style.width = tbox_style_resolve_img_dimension_attribute(node, "width");
     }
@@ -664,8 +815,29 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.padding[i].kind  = TBOX_STYLE_LENGTH_PX;
         style.padding[i].value = 0.0;
     }
-    tbox_style_resolve_box_shorthand(computed, "margin", style.font_size, style.margin);
-    tbox_style_resolve_box_shorthand(computed, "padding", style.font_size, style.padding);
+    static const char *const margin_sides[4] = {"margin-top", "margin-right", "margin-bottom", "margin-left"};
+    static const char *const padding_sides[4] = {"padding-top", "padding-right", "padding-bottom", "padding-left"};
+    tbox_style_resolve_box_edges(computed, "margin", margin_sides, style.font_size, true, style.margin);
+    tbox_style_resolve_box_edges(computed, "padding", padding_sides, style.font_size, false, style.padding);
+    style.text_indent = parent_style != NULL ? parent_style->text_indent :
+        (tbox_style_length){TBOX_STYLE_LENGTH_PX, 0.0};
+    const tbox_css_resolved_declaration *indent_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("text-indent"));
+    if (indent_decl != NULL) {
+        tbox_style_length indent;
+        if (tbox_style_parse_spacing_length(tbox_style_trim(indent_decl->value), style.font_size, &indent) &&
+            indent.kind != TBOX_STYLE_LENGTH_AUTO) style.text_indent = indent;
+    }
+    style.word_spacing = parent_style != NULL ? parent_style->word_spacing : 0.0;
+    const tbox_css_resolved_declaration *word_spacing_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("word-spacing"));
+    if (word_spacing_decl != NULL) {
+        tbox_style_length spacing;
+        if (tbox_style_parse_spacing_length(tbox_style_trim(word_spacing_decl->value), style.font_size, &spacing) &&
+            spacing.kind == TBOX_STYLE_LENGTH_PX) style.word_spacing = spacing.value;
+        else if (tbox_string_view_equal_ascii_ci(tbox_style_trim(word_spacing_decl->value),
+                 tbox_string_view_from_cstr("normal"))) style.word_spacing = 0.0;
+    }
 
     /* color: inheritable. Falls back to the parent's resolved color when
      * undeclared/unparsable and there is a parent, otherwise to opaque
@@ -686,8 +858,14 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
 
     /* background-color: not inheritable; initial value is transparent. */
     const tbox_css_resolved_declaration *bg_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("background-color"));
+    const tbox_css_resolved_declaration *bg_short = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("background"));
     tbox_css_rgba background;
-    if (bg_decl != NULL && tbox_css_color_parse(bg_decl->value, &background)) {
+    tbox_css_rgba short_color;
+    bool short_valid = bg_short != NULL && tbox_css_color_parse(bg_short->value, &short_color);
+    if (short_valid && (bg_decl == NULL ||
+        tbox_css_cascade_priority_compare(bg_short, bg_decl) > 0)) {
+        style.background_color = short_color;
+    } else if (bg_decl != NULL && tbox_css_color_parse(bg_decl->value, &background)) {
         style.background_color = background;
     } else {
         style.background_color.r = 0;
@@ -696,28 +874,87 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.background_color.a = 0;
     }
 
-    /* font-weight: NOVO v2. Only the exact case-insensitive keyword "bold"
-     * sets true; anything else (absent, "normal", 100-900, bolder/lighter
-     * -- all out of scope) inherits the parent's already-resolved value,
-     * the same inheritance mechanism as `color` above, or false with no
-     * parent. */
+    /* The two available font faces map to normal/400 and bold/700. */
     const tbox_css_resolved_declaration *weight_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-weight"));
-    if (weight_decl != NULL && tbox_string_view_equal_ascii_ci(weight_decl->value, tbox_string_view_from_cstr("bold"))) {
-        style.font_weight_bold = true;
-    } else if (parent_style != NULL) {
-        style.font_weight_bold = parent_style->font_weight_bold;
-    } else {
-        style.font_weight_bold = false;
+    style.font_weight_bold = parent_style != NULL && parent_style->font_weight_bold;
+    if (weight_decl != NULL) {
+        tbox_string_view value = tbox_style_trim(weight_decl->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("bold")) ||
+            tbox_string_view_equal_cstr(value, "700")) style.font_weight_bold = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")) ||
+                 tbox_string_view_equal_cstr(value, "400")) style.font_weight_bold = false;
     }
 
     /* border: NOVO v4. Not inheritable -- always cascade-or-initial. */
     style.border_width   = 0.0;
     style.border_style   = TBOX_STYLE_BORDER_STYLE_NONE;
-    style.border_color.r = 0;
-    style.border_color.g = 0;
-    style.border_color.b = 0;
-    style.border_color.a = 255;
-    tbox_style_resolve_border(computed, &style.border_width, &style.border_style, &style.border_color);
+    style.border_color = style.color;
+    tbox_style_resolve_border(computed, "border", style.font_size, style.color,
+                              &style.border_width, &style.border_style, &style.border_color);
+    const tbox_css_resolved_declaration *border = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("border"));
+    const tbox_css_resolved_declaration *border_width = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("border-width"));
+    if (tbox_style_border_longhand_wins(border_width, border)) {
+        double parsed;
+        if (tbox_style_parse_border_width(border_width->value, style.font_size, &parsed))
+            style.border_width = parsed;
+    }
+    const tbox_css_resolved_declaration *border_style = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("border-style"));
+    if (tbox_style_border_longhand_wins(border_style, border)) {
+        tbox_string_view value = tbox_style_trim(border_style->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("solid")))
+            style.border_style = TBOX_STYLE_BORDER_STYLE_SOLID;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("none")))
+            style.border_style = TBOX_STYLE_BORDER_STYLE_NONE;
+    }
+    const tbox_css_resolved_declaration *border_color = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("border-color"));
+    if (tbox_style_border_longhand_wins(border_color, border)) {
+        tbox_css_rgba parsed;
+        if (tbox_style_parse_edge_color(border_color->value, style.color, &parsed))
+            style.border_color = parsed;
+    }
+
+    style.outline_width = 3.0;
+    style.outline_style = TBOX_STYLE_BORDER_STYLE_NONE;
+    style.outline_color = style.color;
+    tbox_style_resolve_border(computed, "outline", style.font_size, style.color,
+                              &style.outline_width, &style.outline_style, &style.outline_color);
+    const tbox_css_resolved_declaration *outline = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("outline"));
+    const tbox_css_resolved_declaration *outline_width = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("outline-width"));
+    if (tbox_style_border_longhand_wins(outline_width, outline)) {
+        double parsed;
+        if (tbox_style_parse_border_width(outline_width->value, style.font_size, &parsed))
+            style.outline_width = parsed;
+    }
+    const tbox_css_resolved_declaration *outline_style = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("outline-style"));
+    if (tbox_style_border_longhand_wins(outline_style, outline)) {
+        tbox_string_view value = tbox_style_trim(outline_style->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("solid")))
+            style.outline_style = TBOX_STYLE_BORDER_STYLE_SOLID;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("none")))
+            style.outline_style = TBOX_STYLE_BORDER_STYLE_NONE;
+    }
+    const tbox_css_resolved_declaration *outline_color = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("outline-color"));
+    if (tbox_style_border_longhand_wins(outline_color, outline)) {
+        tbox_css_rgba parsed;
+        if (tbox_style_parse_edge_color(outline_color->value, style.color, &parsed)) style.outline_color = parsed;
+    }
+    style.outline_offset = 0.0;
+    const tbox_css_resolved_declaration *outline_offset = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("outline-offset"));
+    if (outline_offset != NULL) {
+        tbox_style_length parsed;
+        if (tbox_style_parse_spacing_length(tbox_style_trim(outline_offset->value),
+            style.font_size, &parsed) && parsed.kind == TBOX_STYLE_LENGTH_PX)
+            style.outline_offset = parsed.value;
+    }
 
     /* position + offsets: NOVO v4. Not inheritable. */
     style.position  = tbox_style_resolve_position(computed);
@@ -756,24 +993,71 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.font_family[0] = '\0';
     }
 
-    /* font-style: NOVO v13. Same three-branch inheritance mechanism as
-     * `font-weight` above -- only the exact case-insensitive keyword
-     * "italic" sets true; anything else (absent, "normal", "oblique" -- out
-     * of scope) inherits the parent's already-resolved value, or false with
-     * no parent. */
+    /* An explicit normal value resets inherited italic text. */
     const tbox_css_resolved_declaration *font_style_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-style"));
-    if (font_style_decl != NULL && tbox_string_view_equal_ascii_ci(font_style_decl->value, tbox_string_view_from_cstr("italic"))) {
-        style.font_italic = true;
-    } else if (parent_style != NULL) {
-        style.font_italic = parent_style->font_italic;
-    } else {
-        style.font_italic = false;
+    style.font_italic = parent_style != NULL && parent_style->font_italic;
+    if (font_style_decl != NULL) {
+        tbox_string_view value = tbox_style_trim(font_style_decl->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("italic"))) style.font_italic = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal"))) style.font_italic = false;
     }
 
     /* text-decoration / vertical-align: NOVO v13. Neither inherits --
      * always cascade-or-initial, same posture as background-color/border. */
-    style.text_decoration = tbox_style_resolve_text_decoration(computed);
-    style.vertical_align  = tbox_style_resolve_vertical_align(computed);
+    style.text_decoration                             = tbox_style_resolve_text_decoration(computed);
+    style.text_decoration_color                       = style.color;
+    style.text_decoration_thickness                   = 1.0;
+    const tbox_css_resolved_declaration *decoration_color = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("text-decoration-color"));
+    if (decoration_color != NULL) {
+        tbox_css_rgba parsed;
+        if (tbox_css_color_parse(tbox_style_trim(decoration_color->value), &parsed))
+            style.text_decoration_color = parsed;
+    }
+    const tbox_css_resolved_declaration *decoration_thickness = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("text-decoration-thickness"));
+    if (decoration_thickness != NULL) {
+        tbox_style_length parsed;
+        if (tbox_style_parse_length(decoration_thickness->value, style.font_size, &parsed) &&
+            parsed.kind == TBOX_STYLE_LENGTH_PX && parsed.value >= 0.0)
+            style.text_decoration_thickness = parsed.value;
+    }
+    style.vertical_align                              = tbox_style_resolve_vertical_align(computed);
+    const tbox_css_resolved_declaration *caption_side = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("caption-side"));
+    style.caption_side                                = parent_style != NULL ? parent_style->caption_side : TBOX_STYLE_CAPTION_TOP;
+    if (caption_side != NULL) {
+        tbox_string_view value = tbox_style_trim(caption_side->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("bottom")))
+            style.caption_side = TBOX_STYLE_CAPTION_BOTTOM;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("top")))
+            style.caption_side = TBOX_STYLE_CAPTION_TOP;
+    }
+    const tbox_css_resolved_declaration *collapse = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("border-collapse"));
+    style.border_collapse                         = parent_style != NULL && parent_style->border_collapse;
+    if (collapse != NULL) {
+        tbox_string_view value = tbox_style_trim(collapse->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("collapse")))
+            style.border_collapse = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("separate")))
+            style.border_collapse = false;
+    }
+    style.border_spacing_x                       = parent_style != NULL ? parent_style->border_spacing_x : 0.0;
+    style.border_spacing_y                       = parent_style != NULL ? parent_style->border_spacing_y : 0.0;
+    const tbox_css_resolved_declaration *spacing = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("border-spacing"));
+    if (spacing != NULL) {
+        tbox_string_view raw = tbox_style_trim(spacing->value);
+        size_t split         = 0;
+        while (split < raw.size && !tbox_style_is_space(raw.data[split]))
+            split++;
+        tbox_style_length first, second;
+        if (tbox_style_parse_spacing_length(tbox_string_view_make(raw.data, split), style.font_size, &first) && first.kind == TBOX_STYLE_LENGTH_PX && first.value >= 0.0) {
+            tbox_string_view rest = split < raw.size ? tbox_style_trim(tbox_string_view_make(raw.data + split, raw.size - split)) : tbox_string_view_make(NULL, 0);
+            if (rest.size == 0 || (tbox_style_parse_spacing_length(rest, style.font_size, &second) && second.kind == TBOX_STYLE_LENGTH_PX && second.value >= 0.0)) {
+                style.border_spacing_x = first.value;
+                style.border_spacing_y = rest.size == 0 ? first.value : second.value;
+            }
+        }
+    }
 
     /* border-radius / box-shadow: NOVO (visual fidelity). Neither inherits
      * -- always cascade-or-initial, same posture as border/background-color

@@ -3390,6 +3390,30 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* Hidden overflow shares auto's visual and hit-test clip, but never
+     * creates a scrollbar or consumes wheel scrolling. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<div id='clip'><div id='first'></div><div id='outside'></div></div>",
+            "#clip { width: 60px; height: 30px; overflow-y: hidden; }"
+            "#first { height: 30px; background-color: red; }"
+            "#outside { height: 30px; background-color: blue; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            uint32_t pixels[80 * 80];
+            for (size_t i = 0; i < 80 * 80; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_context_run_frame(ctx, 80.0, 80.0, &list);
+            tbox_raster_display_list(pixels, 80, 80, &list);
+            TBOX_TEST_ASSERT(pixels[10 * 80 + 10] == 0xFFFF0000u);
+            TBOX_TEST_ASSERT(pixels[45 * 80 + 10] == 0xFFFFFFFFu);
+            TBOX_TEST_ASSERT(tbox_context_hit_test(ctx, 10.0, 45.0) == NULL);
+            TBOX_TEST_ASSERT(!tbox_context_scrollbar_press(ctx, 55.0, 5.0));
+            TBOX_TEST_ASSERT(!tbox_context_scroll(ctx, 10.0, 10.0, 20.0));
+            tbox_context_close(ctx);
+        }
+    }
+
     /* Textarea keeps its raw initial text, sizes from rows/cols, and edits
      * multiple lines inside a clipped, scrollable content box. */
     {

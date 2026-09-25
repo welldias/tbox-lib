@@ -41,6 +41,37 @@ horizontal container scrolling, flex/grid
 layout, accessibility tree, or Windows/macOS window backend. The library is
 not yet suitable for a complete desktop application.
 
+Tables support `<caption>`, `<colgroup>`, `<col>`, `<thead>`, `<tbody>`,
+`<tfoot>`, `<tr>`, `<th>`, and `<td>`. Column and row spans share one grid
+across sections; CSS `width` and `min-width` on columns and cells set minimum widths.
+Captions can use `caption-side: top|bottom`; tables accept `border-spacing`
+and `border-collapse: collapse`; cells accept `vertical-align:
+top|middle|bottom`. Block content inside a cell gets its own layout boxes.
+The parser expects explicitly closed table tags in this version and keeps
+direct `<tr>` children without inserting a `<tbody>`.
+
+Recent style support includes `font-weight: normal|bold|400|700`,
+`font-style: normal|italic`, `white-space: normal|nowrap`,
+`text-decoration: overline`, `text-decoration-color`, pixel or `em`
+`text-decoration-thickness`, `word-spacing`, `text-indent`, and
+`overflow-y: hidden`. Individual `margin-*` and `padding-*` sides work with
+their shorthands; `background: <color>` works alongside `background-color`.
+Uniform `outline` and `outline-width/style/color` paint outside the border.
+`outline-offset` controls its gap, and borders or outlines can use
+`currentColor`. Border widths accept `thin`, `medium`, and `thick` (1, 3,
+and 5 pixels). `min-width` and `max-width` constrain content width in pixels,
+`em`, or percentages; table cells use `min-width` when sizing columns.
+`box-sizing: border-box` makes declared width and height include padding and
+border. `line-height` accepts `normal`, unitless numbers, pixels, `em`, and
+percentages; `letter-spacing` accepts pixels and `em`. `visibility: hidden`
+preserves layout while hiding the element, and a descendant can explicitly
+set `visibility: visible`. `text-overflow: ellipsis` truncates a single line
+when paired with `white-space: nowrap` and `overflow: hidden`.
+Uniform `border-width`, `border-style` (`solid`/`none`),
+and `border-color` work alongside the `border` shorthand with normal cascade
+precedence. Other font weights, white-space modes, and per-side borders are
+not yet implemented.
+
 ## Build and checks
 
 ```sh
@@ -48,6 +79,13 @@ cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+To browse the HTML fixtures in `tests/assets`, run
+`build/example/tbox_assets_showrun`. It opens the first `.html` file in
+alphabetical order; Right Arrow loads the next file and Left Arrow loads the
+previous one. Escape closes the window. The current filename is printed in
+the terminal. `--list` prints the browsing order without opening a window;
+an optional directory argument replaces `tests/assets`.
 
 FreeType is fetched by CMake. Fontconfig enables application rendering.
 Wayland enables interactive windows on Linux; `-DTBOX_ENABLE_WAYLAND=OFF`

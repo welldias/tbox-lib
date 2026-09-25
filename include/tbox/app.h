@@ -85,6 +85,17 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
  * tbox_app_step. Returns NULL if app == NULL. */
 tbox_context *tbox_app_context(tbox_app *app);
 
+/* Called for each translated key event before the context handles it.
+ * Return true to consume the key. The handler may load another document. */
+typedef bool (*tbox_app_key_handler)(tbox_app *app, tbox_key_event event, void *userdata);
+void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata);
+
+/* Replaces the current document in the existing window. NULL css_path uses
+ * only the document's embedded styles and the user-agent stylesheet. On
+ * failure the current document remains active. Relative image paths use the
+ * new HTML file's directory. */
+bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path);
+
 /* Request a frame after the caller mutates the document or application
  * state outside an input handler. The next tbox_app_step recomputes styles,
  * layout and painting. Multiple requests before a step coalesce. */

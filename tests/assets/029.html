@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #fafafa; }
+        h2 { margin-bottom: 20px; }
+        .panel {
+            width: 60px;
+            min-width: 220px;
+            max-width: 180px;
+            padding: 12px;
+            color: #245686;
+            background: #e9f3ff;
+            border: thick solid currentColor;
+            outline: thin solid currentColor;
+            outline-offset: 6px;
+        }
+        table { width: 300px; max-width: 220px; margin-top: 30px; }
+        td { border: thin solid currentColor; padding: 5px; }
+        .wide { min-width: 110px; }
+    </style>
+</head>
+<body>
+    <h2>Width limits and outlines</h2>
+    <div class="panel"><p>Minimum width wins over maximum width.</p></div>
+    <table>
+        <tr><td class="wide">Wide cell</td><td>Other cell</td></tr>
+    </table>
+</body>
+</html>

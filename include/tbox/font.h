@@ -134,6 +134,8 @@ bool tbox_font_face_has_glyph(const tbox_font_face *face, uint32_t codepoint);
  * not a new layer -- it only matters once multilingual/complex text does.
  * text.size == 0 returns 0. */
 double tbox_font_measure_text(const tbox_font_face *face, tbox_string_view text);
+/* Same measurement with an extra advance after each Unicode codepoint. */
+double tbox_font_measure_text_spaced(const tbox_font_face *face, tbox_string_view text, double letter_spacing);
 
 /* An 8-bit alpha coverage bitmap for one rasterized glyph (FT_Render_Glyph,
  * antialiased 8-bit mode), plus the metrics needed to place it: bearing_x/

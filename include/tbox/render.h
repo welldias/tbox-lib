@@ -48,6 +48,7 @@ typedef struct tbox_paint_op {
      * faces (see ARCHITECTURE.md's "Render Pipeline" section). */
     tbox_string_view text;
     const tbox_font_face *face; /* injected by whoever builds the display list, never loaded here */
+    double letter_spacing; /* TEXT_RUN only; px after each codepoint */
 
     /* IMAGE only (NULL for FILL_RECT/TEXT_RUN): the decoded image to
      * composite into `rect` -- see tbox_raster_image. */

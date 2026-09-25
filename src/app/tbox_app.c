@@ -61,6 +61,10 @@ struct tbox_app {
     bool closed;
     bool redraw_requested;
     const tbox_html_node *paste_target;
+    bool use_config;
+    tbox_ua_style_config config;
+    tbox_app_key_handler key_handler;
+    void *key_handler_userdata;
 };
 #endif
 
@@ -245,6 +249,10 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     app->closed           = false;
     app->redraw_requested = false;
     app->paste_target     = NULL;
+    app->use_config       = use_config;
+    app->config           = config;
+    app->key_handler      = NULL;
+    app->key_handler_userdata = NULL;
 
     return app;
 }
@@ -359,6 +367,40 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
 tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
     return tbox_app_create_from_files_impl(html_path, css_path, width, height, true, config);
 }
+
+bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path) {
+    if (app == NULL || html_path == NULL) return false;
+    char *html = tbox_app_read_file(html_path);
+    if (html == NULL) return false;
+    char *css = css_path != NULL ? tbox_app_read_file(css_path) : NULL;
+    if (css_path != NULL && css == NULL) {
+        free(html);
+        return false;
+    }
+    char base_dir[TBOX_APP_PATH_BUF_SIZE];
+    tbox_app_dirname(html_path, base_dir, sizeof(base_dir));
+    tbox_image_cache *images = tbox_image_cache_create(base_dir);
+    tbox_context *ctx = NULL;
+    if (images != NULL) {
+        const char *css_text = css != NULL ? css : "";
+        ctx = app->use_config ? tbox_context_open_with_config(html, strlen(html), css_text,
+            strlen(css_text), app->fonts, images, app->config) :
+            tbox_context_open(html, strlen(html), css_text, strlen(css_text), app->fonts, images);
+    }
+    free(css);
+    free(html);
+    if (ctx == NULL) {
+        tbox_image_cache_destroy(images);
+        return false;
+    }
+    tbox_context_close(app->ctx);
+    tbox_image_cache_destroy(app->images);
+    app->ctx = ctx;
+    app->images = images;
+    app->paste_target = NULL;
+    app->redraw_requested = true;
+    return true;
+}
 #endif
 
 /* See <tbox/app.h>'s doc comment. Shares tbox_app_read_file/
@@ -443,6 +485,12 @@ tbox_context *tbox_app_context(tbox_app *app) {
     return app->ctx;
 }
 
+void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata) {
+    if (app == NULL) return;
+    app->key_handler = handler;
+    app->key_handler_userdata = userdata;
+}
+
 void tbox_app_request_redraw(tbox_app *app) {
     if (app != NULL) {
         app->redraw_requested = true;
@@ -502,6 +550,11 @@ void tbox_app_step(tbox_app *app) {
                 dirty = true;
             break;
         case TBOX_INPUT_KEY:
+            if (app->key_handler != NULL && app->key_handler(app, event.data.key,
+                    app->key_handler_userdata)) {
+                dirty = true;
+                break;
+            }
             if (event.data.key.pressed && event.data.key.control && (event.data.key.key == TBOX_KEY_C || event.data.key.key == TBOX_KEY_X)) {
                 tbox_string_view selected = tbox_context_selected_text(app->ctx);
                 if (selected.size > 0 && tbox_window_backend_clipboard_copy(app->backend, selected.data, selected.size, event.serial) && event.data.key.key == TBOX_KEY_X) {
@@ -636,6 +689,15 @@ tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const ch
     (void)height;
     (void)config;
     return NULL;
+}
+
+bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path) {
+    (void)app; (void)html_path; (void)css_path;
+    return false;
+}
+
+void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata) {
+    (void)app; (void)handler; (void)userdata;
 }
 
 tbox_context *tbox_app_context(tbox_app *app) {

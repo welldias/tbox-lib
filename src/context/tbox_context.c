@@ -157,7 +157,16 @@ static bool tbox_context_node_attached(const tbox_context *ctx, const tbox_html_
 static bool tbox_context_is_text_input(const tbox_html_node *node);
 static bool tbox_context_is_password_input(const tbox_html_node *node);
 static double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face,
-                                         tbox_string_view text);
+                                         tbox_string_view text, double letter_spacing);
+
+static double tbox_context_style_line_height(const tbox_style *style, const tbox_font_face *face) {
+    double natural = tbox_font_face_line_height(face);
+    if (style->line_height_kind == TBOX_STYLE_LINE_HEIGHT_NUMBER)
+        return style->font_size * style->line_height_value;
+    if (style->line_height_kind == TBOX_STYLE_LINE_HEIGHT_PX)
+        return style->line_height_value;
+    return natural;
+}
 static bool tbox_context_is_number_input(const tbox_html_node *node);
 static bool tbox_context_is_range_input(const tbox_html_node *node);
 static bool tbox_context_is_search_input(const tbox_html_node *node);
@@ -1421,6 +1430,7 @@ typedef struct tbox_scrollbar_geometry {
 
 static bool tbox_context_scrollbar_geometry(const tbox_layout_box *box, double offset, tbox_scrollbar_geometry *out) {
     if (box == NULL || box->style == NULL || box->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_AUTO ||
+        box->style->visibility_hidden ||
         box->node == NULL || box->padding_box.width <= 0.0 || box->padding_box.height <= 0.0 ||
         box->content_box.height <= 0.0) return false;
     double max_scroll = box->scroll_content_height - box->content_box.height;
@@ -1465,7 +1475,7 @@ static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_b
         if (tbox_context_scrollbar_geometry(box, state != NULL ? state->y : 0.0, &geometry)) {
             tbox_rect clip = geometry.track;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
             items[(*index)++] = (tbox_paint_op){
                 .kind = TBOX_PAINT_FILL_RECT, .rect = geometry.track,
@@ -1503,10 +1513,10 @@ static void tbox_context_push_fill(tbox_vector *items, tbox_rect rect, tbox_css_
 
 static void tbox_context_paint_select_arrows(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
-        if (tbox_context_is_select(box->node) && box->style != NULL) {
+        if (tbox_context_is_select(box->node) && box->style != NULL && !box->style->visibility_hidden) {
             tbox_rect clip = box->content_box;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
             double x = box->content_box.x + box->content_box.width - 14.0;
             double y = box->content_box.y + (box->content_box.height - 6.0) / 2.0;
@@ -1520,11 +1530,11 @@ static void tbox_context_paint_select_arrows(const tbox_layout_box *box, tbox_ve
 
 static void tbox_context_paint_number_steppers(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
-        if (tbox_context_is_number_input(box->node) && box->style != NULL &&
+        if (tbox_context_is_number_input(box->node) && box->style != NULL && !box->style->visibility_hidden &&
             box->content_box.width >= 20.0 && box->content_box.height >= 14.0) {
             tbox_rect clip = box->content_box;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
             double x = box->content_box.x + box->content_box.width - 16.0;
             double y = box->content_box.y;
@@ -1551,11 +1561,11 @@ static void tbox_context_paint_search_clears(const tbox_layout_box *box, tbox_ve
     for (; box != NULL; box = box->next_sibling) {
         const tbox_html_attribute *value = tbox_context_is_search_input(box->node) ?
             tbox_html_node_get_attribute(box->node, tbox_string_view_make("value", 5)) : NULL;
-        if (value != NULL && value->value.size > 0 && box->style != NULL &&
+        if (value != NULL && value->value.size > 0 && box->style != NULL && !box->style->visibility_hidden &&
             box->content_box.width >= 20.0 && box->content_box.height >= 14.0) {
             tbox_rect clip = box->content_box;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
             double x = box->content_box.x + box->content_box.width - 16.0;
             double y = box->content_box.y + box->content_box.height / 2.0 - 5.0;
@@ -1574,7 +1584,7 @@ static void tbox_context_paint_search_clears(const tbox_layout_box *box, tbox_ve
 
 static void tbox_context_paint_ranges(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
-        if (tbox_context_is_range_input(box->node) && box->style != NULL &&
+        if (tbox_context_is_range_input(box->node) && box->style != NULL && !box->style->visibility_hidden &&
             box->content_box.width >= 16.0 && box->content_box.height >= 14.0) {
             double min, max, step, value;
             bool any_step;
@@ -1585,7 +1595,7 @@ static void tbox_context_paint_ranges(const tbox_layout_box *box, tbox_vector *i
             if (progress > 1.0) progress = 1.0;
             tbox_rect clip = box->content_box;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
             double left = box->content_box.x + 8.0;
             double width = box->content_box.width - 16.0;
@@ -1827,10 +1837,10 @@ static void tbox_context_file_push_text(tbox_vector *items, const tbox_font_face
 static void tbox_context_paint_file_controls(tbox_context *ctx, const tbox_layout_box *box,
                                               tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
-        if (tbox_context_is_file_input(box->node) && box->style != NULL) {
+        if (tbox_context_is_file_input(box->node) && box->style != NULL && !box->style->visibility_hidden) {
             tbox_rect clip = box->content_box;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
             const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
                 tbox_string_view_from_cstr(box->style->font_family), false, false, 13.0);
@@ -1972,7 +1982,7 @@ tbox_ua_style_config tbox_ua_style_config_default(void) {
  * slots (no numeric value in it), so the worst case barely moves --
  * ~1260 -> ~1311 chars, nowhere near 2048 -- checked, buffer size left
  * unchanged) -- sized with headroom rather than computed exactly. */
-#define TBOX_UA_STYLE_CSS_BUFFER_SIZE 4096
+#define TBOX_UA_STYLE_CSS_BUFFER_SIZE 8192
 
 /* NOVO v2: renders the UA stylesheet's CSS text from `config`. The
  * selectors and properties are FIXED, exactly as ARCHITECTURE.md's "CSS
@@ -2069,7 +2079,8 @@ bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_
         "ins { display: inline; text-decoration: underline; }\n"
         "sub { display: inline; font-size: 75%%; vertical-align: sub; }\n"
         "sup { display: inline; font-size: 75%%; vertical-align: super; }\n"
-        "table, tr { display: block; }\n"
+        "table, tr, thead, tbody, tfoot, caption { display: block; }\n"
+        "caption { text-align: center; }\n"
         "th { font-weight: bold; text-align: center; }\n"
         "td, th { padding: 4px; }\n",
         config.margin.body_px, config.font.base_px,
@@ -2296,7 +2307,7 @@ static void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *bo
                 tbox_text_line *lines = tbox_arena_alloc(&ctx->frame_arena, maximum * sizeof(*lines));
                 tbox_layout_text_run *runs = tbox_arena_alloc(&ctx->frame_arena, maximum * sizeof(*runs));
                 if (lines != NULL && runs != NULL) {
-                    double line_height = tbox_font_face_line_height(face);
+                    double line_height = tbox_context_style_line_height(style, face);
                     size_t count = 0, start = 0, at = 0;
                     double width = 0.0;
                     while (at < field->length) {
@@ -2307,13 +2318,13 @@ static void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *bo
                             start = next;
                             width = 0.0;
                         } else {
-                            double next_width = tbox_font_measure_text(face,
-                                tbox_string_view_make(field->value + start, next - start));
+                            double next_width = tbox_font_measure_text_spaced(face,
+                                tbox_string_view_make(field->value + start, next - start), style->letter_spacing);
                             if (next_width > box->content_box.width && at > start) {
                                 lines[count++] = (tbox_text_line){start, at, width};
                                 start = at;
-                                next_width = tbox_font_measure_text(face,
-                                    tbox_string_view_make(field->value + start, next - start));
+                                next_width = tbox_font_measure_text_spaced(face,
+                                    tbox_string_view_make(field->value + start, next - start), style->letter_spacing);
                             }
                             width = next_width;
                         }
@@ -2441,7 +2452,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     if (tbox_context_is_text_input(ctx->focused_node)) {
         const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->focused_node);
         tbox_text_field *field = box != NULL ? tbox_context_text_field(ctx, ctx->focused_node) : NULL;
-        if (field != NULL && box->style != NULL && box->content_box.width > 0) {
+        if (field != NULL && box->style != NULL && !box->style->visibility_hidden && box->content_box.width > 0) {
             const tbox_style *style = box->style;
             tbox_rect input_clip = box->content_box;
             const tbox_html_attribute *search_value = tbox_context_is_search_input(box->node) ?
@@ -2451,26 +2462,26 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
                  (search_value != NULL && search_value->value.size > 0)) ? 16.0 : 0.0;
             input_clip.width -= control_width;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     input_clip = tbox_context_rect_intersection(input_clip, ancestor->padding_box);
             const tbox_font_face *face = tbox_font_face_cache_get(
                 ctx->fonts, tbox_string_view_from_cstr(style->font_family),
                 style->font_weight_bold, style->font_italic, style->font_size);
             if (face != NULL) {
                 double cursor_x = tbox_context_input_advance(box->node, face,
-                    tbox_string_view_make(field->value, field->cursor));
+                    tbox_string_view_make(field->value, field->cursor), style->letter_spacing);
                 double visible_width = box->content_box.width - control_width - 1.0;
                 if (visible_width < 0.0) visible_width = 0.0;
                 if (cursor_x < field->scroll_x) field->scroll_x = cursor_x;
                 if (cursor_x > field->scroll_x + visible_width)
                     field->scroll_x = cursor_x - visible_width;
                 double text_width = tbox_context_input_advance(box->node, face,
-                    tbox_string_view_make(field->value, field->length));
+                    tbox_string_view_make(field->value, field->length), style->letter_spacing);
                 double max_scroll = text_width - visible_width;
                 if (max_scroll < 0.0) max_scroll = 0.0;
                 if (field->scroll_x > max_scroll) field->scroll_x = max_scroll;
                 double x = box->content_box.x + cursor_x - field->scroll_x;
-                double height = tbox_font_face_line_height(face);
+                double height = tbox_context_style_line_height(style, face);
                 if (height > box->content_box.height) height = box->content_box.height;
                 tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena,
                     (out_list->count + 2) * sizeof(*items));
@@ -2489,9 +2500,9 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
                                 size_t start = field->anchor < field->cursor ? field->anchor : field->cursor;
                                 size_t end = field->anchor > field->cursor ? field->anchor : field->cursor;
                                 double left = box->content_box.x - field->scroll_x +
-                                    tbox_context_input_advance(box->node, face, tbox_string_view_make(field->value, start));
+                                    tbox_context_input_advance(box->node, face, tbox_string_view_make(field->value, start), style->letter_spacing);
                                 double right = box->content_box.x - field->scroll_x +
-                                    tbox_context_input_advance(box->node, face, tbox_string_view_make(field->value, end));
+                                    tbox_context_input_advance(box->node, face, tbox_string_view_make(field->value, end), style->letter_spacing);
                                 if (left < box->content_box.x) left = box->content_box.x;
                                 if (right > box->content_box.x + box->content_box.width - control_width)
                                     right = box->content_box.x + box->content_box.width - control_width;
@@ -2521,16 +2532,16 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     if (tbox_context_is_textarea(ctx->focused_node)) {
         const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->focused_node);
         tbox_text_field *field = box != NULL ? tbox_context_text_field(ctx, box->node) : NULL;
-        if (field != NULL && field->line_count > 0 && box->style != NULL) {
+        if (field != NULL && field->line_count > 0 && box->style != NULL && !box->style->visibility_hidden) {
             const tbox_style *style = box->style;
             const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
                 tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
                 style->font_italic, style->font_size);
             if (face != NULL) {
-                double line_height = tbox_font_face_line_height(face);
+                double line_height = tbox_context_style_line_height(style, face);
                 tbox_rect clip = box->content_box;
                 for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                    if (ancestor->style != NULL && ancestor->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+                    if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                         clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
                 tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena,
                     (out_list->count + field->line_count + 1) * sizeof(*items));
@@ -2551,10 +2562,10 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
                             size_t a = start > line_start ? start : line_start;
                             size_t b = end < line_end ? end : line_end;
                             if (b > a) {
-                                double left = box->content_box.x + tbox_font_measure_text(face,
-                                    tbox_string_view_make(field->value + line_start, a - line_start));
-                                double right = box->content_box.x + tbox_font_measure_text(face,
-                                    tbox_string_view_make(field->value + line_start, b - line_start));
+                                double left = box->content_box.x + tbox_font_measure_text_spaced(face,
+                                    tbox_string_view_make(field->value + line_start, a - line_start), style->letter_spacing);
+                                double right = box->content_box.x + tbox_font_measure_text_spaced(face,
+                                    tbox_string_view_make(field->value + line_start, b - line_start), style->letter_spacing);
                                 items[count++] = (tbox_paint_op){.kind = TBOX_PAINT_FILL_RECT,
                                     .rect = {left, op.rect.y, right - left, line_height},
                                     .color = {130, 175, 235, 255}, .has_clip = true, .clip = clip};
@@ -2566,8 +2577,8 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
                     for (size_t i = 0; i < field->line_count; i++)
                         if (field->cursor >= field->lines[i].start && field->cursor <= field->lines[i].end) row = i;
                     size_t offset = field->cursor - field->lines[row].start;
-                    double x = box->content_box.x + tbox_font_measure_text(face,
-                        tbox_string_view_make(field->value + field->lines[row].start, offset));
+                    double x = box->content_box.x + tbox_font_measure_text_spaced(face,
+                        tbox_string_view_make(field->value + field->lines[row].start, offset), style->letter_spacing);
                     items[count++] = (tbox_paint_op){.kind = TBOX_PAINT_FILL_RECT,
                         .rect = {x, box->content_box.y + row * line_height - field->scroll_y, 1.0, line_height},
                         .color = style->color, .has_clip = true, .clip = clip};
@@ -2640,7 +2651,7 @@ static const tbox_layout_box *tbox_context_scrollbar_at(const tbox_layout_box *b
             tbox_context_point_in_rect(geometry.track, x, y)) last = box;
         bool child_has_clip = has_clip;
         tbox_rect child_clip = clip;
-        if (box->style != NULL && box->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO) {
+        if (box->style != NULL && box->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE) {
             child_clip = has_clip ? tbox_context_rect_intersection(clip, box->padding_box) : box->padding_box;
             child_has_clip = true;
         }
@@ -2657,7 +2668,7 @@ static const tbox_layout_box *tbox_context_hit_test_clipped(const tbox_layout_bo
     }
 
     const tbox_layout_box *last_hit = NULL;
-    if (box->style == NULL || box->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_AUTO ||
+    if (box->style == NULL || box->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_VISIBLE ||
         tbox_context_point_in_rect(box->padding_box, x, y)) {
         for (const tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling) {
             const tbox_layout_box *hit = tbox_context_hit_test_clipped(child, x, y);
@@ -2669,7 +2680,8 @@ static const tbox_layout_box *tbox_context_hit_test_clipped(const tbox_layout_bo
         return last_hit;
     }
 
-    return tbox_context_point_in_rect(box->border_box, x, y) ? box : NULL;
+    return (box->style == NULL || !box->style->visibility_hidden) &&
+        tbox_context_point_in_rect(box->border_box, x, y) ? box : NULL;
 }
 
 const tbox_layout_box *tbox_context_hit_test_box(const tbox_layout_box *box, double x, double y) {
@@ -2910,14 +2922,14 @@ static bool tbox_context_is_password_input(const tbox_html_node *node) {
 }
 
 static double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face,
-                                         tbox_string_view text) {
-    if (!tbox_context_is_password_input(node)) return tbox_font_measure_text(face, text);
+                                         tbox_string_view text, double letter_spacing) {
+    if (!tbox_context_is_password_input(node)) return tbox_font_measure_text_spaced(face, text, letter_spacing);
     size_t characters = 0;
     for (size_t i = 0; i < text.size; i++)
         if (((unsigned char)text.data[i] & 0xc0) != 0x80) characters++;
     tbox_string_view glyph = tbox_font_face_has_glyph(face, 0x2022) ?
         tbox_string_view_make("\xe2\x80\xa2", 3) : tbox_string_view_make("*", 1);
-    return characters * tbox_font_measure_text(face, glyph);
+    return characters * tbox_font_measure_text_spaced(face, glyph, letter_spacing);
 }
 
 static bool tbox_context_is_number_input(const tbox_html_node *node) {
@@ -3452,10 +3464,10 @@ static size_t tbox_context_cursor_at_x(const tbox_text_field *field, const tbox_
         size_t next = tbox_utf8_next(field->value, field->length, at);
         if (next == at) break;
         double advance = tbox_context_input_advance(field->node, face,
-            tbox_string_view_make(field->value, next));
+            tbox_string_view_make(field->value, next), box->style->letter_spacing);
         if (relative_x < advance) {
             double previous = tbox_context_input_advance(field->node, face,
-                tbox_string_view_make(field->value, at));
+                tbox_string_view_make(field->value, at), box->style->letter_spacing);
             return relative_x - previous < advance - relative_x ? at : next;
         }
         best = next;
@@ -3467,7 +3479,7 @@ static size_t tbox_context_cursor_at_x(const tbox_text_field *field, const tbox_
 static size_t tbox_context_cursor_at_point(const tbox_text_field *field, const tbox_layout_box *box,
                                            const tbox_font_face *face, double x, double y) {
     if (field->line_count == 0) return 0;
-    double height = tbox_font_face_line_height(face);
+    double height = tbox_context_style_line_height(box->style, face);
     if (height <= 0.0) return 0;
     double relative_y = y - box->content_box.y + field->scroll_y;
     size_t row = relative_y <= 0.0 ? 0 : (size_t)(relative_y / height);
@@ -3477,11 +3489,11 @@ static size_t tbox_context_cursor_at_point(const tbox_text_field *field, const t
     for (size_t at = line.start; at < line.end;) {
         size_t next = tbox_utf8_next(field->value, field->length, at);
         if (next <= at || next > line.end) break;
-        double advance = tbox_font_measure_text(face,
-            tbox_string_view_make(field->value + line.start, next - line.start));
+        double advance = tbox_font_measure_text_spaced(face,
+            tbox_string_view_make(field->value + line.start, next - line.start), box->style->letter_spacing);
         if (relative_x < advance) {
-            double previous = tbox_font_measure_text(face,
-                tbox_string_view_make(field->value + line.start, at - line.start));
+            double previous = tbox_font_measure_text_spaced(face,
+                tbox_string_view_make(field->value + line.start, at - line.start), box->style->letter_spacing);
             return relative_x - previous < advance - relative_x ? at : next;
         }
         at = next;
@@ -3519,6 +3531,8 @@ static bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node
             return false;
         }
     }
+    const tbox_style *own_style = tbox_style_table_find(&ctx->styles, node);
+    if (own_style != NULL && own_style->visibility_hidden) return false;
     return true;
 }
 
@@ -4164,10 +4178,10 @@ bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
             size_t row = 0;
             for (size_t i = 0; i < field->line_count; i++)
                 if (field->cursor >= field->lines[i].start && field->cursor <= field->lines[i].end) row = i;
-            double x = box->content_box.x + tbox_font_measure_text(face,
+            double x = box->content_box.x + tbox_font_measure_text_spaced(face,
                 tbox_string_view_make(field->value + field->lines[row].start,
-                    field->cursor - field->lines[row].start));
-            double height = tbox_font_face_line_height(face);
+                    field->cursor - field->lines[row].start), box->style->letter_spacing);
+            double height = tbox_context_style_line_height(box->style, face);
             double y = box->content_box.y + ((double)row + (event.key == TBOX_KEY_UP ? -0.5 : 1.5)) * height - field->scroll_y;
             field->cursor = tbox_context_cursor_at_point(field, box, face, x, y);
             break;

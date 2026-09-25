@@ -113,7 +113,7 @@ bool tbox_font_face_has_glyph(const tbox_font_face *face, uint32_t codepoint) {
     return face != NULL && FT_Get_Char_Index(face->ft_face, (FT_ULong)codepoint) != 0;
 }
 
-double tbox_font_measure_text(const tbox_font_face *face, tbox_string_view text) {
+double tbox_font_measure_text_spaced(const tbox_font_face *face, tbox_string_view text, double letter_spacing) {
     if (face == NULL || text.size == 0) {
         return 0.0;
     }
@@ -127,15 +127,20 @@ double tbox_font_measure_text(const tbox_font_face *face, tbox_string_view text)
         cursor = utf8codepoint(cursor, &codepoint);
 
         if (FT_Load_Char(face->ft_face, (FT_ULong)codepoint, FT_LOAD_DEFAULT) != 0) {
+            total += letter_spacing;
             continue;
         }
 
         /* 26.6 fixed-point, no kerning/shaping -- see tbox_font_measure_text's
          * doc comment in <tbox/font.h>. */
-        total += face->ft_face->glyph->advance.x / 64.0;
+        total += face->ft_face->glyph->advance.x / 64.0 + letter_spacing;
     }
 
     return total;
+}
+
+double tbox_font_measure_text(const tbox_font_face *face, tbox_string_view text) {
+    return tbox_font_measure_text_spaced(face, text, 0.0);
 }
 
 tbox_font_glyph_bitmap tbox_font_rasterize_glyph(tbox_font_face *face, uint32_t codepoint) {

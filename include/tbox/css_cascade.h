@@ -171,7 +171,13 @@ typedef struct tbox_css_resolved_declaration {
     tbox_string_view value;
     bool important;
     tbox_css_specificity specificity;
+    size_t source_order; /* order among matching declarations, across all sources */
 } tbox_css_resolved_declaration;
+
+/* Compares the full cascade priority of two resolved declarations, even
+ * when they have different property names (e.g. border and border-color). */
+int tbox_css_cascade_priority_compare(const tbox_css_resolved_declaration *a,
+                                      const tbox_css_resolved_declaration *b);
 
 typedef struct tbox_css_computed_style {
     tbox_css_resolved_declaration *items;

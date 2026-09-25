@@ -554,6 +554,8 @@ int tbox_test_render_run(void) {
         tbox_style run_style      = tbox_test_render_default_style();
         run_style.color           = (tbox_css_rgba){ 11, 22, 33, 255 };
         run_style.text_decoration = TBOX_STYLE_TEXT_DECORATION_UNDERLINE;
+        run_style.text_decoration_color = run_style.color;
+        run_style.text_decoration_thickness = 1.0;
 
         tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
@@ -589,6 +591,8 @@ int tbox_test_render_run(void) {
         tbox_style run_style      = tbox_test_render_default_style();
         run_style.color           = (tbox_css_rgba){ 44, 55, 66, 255 };
         run_style.text_decoration = TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH;
+        run_style.text_decoration_color = (tbox_css_rgba){ 200, 30, 20, 255 };
+        run_style.text_decoration_thickness = 3.0;
 
         tbox_layout_text_run run = { 0 };
         run.rect  = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
@@ -609,6 +613,8 @@ int tbox_test_render_run(void) {
             TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_FILL_RECT, "the decoration FILL_RECT must come after the TEXT_RUN");
             TBOX_TEST_ASSERT_MSG(list.items[1].rect.y == expected_y, "the line-through FILL_RECT must sit ascent*0.3 above the run's baseline");
             TBOX_TEST_ASSERT_MSG(list.items[1].rect.y < baseline, "the line-through FILL_RECT must be above the baseline, unlike UNDERLINE below it");
+            TBOX_TEST_ASSERT(list.items[1].rect.height == 3.0);
+            TBOX_TEST_ASSERT(list.items[1].color.r == 200 && list.items[1].color.g == 30 && list.items[1].color.b == 20);
         }
         tbox_arena_destroy(&arena);
     }
@@ -829,6 +835,114 @@ int tbox_test_render_run(void) {
             TBOX_TEST_ASSERT_MSG(first_shadow.rect.width > last_shadow.rect.width, "outermost shadow layer must be larger than the innermost one");
             TBOX_TEST_ASSERT(list.items[shadow_count].kind == TBOX_PAINT_FILL_RECT && rect_equal(list.items[shadow_count].rect, box.border_box) && list.items[shadow_count].color.r == 200);
         }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* Hidden overflow clips descendants while its own background remains
+     * visible. The same clip is used by auto, without a scrollbar here. */
+    {
+        tbox_style parent_style = tbox_test_render_default_style();
+        parent_style.overflow_y = TBOX_STYLE_OVERFLOW_Y_HIDDEN;
+        parent_style.background_color = (tbox_css_rgba){0, 0, 255, 255};
+        tbox_style child_style = tbox_test_render_default_style();
+        child_style.background_color = (tbox_css_rgba){255, 0, 0, 255};
+        tbox_layout_box parent = tbox_test_render_default_box(&parent_style);
+        tbox_layout_box child = tbox_test_render_default_box(&child_style);
+        parent.border_box = parent.padding_box = (tbox_rect){0, 0, 40, 20};
+        child.border_box = child.padding_box = (tbox_rect){0, 15, 40, 20};
+        parent.first_child = parent.last_child = &child;
+        child.parent = &parent;
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &parent);
+        TBOX_TEST_ASSERT(list.count == 2);
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT(!list.items[0].has_clip);
+            TBOX_TEST_ASSERT(list.items[1].has_clip && rect_equal(list.items[1].clip, parent.padding_box));
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* A box's own overflowing text also obeys its clip. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.overflow_y = TBOX_STYLE_OVERFLOW_Y_HIDDEN;
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.padding_box = (tbox_rect){0, 0, 40, 20};
+        tbox_layout_text_run run = {0};
+        run.rect = (tbox_rect){0, 0, 100, 20};
+        run.text = tbox_test_render_view_from_cstr("long text");
+        run.font = font;
+        run.style = &style;
+        box.text_runs = &run;
+        box.text_run_count = 1;
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1);
+        if (list.count == 1)
+            TBOX_TEST_ASSERT(list.items[0].has_clip && rect_equal(list.items[0].clip, box.padding_box));
+        tbox_arena_destroy(&arena);
+    }
+
+    /* A solid outline is painted outside the border box without changing it. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.outline_style = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.outline_width = 2.0;
+        style.outline_color = (tbox_css_rgba){255, 0, 0, 255};
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = box.padding_box = (tbox_rect){10, 20, 40, 30};
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 4);
+        if (list.count == 4) {
+            TBOX_TEST_ASSERT(rect_equal(list.items[0].rect, (tbox_rect){8, 18, 44, 2}));
+            TBOX_TEST_ASSERT(rect_equal(list.items[1].rect, (tbox_rect){8, 50, 44, 2}));
+            TBOX_TEST_ASSERT(rect_equal(list.items[2].rect, (tbox_rect){8, 20, 2, 30}));
+            TBOX_TEST_ASSERT(rect_equal(list.items[3].rect, (tbox_rect){50, 20, 2, 30}));
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* A positive outline offset leaves a visible gap around the box. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.outline_style = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.outline_width = 2.0;
+        style.outline_offset = 4.0;
+        style.outline_color = (tbox_css_rgba){0, 0, 255, 255};
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = box.padding_box = (tbox_rect){10, 20, 40, 30};
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 4);
+        if (list.count == 4) {
+            TBOX_TEST_ASSERT(rect_equal(list.items[0].rect, (tbox_rect){4, 14, 52, 2}));
+            TBOX_TEST_ASSERT(rect_equal(list.items[1].rect, (tbox_rect){4, 54, 52, 2}));
+            TBOX_TEST_ASSERT(rect_equal(list.items[2].rect, (tbox_rect){4, 16, 2, 38}));
+            TBOX_TEST_ASSERT(rect_equal(list.items[3].rect, (tbox_rect){54, 16, 2, 38}));
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* A visible descendant can paint inside a hidden parent; hidden boxes
+     * still participate in layout but contribute no paint operations. */
+    {
+        tbox_style hidden = tbox_test_render_default_style();
+        hidden.visibility_hidden = true;
+        hidden.background_color = (tbox_css_rgba){255, 0, 0, 255};
+        tbox_style visible = tbox_test_render_default_style();
+        visible.background_color = (tbox_css_rgba){0, 255, 0, 255};
+        tbox_layout_box parent = tbox_test_render_default_box(&hidden);
+        tbox_layout_box child = tbox_test_render_default_box(&visible);
+        parent.border_box = parent.padding_box = (tbox_rect){0, 0, 100, 30};
+        child.border_box = child.padding_box = (tbox_rect){0, 0, 50, 20};
+        parent.first_child = parent.last_child = &child;
+        child.parent = &parent;
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &parent);
+        TBOX_TEST_ASSERT(list.count == 1);
+        if (list.count == 1)
+            TBOX_TEST_ASSERT(list.items[0].color.g == 255);
         tbox_arena_destroy(&arena);
     }
 

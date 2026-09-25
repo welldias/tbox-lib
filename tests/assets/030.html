@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #fafafa; color: #253344; font-size: 16px; }
+        h2 { margin-bottom: 12px; }
+        h3 { margin-top: 16px; margin-bottom: 5px; }
+        p { margin: 0; }
+
+        .box {
+            width: 240px;
+            padding: 10px;
+            border: 2px solid #4a78a8;
+            background: #e9f3ff;
+            margin-bottom: 6px;
+        }
+        .border-box { box-sizing: border-box; }
+        .content-box { box-sizing: content-box; }
+
+        .lines { width: 300px; background: #edf7ed; }
+        .compact { line-height: 18px; }
+        .relaxed { line-height: 1.8; }
+
+        .letters { width: 300px; background: #fff1df; letter-spacing: 3px; }
+
+        .hidden-panel {
+            width: 300px;
+            height: 45px;
+            background: #ffe7e7;
+            visibility: hidden;
+        }
+        .revealed { visibility: visible; }
+
+        .ellipsis {
+            width: 240px;
+            padding: 8px;
+            border: 1px solid #4a78a8;
+            background: #e9f3ff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    </style>
+</head>
+<body>
+    <h2>Text and box styles</h2>
+
+    <h3>box-sizing</h3>
+    <div class="box content-box"><p>Content box: outer width is 264px.</p></div>
+    <div class="box border-box"><p>Border box: outer width is 240px.</p></div>
+
+    <h3>line-height</h3>
+    <p class="lines compact">Compact first line<br>Compact second line</p>
+    <p class="lines relaxed">Relaxed first line<br>Relaxed second line</p>
+
+    <h3>letter-spacing</h3>
+    <p class="letters">Spaced letters: ABCDEFGHIJ</p>
+
+    <h3>visibility</h3>
+    <div class="hidden-panel"><p>Hidden text and background</p>
+        <p class="revealed">Visible child inside hidden parent</p></div>
+    <p>This line follows the reserved hidden space.</p>
+
+    <h3>text-overflow</h3>
+    <p class="ellipsis">This long line ends with an ellipsis when it is clipped.</p>
+</body>
+</html>

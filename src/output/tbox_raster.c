@@ -184,7 +184,7 @@ void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32
     tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, rect, radius, color, false, (tbox_rect){0});
 }
 
-static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color, bool has_clip, tbox_rect clip) {
+static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color, double letter_spacing, bool has_clip, tbox_rect clip) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || face == NULL || text.size == 0 || color.a == 0) {
         return;
     }
@@ -245,12 +245,12 @@ static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width,
             }
         }
 
-        pen_x += glyph.advance;
+        pen_x += glyph.advance + letter_spacing;
     }
 }
 
 void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color) {
-    tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, origin, text, face, color, false, (tbox_rect){0});
+    tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, origin, text, face, color, 0.0, false, (tbox_rect){0});
 }
 
 /* Composites `image`'s decoded RGBA8 pixels into `dest_rect`. When
@@ -379,7 +379,7 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
             }
             break;
         case TBOX_PAINT_TEXT_RUN:
-            tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0});
+            tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0});
             break;
         case TBOX_PAINT_IMAGE:
             tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->has_clip, op->clip);
