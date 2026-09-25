@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #f4f7fb; color: #24364a; font-size: 16px; }
+        h2 { margin-bottom: 10px; }
+        h3 { margin-top: 18px; margin-bottom: 6px; }
+        p { margin: 0; }
+
+        .card {
+            width: 320px;
+            padding: 10px;
+            border: 2px solid #496889;
+            margin-bottom: 8px;
+            background: white;
+        }
+        .min-card { min-height: 70px; }
+        .border-card { box-sizing: border-box; min-height: 70px; }
+        .scroll-card { max-height: 60px; overflow-y: auto; }
+        .scroll-card p { height: 25px; }
+
+        .ink { color: #27786b; background: currentColor; padding: 3px; }
+        .ink-child { color: white; }
+        .ink-longhand { color: #8b4b7f; background-color: currentColor; padding: 3px; }
+        .weight-300 { font-weight: 300; }
+        .weight-500 { font-weight: 500; }
+        .weight-600 { font-weight: 600; }
+        .weight-900 { font-weight: 900; }
+        .slanted { font-style: oblique; }
+    </style>
+</head>
+<body>
+    <h2>Height, color, and font styles</h2>
+
+    <h3>min-height</h3>
+    <div class="card min-card"><p>This card has at least 70px of content height.</p></div>
+    <div class="card border-card"><p>This card is at least 70px tall including its padding and border.</p></div>
+
+    <h3>max-height with scrolling</h3>
+    <div class="card scroll-card">
+        <p>First item</p><p>Second item</p><p>Third item</p><p>Fourth item</p>
+    </div>
+
+    <h3>currentColor backgrounds</h3>
+    <div class="card ink"><p class="ink-child">The shorthand uses the parent text color.</p></div>
+    <div class="card ink-longhand"><p class="ink-child">The longhand uses the parent text color.</p></div>
+
+    <h3>Numeric font weights and oblique</h3>
+    <p class="weight-300">300: regular face</p>
+    <p class="weight-500">500: regular face</p>
+    <p class="weight-600">600: bold face</p>
+    <p class="weight-900 slanted">900 plus oblique: bold italic face</p>
+</body>
+</html>

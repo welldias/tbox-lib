@@ -3468,6 +3468,47 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* A decorative overlay lets clicks reach the box behind it, while a
+     * descendant that explicitly restores auto can still receive clicks. */
+    {
+        tbox_style overlay_style = {0};
+        overlay_style.pointer_events_none = true;
+        tbox_style child_style = {0};
+        tbox_layout_box root_box = {0}, behind = {0}, overlay = {0}, child = {0};
+        root_box.border_box = (tbox_rect){0, 0, 100, 100};
+        behind.border_box = (tbox_rect){0, 0, 100, 100};
+        overlay.border_box = (tbox_rect){0, 0, 100, 100};
+        overlay.style = &overlay_style;
+        child.border_box = (tbox_rect){10, 10, 20, 20};
+        child.style = &child_style;
+        root_box.first_child = &behind;
+        root_box.last_child = &overlay;
+        behind.next_sibling = &overlay;
+        overlay.first_child = overlay.last_child = &child;
+        TBOX_TEST_ASSERT(tbox_context_hit_test_box(&root_box, 50, 50) == &behind);
+        TBOX_TEST_ASSERT(tbox_context_hit_test_box(&root_box, 20, 20) == &child);
+        overlay_style.pointer_events_none = false;
+        TBOX_TEST_ASSERT(tbox_context_hit_test_box(&root_box, 50, 50) == &overlay);
+    }
+
+    {
+        tbox_context *ctx = open_cstr(
+            "<div><button>Under</button><span id='overlay'>Tint</span></div>",
+            "div { width: 120px; height: 45px; position: relative; }"
+            "button { width: 100px; height: 40px; }"
+            "#overlay { display: block; position: absolute; top: 0; left: 0;"
+            " width: 100px; height: 40px; pointer-events: none; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 200.0, 100.0, &list);
+            const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, 10.0);
+            TBOX_TEST_ASSERT(hit != NULL && hit->node != NULL &&
+                string_view_equal_cstr(hit->node->element.tag_name, "button"));
+            tbox_context_close(ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

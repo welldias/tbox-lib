@@ -102,20 +102,22 @@ void tbox_raster_fill_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffe
  * (after clamping) degenerates to a plain call to tbox_raster_fill_rect, so
  * every other codepath in this file that already produces a correct plain
  * rectangle keeps doing so unchanged. */
-static void tbox_raster_fill_rounded_rect_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, double radius, tbox_css_rgba color, bool has_clip, tbox_rect clip) {
+static void tbox_raster_fill_rounded_rect_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, const double corners[4], tbox_css_rgba color, bool has_clip, tbox_rect clip) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || rect.width <= 0.0 || rect.height <= 0.0 || color.a == 0) {
         return;
     }
 
-    double max_radius = (rect.width < rect.height ? rect.width : rect.height) / 2.0;
-    if (radius > max_radius) {
-        radius = max_radius;
-    }
-    if (radius < 0.0) {
-        radius = 0.0;
-    }
+    double radius[4];
+    for (size_t i = 0; i < 4; i++) radius[i] = corners[i] > 0.0 ? corners[i] : 0.0;
+    double scale = 1.0;
+    const double sums[4] = {radius[0] + radius[1], radius[2] + radius[3],
+                            radius[0] + radius[3], radius[1] + radius[2]};
+    const double limits[4] = {rect.width, rect.width, rect.height, rect.height};
+    for (size_t i = 0; i < 4; i++)
+        if (sums[i] > 0.0 && limits[i] / sums[i] < scale) scale = limits[i] / sums[i];
+    for (size_t i = 0; i < 4; i++) radius[i] *= scale;
 
-    if (radius <= 0.0 && !has_clip) {
+    if (radius[0] <= 0.0 && radius[1] <= 0.0 && radius[2] <= 0.0 && radius[3] <= 0.0 && !has_clip) {
         tbox_raster_fill_rect(pixels, buffer_width, buffer_height, rect, color);
         return;
     }
@@ -146,8 +148,7 @@ static void tbox_raster_fill_rounded_rect_clipped(uint32_t *pixels, int32_t buff
         if (y1 > cy1) y1 = cy1;
     }
 
-    double alpha     = color.a / 255.0;
-    double radius_sq = radius * radius;
+    double alpha = color.a / 255.0;
 
     for (int32_t y = y0; y < y1; y++) {
         double ry     = ((double)y + 0.5) - rect.y;
@@ -156,23 +157,16 @@ static void tbox_raster_fill_rounded_rect_clipped(uint32_t *pixels, int32_t buff
         for (int32_t x = x0; x < x1; x++) {
             double rx = ((double)x + 0.5) - rect.x;
 
-            bool in_left_band   = rx < radius;
-            bool in_right_band  = rx > rect.width - radius;
-            bool in_top_band    = ry < radius;
-            bool in_bottom_band = ry > rect.height - radius;
-
-            /* Only inside a RADIUSxRADIUS corner square (both an x-band and
-             * a y-band at once) does the circular cutout matter -- anywhere
-             * else in the rect (the "cross" region between the 4 corners)
-             * always paints. */
-            if ((in_left_band || in_right_band) && (in_top_band || in_bottom_band)) {
-                double corner_x = in_left_band ? radius : rect.width - radius;
-                double corner_y = in_top_band ? radius : rect.height - radius;
-                double dx       = rx - corner_x;
-                double dy       = ry - corner_y;
-                if (dx * dx + dy * dy > radius_sq) {
-                    continue;
-                }
+            int corner = -1;
+            if (rx < radius[0] && ry < radius[0]) corner = 0;
+            else if (rx > rect.width - radius[1] && ry < radius[1]) corner = 1;
+            else if (rx > rect.width - radius[2] && ry > rect.height - radius[2]) corner = 2;
+            else if (rx < radius[3] && ry > rect.height - radius[3]) corner = 3;
+            if (corner >= 0) {
+                double center_x = corner == 0 || corner == 3 ? radius[corner] : rect.width - radius[corner];
+                double center_y = corner == 0 || corner == 1 ? radius[corner] : rect.height - radius[corner];
+                double dx = rx - center_x, dy = ry - center_y;
+                if (dx * dx + dy * dy > radius[corner] * radius[corner]) continue;
             }
 
             row[x] = tbox_raster_blend_pixel(row[x], color, alpha);
@@ -181,7 +175,8 @@ static void tbox_raster_fill_rounded_rect_clipped(uint32_t *pixels, int32_t buff
 }
 
 void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, double radius, tbox_css_rgba color) {
-    tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, rect, radius, color, false, (tbox_rect){0});
+    const double corners[4] = {radius, radius, radius, radius};
+    tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, rect, corners, color, false, (tbox_rect){0});
 }
 
 static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color, double letter_spacing, bool has_clip, tbox_rect clip) {
@@ -364,8 +359,14 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
         const tbox_paint_op *op = &list->items[i];
         switch (op->kind) {
         case TBOX_PAINT_FILL_RECT:
-            if (op->radius > 0.0) {
-                tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, op->rect, op->radius, op->color, op->has_clip, op->clip);
+            if (op->corner_radii[0] > 0.0 || op->corner_radii[1] > 0.0 ||
+                op->corner_radii[2] > 0.0 || op->corner_radii[3] > 0.0 || op->radius > 0.0) {
+                double corners[4];
+                bool has_corners = op->corner_radii[0] > 0.0 || op->corner_radii[1] > 0.0 ||
+                    op->corner_radii[2] > 0.0 || op->corner_radii[3] > 0.0;
+                for (size_t j = 0; j < 4; j++)
+                    corners[j] = has_corners ? op->corner_radii[j] : op->radius;
+                tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, op->rect, corners, op->color, op->has_clip, op->clip);
             } else {
                 tbox_rect rect = op->rect;
                 if (op->has_clip) {

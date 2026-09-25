@@ -138,8 +138,11 @@ typedef struct tbox_style {
     bool visibility_hidden;           /* inheritable; hidden keeps layout */
     tbox_style_text_overflow text_overflow; /* clip or ellipsis; not inheritable */
     bool white_space_nowrap;          /* inheritable; normal by default */
+    bool overflow_wrap_break_word;    /* inheritable; normal by default */
+    bool pointer_events_none;         /* inheritable; auto by default */
     tbox_style_length width, height; /* initial: AUTO */
-    tbox_style_length min_width, max_width; /* AUTO means no constraint; px or % */
+    tbox_style_length min_width, max_width; /* AUTO means no constraint; em resolves to px */
+    tbox_style_length min_height, max_height; /* AUTO means no constraint; em resolves to px */
     tbox_style_length margin[4];     /* top right bottom left; initial: 0px each */
     tbox_style_length padding[4];    /* top right bottom left; initial: 0px each */
     tbox_style_length text_indent;   /* inheritable; first line, px or %; initial 0px */
@@ -158,7 +161,7 @@ typedef struct tbox_style {
      * inheritance). Initial value (no parent): 16px, the same default
      * already used by Fonte/Texto since v0. */
     double font_size;
-    /* Only the bold/not-bold axis: bold/700 versus normal/400.
+    /* Only the bold/not-bold axis: bold/600-900 versus normal/100-500.
      * Inheritable like `color`; initial value (no parent): false. */
     bool font_weight_bold;
     /* NOVO v4: `border` shorthand (width + style + color, order-free, each
@@ -200,15 +203,12 @@ typedef struct tbox_style {
     tbox_style_caption_side caption_side;
     bool border_collapse;
     double border_spacing_x, border_spacing_y;
-    /* NOVO (visual fidelity): `border-radius`. A single px length, uniform
-     * on all 4 corners -- no per-corner syntax, no elliptical (`/`) syntax,
-     * no percentages (would need the containing block's dimensions at
-     * Style-resolve time, same reasoning width/height PERCENT is deferred
-     * to Layout instead -- see tbox_style_resolve_border_radius). NOT
-     * inheritable, same posture as border_width/border_style/border_color
-     * right above; initial value 0.0 (no rounding, box_render_walk's
-     * existing 4-border-strip path is used unchanged). */
+    /* Circular corner radii in px. The scalar retains the old uniform value
+     * for callers that build styles directly; shorthand and longhand CSS
+     * resolve into border_radius_corners in clockwise order. Percentages and
+     * elliptical radii remain unsupported. */
     double border_radius;
+    double border_radius_corners[4]; /* top-left, top-right, bottom-right, bottom-left */
     /* NOVO (visual fidelity): `box-shadow: <offset-x> <offset-y>
      * [<blur-radius>] <color>` -- ONE shadow only (no comma-separated list,
      * no `inset`, no spread-radius -- see tbox_style_resolve_box_shadow).
@@ -238,14 +238,17 @@ typedef struct tbox_style {
  * initial value, same as if the property were undeclared), `min-width` and
  * `max-width` (nonnegative px/em/%; `max-width: none` removes the limit), `margin`,
  * `padding` (CSS2.1 1/2/3/4-value shorthand and per-side longhands),
- * `color`, `background-color`, `background: <color>`
- * (any syntax tbox_css_color_parse accepts), `font-size` (NOVO v2: a bare
+ * `min-height` and `max-height` (nonnegative px/em/%, with percentage heights
+ * requiring a definite containing-block height), `color`,
+ * `background-color`, `background: <color>`
+ * (any syntax tbox_css_color_parse accepts, plus currentColor), `font-size` (a bare
  * number followed by `px` -- absolute --, `em` -- `parent_style->font_size
- * * number` --, or `%` -- `parent_style->font_size * number / 100`; an
- * absent/unparsable value, or any CSS2.1 keyword like `medium`/`larger`
- * -- out of scope --, inherits `parent_style->font_size`, or falls back to
- * 16px with no parent), `font-weight` (`bold`/`700` select bold;
- * `normal`/`400` select regular; absent inherits), `border`
+ * * number` --, or `%` -- `parent_style->font_size * number / 100`;
+ * xx-small through xx-large use a fixed pixel scale, and smaller/larger
+ * divide/multiply the parent size by 1.2; absent/unparsable values inherit
+ * the parent's size, or use 16px with no parent), `font-weight` (`bold` selects bold;
+ * `normal` and `100` through `500` select regular; `600` through `900` select
+ * bold; absent inherits), `border`
  * (NOVO v4: width/style/color shorthand, order-free, each optional;
  * see tbox_style_border_style and ARCHITECTURE.md's v4 Style section for the
  * exact per-token classification; uniform `border-width`/`border-style`/
@@ -264,18 +267,20 @@ typedef struct tbox_style {
  * comma-separated list is used -- a full list is never kept for fallback --
  * a name in quotes (`"Courier New"`) is recognized with the quotes stripped;
  * inheritable, same mechanism as `color`, falling back to `""` -- no
- * override -- with no parent), `font-style` (`italic` or `normal`;
- * absent inherits; `oblique` is out of scope), same inheritance mechanism as
- * `font-weight`, or falls back to `false` with no parent), `text-decoration`
+ * override -- with no parent), `font-style` (`italic`, `oblique`, or `normal`;
+ * absent inherits; `oblique` uses the italic face), same inheritance mechanism
+ * as `font-weight`, or falls back to `false` with no parent), `text-decoration`
  * (`underline`/`line-through`/`overline`, case-insensitive; any other
  * value/absent falls back to the initial value `NONE`; NOT inheritable --
  * always cascade-or-initial, same posture as `background-color`),
  * `text-decoration-color` (a solid color) and `text-decoration-thickness`
  * (nonnegative px/em), `white-space` (`normal`/`nowrap`, inheritable),
+ * `overflow-wrap` (`normal`/`break-word`, inheritable), `pointer-events`
+ * (`auto`/`none`, inheritable, applies to pointer hit testing),
  * `word-spacing` (normal or px/em, inheritable), `text-indent` (px/em/%,
  * inheritable), `outline` (uniform width/solid/color) and its width/style/
- * color longhands, `outline-offset` (signed px/em), `currentColor` for border
- * and outline colors, and `thin`/`medium`/`thick` border widths,
+ * color longhands, `outline-offset` (signed px/em), `currentColor` for
+ * background, border, and outline colors, and `thin`/`medium`/`thick` border widths,
  * `overflow-y` (`visible`, `auto`, or `hidden`; auto clips and scrolls,
  * hidden only clips),
  * `vertical-align` (`sub`/`super` for inline text and `top`/`middle`/

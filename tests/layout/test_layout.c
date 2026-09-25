@@ -3078,6 +3078,106 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Height constraints change the visible box without losing the full
+     * content height needed for overflow-y: auto. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div id='host'><div id='min'></div><div id='max'></div>"
+            "<div id='percent'></div><div id='conflict'></div>"
+            "<div id='border'></div><div id='scroll'>"
+            "<p>one</p><p>two</p><p>three</p></div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "#host { height: 200px; }"
+            "#min { height: 20px; min-height: 80px; }"
+            "#max { height: 180px; max-height: 100px; }"
+            "#percent { height: 150px; max-height: 50%; }"
+            "#conflict { height: 50px; min-height: 120px; max-height: 80px; }"
+            "#border { box-sizing: border-box; height: 20px; min-height: 60px;"
+            " padding: 10px; border: 2px solid black; }"
+            "#scroll { max-height: 40px; overflow-y: auto; }"
+            "#scroll p { height: 25px; margin: 0; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 400.0, 300.0);
+        const tbox_layout_box *min = find_box_for_node(layout, find_html_id(root, "min"));
+        const tbox_layout_box *max = find_box_for_node(layout, find_html_id(root, "max"));
+        const tbox_layout_box *percent = find_box_for_node(layout, find_html_id(root, "percent"));
+        const tbox_layout_box *conflict = find_box_for_node(layout, find_html_id(root, "conflict"));
+        const tbox_layout_box *border = find_box_for_node(layout, find_html_id(root, "border"));
+        const tbox_layout_box *scroll = find_box_for_node(layout, find_html_id(root, "scroll"));
+        TBOX_TEST_ASSERT(min && max && percent && conflict && border && scroll);
+        if (min && max && percent && conflict && border && scroll) {
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(min->content_box.height, 80.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(max->content_box.height, 100.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(percent->content_box.height, 100.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(conflict->content_box.height, 120.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(border->border_box.height, 60.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(border->content_box.height, 36.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(scroll->content_box.height, 40.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(scroll->scroll_content_height, 75.0));
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* break-word splits only overlong text, preserving every UTF-8 byte;
+     * normal and nowrap retain their existing overflow behavior. */
+    {
+        const char *long_word = "supercalifragilisticexpialidocious";
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><p id='normal'>supercalifragilisticexpialidocious</p>"
+            "<p id='wrapped'>supercalifragilisticexpialidocious</p>"
+            "<p id='nowrap'>supercalifragilisticexpialidocious</p>"
+            "<p id='utf8'>éééééééééééééééé</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "p { width: 50px; } #wrapped, #utf8 { overflow-wrap: break-word; }"
+            "#nowrap { overflow-wrap: break-word; white-space: nowrap; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 300.0, 300.0);
+        const tbox_layout_box *normal = find_box_for_node(layout, find_html_id(root, "normal"));
+        const tbox_layout_box *wrapped = find_box_for_node(layout, find_html_id(root, "wrapped"));
+        const tbox_layout_box *nowrap = find_box_for_node(layout, find_html_id(root, "nowrap"));
+        const tbox_layout_box *utf8 = find_box_for_node(layout, find_html_id(root, "utf8"));
+        TBOX_TEST_ASSERT(normal && wrapped && nowrap && utf8);
+        if (normal && wrapped && nowrap && utf8) {
+            TBOX_TEST_ASSERT(normal->text_run_count == 1 && normal->text_runs[0].rect.width > 50.0);
+            TBOX_TEST_ASSERT(nowrap->text_run_count == 1 && nowrap->text_runs[0].rect.width > 50.0);
+            TBOX_TEST_ASSERT(wrapped->text_run_count > 1);
+            size_t offset = 0;
+            for (size_t i = 0; i < wrapped->text_run_count; i++) {
+                const tbox_layout_text_run *run = &wrapped->text_runs[i];
+                TBOX_TEST_ASSERT(run->rect.width <= 50.0 + 1e-6);
+                TBOX_TEST_ASSERT(offset + run->text.size <= strlen(long_word));
+                if (offset + run->text.size <= strlen(long_word))
+                    TBOX_TEST_ASSERT(memcmp(run->text.data, long_word + offset, run->text.size) == 0);
+                offset += run->text.size;
+            }
+            TBOX_TEST_ASSERT(offset == strlen(long_word));
+            TBOX_TEST_ASSERT(utf8->text_run_count > 1);
+            size_t codepoints = 0;
+            for (size_t i = 0; i < utf8->text_run_count; i++) {
+                const tbox_layout_text_run *run = &utf8->text_runs[i];
+                TBOX_TEST_ASSERT(run->text.size % 2 == 0);
+                TBOX_TEST_ASSERT(run->rect.width <= 50.0 + 1e-6);
+                for (size_t j = 0; j + 1 < run->text.size; j += 2) {
+                    TBOX_TEST_ASSERT((unsigned char)run->text.data[j] == 0xc3);
+                    TBOX_TEST_ASSERT((unsigned char)run->text.data[j + 1] == 0xa9);
+                    codepoints++;
+                }
+            }
+            TBOX_TEST_ASSERT(codepoints == 16);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

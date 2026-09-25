@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #f5f7fa;
+            color: #25364a;
+            font-size: 16px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        h3 {
+            margin-top: 16px;
+            margin-bottom: 6px;
+        }
+
+        p {
+            margin: 0;
+        }
+
+        .panel {
+            width: 250px;
+            padding: 8px;
+            margin-bottom: 8px;
+            border: 2px solid #356581;
+            background: #e3eff7;
+        }
+
+        .break {
+            overflow-wrap: break-word;
+        }
+
+        .nowrap {
+            overflow-wrap: break-word;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .target {
+            width: 260px;
+            height: 54px;
+            position: relative;
+        }
+
+        button {
+            box-sizing: border-box;
+            width: 222px;
+            height: 42px;
+            padding: 0;
+            text-align: center;
+            line-height: 38px;
+            font-family: sans-serif;
+            font-size: 13px;
+            background: #b7d6ed;
+        }
+
+        button:hover {
+            background: #72bce9;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 222px;
+            height: 42px;
+            box-sizing: border-box;
+            background: rgba(240, 180, 80, 0.35);
+            border: 1px solid #bf8641;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Word wrapping and pointer events</h2>
+    <h3>Default overflow</h3>
+    <div class="panel">
+        <p>https://example.com/averyveryverylongpathwithoutspaces</p>
+    </div>
+    <h3>overflow-wrap: break-word</h3>
+    <div class="panel break">
+        <p>https://example.com/averyveryverylongpathwithoutspaces</p>
+    </div>
+    <div class="panel break">
+        <p>Unicode: éééééééééééééééééééééééééééééééééééé</p>
+    </div>
+    <h3>white-space: nowrap keeps one line</h3>
+    <div class="panel nowrap">
+        <p>https://example.com/averyveryverylongpathwithoutspaces</p>
+    </div>
+    <h3>pointer-events: none</h3>
+    <p>Hover over the tinted layer: the button underneath turns blue.</p>
+    <div class="target">
+        <button>Button under overlay</button>
+        <div class="overlay"></div>
+    </div>
+</body>
+
+</html>

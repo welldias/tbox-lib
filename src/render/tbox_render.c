@@ -22,6 +22,7 @@ static void tbox_render_push_fill_rect(tbox_vector *items, tbox_rect rect, tbox_
     op->face          = NULL;
     op->image         = NULL;
     op->radius        = 0.0;
+    for (size_t i = 0; i < 4; i++) op->corner_radii[i] = 0.0;
     op->has_clip      = false;
 }
 
@@ -63,14 +64,18 @@ static bool tbox_render_color_input(const tbox_html_node *node, tbox_css_rgba *o
  * at radius 0.0 via tbox_render_push_fill_rect). `radius` is clamped here
  * to at most half of `min(rect.width, rect.height)`, standard CSS
  * border-radius behavior -- callers never need to clamp it themselves. */
-static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rect, double radius, tbox_css_rgba color) {
-    double max_radius = (rect.width < rect.height ? rect.width : rect.height) / 2.0;
-    if (radius > max_radius) {
-        radius = max_radius;
-    }
-    if (radius < 0.0) {
-        radius = 0.0;
-    }
+static void tbox_render_push_fill_rect_corners(tbox_vector *items, tbox_rect rect,
+                                                const double corners[4], tbox_css_rgba color) {
+    double radii[4];
+    for (size_t i = 0; i < 4; i++) radii[i] = corners[i] > 0.0 ? corners[i] : 0.0;
+    double scale = 1.0;
+    const double sums[4] = {radii[0] + radii[1], radii[2] + radii[3],
+                            radii[0] + radii[3], radii[1] + radii[2]};
+    const double limits[4] = {rect.width, rect.width, rect.height, rect.height};
+    for (size_t i = 0; i < 4; i++)
+        if (sums[i] > 0.0 && limits[i] / sums[i] < scale) scale = limits[i] / sums[i];
+    if (scale < 0.0) scale = 0.0;
+    for (size_t i = 0; i < 4; i++) radii[i] *= scale;
 
     tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
     op->kind          = TBOX_PAINT_FILL_RECT;
@@ -79,8 +84,24 @@ static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rec
     op->text          = tbox_string_view_make(NULL, 0);
     op->face          = NULL;
     op->image         = NULL;
-    op->radius        = radius;
+    op->radius        = radii[0] == radii[1] && radii[0] == radii[2] && radii[0] == radii[3]
+        ? radii[0] : 0.0;
+    for (size_t i = 0; i < 4; i++) op->corner_radii[i] = radii[i];
     op->has_clip      = false;
+}
+
+static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rect,
+                                                double radius, tbox_css_rgba color) {
+    const double corners[4] = {radius, radius, radius, radius};
+    tbox_render_push_fill_rect_corners(items, rect, corners, color);
+}
+
+static void tbox_render_style_corners(const tbox_style *style, double out[4]) {
+    bool has_corner = false;
+    for (size_t i = 0; i < 4; i++)
+        if (style->border_radius_corners[i] > 0.0) has_corner = true;
+    for (size_t i = 0; i < 4; i++)
+        out[i] = has_corner ? style->border_radius_corners[i] : style->border_radius;
 }
 
 /* NOVO (visual fidelity): approximates `box-shadow`'s blur with a handful
@@ -97,16 +118,16 @@ static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rec
  * layers gets progressively fainter -- a soft-looking falloff from cheap,
  * repeated flat fills, not a real convolution. `blur <= 0.0` (the common,
  * simple-shadow case) skips all of this and pushes exactly one hard-edged
- * rect, no loop overhead. `corner_radius` is the box's OWN border-radius
+ * rect, no loop overhead. `corner_radii` are the box's own border radii
  * (a shadow of a rounded box is itself rounded), grown along with each
  * step so the corners stay proportionally rounded as the shadow expands. */
 #define TBOX_RENDER_BOX_SHADOW_STEPS 6
 
-static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box, double corner_radius, double offset_x, double offset_y, double blur, tbox_css_rgba color) {
+static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box, const double corner_radii[4], double offset_x, double offset_y, double blur, tbox_css_rgba color) {
     tbox_rect base = { border_box.x + offset_x, border_box.y + offset_y, border_box.width, border_box.height };
 
     if (blur <= 0.0) {
-        tbox_render_push_fill_rect_rounded(items, base, corner_radius, color);
+        tbox_render_push_fill_rect_corners(items, base, corner_radii, color);
         return;
     }
 
@@ -119,7 +140,9 @@ static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box
     for (int step = TBOX_RENDER_BOX_SHADOW_STEPS; step >= 1; step--) {
         double grow         = blur * (double)(step - 1) / (double)(TBOX_RENDER_BOX_SHADOW_STEPS - 1);
         tbox_rect expanded  = { base.x - grow, base.y - grow, base.width + 2.0 * grow, base.height + 2.0 * grow };
-        tbox_render_push_fill_rect_rounded(items, expanded, corner_radius + grow, step_color);
+        double grown[4];
+        for (size_t i = 0; i < 4; i++) grown[i] = corner_radii[i] + grow;
+        tbox_render_push_fill_rect_corners(items, expanded, grown, step_color);
     }
 }
 
@@ -144,13 +167,15 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
     for (; box != NULL; box = box->next_sibling) {
         size_t own_start = items->length;
         bool visible = box->style == NULL || !box->style->visibility_hidden;
+        double corners[4] = {0.0, 0.0, 0.0, 0.0};
+        if (box->style != NULL) tbox_render_style_corners(box->style, corners);
         /* NOVO (visual fidelity): box-shadow, painted BEFORE the box's own
          * background/border so paint order alone makes them correctly cover
          * the shadow wherever the two overlap -- no explicit clipping
          * needed, same reasoning as any other paint-order z-stack in this
          * pipeline. */
         if (visible && box->style != NULL && box->style->box_shadow_color.a != 0) {
-            tbox_render_push_box_shadow(items, box->border_box, box->style->border_radius, box->style->box_shadow_offset_x, box->style->box_shadow_offset_y, box->style->box_shadow_blur, box->style->box_shadow_color);
+            tbox_render_push_box_shadow(items, box->border_box, corners, box->style->box_shadow_offset_x, box->style->box_shadow_offset_y, box->style->box_shadow_blur, box->style->box_shadow_color);
         }
 
         /* NOVO v4: border painting. Render Pipeline isn't handed the
@@ -159,9 +184,9 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
          * (Tarefa 2): only `solid` ever paints. */
         double effective_border = (!box->table_suppress_border && box->style != NULL &&
             box->style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID) ? box->style->border_width : 0.0;
-        double radius            = box->style != NULL ? box->style->border_radius : 0.0;
+        bool rounded = corners[0] > 0.0 || corners[1] > 0.0 || corners[2] > 0.0 || corners[3] > 0.0;
 
-        if (visible && radius > 0.0) {
+        if (visible && rounded) {
             /* NOVO (visual fidelity): border-radius. The 4-strip technique
              * below is geometrically incompatible with curved corners (its
              * strips meet at sharp 90-degree joins), so a box with a radius
@@ -183,15 +208,14 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
              *   box (card/button) almost always has an actual background
              *   too, where this renders correctly. */
             if (effective_border > 0.0) {
-                tbox_render_push_fill_rect_rounded(items, box->border_box, radius, box->style->border_color);
+                tbox_render_push_fill_rect_corners(items, box->border_box, corners, box->style->border_color);
 
-                double inner_radius = radius - effective_border;
-                if (inner_radius < 0.0) {
-                    inner_radius = 0.0;
-                }
-                tbox_render_push_fill_rect_rounded(items, box->padding_box, inner_radius, box->style->background_color);
+                double inner[4];
+                for (size_t i = 0; i < 4; i++)
+                    inner[i] = corners[i] > effective_border ? corners[i] - effective_border : 0.0;
+                tbox_render_push_fill_rect_corners(items, box->padding_box, inner, box->style->background_color);
             } else if (box->style->background_color.a != 0) {
-                tbox_render_push_fill_rect_rounded(items, box->border_box, radius, box->style->background_color);
+                tbox_render_push_fill_rect_corners(items, box->border_box, corners, box->style->background_color);
             }
         } else if (visible) {
             if (box->style != NULL && box->style->background_color.a != 0) {
@@ -281,6 +305,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 op->face          = NULL;
                 op->image         = run->image;
                 op->radius        = 0.0;
+                for (size_t j = 0; j < 4; j++) op->corner_radii[j] = 0.0;
                 op->has_clip      = false;
                 continue;
             }
@@ -316,6 +341,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
             op->letter_spacing = run->style->letter_spacing;
             op->image         = NULL;
             op->radius        = 0.0;
+            for (size_t j = 0; j < 4; j++) op->corner_radii[j] = 0.0;
             bool is_select = box->node != NULL &&
                 tbox_string_view_equal_cstr(box->node->element.tag_name, "select");
             op->has_clip = box->node != NULL &&

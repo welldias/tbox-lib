@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #f5f7fa; color: #25364a; font-size: medium; }
+        h2 { margin-bottom: 10px; }
+        h3 { margin-top: 16px; margin-bottom: 6px; }
+        p { margin: 0; }
+        .scale { padding: 4px; margin-bottom: 3px; background: #e5ecf5; }
+        .small { font-size: small; }
+        .large { font-size: large; }
+        .xlarge { font-size: x-large; }
+        .relative { font-size: larger; }
+        .nested { font-size: smaller; }
+        .card {
+            width: 300px;
+            height: 46px;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 3px solid #2d6079;
+            background: #c7e7e4;
+            box-shadow: 3px 3px 0px #a6b5c2;
+        }
+        .one { border-radius: 16px; }
+        .two { border-radius: 24px 4px; }
+        .three { border-radius: 24px 8px 0px; }
+        .four { border-radius: 24px 8px 0px 16px; }
+        .corner { border-radius: 4px; border-top-left-radius: 30px; border-bottom-right-radius: 20px; }
+    </style>
+</head>
+<body>
+    <h2>Font size keywords and individual corners</h2>
+    <h3>Absolute and relative sizes</h3>
+    <p class="scale small">small (13px)</p>
+    <p class="scale">medium (16px)</p>
+    <p class="scale large">large (18px)</p>
+    <p class="scale xlarge">x-large (24px)</p>
+    <div class="scale relative">larger than medium (19.2px)
+        <p class="nested">smaller child (16px)</p>
+    </div>
+
+    <h3>Clockwise border-radius values</h3>
+    <div class="card one"><p>One value: all corners 16px</p></div>
+    <div class="card two"><p>Two values: 24px / 4px</p></div>
+    <div class="card three"><p>Three values: 24px / 8px / 0px</p></div>
+    <div class="card four"><p>Four values: 24px / 8px / 0px / 16px</p></div>
+    <div class="card corner"><p>Individual top-left and bottom-right overrides</p></div>
+</body>
+</html>

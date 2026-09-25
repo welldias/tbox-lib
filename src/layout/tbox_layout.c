@@ -191,6 +191,7 @@ typedef struct tbox_layout_word {
     const tbox_style *style;
     double width;       /* tbox_font_measure_text(face, text), OR (image word) the resolved CSS/attribute content width */
     double space_width; /* tbox_font_measure_text(face, " ") -- the gap this word's face would render before it */
+    bool no_space_before; /* continuation of an overflow-wrap split word */
 
     /* An <img> word instead of a text word -- see tbox_layout_push_image_word.
      * NULL for every ordinary word (text or hard-break). `face`/`style`
@@ -272,6 +273,7 @@ static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapse
             entry->image            = NULL;
             entry->image_height     = 0.0;
             entry->hard_break       = false;
+            entry->no_space_before  = false;
         }
 
         while (i < collapsed.size && collapsed.data[i] == ' ') {
@@ -301,6 +303,7 @@ static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face
     entry->image            = NULL;
     entry->image_height     = 0.0;
     entry->hard_break       = true;
+    entry->no_space_before  = false;
 }
 
 /* Pushes one tbox_layout_word for an <img> element (see
@@ -364,6 +367,7 @@ static void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node 
     entry->image              = image;
     entry->image_height       = height;
     entry->hard_break          = false;
+    entry->no_space_before     = false;
 }
 
 /* True if `node` (an ELEMENT) has an `<img>` among its OWN direct children
@@ -456,8 +460,9 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
     }
 }
 
-/* Greedy, per-word line breaking (CSS `overflow-wrap: normal` -- never
- * breaks mid-word, see ARCHITECTURE.md): accumulates words onto the current
+/* Greedy, per-word line breaking. Optional break-word preprocessing splits
+ * only words wider than an empty line into codepoint-aligned pieces before
+ * this pass. This loop accumulates words onto the current
  * line (measuring each one's own advance + a preceding space, both already
  * cached on the word) until the next word wouldn't fit within
  * `available_width`; then closes the line and starts a new one. A single
@@ -709,7 +714,7 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
             run_image_height = word->image_height;
             tbox_string_builder_init(&run_builder, arena, word->text.size + 8);
             have_run = true;
-        } else {
+        } else if (!word->no_space_before) {
             tbox_string_builder_append_byte(&run_builder, ' ');
         }
 
@@ -738,6 +743,53 @@ static size_t tbox_layout_previous_codepoint(tbox_string_view text) {
     at--;
     while (at > 0 && ((unsigned char)text.data[at] & 0xc0) == 0x80) at--;
     return at;
+}
+
+/* Split only text words too wide for an empty line. Each piece is a UTF-8
+ * codepoint-aligned view into the original word; continuation pieces carry
+ * no preceding space, so both measurement and painted text stay intact. */
+static void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words,
+                                              double available_width, double first_indent) {
+    if (available_width <= 0.0) return;
+    tbox_vector expanded;
+    tbox_vector_init(&expanded, arena, sizeof(tbox_layout_word), words->length);
+    const tbox_layout_word *source = (const tbox_layout_word *)words->data;
+    for (size_t i = 0; i < words->length; i++) {
+        const tbox_layout_word *word = &source[i];
+        double first_limit = i == 0 ? available_width - first_indent : available_width;
+        if (word->hard_break || word->image != NULL || word->text.size == 0 ||
+            !word->style->overflow_wrap_break_word || word->width <= first_limit) {
+            *(tbox_layout_word *)tbox_vector_push(&expanded) = *word;
+            continue;
+        }
+        size_t start = 0;
+        while (start < word->text.size) {
+            double limit = start == 0 ? first_limit : available_width;
+            size_t end = start, best = start;
+            double best_width = 0.0;
+            while (end < word->text.size) {
+                size_t next = end + 1;
+                while (next < word->text.size &&
+                    ((unsigned char)word->text.data[next] & 0xc0) == 0x80) next++;
+                tbox_string_view piece = tbox_string_view_make(word->text.data + start, next - start);
+                double measured = tbox_font_measure_text_spaced(word->face, piece,
+                    word->style->letter_spacing);
+                if (measured > limit && best > start) break;
+                best = next;
+                best_width = measured;
+                end = next;
+                if (measured > limit) break; /* one glyph exceeds the line */
+            }
+            tbox_layout_word *part = (tbox_layout_word *)tbox_vector_push(&expanded);
+            *part = *word;
+            part->text = tbox_string_view_make(word->text.data + start, best - start);
+            part->width = best_width;
+            part->space_width = start == 0 ? word->space_width : 0.0;
+            part->no_space_before = start != 0;
+            start = best;
+        }
+    }
+    *words = expanded;
 }
 
 static void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_x,
@@ -902,6 +954,7 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
         entry->image            = NULL;
         entry->image_height     = 0.0;
         entry->hard_break       = false;
+        entry->no_space_before  = false;
 
         if (i < text.size) {
             /* A real '\n' (not the end-of-text sentinel iteration) -- more
@@ -994,6 +1047,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
             word->image = NULL;
             word->image_height = 0.0;
             word->hard_break = false;
+            word->no_space_before = false;
         }
     } else if (is_select) {
         /* The selected label is supplied by Context after layout; option
@@ -1016,15 +1070,17 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         return own_face != NULL ? tbox_layout_style_line_height(style, own_face) : 0.0;
     }
 
-    const tbox_layout_word *word_items = (const tbox_layout_word *)words.data;
-
     tbox_vector lines;
     tbox_vector_init(&lines, arena, sizeof(tbox_layout_line), 0);
     double indent = style->text_indent.kind == TBOX_STYLE_LENGTH_PX ? style->text_indent.value :
         style->text_indent.kind == TBOX_STYLE_LENGTH_PERCENT ?
         available_width * style->text_indent.value / 100.0 : 0.0;
+    bool no_wrap = is_preformatted || is_input || style->white_space_nowrap;
+    if (!no_wrap) tbox_layout_split_overlong_words(arena, &words, available_width, indent);
+    const tbox_layout_word *word_items = (const tbox_layout_word *)words.data;
+    word_count = tbox_vector_length(&words);
     tbox_layout_break_lines(word_items, word_count, available_width, indent,
-        is_preformatted || is_input || style->white_space_nowrap, &lines);
+        no_wrap, &lines);
 
     tbox_vector runs;
     tbox_vector_init(&runs, arena, sizeof(tbox_layout_text_run), 0);
@@ -1112,6 +1168,27 @@ static double tbox_layout_constrain_width(const tbox_style *style, double width,
         if (width < minimum) width = minimum;
     }
     return width;
+}
+
+/* Height constraints use the containing block's height only when definite.
+ * CSS min-height wins if it exceeds max-height, as with width constraints. */
+static double tbox_layout_constrain_height(const tbox_style *style, double height,
+                                           double base, bool base_definite, double edges) {
+    if (style->max_height.kind == TBOX_STYLE_LENGTH_PX ||
+        (style->max_height.kind == TBOX_STYLE_LENGTH_PERCENT && base_definite)) {
+        double maximum = tbox_layout_resolve_edge(style->max_height, base);
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) maximum -= edges;
+        if (maximum < 0.0) maximum = 0.0;
+        if (height > maximum) height = maximum;
+    }
+    if (style->min_height.kind == TBOX_STYLE_LENGTH_PX ||
+        (style->min_height.kind == TBOX_STYLE_LENGTH_PERCENT && base_definite)) {
+        double minimum = tbox_layout_resolve_edge(style->min_height, base);
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) minimum -= edges;
+        if (minimum < 0.0) minimum = 0.0;
+        if (height < minimum) height = minimum;
+    }
+    return height;
 }
 
 /* NOVO v4: resolves one (primary, opposite) pair of `position: relative`
@@ -1297,10 +1374,12 @@ static const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *ru
  * zero margin/padding/border, transparent background, no position -- so the
  * anonymous box paints nothing of its own and never double-paints the
  * container's background/border, see ARCHITECTURE.md) and then copies ONLY
- * the six INHERITABLE tbox_style fields from `container_style` (see
+ * the inherited fields needed by anonymous text and pointer hit testing
+ * from `container_style` (see
  * include/tbox/style.h's "inheritable" comments on each field): `color`,
  * `font_family` (the whole fixed buffer, via memcpy -- not a pointer),
- * `font_weight_bold`, `font_italic`, `font_size`, `text_align`. This is
+ * `font_weight_bold`, `font_italic`, `font_size`, `text_align`,
+ * `overflow_wrap_break_word`, and `pointer_events_none`. This is
  * exactly what a real, undeclared child element would resolve to against
  * this same parent, computed here without calling back into the Style
  * layer (which already ran and has no entry point for "resolve a style with
@@ -1319,6 +1398,8 @@ static tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const
     anon.font_italic      = container_style->font_italic;
     anon.font_size        = container_style->font_size;
     anon.text_align       = container_style->text_align;
+    anon.overflow_wrap_break_word = container_style->overflow_wrap_break_word;
+    anon.pointer_events_none = container_style->pointer_events_none;
 
     /* `box->style` is a pointer that must outlive this call -- unlike `anon`
      * itself (a local), the synthesized style needs arena-backed storage,
@@ -2469,6 +2550,8 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
                 if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
                     early_content_height = early_content_height > vertical_edges ?
                         early_content_height - vertical_edges : 0.0;
+                early_content_height = tbox_layout_constrain_height(style, early_content_height,
+                    container.height, container.height_definite, vertical_edges);
                 double early_border_box_height = early_content_height + padding_top + padding_bottom + 2.0 * effective_border;
                 margin_box_height              = early_border_box_height + margin_top + margin_bottom;
             }
@@ -2640,6 +2723,9 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
             content_height = children_total_height;
         }
     }
+
+    content_height = tbox_layout_constrain_height(style, content_height, container.height,
+        container.height_definite, vertical_edges);
 
     box->content_box.x      = content_x;
     box->content_box.y      = content_y;

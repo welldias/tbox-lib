@@ -147,14 +147,8 @@ static bool tbox_style_parse_edge_color(tbox_string_view raw, tbox_css_rgba curr
     return tbox_css_color_parse(value, out);
 }
 
-/* NOVO v2: resolves `font-size` per ARCHITECTURE.md's Style section --
- * "<number>px" (absolute), "<number>em" (parent_font_size * number), or
- * "<number>%" (parent_font_size * number / 100). Anything else (absent,
- * unparsable, or any CSS2.1 keyword like "medium"/"larger" -- out of
- * scope) inherits `parent_font_size` unchanged. `parent_font_size` is
- * already the caller's fallback (16px with no parent -- see
- * tbox_style_resolve), so this function never needs a separate "no
- * parent" case of its own. */
+/* Resolves lengths against the parent's font size and named absolute sizes
+ * against the fixed 16px medium scale. Relative keywords use a 1.2 ratio. */
 static double tbox_style_resolve_font_size(const tbox_css_computed_style *computed, double parent_font_size) {
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-size"));
     if (decl == NULL) {
@@ -165,6 +159,20 @@ static double tbox_style_resolve_font_size(const tbox_css_computed_style *comput
     if (text.size == 0) {
         return parent_font_size;
     }
+
+    static const struct { const char *name; double pixels; } absolute_sizes[] = {
+        {"xx-small", 9.0}, {"x-small", 10.0}, {"small", 13.0},
+        {"medium", 16.0}, {"large", 18.0}, {"x-large", 24.0},
+        {"xx-large", 32.0},
+    };
+    for (size_t i = 0; i < sizeof(absolute_sizes) / sizeof(absolute_sizes[0]); i++) {
+        if (tbox_string_view_equal_ascii_ci(text, tbox_string_view_from_cstr(absolute_sizes[i].name)))
+            return absolute_sizes[i].pixels;
+    }
+    if (tbox_string_view_equal_ascii_ci(text, tbox_string_view_from_cstr("smaller")))
+        return parent_font_size / 1.2;
+    if (tbox_string_view_equal_ascii_ci(text, tbox_string_view_from_cstr("larger")))
+        return parent_font_size * 1.2;
 
     if (text.data[text.size - 1] == '%') {
         double value;
@@ -485,24 +493,58 @@ static bool tbox_style_border_longhand_wins(const tbox_css_resolved_declaration 
         tbox_css_cascade_priority_compare(longhand, shorthand) > 0);
 }
 
-/* NOVO (visual fidelity): `border-radius` -- a single, uniform px length.
- * Same token shape as `border`'s own width token (tbox_style_resolve_border
- * above): a bare number followed by "px", nothing else recognized (no
- * percentages, no per-corner values -- see include/tbox/style.h's field
- * comment for why). Falls back to `0.0` (no rounding) on anything else,
- * same "unrecognized token, ignored" posture as `border`. */
-static double tbox_style_resolve_border_radius(const tbox_css_computed_style *computed) {
-    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("border-radius"));
-    if (decl == NULL) {
-        return 0.0;
+static bool tbox_style_parse_radius(tbox_string_view value, double font_size, double *out) {
+    tbox_style_length length;
+    if (!tbox_style_parse_spacing_length(tbox_style_trim(value), font_size, &length) ||
+        length.kind != TBOX_STYLE_LENGTH_PX || length.value < 0.0) return false;
+    *out = length.value;
+    return true;
+}
+
+/* CSS clockwise shorthand expansion; individual corners obey the same
+ * cascade precedence as the existing border longhands. Elliptical and
+ * percentage radii remain outside this renderer's circular-pixel model. */
+static void tbox_style_resolve_border_radius(const tbox_css_computed_style *computed,
+                                             double font_size, double out[4]) {
+    for (size_t i = 0; i < 4; i++) out[i] = 0.0;
+    const tbox_css_resolved_declaration *shorthand = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("border-radius"));
+    bool shorthand_valid = false;
+    if (shorthand != NULL) {
+        tbox_string_view value = tbox_style_trim(shorthand->value);
+        double parsed[4];
+        size_t count = 0, pos = 0;
+        bool valid = true;
+        while (pos < value.size) {
+            while (pos < value.size && tbox_style_is_space(value.data[pos])) pos++;
+            if (pos == value.size) break;
+            size_t start = pos;
+            while (pos < value.size && !tbox_style_is_space(value.data[pos])) pos++;
+            if (count == 4 || !tbox_style_parse_radius(tbox_string_view_make(value.data + start, pos - start),
+                    font_size, &parsed[count])) { valid = false; break; }
+            count++;
+        }
+        if (valid && count > 0) {
+            shorthand_valid = true;
+            out[0] = parsed[0];
+            out[1] = parsed[count > 1 ? 1 : 0];
+            out[2] = parsed[count > 2 ? 2 : 0];
+            out[3] = parsed[count > 3 ? 3 : count > 1 ? 1 : 0];
+        }
     }
 
-    tbox_string_view value = tbox_style_trim(decl->value);
-    double radius;
-    if (value.size > 2 && tbox_string_view_equal_ascii_ci(tbox_string_view_make(value.data + value.size - 2, 2), tbox_string_view_from_cstr("px")) && tbox_style_parse_number(tbox_string_view_make(value.data, value.size - 2), &radius) && radius >= 0.0) {
-        return radius;
+    static const char *const names[4] = {
+        "border-top-left-radius", "border-top-right-radius",
+        "border-bottom-right-radius", "border-bottom-left-radius"
+    };
+    for (size_t i = 0; i < 4; i++) {
+        const tbox_css_resolved_declaration *longhand = tbox_css_computed_style_find(computed,
+            tbox_string_view_from_cstr(names[i]));
+        if (tbox_style_border_longhand_wins(longhand, shorthand_valid ? shorthand : NULL)) {
+            double radius;
+            if (tbox_style_parse_radius(longhand->value, font_size, &radius)) out[i] = radius;
+        }
     }
-    return 0.0;
 }
 
 /* NOVO (visual fidelity): `box-shadow: <offset-x> <offset-y> [<blur-radius>]
@@ -734,6 +776,26 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")))
             style.white_space_nowrap = false;
     }
+    style.overflow_wrap_break_word = parent_style != NULL && parent_style->overflow_wrap_break_word;
+    const tbox_css_resolved_declaration *overflow_wrap = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("overflow-wrap"));
+    if (overflow_wrap != NULL) {
+        tbox_string_view value = tbox_style_trim(overflow_wrap->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("break-word")))
+            style.overflow_wrap_break_word = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")))
+            style.overflow_wrap_break_word = false;
+    }
+    style.pointer_events_none = parent_style != NULL && parent_style->pointer_events_none;
+    const tbox_css_resolved_declaration *pointer_events = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("pointer-events"));
+    if (pointer_events != NULL) {
+        tbox_string_view value = tbox_style_trim(pointer_events->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("none")))
+            style.pointer_events_none = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("auto")))
+            style.pointer_events_none = false;
+    }
     const tbox_css_resolved_declaration *display_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("display"));
     if (display_decl != NULL) {
         tbox_style_display parsed;
@@ -791,6 +853,8 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     style.height = tbox_style_resolve_length_property(computed, "height", style.font_size);
     style.min_width = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
     style.max_width = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
+    style.min_height = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
+    style.max_height = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
     const tbox_css_resolved_declaration *min_width_decl = tbox_css_computed_style_find(computed,
         tbox_string_view_from_cstr("min-width"));
     const tbox_css_resolved_declaration *max_width_decl = tbox_css_computed_style_find(computed,
@@ -802,6 +866,17 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     if (max_width_decl != NULL && tbox_style_parse_spacing_length(max_width_decl->value,
         style.font_size, &width_limit) && width_limit.kind != TBOX_STYLE_LENGTH_AUTO &&
         width_limit.value >= 0.0) style.max_width = width_limit;
+    const tbox_css_resolved_declaration *min_height_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("min-height"));
+    const tbox_css_resolved_declaration *max_height_decl = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("max-height"));
+    tbox_style_length height_limit;
+    if (min_height_decl != NULL && tbox_style_parse_spacing_length(min_height_decl->value,
+        style.font_size, &height_limit) && height_limit.kind != TBOX_STYLE_LENGTH_AUTO &&
+        height_limit.value >= 0.0) style.min_height = height_limit;
+    if (max_height_decl != NULL && tbox_style_parse_spacing_length(max_height_decl->value,
+        style.font_size, &height_limit) && height_limit.kind != TBOX_STYLE_LENGTH_AUTO &&
+        height_limit.value >= 0.0) style.max_height = height_limit;
     if (style.width.kind == TBOX_STYLE_LENGTH_AUTO) {
         style.width = tbox_style_resolve_img_dimension_attribute(node, "width");
     }
@@ -861,11 +936,11 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     const tbox_css_resolved_declaration *bg_short = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("background"));
     tbox_css_rgba background;
     tbox_css_rgba short_color;
-    bool short_valid = bg_short != NULL && tbox_css_color_parse(bg_short->value, &short_color);
+    bool short_valid = bg_short != NULL && tbox_style_parse_edge_color(bg_short->value, style.color, &short_color);
     if (short_valid && (bg_decl == NULL ||
         tbox_css_cascade_priority_compare(bg_short, bg_decl) > 0)) {
         style.background_color = short_color;
-    } else if (bg_decl != NULL && tbox_css_color_parse(bg_decl->value, &background)) {
+    } else if (bg_decl != NULL && tbox_style_parse_edge_color(bg_decl->value, style.color, &background)) {
         style.background_color = background;
     } else {
         style.background_color.r = 0;
@@ -874,15 +949,19 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.background_color.a = 0;
     }
 
-    /* The two available font faces map to normal/400 and bold/700. */
+    /* The font backend selects either regular or bold. Map numeric weights
+     * through 500 to regular, and 600 through 900 to bold. */
     const tbox_css_resolved_declaration *weight_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-weight"));
     style.font_weight_bold = parent_style != NULL && parent_style->font_weight_bold;
     if (weight_decl != NULL) {
         tbox_string_view value = tbox_style_trim(weight_decl->value);
-        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("bold")) ||
-            tbox_string_view_equal_cstr(value, "700")) style.font_weight_bold = true;
-        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")) ||
-                 tbox_string_view_equal_cstr(value, "400")) style.font_weight_bold = false;
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("bold")))
+            style.font_weight_bold = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")))
+            style.font_weight_bold = false;
+        else if (value.size == 3 && value.data[1] == '0' && value.data[2] == '0' &&
+                 value.data[0] >= '1' && value.data[0] <= '9')
+            style.font_weight_bold = value.data[0] >= '6';
     }
 
     /* border: NOVO v4. Not inheritable -- always cascade-or-initial. */
@@ -998,7 +1077,8 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     style.font_italic = parent_style != NULL && parent_style->font_italic;
     if (font_style_decl != NULL) {
         tbox_string_view value = tbox_style_trim(font_style_decl->value);
-        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("italic"))) style.font_italic = true;
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("italic")) ||
+            tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("oblique"))) style.font_italic = true;
         else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal"))) style.font_italic = false;
     }
 
@@ -1062,7 +1142,11 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     /* border-radius / box-shadow: NOVO (visual fidelity). Neither inherits
      * -- always cascade-or-initial, same posture as border/background-color
      * above. */
-    style.border_radius = tbox_style_resolve_border_radius(computed);
+    tbox_style_resolve_border_radius(computed, style.font_size, style.border_radius_corners);
+    style.border_radius = style.border_radius_corners[0] == style.border_radius_corners[1] &&
+        style.border_radius_corners[0] == style.border_radius_corners[2] &&
+        style.border_radius_corners[0] == style.border_radius_corners[3] ?
+        style.border_radius_corners[0] : 0.0;
 
     style.box_shadow_offset_x = 0.0;
     style.box_shadow_offset_y = 0.0;

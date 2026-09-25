@@ -69,8 +69,31 @@ set `visibility: visible`. `text-overflow: ellipsis` truncates a single line
 when paired with `white-space: nowrap` and `overflow: hidden`.
 Uniform `border-width`, `border-style` (`solid`/`none`),
 and `border-color` work alongside the `border` shorthand with normal cascade
-precedence. Other font weights, white-space modes, and per-side borders are
-not yet implemented.
+precedence. Other white-space modes and per-side borders are not yet implemented.
+
+`min-height` and `max-height` constrain box height in pixels, `em`, or
+percentages when the containing block has a definite height. They work with
+`box-sizing` and vertical scrolling; `min-height` wins when it exceeds
+`max-height`. `font-weight` accepts numeric values from 100 to 900 in steps of
+100, mapped to
+the available regular (100–500) and bold (600–900) faces. `font-style:
+oblique` uses the italic face. `background` and `background-color` accept
+`currentColor`.
+
+`font-size` also accepts `xx-small`, `x-small`, `small`, `medium`, `large`,
+`x-large`, and `xx-large` on a fixed 9/10/13/16/18/24/32px scale.
+`smaller` and `larger` scale the inherited size by 1/1.2 and 1.2.
+`border-radius` accepts one to four circular values in pixels or `em`, plus
+`border-top-left-radius`, `border-top-right-radius`,
+`border-bottom-right-radius`, and `border-bottom-left-radius`. Percentage
+and elliptical radii are not supported.
+
+`overflow-wrap: break-word` breaks a text word at UTF-8 codepoint boundaries
+when it cannot fit on an empty line; `normal` restores the default overflow.
+It does not override `white-space: nowrap` or the preserved lines in `<pre>`.
+`pointer-events: none` removes an element from pointer hit testing while
+keeping it visible; descendants can use `pointer-events: auto` to receive
+pointer events again. Keyboard focus is unaffected.
 
 ## Build and checks
 

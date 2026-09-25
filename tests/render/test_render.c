@@ -946,6 +946,33 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* Distinct outer and inner corner radii reach the display list. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.background_color = (tbox_css_rgba){255, 255, 255, 255};
+        style.border_color = (tbox_css_rgba){0, 0, 0, 255};
+        style.border_style = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.border_width = 2.0;
+        style.border_radius_corners[0] = 8.0;
+        style.border_radius_corners[1] = 4.0;
+        style.border_radius_corners[2] = 0.0;
+        style.border_radius_corners[3] = 12.0;
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = (tbox_rect){0, 0, 100, 50};
+        box.padding_box = (tbox_rect){2, 2, 96, 46};
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 2);
+        if (list.count == 2) {
+            const double outer[4] = {8, 4, 0, 12}, inner[4] = {6, 2, 0, 10};
+            for (size_t i = 0; i < 4; i++) {
+                TBOX_TEST_ASSERT(list.items[0].corner_radii[i] == outer[i]);
+                TBOX_TEST_ASSERT(list.items[1].corner_radii[i] == inner[i]);
+            }
+        }
+        tbox_arena_destroy(&arena);
+    }
+
     tbox_font_face_destroy(bold_font);
     tbox_font_face_destroy(font);
     free(font_data);

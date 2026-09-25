@@ -895,6 +895,31 @@ static void tbox_test_raster_rounded_rect_invalid_args(int *failures_ptr) {
     *failures_ptr = failures;
 }
 
+static void tbox_test_raster_individual_corners(int *failures_ptr) {
+    int failures = *failures_ptr;
+    const int32_t width = 20, height = 20;
+    uint32_t background = tbox_test_raster_xrgb(0, 0, 0);
+    uint32_t painted = tbox_test_raster_xrgb(255, 255, 255);
+    uint32_t *pixels = tbox_test_raster_make_buffer(width, height, background);
+    TBOX_TEST_ASSERT(pixels != NULL);
+    if (pixels != NULL) {
+        tbox_paint_op op = {0};
+        op.kind = TBOX_PAINT_FILL_RECT;
+        op.rect = (tbox_rect){0, 0, 20, 20};
+        op.color = (tbox_css_rgba){255, 255, 255, 255};
+        op.corner_radii[0] = 8.0;
+        tbox_display_list list = {&op, 1};
+        tbox_raster_display_list(pixels, width, height, &list);
+        TBOX_TEST_ASSERT(pixels[0] == background);
+        TBOX_TEST_ASSERT(pixels[19] == painted);
+        TBOX_TEST_ASSERT(pixels[19 * (size_t)width] == painted);
+        TBOX_TEST_ASSERT(pixels[19 * (size_t)width + 19] == painted);
+        TBOX_TEST_ASSERT(pixels[8 * (size_t)width + 8] == painted);
+        free(pixels);
+    }
+    *failures_ptr = failures;
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
@@ -913,6 +938,7 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_rounded_rect_radius_clamped(&failures);
     tbox_test_raster_rounded_rect_out_of_bounds(&failures);
     tbox_test_raster_rounded_rect_invalid_args(&failures);
+    tbox_test_raster_individual_corners(&failures);
     tbox_test_raster_write_png_round_trip(&failures);
     tbox_test_raster_write_png_invalid_args(&failures);
 

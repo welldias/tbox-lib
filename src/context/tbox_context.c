@@ -2602,7 +2602,9 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
  * descendant can be positioned entirely outside its own parent's
  * border_box on purpose. So this always visits every child first,
  * regardless of whether `box` itself contains the point, and only falls
- * back to checking `box` once none of them matched.
+ * back to checking `box` once none of them matched. A box with
+ * pointer-events:none cannot be the target itself; its children are still
+ * searched so an explicit pointer-events:auto descendant can be targeted.
  *
  * Overlap is also now possible between two boxes that are not
  * ancestor/descendant of each other (e.g. two positioned siblings, or a
@@ -2647,7 +2649,8 @@ static const tbox_layout_box *tbox_context_scrollbar_at(const tbox_layout_box *b
     for (; box != NULL; box = box->next_sibling) {
         if (has_clip && !tbox_context_point_in_rect(clip, x, y)) continue;
         tbox_scrollbar_geometry geometry;
-        if (tbox_context_scrollbar_geometry(box, 0.0, &geometry) &&
+        if ((box->style == NULL || !box->style->pointer_events_none) &&
+            tbox_context_scrollbar_geometry(box, 0.0, &geometry) &&
             tbox_context_point_in_rect(geometry.track, x, y)) last = box;
         bool child_has_clip = has_clip;
         tbox_rect child_clip = clip;
@@ -2680,7 +2683,7 @@ static const tbox_layout_box *tbox_context_hit_test_clipped(const tbox_layout_bo
         return last_hit;
     }
 
-    return (box->style == NULL || !box->style->visibility_hidden) &&
+    return (box->style == NULL || (!box->style->visibility_hidden && !box->style->pointer_events_none)) &&
         tbox_context_point_in_rect(box->border_box, x, y) ? box : NULL;
 }
 
