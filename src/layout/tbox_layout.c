@@ -282,6 +282,51 @@ static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapse
     }
 }
 
+/* Applies `text-transform` codepoint by codepoint (utf8.h's simple case
+ * mappings, so no multi-codepoint expansions such as German sharp s).
+ * `capitalize` uppercases the first letter after the start of `text` or a
+ * whitespace byte -- word boundaries across inline elements are not
+ * tracked. Returns `text` itself for NONE or on allocation failure. */
+static tbox_string_view tbox_layout_transform_text(tbox_arena *arena, tbox_string_view text,
+                                                   tbox_style_text_transform transform) {
+    if (transform == TBOX_STYLE_TEXT_TRANSFORM_NONE || text.size == 0 || text.size > SIZE_MAX / 2 - 4)
+        return text;
+    size_t capacity = text.size * 2 + 4; /* utf8.h's mappings keep byte length; slack is defensive */
+    char *out = (char *)tbox_arena_alloc(arena, capacity);
+    if (out == NULL) return text;
+
+    char *write = out;
+    const char *read = text.data;
+    const char *end = text.data + text.size;
+    bool word_start = true;
+    while (read < end) {
+        /* A truncated sequence at the end would read past the view: leave
+         * the text alone rather than decode it. */
+        if ((size_t)(end - read) < utf8codepointcalcsize((const utf8_int8_t *)read)) return text;
+        utf8_int32_t codepoint;
+        const char *next = (const char *)utf8codepoint((const utf8_int8_t *)read, &codepoint);
+        bool space = codepoint == ' ' || codepoint == '\t' || codepoint == '\n' ||
+            codepoint == '\r' || codepoint == '\f';
+        if (transform == TBOX_STYLE_TEXT_TRANSFORM_UPPERCASE ||
+            (transform == TBOX_STYLE_TEXT_TRANSFORM_CAPITALIZE && word_start))
+            codepoint = utf8uprcodepoint(codepoint);
+        else if (transform == TBOX_STYLE_TEXT_TRANSFORM_LOWERCASE)
+            codepoint = utf8lwrcodepoint(codepoint);
+        word_start = space;
+        utf8_int8_t *written = utf8catcodepoint((utf8_int8_t *)write, codepoint,
+                                                (size_t)(out + capacity - write));
+        if (written == NULL) return text;
+        write = (char *)written;
+        read = next;
+    }
+    return tbox_string_view_make(out, (size_t)(write - out));
+}
+
+static void tbox_layout_push_text_words(tbox_arena *arena, tbox_vector *words, tbox_string_view collapsed,
+                                        const tbox_font_face *face, const tbox_style *style) {
+    tbox_layout_push_words(words, tbox_layout_transform_text(arena, collapsed, style->text_transform), face, style);
+}
+
 /* NOVO v11: pushes one tbox_layout_word marking a FORCED end of line --
  * `<br>` (see tbox_layout_collect_words below), or the boundary between two
  * physical lines inside a `<pre>` (see tbox_layout_collect_preformatted_words
@@ -349,7 +394,7 @@ static void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node 
         const tbox_html_attribute *alt_attr = tbox_html_node_get_attribute(img_node, tbox_string_view_make("alt", 3));
         if (alt_attr != NULL && alt_attr->value.size > 0) {
             tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, alt_attr->value);
-            tbox_layout_push_words(words, collapsed, context_face, img_style);
+            tbox_layout_push_text_words(arena, words, collapsed, context_face, img_style);
         }
         return;
     }
@@ -427,7 +472,7 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
         if (child->type == TBOX_HTML_NODE_TEXT) {
             tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, child->text.text);
             const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
-            tbox_layout_push_words(words, collapsed, face, style);
+            tbox_layout_push_text_words(arena, words, collapsed, face, style);
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
             if (tbox_string_view_equal_cstr(child->element.tag_name, "img")) {
@@ -439,7 +484,7 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
                         if (grandchild->type == TBOX_HTML_NODE_TEXT) {
                             tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, grandchild->text.text);
                             const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
-                            tbox_layout_push_words(words, collapsed, face, child_style);
+                            tbox_layout_push_text_words(arena, words, collapsed, face, child_style);
                         } else if (grandchild->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(grandchild->element.tag_name, "img")) {
                             const tbox_style *img_style = tbox_layout_style_or_default(styles, grandchild);
                             const tbox_font_face *face  = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
@@ -451,7 +496,7 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
                     tbox_string_view raw       = tbox_html_node_text_content(arena, child);
                     tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, raw);
                     const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
-                    tbox_layout_push_words(words, collapsed, face, child_style);
+                    tbox_layout_push_text_words(arena, words, collapsed, face, child_style);
                 }
             }
         }
@@ -780,6 +825,25 @@ static void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *wor
     for (size_t i = 0; i < words->length; i++) {
         const tbox_layout_word *word = &source[i];
         double first_limit = i == 0 ? available_width - first_indent : available_width;
+        /* word-break: break-all -- every codepoint becomes its own word
+         * glued to the previous one (no space), so the greedy line breaker
+         * can break between any two characters and fill each line. Run
+         * building merges the pieces back into one run per line. */
+        if (word->style->word_break_all && !word->hard_break && word->image == NULL && word->text.size > 0) {
+            size_t start = 0;
+            while (start < word->text.size) {
+                size_t next = start + 1;
+                while (next < word->text.size && ((unsigned char)word->text.data[next] & 0xc0) == 0x80) next++;
+                tbox_layout_word *part = (tbox_layout_word *)tbox_vector_push(&expanded);
+                *part = *word;
+                part->text = tbox_string_view_make(word->text.data + start, next - start);
+                part->width = tbox_font_measure_text_spaced(word->face, part->text, word->style->letter_spacing);
+                part->space_width = start == 0 ? word->space_width : 0.0;
+                part->no_space_before = start == 0 ? word->no_space_before : true;
+                start = next;
+            }
+            continue;
+        }
         if (word->hard_break || word->image != NULL || word->text.size == 0 ||
             !word->style->overflow_wrap_break_word || word->width <= first_limit) {
             *(tbox_layout_word *)tbox_vector_push(&expanded) = *word;
@@ -868,6 +932,45 @@ static void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double c
  * measuring/word-splitting the marker exactly like any other word, so it
  * gets the same space_width/line-break treatment as real text, with no
  * duplicated tbox_font_measure_text call here. */
+/* Formats `index` (1-based) as a counter marker plus its trailing '.':
+ * alphabetic markers count a..z, aa..zz, ...; roman numerals cover 1-3999
+ * and fall back to decimal outside that range, like browsers do. Returns
+ * the length written (without a NUL), 0 on failure. */
+static size_t tbox_layout_format_list_counter(tbox_style_list_style_type type, size_t index, char *buffer, size_t size) {
+    char digits[20];
+    size_t count = 0;
+    bool upper = type == TBOX_STYLE_LIST_STYLE_UPPER_ALPHA || type == TBOX_STYLE_LIST_STYLE_UPPER_ROMAN;
+    if ((type == TBOX_STYLE_LIST_STYLE_LOWER_ALPHA || type == TBOX_STYLE_LIST_STYLE_UPPER_ALPHA) && index > 0) {
+        for (size_t n = index; n > 0 && count < sizeof(digits); n = (n - 1) / 26)
+            digits[count++] = (char)((upper ? 'A' : 'a') + (n - 1) % 26);
+        for (size_t i = 0; i < count / 2; i++) {
+            char tmp = digits[i];
+            digits[i] = digits[count - 1 - i];
+            digits[count - 1 - i] = tmp;
+        }
+    } else if ((type == TBOX_STYLE_LIST_STYLE_LOWER_ROMAN || type == TBOX_STYLE_LIST_STYLE_UPPER_ROMAN) &&
+               index > 0 && index < 4000) {
+        static const struct { size_t value; const char *text; } numerals[] = {
+            {1000, "m"}, {900, "cm"}, {500, "d"}, {400, "cd"}, {100, "c"}, {90, "xc"},
+            {50, "l"}, {40, "xl"}, {10, "x"}, {9, "ix"}, {5, "v"}, {4, "iv"}, {1, "i"},
+        };
+        size_t n = index;
+        for (size_t i = 0; i < sizeof(numerals) / sizeof(numerals[0]); i++) {
+            for (; n >= numerals[i].value; n -= numerals[i].value)
+                for (const char *c = numerals[i].text; *c != '\0'; c++)
+                    digits[count++] = upper ? (char)(*c - 'a' + 'A') : *c;
+        }
+    } else {
+        int written = snprintf(digits, sizeof(digits), "%zu", index);
+        if (written <= 0) return 0;
+        count = (size_t)written < sizeof(digits) ? (size_t)written : sizeof(digits) - 1;
+    }
+    if (count + 1 > size) return 0;
+    memcpy(buffer, digits, count);
+    buffer[count] = '.';
+    return count + 1;
+}
+
 static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words) {
     if (node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(node->element.tag_name, "li")) {
         return;
@@ -892,15 +995,30 @@ static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node
         return;
     }
 
-    if (parent_is_ul) {
-        static const tbox_string_view bullet = { "\xE2\x80\xA2", 3 };
-        tbox_layout_push_words(words, bullet, face, style);
+    tbox_style_list_style_type type = style->list_style_type;
+    if (type == TBOX_STYLE_LIST_STYLE_AUTO)
+        type = parent_is_ul ? TBOX_STYLE_LIST_STYLE_DISC : TBOX_STYLE_LIST_STYLE_DECIMAL;
+    if (type == TBOX_STYLE_LIST_STYLE_NONE) {
         return;
     }
 
-    /* <ol>: count this <li>'s direct <li> siblings (same parent), in
-     * document order, up to and including `node` itself -- a plain 1-based
-     * position, never restarting across sibling groups. */
+    /* Glyph markers fall back to the plain bullet when the face lacks
+     * U+25E6 (white bullet) or U+25AA (small black square). */
+    if (type == TBOX_STYLE_LIST_STYLE_DISC || type == TBOX_STYLE_LIST_STYLE_CIRCLE ||
+        type == TBOX_STYLE_LIST_STYLE_SQUARE) {
+        static const tbox_string_view bullet = { "\xE2\x80\xA2", 3 };
+        static const tbox_string_view circle = { "\xE2\x97\xA6", 3 };
+        static const tbox_string_view square = { "\xE2\x96\xAA", 3 };
+        tbox_string_view marker = bullet;
+        if (type == TBOX_STYLE_LIST_STYLE_CIRCLE && tbox_font_face_has_glyph(face, 0x25E6)) marker = circle;
+        if (type == TBOX_STYLE_LIST_STYLE_SQUARE && tbox_font_face_has_glyph(face, 0x25AA)) marker = square;
+        tbox_layout_push_words(words, marker, face, style);
+        return;
+    }
+
+    /* Counters: this <li>'s 1-based position among its direct <li>
+     * siblings (same parent), in document order, never restarting across
+     * sibling groups. */
     size_t index = 0;
     for (const tbox_html_node *sibling = parent->first_child; sibling != NULL; sibling = sibling->next_sibling) {
         if (sibling->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(sibling->element.tag_name, "li")) {
@@ -912,11 +1030,10 @@ static void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node
     }
 
     char buffer[24];
-    int written = snprintf(buffer, sizeof(buffer), "%zu.", index);
-    if (written <= 0) {
+    size_t length = tbox_layout_format_list_counter(type, index, buffer, sizeof(buffer));
+    if (length == 0) {
         return;
     }
-    size_t length = (size_t)written < sizeof(buffer) ? (size_t)written : sizeof(buffer) - 1;
 
     /* `tbox_layout_word.text` must point at memory that outlives this call
      * (the rest of the frame) -- `buffer` is a stack array, so the formatted
@@ -957,7 +1074,8 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
     static const tbox_string_view space = { " ", 1 };
     double space_width                  = tbox_font_measure_text_spaced(face, space, style->letter_spacing) + style->word_spacing;
 
-    tbox_string_view text = tbox_html_node_text_content(arena, node);
+    tbox_string_view text = tbox_layout_transform_text(arena, tbox_html_node_text_content(arena, node),
+                                                       style->text_transform);
 
     size_t line_start = 0;
     for (size_t i = 0; i <= text.size; i++) {

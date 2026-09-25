@@ -123,6 +123,29 @@ typedef enum tbox_style_vertical_align {
     TBOX_STYLE_VERTICAL_ALIGN_LENGTH,      /* raised by vertical_align_length */
 } tbox_style_vertical_align;
 
+/* `list-style-type` for an <li> inside <ul>/<ol>. AUTO (the zero value,
+ * never produced by CSS) keeps the tag default -- disc for <ul>, decimal
+ * for <ol> -- for callers resolving without the user-agent stylesheet. */
+typedef enum tbox_style_list_style_type {
+    TBOX_STYLE_LIST_STYLE_AUTO,
+    TBOX_STYLE_LIST_STYLE_DISC, /* initial */
+    TBOX_STYLE_LIST_STYLE_CIRCLE,
+    TBOX_STYLE_LIST_STYLE_SQUARE,
+    TBOX_STYLE_LIST_STYLE_DECIMAL,
+    TBOX_STYLE_LIST_STYLE_LOWER_ALPHA,
+    TBOX_STYLE_LIST_STYLE_UPPER_ALPHA,
+    TBOX_STYLE_LIST_STYLE_LOWER_ROMAN,
+    TBOX_STYLE_LIST_STYLE_UPPER_ROMAN,
+    TBOX_STYLE_LIST_STYLE_NONE,
+} tbox_style_list_style_type;
+
+typedef enum tbox_style_text_transform {
+    TBOX_STYLE_TEXT_TRANSFORM_NONE, /* initial */
+    TBOX_STYLE_TEXT_TRANSFORM_UPPERCASE,
+    TBOX_STYLE_TEXT_TRANSFORM_LOWERCASE,
+    TBOX_STYLE_TEXT_TRANSFORM_CAPITALIZE,
+} tbox_style_text_transform;
+
 typedef enum tbox_style_caption_side {
     TBOX_STYLE_CAPTION_TOP,
     TBOX_STYLE_CAPTION_BOTTOM,
@@ -142,6 +165,9 @@ typedef struct tbox_style {
     tbox_style_text_overflow text_overflow; /* clip or ellipsis; not inheritable */
     bool white_space_nowrap;          /* inheritable; normal by default */
     bool overflow_wrap_break_word;    /* inheritable; normal by default */
+    bool word_break_all;              /* inheritable; `word-break: break-all` */
+    tbox_style_text_transform text_transform; /* inheritable; initial NONE */
+    tbox_style_list_style_type list_style_type; /* inheritable */
     bool pointer_events_none;         /* inheritable; auto by default */
     tbox_style_length width, height; /* initial: AUTO */
     tbox_style_length min_width, max_width; /* AUTO means no constraint; em resolves to px */
@@ -227,7 +253,12 @@ typedef struct tbox_style {
      * that's also the initial value, so an undeclared box-shadow paints
      * nothing. */
     double box_shadow_offset_x, box_shadow_offset_y, box_shadow_blur; /* px; initial 0.0 */
+    double box_shadow_spread;                                        /* px, may be negative; initial 0.0 */
     tbox_css_rgba box_shadow_color;                                  /* initial transparent */
+    /* `text-shadow`: one shadow, `<x> <y> [<blur>] [<color>]`. Inheritable;
+     * text_shadow_color.a == 0 means none (the initial value). */
+    double text_shadow_offset_x, text_shadow_offset_y, text_shadow_blur; /* px */
+    tbox_css_rgba text_shadow_color;
     /* Form control colors, both inheritable. Alpha 0 means `auto` (the
      * initial value), which paints with the element's own `color` --
      * same "alpha 0 means absent" convention as box_shadow_color. */
@@ -311,7 +342,13 @@ typedef struct tbox_style {
  * the `text-decoration` shorthand with line/color/thickness plus the
  * `text-decoration-line` longhand, `text-underline-offset` (px/em/%,
  * inheritable), `vertical-align: text-top|text-bottom|<length>|<percent>`,
- * and inheritable `accent-color`/`caret-color`.
+ * inheritable `accent-color`/`caret-color`, `list-style-type` and the
+ * `list-style` shorthand's type keyword (`disc`, `circle`, `square`,
+ * `decimal`, `lower-alpha`/`-latin`, `upper-alpha`/`-latin`, `lower-roman`,
+ * `upper-roman`, `none`; inheritable), `text-transform` (`uppercase`,
+ * `lowercase`, `capitalize`, `none`; inheritable), one `text-shadow`
+ * (inheritable), an optional `box-shadow` spread radius (a shadow color
+ * defaults to currentColor), and `word-break: break-all` (inheritable).
  * Out of scope: `float`, flex/grid, `z-index`, other white-space modes. */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 

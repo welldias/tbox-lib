@@ -1234,6 +1234,101 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* list-style-type picks the marker; the fourth <li> shows counters past
+     * the first cycle (alpha) and multi-letter numerals (roman). */
+    {
+        static const struct { const char *css; const char *expected[4]; } cases[] = {
+            {"ol { list-style-type: lower-alpha; }", {"a. x", "b. x", "c. x", "d. x"}},
+            {"ol { list-style: upper-roman inside; }", {"I. x", "II. x", "III. x", "IV. x"}},
+            {"ol { list-style-type: lower-roman; } li + li + li { list-style-type: none; }", {"i. x", "ii. x", "x", "x"}},
+            {"ol { list-style-type: disc; }", {"\xE2\x80\xA2 x", "\xE2\x80\xA2 x", "\xE2\x80\xA2 x", "\xE2\x80\xA2 x"}},
+            {"ol { list-style-type: decimal; list-style: square; }", {NULL, NULL, NULL, NULL}},
+        };
+        for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+            tbox_html_document *doc    = parse_html_cstr("<ol><li>x</li><li>x</li><li>x</li><li>x</li></ol>");
+            const tbox_html_node *root = tbox_html_document_root(doc);
+            tbox_css_stylesheet *sheet = parse_css_cstr(cases[c].css);
+            tbox_arena arena               = tbox_arena_create(0);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+            tbox_layout_box *ol_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+            TBOX_TEST_ASSERT(ol_box != NULL);
+            size_t i = 0;
+            for (tbox_layout_box *li = ol_box != NULL ? ol_box->first_child : NULL; li != NULL; li = li->next_sibling, i++) {
+                TBOX_TEST_ASSERT(li->text_run_count == 1);
+                if (li->text_run_count != 1) continue;
+                if (cases[c].expected[i] != NULL) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(li->text_runs[0].text, cases[c].expected[i]), cases[c].css);
+                } else {
+                    /* square: U+25AA when the face has it, else the bullet */
+                    const char *square = tbox_font_face_has_glyph(li->text_runs[0].font, 0x25AA) ?
+                        "\xE2\x96\xAA x" : "\xE2\x80\xA2 x";
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(li->text_runs[0].text, square));
+                }
+            }
+            TBOX_TEST_ASSERT(i == 4);
+            tbox_arena_destroy(&arena);
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
+    /* text-transform rewrites the measured text; inline children inherit
+     * it and can reset it. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>olá mundo <span>são paulo</span> <b>fim</b></p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "p { text-transform: uppercase; } span { display: inline; text-transform: capitalize; }"
+            " b { display: inline; text-transform: none; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL && box->text_run_count == 3);
+        if (box != NULL && box->text_run_count == 3) {
+            TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[0].text, "OLÁ MUNDO"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[1].text, "São Paulo"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[2].text, "fim"));
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* word-break: break-all fills each line up to the width, breaking
+     * inside words; without it the long word moves to its own line. */
+    {
+        for (int all = 0; all < 2; all++) {
+            tbox_html_document *doc    = parse_html_cstr("<p>ab cdefghijklmnopqrstuvwxyz</p>");
+            const tbox_html_node *root = tbox_html_document_root(doc);
+            tbox_css_stylesheet *sheet = parse_css_cstr(all ? "p { width: 100px; word-break: break-all; }" : "p { width: 100px; }");
+            tbox_arena arena               = tbox_arena_create(0);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+            tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+            TBOX_TEST_ASSERT(box != NULL && box->text_run_count >= 2);
+            if (box != NULL && box->text_run_count >= 2) {
+                const tbox_layout_text_run *first = &box->text_runs[0];
+                if (!all) {
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(first->text, "ab"));
+                } else {
+                    TBOX_TEST_ASSERT(first->text.size > 3 && first->text.data[0] == 'a' && first->text.data[2] == ' ');
+                    TBOX_TEST_ASSERT(first->rect.width <= 100.0);
+                    size_t total = 0;
+                    for (size_t r = 0; r < box->text_run_count; r++) {
+                        TBOX_TEST_ASSERT(box->text_runs[r].rect.width <= 100.0);
+                        total += box->text_runs[r].text.size;
+                    }
+                    TBOX_TEST_ASSERT(total == strlen("ab cdefghijklmnopqrstuvwxyz"));
+                }
+            }
+            tbox_arena_destroy(&arena);
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
     /* 34: NOVO v8 -- <ul><li></li></ul>, an EMPTY <li>: intentional
      * behavior change from v7 -- an empty text-tag box used to have
      * word_count == 0 and thus text_run_count == 0 (the "no words at all"

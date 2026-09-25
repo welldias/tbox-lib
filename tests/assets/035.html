@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #f4f6f8;
+            color: #283241;
+            font-size: 16px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        h3 {
+            margin-top: 14px;
+            margin-bottom: 6px;
+        }
+
+        p {
+            margin: 0;
+        }
+
+        ul,
+        ol {
+            margin: 0;
+        }
+
+        .lists {
+            position: relative;
+            height: 88px;
+        }
+
+        .col {
+            position: absolute;
+            top: 0;
+            width: 150px;
+        }
+
+        .circle {
+            list-style-type: circle;
+        }
+
+        .square {
+            list-style: square inside;
+        }
+
+        .alpha {
+            list-style-type: upper-alpha;
+        }
+
+        .roman {
+            list-style-type: lower-roman;
+        }
+
+        .none {
+            list-style-type: none;
+        }
+
+        .upper {
+            text-transform: uppercase;
+        }
+
+        .lower {
+            text-transform: lowercase;
+        }
+
+        .capitalize {
+            text-transform: capitalize;
+        }
+
+        .shadow-hard {
+            font-size: 22px;
+            font-weight: bold;
+            color: #1c7ed6;
+            text-shadow: 2px 2px #f59f00;
+        }
+
+        .shadow-soft {
+            font-size: 22px;
+            font-weight: bold;
+            color: #ffffff;
+            text-shadow: 1px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .cards {
+            position: relative;
+            height: 80px;
+        }
+
+        .card {
+            position: absolute;
+            top: 12px;
+            width: 110px;
+            height: 50px;
+            background: #ffffff;
+            border-radius: 6px;
+        }
+
+        .spread-out {
+            left: 12px;
+            box-shadow: 0 0 0 4px #74c0fc;
+        }
+
+        .spread-blur {
+            left: 162px;
+            box-shadow: 0 4px 8px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        .spread-in {
+            left: 312px;
+            box-shadow: 0 10px 6px -4px #495057;
+        }
+
+        .panel {
+            width: 230px;
+            padding: 6px;
+            margin-bottom: 6px;
+            background: #e6f0e1;
+            border: 1px solid #5f8b52;
+        }
+
+        .break-all {
+            word-break: break-all;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Level 2 style properties</h2>
+
+    <h3>list-style-type / list-style</h3>
+    <div class="lists">
+        <ul class="col circle" style="left: 0px;">
+            <li>circle</li>
+            <li>circle</li>
+        </ul>
+        <ul class="col square" style="left: 160px;">
+            <li>square</li>
+            <li>square</li>
+        </ul>
+        <ol class="col alpha" style="left: 320px;">
+            <li>upper-alpha</li>
+            <li>upper-alpha</li>
+            <li>upper-alpha</li>
+        </ol>
+        <ol class="col roman" style="left: 480px;">
+            <li>lower-roman</li>
+            <li>lower-roman</li>
+            <li>lower-roman</li>
+            <li class="none">none</li>
+        </ol>
+    </div>
+
+    <h3>text-transform</h3>
+    <p class="upper">uppercase: são paulo e brasília</p>
+    <p class="lower">LOWERCASE: SÃO PAULO E BRASÍLIA</p>
+    <p class="capitalize">capitalize: são paulo e brasília</p>
+
+    <h3>text-shadow</h3>
+    <p class="shadow-hard">Hard shadow 2px 2px</p>
+    <p class="shadow-soft">Soft shadow with blur</p>
+
+    <h3>box-shadow spread</h3>
+    <div class="cards">
+        <div class="card spread-out"></div>
+        <div class="card spread-blur"></div>
+        <div class="card spread-in"></div>
+    </div>
+
+    <h3>word-break: break-all</h3>
+    <div class="panel">
+        <p>Default: supercalifragilisticexpialidocious word</p>
+    </div>
+    <div class="panel break-all">
+        <p>break-all: supercalifragilisticexpialidocious word</p>
+    </div>
+</body>
+
+</html>

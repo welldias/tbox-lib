@@ -687,82 +687,112 @@ static void tbox_style_resolve_border_radius(const tbox_css_computed_style *comp
  * were found -- an incomplete/unrecognized declaration is not a shadow at
  * all, same as `border` needing at least a recognized token to do
  * anything. */
-static bool tbox_style_resolve_box_shadow(const tbox_css_computed_style *computed, double *out_offset_x, double *out_offset_y, double *out_blur, tbox_css_rgba *out_color) {
-    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("box-shadow"));
-    if (decl == NULL) {
-        return false;
+/* Parses one shadow: `<x> <y> [<blur> [<spread>]] [<color>]`, in any
+ * order between the lengths and the color, `max_lengths` being 4 for
+ * box-shadow and 3 for text-shadow. Lengths are px/em (or a bare 0); the
+ * color defaults to currentColor. `none` yields a transparent color (no
+ * shadow). Returns false -- keep the caller's fallback -- for more than one
+ * shadow, too few/many lengths, a negative blur, or an unrecognized token
+ * other than `inset` (which is ignored: the shadow still paints outside). */
+static bool tbox_style_parse_shadow(tbox_string_view raw, double font_size, tbox_css_rgba current_color,
+                                    int max_lengths, double out_lengths[4], tbox_css_rgba *out_color) {
+    tbox_string_view text = tbox_style_trim(raw);
+    if (tbox_string_view_equal_ascii_ci(text, tbox_string_view_from_cstr("none"))) {
+        for (int i = 0; i < 4; i++) out_lengths[i] = 0.0;
+        *out_color = (tbox_css_rgba){0, 0, 0, 0};
+        return true;
     }
-
-    tbox_string_view text = tbox_style_trim(decl->value);
 
     /* A comma OUTSIDE parentheses separates multiple shadows (out of
      * scope, rejected entirely) -- a comma INSIDE parentheses is just an
-     * rgba()/hsla() color's own argument separator, which must NOT trigger
-     * this. A separate pass (not folded into the tokenizer below) so a
-     * comma with no surrounding whitespace, e.g. "...red,2px...", is still
-     * caught -- the tokenizer's own paren-tracking only governs where IT
-     * splits on whitespace, not comma detection. */
-    {
-        int paren_depth = 0;
-        for (size_t i = 0; i < text.size; i++) {
-            if (text.data[i] == '(') {
-                paren_depth++;
-            } else if (text.data[i] == ')') {
-                if (paren_depth > 0) {
-                    paren_depth--;
-                }
-            } else if (text.data[i] == ',' && paren_depth == 0) {
-                return false;
-            }
+     * rgba()/hsla() color's own argument separator. A separate pass (not
+     * folded into the tokenizer below) so a comma with no surrounding
+     * whitespace, e.g. "...red,2px...", is still caught. */
+    int paren_depth = 0;
+    for (size_t i = 0; i < text.size; i++) {
+        if (text.data[i] == '(') {
+            paren_depth++;
+        } else if (text.data[i] == ')') {
+            if (paren_depth > 0) paren_depth--;
+        } else if (text.data[i] == ',' && paren_depth == 0) {
+            return false;
         }
     }
 
-    double offsets[3];
-    int offset_count = 0;
-    bool have_color  = false;
-    tbox_css_rgba color;
-
+    double lengths[4] = {0.0, 0.0, 0.0, 0.0};
+    int length_count = 0;
+    tbox_css_rgba color = current_color;
     size_t i = 0;
     while (i < text.size) {
-        while (i < text.size && tbox_style_is_space(text.data[i])) {
-            i++;
-        }
-        if (i >= text.size) {
-            break;
-        }
-
-        size_t start    = i;
-        int paren_depth = 0;
+        while (i < text.size && tbox_style_is_space(text.data[i])) i++;
+        if (i >= text.size) break;
+        size_t start = i;
+        paren_depth = 0;
         while (i < text.size && (paren_depth > 0 || !tbox_style_is_space(text.data[i]))) {
-            if (text.data[i] == '(') {
-                paren_depth++;
-            } else if (text.data[i] == ')' && paren_depth > 0) {
-                paren_depth--;
-            }
+            if (text.data[i] == '(') paren_depth++;
+            else if (text.data[i] == ')' && paren_depth > 0) paren_depth--;
             i++;
         }
         tbox_string_view token = tbox_string_view_make(text.data + start, i - start);
 
-        double length;
-        if (token.size > 2 && tbox_string_view_equal_ascii_ci(tbox_string_view_make(token.data + token.size - 2, 2), tbox_string_view_from_cstr("px")) && tbox_style_parse_number(tbox_string_view_make(token.data, token.size - 2), &length)) {
-            if (offset_count < 3) {
-                offsets[offset_count++] = length;
-            }
-        } else if (tbox_css_color_parse(token, &color)) {
-            have_color = true;
+        tbox_style_length length;
+        if (tbox_style_parse_spacing_length(token, font_size, &length) && length.kind == TBOX_STYLE_LENGTH_PX) {
+            if (length_count >= max_lengths) return false;
+            lengths[length_count++] = length.value;
+        } else if (tbox_style_parse_edge_color(token, current_color, &color)) {
+            /* color kept */
+        } else if (!tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("inset"))) {
+            return false;
         }
-        /* else: unrecognized token (e.g. "inset"), ignored -- keep scanning. */
     }
 
-    if (!have_color || offset_count < 2) {
-        return false;
-    }
-
-    *out_offset_x = offsets[0];
-    *out_offset_y = offsets[1];
-    *out_blur     = offset_count >= 3 ? offsets[2] : 0.0;
-    *out_color    = color;
+    if (length_count < 2 || lengths[2] < 0.0) return false;
+    for (int j = 0; j < 4; j++) out_lengths[j] = lengths[j];
+    *out_color = color;
     return true;
+}
+
+static bool tbox_style_parse_list_style_type(tbox_string_view raw, tbox_style_list_style_type *out) {
+    static const struct { const char *name; tbox_style_list_style_type value; } types[] = {
+        {"disc", TBOX_STYLE_LIST_STYLE_DISC}, {"circle", TBOX_STYLE_LIST_STYLE_CIRCLE},
+        {"square", TBOX_STYLE_LIST_STYLE_SQUARE}, {"decimal", TBOX_STYLE_LIST_STYLE_DECIMAL},
+        {"lower-alpha", TBOX_STYLE_LIST_STYLE_LOWER_ALPHA}, {"lower-latin", TBOX_STYLE_LIST_STYLE_LOWER_ALPHA},
+        {"upper-alpha", TBOX_STYLE_LIST_STYLE_UPPER_ALPHA}, {"upper-latin", TBOX_STYLE_LIST_STYLE_UPPER_ALPHA},
+        {"lower-roman", TBOX_STYLE_LIST_STYLE_LOWER_ROMAN}, {"upper-roman", TBOX_STYLE_LIST_STYLE_UPPER_ROMAN},
+        {"none", TBOX_STYLE_LIST_STYLE_NONE},
+    };
+    tbox_string_view value = tbox_style_trim(raw);
+    for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr(types[i].name))) {
+            *out = types[i].value;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* `list-style-type` plus the `list-style` shorthand, of which only the type
+ * keyword is supported (position and image tokens are ignored). A shorthand
+ * without a type resets it to `disc`, as any shorthand resets its omitted
+ * longhands. Inheritable. */
+static tbox_style_list_style_type tbox_style_resolve_list_style_type(const tbox_css_computed_style *computed,
+                                                                     tbox_style_list_style_type inherited) {
+    tbox_style_list_style_type result = inherited;
+    const tbox_css_resolved_declaration *shorthand = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("list-style"));
+    if (shorthand != NULL) {
+        result = TBOX_STYLE_LIST_STYLE_DISC;
+        tbox_string_view tokens[4];
+        size_t count;
+        if (tbox_style_split_box_shorthand(shorthand->value, tokens, &count))
+            for (size_t i = 0; i < count; i++) tbox_style_parse_list_style_type(tokens[i], &result);
+    }
+    const tbox_css_resolved_declaration *longhand = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("list-style-type"));
+    tbox_style_list_style_type parsed;
+    if (tbox_style_border_longhand_wins(longhand, shorthand) &&
+        tbox_style_parse_list_style_type(longhand->value, &parsed)) result = parsed;
+    return result;
 }
 
 /* `accent-color`/`caret-color`: inheritable, `auto` stored as alpha 0 (see
@@ -923,6 +953,32 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")))
             style.overflow_wrap_break_word = false;
     }
+    style.word_break_all = parent_style != NULL && parent_style->word_break_all;
+    const tbox_css_resolved_declaration *word_break = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("word-break"));
+    if (word_break != NULL) {
+        tbox_string_view value = tbox_style_trim(word_break->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("break-all")))
+            style.word_break_all = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")) ||
+                 tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("keep-all")))
+            style.word_break_all = false;
+    }
+    style.text_transform = parent_style != NULL ? parent_style->text_transform : TBOX_STYLE_TEXT_TRANSFORM_NONE;
+    const tbox_css_resolved_declaration *text_transform = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("text-transform"));
+    if (text_transform != NULL) {
+        static const struct { const char *name; tbox_style_text_transform value; } transforms[] = {
+            {"none", TBOX_STYLE_TEXT_TRANSFORM_NONE}, {"uppercase", TBOX_STYLE_TEXT_TRANSFORM_UPPERCASE},
+            {"lowercase", TBOX_STYLE_TEXT_TRANSFORM_LOWERCASE}, {"capitalize", TBOX_STYLE_TEXT_TRANSFORM_CAPITALIZE},
+        };
+        tbox_string_view value = tbox_style_trim(text_transform->value);
+        for (size_t i = 0; i < sizeof(transforms) / sizeof(transforms[0]); i++)
+            if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr(transforms[i].name)))
+                style.text_transform = transforms[i].value;
+    }
+    style.list_style_type = tbox_style_resolve_list_style_type(computed, parent_style != NULL ?
+        parent_style->list_style_type : TBOX_STYLE_LIST_STYLE_AUTO);
     style.pointer_events_none = parent_style != NULL && parent_style->pointer_events_none;
     const tbox_css_resolved_declaration *pointer_events = tbox_css_computed_style_find(computed,
         tbox_string_view_from_cstr("pointer-events"));
@@ -1314,11 +1370,33 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
         style.border_radius_corners[0] == style.border_radius_corners[3] ?
         style.border_radius_corners[0] : 0.0;
 
-    style.box_shadow_offset_x = 0.0;
-    style.box_shadow_offset_y = 0.0;
-    style.box_shadow_blur     = 0.0;
-    style.box_shadow_color    = (tbox_css_rgba){ 0, 0, 0, 0 };
-    tbox_style_resolve_box_shadow(computed, &style.box_shadow_offset_x, &style.box_shadow_offset_y, &style.box_shadow_blur, &style.box_shadow_color);
+    double shadow[4] = {0.0, 0.0, 0.0, 0.0};
+    tbox_css_rgba shadow_color = {0, 0, 0, 0};
+    const tbox_css_resolved_declaration *box_shadow = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("box-shadow"));
+    if (box_shadow != NULL)
+        tbox_style_parse_shadow(box_shadow->value, style.font_size, style.color, 4, shadow, &shadow_color);
+    style.box_shadow_offset_x = shadow[0];
+    style.box_shadow_offset_y = shadow[1];
+    style.box_shadow_blur     = shadow[2];
+    style.box_shadow_spread   = shadow[3];
+    style.box_shadow_color    = shadow_color;
+
+    /* text-shadow: inheritable, so an explicit `none` is what resets it. */
+    style.text_shadow_offset_x = parent_style != NULL ? parent_style->text_shadow_offset_x : 0.0;
+    style.text_shadow_offset_y = parent_style != NULL ? parent_style->text_shadow_offset_y : 0.0;
+    style.text_shadow_blur     = parent_style != NULL ? parent_style->text_shadow_blur : 0.0;
+    style.text_shadow_color    = parent_style != NULL ? parent_style->text_shadow_color :
+        (tbox_css_rgba){0, 0, 0, 0};
+    const tbox_css_resolved_declaration *text_shadow = tbox_css_computed_style_find(computed,
+        tbox_string_view_from_cstr("text-shadow"));
+    if (text_shadow != NULL && tbox_style_parse_shadow(text_shadow->value, style.font_size, style.color, 3,
+                                                       shadow, &shadow_color)) {
+        style.text_shadow_offset_x = shadow[0];
+        style.text_shadow_offset_y = shadow[1];
+        style.text_shadow_blur     = shadow[2];
+        style.text_shadow_color    = shadow_color;
+    }
 
     style.accent_color = tbox_style_resolve_control_color(computed, "accent-color", parent_style != NULL ?
         parent_style->accent_color : (tbox_css_rgba){0, 0, 0, 0}, style.color);

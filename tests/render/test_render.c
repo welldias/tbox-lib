@@ -1020,6 +1020,56 @@ int tbox_test_render_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* text-shadow: one offset copy in the shadow color before the text; a
+     * blur paints a 3x3 grid of fainter copies instead. */
+    for (int blurred = 0; blurred < 2; blurred++) {
+        tbox_style box_style = tbox_test_render_default_style();
+        tbox_layout_box box  = tbox_test_render_default_box(&box_style);
+        tbox_style run_style = tbox_test_render_default_style();
+        run_style.text_shadow_offset_x = 2.0;
+        run_style.text_shadow_offset_y = 3.0;
+        run_style.text_shadow_blur = blurred ? 4.0 : 0.0;
+        run_style.text_shadow_color = (tbox_css_rgba){ 10, 20, 30, 250 };
+        tbox_layout_text_run run = { 0 };
+        run.rect  = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
+        run.text  = tbox_test_render_view_from_cstr("abc");
+        run.font  = font;
+        run.style = &run_style;
+        box.text_runs      = &run;
+        box.text_run_count = 1;
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        size_t copies = blurred ? 9 : 1;
+        TBOX_TEST_ASSERT(list.count == copies + 1);
+        if (list.count == copies + 1) {
+            for (size_t i = 0; i <= copies; i++) TBOX_TEST_ASSERT(list.items[i].kind == TBOX_PAINT_TEXT_RUN);
+            TBOX_TEST_ASSERT(list.items[copies].color.a == 255 && list.items[copies].rect.x == 5.0);
+            TBOX_TEST_ASSERT(list.items[0].color.r == 10 && list.items[0].color.a == (blurred ? 50 : 250));
+            double spread = blurred ? 2.0 : 0.0;
+            TBOX_TEST_ASSERT(list.items[0].rect.x == 7.0 - spread && list.items[0].rect.y == 13.0 - spread);
+            TBOX_TEST_ASSERT(list.items[copies - 1].rect.x == 7.0 + spread);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* box-shadow spread grows the shadow rect on every side. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.box_shadow_offset_x = 1.0;
+        style.box_shadow_spread = 3.0;
+        style.box_shadow_color = (tbox_css_rgba){ 0, 0, 0, 255 };
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = (tbox_rect){ 10.0, 10.0, 20.0, 20.0 };
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1);
+        if (list.count == 1) {
+            tbox_rect r = list.items[0].rect;
+            TBOX_TEST_ASSERT(r.x == 8.0 && r.y == 7.0 && r.width == 26.0 && r.height == 26.0);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
     tbox_font_face_destroy(bold_font);
     tbox_font_face_destroy(font);
     free(font_data);

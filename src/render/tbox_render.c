@@ -128,8 +128,17 @@ static void tbox_render_style_corners(const tbox_style *style, double out[4]) {
  * step so the corners stay proportionally rounded as the shadow expands. */
 #define TBOX_RENDER_BOX_SHADOW_STEPS 6
 
-static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box, const double corner_radii[4], double offset_x, double offset_y, double blur, tbox_css_rgba color) {
-    tbox_rect base = { border_box.x + offset_x, border_box.y + offset_y, border_box.width, border_box.height };
+static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box, const double box_radii[4], double offset_x, double offset_y, double blur, double spread, tbox_css_rgba color) {
+    /* The spread radius grows (or, negative, shrinks) the shadow shape on
+     * every side before blurring; rounded corners grow with it, square
+     * corners stay square (CSS Backgrounds 3's spread rule, simplified to
+     * "radius + spread, never below 0"). */
+    double width = border_box.width + 2.0 * spread, height = border_box.height + 2.0 * spread;
+    if (width <= 0.0 || height <= 0.0) return;
+    tbox_rect base = { border_box.x + offset_x - spread, border_box.y + offset_y - spread, width, height };
+    double corner_radii[4];
+    for (size_t i = 0; i < 4; i++)
+        corner_radii[i] = box_radii[i] > 0.0 && box_radii[i] + spread > 0.0 ? box_radii[i] + spread : 0.0;
 
     if (blur <= 0.0) {
         tbox_render_push_fill_rect_corners(items, base, corner_radii, color);
@@ -180,7 +189,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
          * needed, same reasoning as any other paint-order z-stack in this
          * pipeline. */
         if (visible && box->style != NULL && box->style->box_shadow_color.a != 0) {
-            tbox_render_push_box_shadow(items, box->border_box, corners, box->style->box_shadow_offset_x, box->style->box_shadow_offset_y, box->style->box_shadow_blur, box->style->box_shadow_color);
+            tbox_render_push_box_shadow(items, box->border_box, corners, box->style->box_shadow_offset_x, box->style->box_shadow_offset_y, box->style->box_shadow_blur, box->style->box_shadow_spread, box->style->box_shadow_color);
         }
 
         /* NOVO v4: border painting. Render Pipeline isn't handed the
@@ -362,6 +371,34 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                     op->clip.width -= 18.0;
                     if (op->clip.width < 0.0) op->clip.width = 0.0;
                 }
+            }
+
+            /* text-shadow: copies of the finished TEXT_RUN, offset and in
+             * the shadow color, painted before it. The op is popped and
+             * pushed back after them, since pushing may move `items`. A blur
+             * is approximated by a 3x3 grid of faint copies spread over
+             * +-blur/2 -- no real Gaussian, same spirit as box-shadow's
+             * stepped rings. Decoration lines get no shadow. */
+            if (run->style->text_shadow_color.a != 0) {
+                tbox_paint_op text_op = *op;
+                items->length--;
+                tbox_css_rgba shadow = run->style->text_shadow_color;
+                double blur = run->style->text_shadow_blur;
+                int steps = blur > 0.0 ? 3 : 1;
+                if (steps > 1) {
+                    shadow.a = (unsigned char)((double)shadow.a / 5.0 + 0.5);
+                    if (shadow.a == 0) shadow.a = 1;
+                }
+                for (int sy = 0; sy < steps; sy++) {
+                    for (int sx = 0; sx < steps; sx++) {
+                        tbox_paint_op *copy = (tbox_paint_op *)tbox_vector_push(items);
+                        *copy = text_op;
+                        copy->color = shadow;
+                        copy->rect.x += run->style->text_shadow_offset_x + (steps > 1 ? (sx - 1) * blur / 2.0 : 0.0);
+                        copy->rect.y += run->style->text_shadow_offset_y + (steps > 1 ? (sy - 1) * blur / 2.0 : 0.0);
+                    }
+                }
+                *(tbox_paint_op *)tbox_vector_push(items) = text_op;
             }
 
             /* NOVO v13: <del>/<ins> decoration line -- a thin (1px)

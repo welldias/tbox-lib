@@ -107,6 +107,14 @@ accepts `text-top`, `text-bottom`, lengths, and percentages of the
 line-height. `accent-color` colors checked checkboxes and radio buttons, and
 `caret-color` colors the text insertion caret.
 
+`list-style-type` (and the type keyword of `list-style`) selects `disc`,
+`circle`, `square`, `decimal`, `lower-alpha`, `upper-alpha`, `lower-roman`,
+`upper-roman`, or `none` list markers. `text-transform` accepts `uppercase`,
+`lowercase`, and `capitalize`. `text-shadow` paints one shadow with an
+optional approximated blur, `box-shadow` accepts a spread radius and
+defaults its color to `currentColor`, and `word-break: break-all` breaks
+lines between any two characters.
+
 ## Build and checks
 
 ```sh

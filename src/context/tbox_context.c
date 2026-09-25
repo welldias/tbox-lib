@@ -2041,6 +2041,8 @@ bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_
         "h6 { display: block; font-size: %gem; font-weight: bold; margin: %gpx 0px; }\n"
         "p { display: block; margin: %gpx 0px; }\n"
         "ul, ol { display: block; margin: %gpx 0px; padding: 0px 0px 0px %gpx; }\n"
+        "ul { list-style-type: disc; }\n"
+        "ol { list-style-type: decimal; }\n"
         "li { display: block; }\n"
         "button { display: block; border: 1px solid gray; padding: 4px; }\n"
         "button:focus { border: 2px solid blue; }\n"

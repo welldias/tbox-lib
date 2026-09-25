@@ -1457,5 +1457,94 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* list-style-type inherits; the list-style shorthand resets it to disc
+     * unless it names a type, and follows cascade order with the longhand. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<ol><li>x</li></ol>");
+        const tbox_html_node *ol = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *li = ol->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("ol { list-style-type: upper-latin; } li { list-style: inside; }");
+        tbox_style parent = resolve_node(sheet, ol, NULL);
+        tbox_style child = resolve_node(sheet, li, &parent);
+        TBOX_TEST_ASSERT(parent.list_style_type == TBOX_STYLE_LIST_STYLE_UPPER_ALPHA);
+        TBOX_TEST_ASSERT(child.list_style_type == TBOX_STYLE_LIST_STYLE_DISC);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("li { list-style: none outside; list-style-type: circle; }");
+        child = resolve_node(sheet, li, &parent);
+        TBOX_TEST_ASSERT(child.list_style_type == TBOX_STYLE_LIST_STYLE_CIRCLE);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("li { list-style-type: bogus; }");
+        child = resolve_node(sheet, li, &parent);
+        TBOX_TEST_ASSERT(child.list_style_type == TBOX_STYLE_LIST_STYLE_UPPER_ALPHA);
+        tbox_style root = resolve_node(sheet, ol, NULL);
+        TBOX_TEST_ASSERT(root.list_style_type == TBOX_STYLE_LIST_STYLE_AUTO);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* text-transform and word-break inherit and can be reset. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { text-transform: UPPERCASE; word-break: break-all; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.text_transform == TBOX_STYLE_TEXT_TRANSFORM_UPPERCASE && child.word_break_all);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { text-transform: capitalize; word-break: keep-all; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.text_transform == TBOX_STYLE_TEXT_TRANSFORM_CAPITALIZE && !child.word_break_all);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* box-shadow spread and default currentColor; em lengths; too many
+     * lengths or a negative blur are rejected. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { color: red; font-size: 10px; box-shadow: 1px 2px 0.3em -4px; }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.box_shadow_offset_x == 1.0 && style.box_shadow_offset_y == 2.0);
+        TBOX_TEST_ASSERT(style.box_shadow_blur == 3.0 && style.box_shadow_spread == -4.0);
+        TBOX_TEST_ASSERT(rgba_eq(style.box_shadow_color, (tbox_css_rgba){255, 0, 0, 255}));
+        tbox_css_stylesheet_destroy(sheet);
+        const char *invalid[] = {"div { box-shadow: 1px 2px 3px 4px 5px red; }", "div { box-shadow: 1px 2px -3px red; }",
+                                 "div { box-shadow: 1px red; }", "div { box-shadow: none; }"};
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            sheet = parse_css_cstr(invalid[i]);
+            style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.box_shadow_color.a == 0, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* text-shadow: one shadow with up to three lengths, inherited, reset by
+     * none, and rejected with a spread length. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { text-shadow: rgba(0, 0, 255, 0.5) 1px 2px 3px; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.text_shadow_offset_x == 1.0 && parent.text_shadow_offset_y == 2.0);
+        TBOX_TEST_ASSERT(parent.text_shadow_blur == 3.0 && parent.text_shadow_color.b == 255 &&
+                         parent.text_shadow_color.a == 128);
+        TBOX_TEST_ASSERT(rgba_eq(child.text_shadow_color, parent.text_shadow_color) && child.text_shadow_blur == 3.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { text-shadow: none; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.text_shadow_color.a == 0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { text-shadow: 1px 1px 1px 1px red; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(rgba_eq(child.text_shadow_color, parent.text_shadow_color));
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }
