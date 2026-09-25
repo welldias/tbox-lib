@@ -2,6 +2,7 @@
 
 #include <tbox/image.h>
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,6 +67,7 @@ static tbox_style tbox_test_render_default_style(void) {
     tbox_style style;
     memset(&style, 0, sizeof(style));
     style.color = (tbox_css_rgba){ 0, 0, 0, 255 };
+    style.opacity = 1.0;
     return style;
 }
 
@@ -1066,6 +1068,124 @@ int tbox_test_render_run(void) {
         if (list.count == 1) {
             tbox_rect r = list.items[0].rect;
             TBOX_TEST_ASSERT(r.x == 8.0 && r.y == 7.0 && r.width == 26.0 && r.height == 26.0);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* opacity multiplies the alpha of the box's and its descendants' ops,
+     * image ops included; 0 drops the whole subtree. */
+    for (int hidden = 0; hidden < 2; hidden++) {
+        tbox_style parent_style = tbox_test_render_default_style();
+        parent_style.background_color = (tbox_css_rgba){ 10, 20, 30, 200 };
+        parent_style.opacity = hidden ? 0.0 : 0.5;
+        tbox_style child_style = tbox_test_render_default_style();
+        child_style.background_color = (tbox_css_rgba){ 40, 50, 60, 255 };
+        tbox_layout_box parent = tbox_test_render_default_box(&parent_style);
+        tbox_layout_box child = tbox_test_render_default_box(&child_style);
+        tbox_image fake_image = { 0 };
+        tbox_layout_text_run run = { 0 };
+        run.rect  = (tbox_rect){ 0.0, 0.0, 4.0, 4.0 };
+        run.style = &child_style;
+        run.image = &fake_image;
+        child.text_runs = &run;
+        child.text_run_count = 1;
+        parent.first_child = parent.last_child = &child;
+        tbox_layout_box sibling = tbox_test_render_default_box(&child_style);
+        parent.next_sibling = &sibling;
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &parent);
+        if (hidden) {
+            TBOX_TEST_ASSERT(list.count == 1 && list.items[0].color.a == 255);
+        } else {
+            TBOX_TEST_ASSERT(list.count == 4);
+            if (list.count == 4) {
+                TBOX_TEST_ASSERT(list.items[0].color.a == 100);
+                TBOX_TEST_ASSERT(list.items[1].color.a == 128);
+                TBOX_TEST_ASSERT(list.items[2].kind == TBOX_PAINT_IMAGE && list.items[2].color.a == 128);
+                TBOX_TEST_ASSERT(list.items[3].color.a == 255);
+            }
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* Per-side borders paint only their non-zero sides, each in its own
+     * color. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.border_per_side = true;
+        const double widths[4] = {1.0, 0.0, 3.0, 4.0};
+        for (size_t i = 0; i < 4; i++) {
+            style.border_widths[i] = widths[i];
+            style.border_styles[i] = TBOX_STYLE_BORDER_STYLE_SOLID;
+            style.border_colors[i] = (tbox_css_rgba){ (unsigned char)(i + 1), 0, 0, 255 };
+        }
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = (tbox_rect){ 0.0, 0.0, 50.0, 30.0 };
+        box.padding_box = (tbox_rect){ 4.0, 1.0, 46.0, 26.0 };
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 3);
+        if (list.count == 3) {
+            TBOX_TEST_ASSERT(list.items[0].color.r == 1 && list.items[0].rect.height == 1.0);
+            TBOX_TEST_ASSERT(list.items[1].color.r == 3 && list.items[1].rect.height == 3.0);
+            TBOX_TEST_ASSERT(list.items[2].color.r == 4 && list.items[2].rect.width == 4.0);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* A 40px-long top border: double (3px) = two 1px bands at the strip's
+     * edges, dashed (2px) = 6px dashes spread to cover both ends, dotted
+     * (2px) = round 2px dots. Only the top side is painted. */
+    {
+        const tbox_style_border_style styles[3] = {TBOX_STYLE_BORDER_STYLE_DOUBLE, TBOX_STYLE_BORDER_STYLE_DASHED,
+                                                   TBOX_STYLE_BORDER_STYLE_DOTTED};
+        for (size_t k = 0; k < 3; k++) {
+            tbox_style style = tbox_test_render_default_style();
+            style.border_per_side = true;
+            style.border_widths[0] = styles[k] == TBOX_STYLE_BORDER_STYLE_DOUBLE ? 3.0 : 2.0;
+            style.border_styles[0] = styles[k];
+            style.border_colors[0] = (tbox_css_rgba){ 9, 9, 9, 255 };
+            tbox_layout_box box = tbox_test_render_default_box(&style);
+            double w = style.border_widths[0];
+            box.border_box = (tbox_rect){ 0.0, 0.0, 40.0, 20.0 };
+            box.padding_box = (tbox_rect){ 0.0, w, 40.0, 20.0 - w };
+            tbox_arena arena = tbox_arena_create(0);
+            tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+            if (k == 0) {
+                TBOX_TEST_ASSERT(list.count == 2);
+                if (list.count == 2) {
+                    TBOX_TEST_ASSERT(list.items[0].rect.y == 0.0 && list.items[0].rect.height == 1.0);
+                    TBOX_TEST_ASSERT(list.items[1].rect.y == 2.0 && list.items[1].rect.width == 40.0);
+                }
+            } else {
+                size_t expected = k == 1 ? 5 : 10; /* (40 + gap) / (mark + gap) */
+                TBOX_TEST_ASSERT(list.count == expected);
+                if (list.count == expected) {
+                    const tbox_paint_op *last = &list.items[list.count - 1];
+                    TBOX_TEST_ASSERT(list.items[0].rect.x == 0.0);
+                    TBOX_TEST_ASSERT(fabs(last->rect.x + last->rect.width - 40.0) < 1e-9);
+                    TBOX_TEST_ASSERT(list.items[0].rect.width == (k == 1 ? 6.0 : 2.0));
+                    TBOX_TEST_ASSERT(k == 1 ? list.items[0].corner_radii[0] == 0.0 : list.items[0].corner_radii[0] == 1.0);
+                }
+            }
+            tbox_arena_destroy(&arena);
+        }
+    }
+
+    /* A percentage radius resolves against the smaller border-box side. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.background_color = (tbox_css_rgba){ 1, 2, 3, 255 };
+        for (size_t i = 0; i < 4; i++) style.border_radius_percent[i] = 25.0;
+        style.border_radius_corners[1] = 2.0;
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = (tbox_rect){ 0.0, 0.0, 80.0, 40.0 };
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1);
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT(list.items[0].corner_radii[0] == 10.0);
+            TBOX_TEST_ASSERT(list.items[0].corner_radii[1] == 12.0);
         }
         tbox_arena_destroy(&arena);
     }

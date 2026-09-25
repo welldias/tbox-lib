@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #f5f5f2;
+            color: #26303d;
+            font-size: 16px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        h3 {
+            margin-top: 14px;
+            margin-bottom: 6px;
+        }
+
+        p {
+            margin: 0;
+        }
+
+        .row {
+            position: relative;
+            height: 64px;
+        }
+
+        .b {
+            position: absolute;
+            top: 4px;
+            width: 110px;
+            height: 44px;
+            background: #ffffff;
+            border-width: 3px;
+            border-color: #3b5bdb;
+        }
+
+        .dashed {
+            left: 0px;
+            border-style: dashed;
+        }
+
+        .dotted {
+            left: 135px;
+            border-style: dotted;
+        }
+
+        .double {
+            left: 270px;
+            border-width: 6px;
+            border-style: double;
+        }
+
+        .mixed {
+            left: 405px;
+            border-style: solid dashed dotted double;
+            border-width: 6px;
+        }
+
+        .outlined {
+            left: 540px;
+            border: 1px solid #adb5bd;
+            outline: 2px dashed #e8590c;
+            outline-offset: 3px;
+        }
+
+        .justify {
+            width: 320px;
+            padding: 6px;
+            background: #e7f1e4;
+            text-align: justify;
+        }
+
+        .radius {
+            position: relative;
+            height: 90px;
+        }
+
+        .shape {
+            position: absolute;
+            top: 5px;
+            background: #f59f00;
+        }
+
+        .circle {
+            left: 0px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+        }
+
+        .pill {
+            left: 110px;
+            width: 160px;
+            height: 50px;
+            border-radius: 50%;
+            background: #12b886;
+        }
+
+        .corner {
+            left: 300px;
+            width: 80px;
+            height: 80px;
+            border-radius: 30% 0;
+            background: #7048e8;
+        }
+
+        .font-a {
+            font: italic bold 20px/1.6 serif;
+        }
+
+        .font-b {
+            font: 13px monospace;
+        }
+
+        .stage {
+            position: relative;
+            width: 400px;
+            height: 110px;
+            background: #dfe7ef;
+            border: 1px solid #5c7cfa;
+        }
+
+        .stretch {
+            position: absolute;
+            inset: 12px 20px;
+            background: rgba(92, 124, 250, 0.35);
+            border: 2px dashed #364fc7;
+        }
+
+        .stretch p {
+            padding: 6px;
+        }
+
+        .anon {
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Border styles, justify, radius %, font, stretch</h2>
+
+    <h3>border-style: dashed / dotted / double / mixed + outline</h3>
+    <div class="row">
+        <div class="b dashed"></div>
+        <div class="b dotted"></div>
+        <div class="b double"></div>
+        <div class="b mixed"></div>
+        <div class="b outlined"></div>
+    </div>
+
+    <h3>text-align: justify</h3>
+    <p class="justify">Justified text spreads the words of every line to fill the whole width, except the
+        last line of the paragraph, which keeps its natural spacing.</p>
+
+    <h3>border-radius percentages</h3>
+    <div class="radius">
+        <div class="shape circle"></div>
+        <div class="shape pill"></div>
+        <div class="shape corner"></div>
+    </div>
+
+    <h3>font shorthand</h3>
+    <p class="font-a">font: italic bold 20px/1.6 serif</p>
+    <p class="font-b">font: 13px monospace</p>
+
+    <h3>absolute box stretched by inset</h3>
+    <div class="stage">
+        <div class="stretch">
+            <p>inset: 12px 20px, no width or height</p>
+        </div>
+    </div>
+
+    <h3>anonymous text inherits</h3>
+    <div class="anon">bare text next to <b>bold</b> text</div>
+</body>
+
+</html>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #f6f4f1;
+            color: #2b2f3a;
+            font-size: 16px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        h3 {
+            margin-top: 14px;
+            margin-bottom: 6px;
+        }
+
+        p {
+            margin: 0;
+        }
+
+        .ws {
+            width: 200px;
+            margin-bottom: 6px;
+            padding: 4px;
+            background: #e4ecf5;
+            border: 1px solid #6b8bb0;
+        }
+
+        .pre {
+            white-space: pre;
+        }
+
+        .pre-wrap {
+            white-space: pre-wrap;
+        }
+
+        .pre-line {
+            white-space: pre-line;
+        }
+
+        .stage {
+            position: relative;
+            height: 70px;
+            background: #ffffff;
+            border: 1px solid #b5b5b5;
+        }
+
+        .tile {
+            position: absolute;
+            top: 10px;
+            width: 90px;
+            height: 50px;
+            background: #d9480f;
+        }
+
+        .tile p {
+            color: #ffffff;
+            font-weight: bold;
+            padding: 4px;
+        }
+
+        .o100 {
+            left: 10px;
+        }
+
+        .o60 {
+            left: 110px;
+            opacity: 0.6;
+        }
+
+        .o30 {
+            left: 210px;
+            opacity: 30%;
+        }
+
+        .o0 {
+            left: 310px;
+            opacity: 0;
+        }
+
+        .sides {
+            width: 150px;
+            height: 40px;
+            margin-bottom: 8px;
+            padding: 4px;
+            background: #eef3e8;
+        }
+
+        .left-accent {
+            border-left: 6px solid #2f9e44;
+        }
+
+        .bottom-only {
+            border-bottom: 3px solid #1c7ed6;
+        }
+
+        .four-colors {
+            border-style: solid;
+            border-width: 2px 4px 6px 8px;
+            border-color: #e03131 #f08c00 #2f9e44 #1971c2;
+        }
+
+        .top-override {
+            border: 2px solid #868e96;
+            border-top-color: #c2255c;
+            border-top-width: 5px;
+            border-right-style: none;
+        }
+
+        table {
+            border-collapse: collapse;
+        }
+
+        td {
+            padding: 4px 10px;
+            border-bottom: 1px solid #adb5bd;
+        }
+
+        th {
+            padding: 4px 10px;
+            border-bottom: 3px solid #495057;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>white-space, opacity and per-side borders</h2>
+
+    <h3>white-space</h3>
+    <p class="ws pre">pre:   keeps   spaces
+    and newlines, never wraps at the width</p>
+    <p class="ws pre-wrap">pre-wrap:   keeps   spaces
+    and newlines, and wraps at the width</p>
+    <p class="ws pre-line">pre-line:   collapses   spaces
+    but keeps newlines</p>
+
+    <h3>opacity (1, 0.6, 30%, 0)</h3>
+    <div class="stage">
+        <div class="tile o100"><p>1</p></div>
+        <div class="tile o60"><p>0.6</p></div>
+        <div class="tile o30"><p>30%</p></div>
+        <div class="tile o0"><p>0</p></div>
+    </div>
+
+    <h3>Per-side borders</h3>
+    <div class="sides left-accent"><p>border-left</p></div>
+    <div class="sides bottom-only"><p>border-bottom</p></div>
+    <div class="sides four-colors"><p>1-4 values</p></div>
+    <div class="sides top-override"><p>side longhands</p></div>
+
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>alpha</td>
+            <td>1</td>
+        </tr>
+        <tr>
+            <td>beta</td>
+            <td>2</td>
+        </tr>
+    </table>
+</body>
+
+</html>

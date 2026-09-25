@@ -68,13 +68,15 @@ typedef enum tbox_style_text_overflow {
     TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS,
 } tbox_style_text_overflow;
 
-/* NOVO v4: only `solid` is ever painted (see Render Pipeline); `none` and
- * any unsupported keyword both resolve here, indistinguishable from each
- * other and from "no border declared" -- see ARCHITECTURE.md's v4 Style
- * section. */
+/* Border and outline styles. `none`/`hidden` and "no border declared" all
+ * resolve to NONE. `groove`, `ridge`, `inset` and `outset` paint as SOLID
+ * (no 3D shading). Rounded boxes paint every style as SOLID. */
 typedef enum tbox_style_border_style {
     TBOX_STYLE_BORDER_STYLE_NONE, /* initial */
     TBOX_STYLE_BORDER_STYLE_SOLID,
+    TBOX_STYLE_BORDER_STYLE_DASHED,
+    TBOX_STYLE_BORDER_STYLE_DOTTED,
+    TBOX_STYLE_BORDER_STYLE_DOUBLE,
 } tbox_style_border_style;
 
 /* NOVO v4: the visual-offset axis of `position: relative`. NOVO v5:
@@ -90,13 +92,15 @@ typedef enum tbox_style_position {
     TBOX_STYLE_POSITION_STICKY,   /* NOVO v5 -- treated as RELATIVE outside the Style layer, see above */
 } tbox_style_position;
 
-/* NOVO v11: `text-align`'s three supported values -- `justify` is out of
- * scope (see ARCHITECTURE.md's v11 Style section). `LEFT` is the initial
- * value and, not coincidentally, the enum's first/zero member. */
+/* NOVO v11: `text-align`. `start`/`end` map to LEFT/RIGHT (text is always
+ * left-to-right). JUSTIFY stretches the gaps between words on every line
+ * but the last one of a paragraph and lines ended by a forced break. `LEFT`
+ * is the initial value and the enum's first/zero member. */
 typedef enum tbox_style_text_align {
     TBOX_STYLE_TEXT_ALIGN_LEFT, /* initial */
     TBOX_STYLE_TEXT_ALIGN_CENTER,
     TBOX_STYLE_TEXT_ALIGN_RIGHT,
+    TBOX_STYLE_TEXT_ALIGN_JUSTIFY,
 } tbox_style_text_align;
 
 /* `text-decoration` supports one line at a time; no multi-value
@@ -139,6 +143,19 @@ typedef enum tbox_style_list_style_type {
     TBOX_STYLE_LIST_STYLE_NONE,
 } tbox_style_list_style_type;
 
+/* `white-space`. AUTO (the zero value, never produced by CSS) acts as
+ * NORMAL except on a <pre> element, which keeps its verbatim behavior for
+ * callers resolving without the user-agent stylesheet (that sheet sets
+ * `pre { white-space: pre }` explicitly). */
+typedef enum tbox_style_white_space {
+    TBOX_STYLE_WHITE_SPACE_AUTO,
+    TBOX_STYLE_WHITE_SPACE_NORMAL,
+    TBOX_STYLE_WHITE_SPACE_NOWRAP,
+    TBOX_STYLE_WHITE_SPACE_PRE,      /* spaces and newlines kept, no wrapping */
+    TBOX_STYLE_WHITE_SPACE_PRE_WRAP, /* spaces and newlines kept, wraps */
+    TBOX_STYLE_WHITE_SPACE_PRE_LINE, /* spaces collapse, newlines kept, wraps */
+} tbox_style_white_space;
+
 typedef enum tbox_style_text_transform {
     TBOX_STYLE_TEXT_TRANSFORM_NONE, /* initial */
     TBOX_STYLE_TEXT_TRANSFORM_UPPERCASE,
@@ -163,7 +180,7 @@ typedef struct tbox_style {
     tbox_style_box_sizing box_sizing; /* initial: content-box */
     bool visibility_hidden;           /* inheritable; hidden keeps layout */
     tbox_style_text_overflow text_overflow; /* clip or ellipsis; not inheritable */
-    bool white_space_nowrap;          /* inheritable; normal by default */
+    tbox_style_white_space white_space; /* inheritable; initial AUTO */
     bool overflow_wrap_break_word;    /* inheritable; normal by default */
     bool word_break_all;              /* inheritable; `word-break: break-all` */
     tbox_style_text_transform text_transform; /* inheritable; initial NONE */
@@ -200,6 +217,16 @@ typedef struct tbox_style {
     double border_width;                  /* px; initial 0.0; thin/medium/thick = 1/3/5px */
     tbox_style_border_style border_style; /* initial NONE */
     tbox_css_rgba border_color;           /* initial: current text color */
+    /* Per-side borders (top, right, bottom, left), always filled by
+     * tbox_style_resolve. When the four sides agree, border_per_side is
+     * false and the uniform fields above carry the same values; otherwise
+     * it is true and the uniform fields hold the top side. A hand-built
+     * style may set only the uniform fields and leave border_per_side
+     * false. Read borders through tbox_style_border_side_width/_color. */
+    double border_widths[4];
+    tbox_style_border_style border_styles[4];
+    tbox_css_rgba border_colors[4];
+    bool border_per_side;
     double outline_width;                 /* px; initial 3 (medium); style NONE means no paint */
     tbox_style_border_style outline_style; /* none or solid */
     tbox_css_rgba outline_color;          /* initial: current text color */
@@ -241,10 +268,14 @@ typedef struct tbox_style {
     double border_spacing_x, border_spacing_y;
     /* Circular corner radii in px. The scalar retains the old uniform value
      * for callers that build styles directly; shorthand and longhand CSS
-     * resolve into border_radius_corners in clockwise order. Percentages and
-     * elliptical radii remain unsupported. */
+     * resolve into border_radius_corners in clockwise order. Elliptical
+     * radii remain unsupported. */
     double border_radius;
     double border_radius_corners[4]; /* top-left, top-right, bottom-right, bottom-left */
+    /* Corners declared as a percentage (0 otherwise), resolved by Render
+     * against the smaller side of the border box -- a circular stand-in for
+     * CSS's elliptical percentage radii, exact for squares (50% = circle). */
+    double border_radius_percent[4];
     /* NOVO (visual fidelity): `box-shadow: <offset-x> <offset-y>
      * [<blur-radius>] <color>` -- ONE shadow only (no comma-separated list,
      * no `inset`, no spread-radius -- see tbox_style_resolve_box_shadow).
@@ -259,6 +290,11 @@ typedef struct tbox_style {
      * text_shadow_color.a == 0 means none (the initial value). */
     double text_shadow_offset_x, text_shadow_offset_y, text_shadow_blur; /* px */
     tbox_css_rgba text_shadow_color;
+    /* `opacity`, 0..1 (numbers or percentages, clamped). NOT inheritable,
+     * but Render multiplies it into the element's whole subtree. Initial
+     * 1.0 -- a hand-built, zero-initialized tbox_style must set it, or the
+     * element paints nothing. */
+    double opacity;
     /* Form control colors, both inheritable. Alpha 0 means `auto` (the
      * initial value), which paints with the element's own `color` --
      * same "alpha 0 means absent" convention as box_shadow_color. */
@@ -298,16 +334,19 @@ typedef struct tbox_style {
  * (NOVO v4: width/style/color shorthand, order-free, each optional;
  * see tbox_style_border_style and ARCHITECTURE.md's v4 Style section for the
  * exact per-token classification; uniform `border-width`/`border-style`/
- * `border-color` longhands are supported with normal cascade precedence;
- * per-side borders and styles besides `solid`/`none` remain out of scope), `position`
+ * `border-color` longhands, now with 1-4 values, are supported with normal
+ * cascade precedence, as are the per-side `border-top`/`-right`/`-bottom`/
+ * `-left` shorthands and their `-width`/`-style`/`-color` longhands; styles
+ * `solid`, `dashed`, `dotted`, `double`, `none`, `hidden`, with the 3D
+ * styles painted solid), `position`
  * (NOVO v4: `static`/`relative`; NOVO v5: `absolute`/`fixed`/`sticky`, all
  * case-insensitive; any other value falls back to the initial value
  * `STATIC`, same posture as `display` since v0), `top`, `right`, `bottom`,
  * `left` (NOVO v4: same length parser as `width`/`margin` -- `auto`, px, or
  * `%` -- only meaningful when `position` is non-`static`, but always
  * resolved regardless of `position`), `text-align` (NOVO v11: `left`/
- * `center`/`right`, case-insensitive; any other value -- including
- * `justify`, out of scope -- falls back to the same "not recognized =
+ * `center`/`right`/`justify`/`start`/`end`, case-insensitive; any other
+ * value falls back to the same "not recognized =
  * inherits" treatment `font-weight` already gets, or the initial value
  * `LEFT` with no parent), `font-family` (NOVO v12: only the FIRST name of a
  * comma-separated list is used -- a full list is never kept for fallback --
@@ -320,7 +359,10 @@ typedef struct tbox_style {
  * value/absent falls back to the initial value `NONE`; NOT inheritable --
  * always cascade-or-initial, same posture as `background-color`),
  * `text-decoration-color` (a solid color) and `text-decoration-thickness`
- * (nonnegative px/em), `white-space` (`normal`/`nowrap`, inheritable),
+ * (nonnegative px/em), `white-space` (`normal`, `nowrap`, `pre`,
+ * `pre-wrap`, `pre-line`; inheritable -- the text box's own value decides
+ * whether its lines wrap, each text node's value how its spaces and
+ * newlines are kept),
  * `overflow-wrap` (`normal`/`break-word`, inheritable), `pointer-events`
  * (`auto`/`none`, inheritable, applies to pointer hit testing),
  * `word-spacing` (normal or px/em, inheritable), `text-indent` (px/em/%,
@@ -348,9 +390,21 @@ typedef struct tbox_style {
  * `upper-roman`, `none`; inheritable), `text-transform` (`uppercase`,
  * `lowercase`, `capitalize`, `none`; inheritable), one `text-shadow`
  * (inheritable), an optional `box-shadow` spread radius (a shadow color
- * defaults to currentColor), and `word-break: break-all` (inheritable).
- * Out of scope: `float`, flex/grid, `z-index`, other white-space modes. */
+ * defaults to currentColor), `word-break: break-all` (inheritable), and
+ * `opacity` (0..1 or a percentage, clamped; not inheritable).
+ * Out of scope: `float`, flex/grid, `z-index`, `break-spaces`, `tab-size`. */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
+
+/* The painted border width of `side` (0 top, 1 right, 2 bottom, 3 left):
+ * its width unless that side's style is NONE, 0 otherwise -- the space the
+ * Layout Tree reserves and the strip Render paints. */
+double tbox_style_border_side_width(const tbox_style *style, size_t side);
+
+/* The border style of `side`, same side numbering. */
+tbox_style_border_style tbox_style_border_side_style(const tbox_style *style, size_t side);
+
+/* The border color of `side`, same side numbering. */
+tbox_css_rgba tbox_style_border_side_color(const tbox_style *style, size_t side);
 
 typedef struct tbox_style_entry {
     const tbox_html_node *node;

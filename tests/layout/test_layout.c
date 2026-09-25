@@ -589,10 +589,10 @@ int tbox_test_layout_run(void) {
     }
 
     /* 15: NOVO v4 -- no effective border (no `border` declared at all, or a
-     * declared but unsupported style like `dashed`) keeps the v0-v3
+     * declared but unrecognized style like `wavy`) keeps the v0-v3
      * identity border_box == padding_box exactly. */
     {
-        const char *cases[] = { "", "div { border: 5px dashed red; }" };
+        const char *cases[] = { "", "div { border: 5px wavy red; }" };
         for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
             tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
             const tbox_html_node *root = tbox_html_document_root(doc);
@@ -1254,7 +1254,7 @@ int tbox_test_layout_run(void) {
             tbox_layout_box *ol_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
             TBOX_TEST_ASSERT(ol_box != NULL);
             size_t i = 0;
-            for (tbox_layout_box *li = ol_box != NULL ? ol_box->first_child : NULL; li != NULL; li = li->next_sibling, i++) {
+            for (const tbox_layout_box *li = ol_box != NULL ? ol_box->first_child : NULL; li != NULL; li = li->next_sibling, i++) {
                 TBOX_TEST_ASSERT(li->text_run_count == 1);
                 if (li->text_run_count != 1) continue;
                 if (cases[c].expected[i] != NULL) {
@@ -1284,7 +1284,7 @@ int tbox_test_layout_run(void) {
         tbox_arena arena               = tbox_arena_create(0);
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
-        tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
         TBOX_TEST_ASSERT(box != NULL && box->text_run_count == 3);
         if (box != NULL && box->text_run_count == 3) {
             TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[0].text, "OLÁ MUNDO"));
@@ -1327,6 +1327,160 @@ int tbox_test_layout_run(void) {
             tbox_css_stylesheet_destroy(sheet);
             tbox_html_document_destroy(doc);
         }
+    }
+
+    /* white-space on an ordinary element: pre keeps spaces and breaks only
+     * at newlines, pre-wrap also wraps at the width, pre-line collapses
+     * spaces but keeps newlines, nowrap stays on one line. */
+    {
+        static const struct { const char *css; size_t runs; const char *first; const char *last; } cases[] = {
+            {"p { white-space: pre; width: 60px; }", 2, "a  b   c", "  d e"},
+            {"p { white-space: pre-line; width: 400px; }", 2, "a b c", "d e"},
+            {"p { white-space: nowrap; width: 60px; }", 1, "a b c d e", "a b c d e"},
+            {"p { white-space: pre-wrap; width: 400px; }", 2, "a  b   c", "  d e"},
+        };
+        for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+            tbox_html_document *doc    = parse_html_cstr("<p>a  b   c\n  d e</p>");
+            const tbox_html_node *root = tbox_html_document_root(doc);
+            tbox_css_stylesheet *sheet = parse_css_cstr(cases[c].css);
+            tbox_arena arena               = tbox_arena_create(0);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+            const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+            TBOX_TEST_ASSERT_MSG(box != NULL && box->text_run_count == cases[c].runs, cases[c].css);
+            if (box != NULL && box->text_run_count == cases[c].runs) {
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[0].text, cases[c].first), cases[c].css);
+                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(box->text_runs[cases[c].runs - 1].text, cases[c].last), cases[c].css);
+                if (cases[c].runs == 2)
+                    TBOX_TEST_ASSERT(box->text_runs[1].rect.y > box->text_runs[0].rect.y);
+            }
+            tbox_arena_destroy(&arena);
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
+    /* pre-wrap wraps at spaces inside a line, and the extra spaces of a gap
+     * hang at the end of the broken line. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>aaaa   bbbb</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("p { white-space: pre-wrap; width: 50px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL && box->text_run_count == 2);
+        if (box != NULL && box->text_run_count == 2) {
+            TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[0].text, "aaaa  "));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[1].text, "bbbb"));
+            TBOX_TEST_ASSERT(box->text_runs[1].rect.x == box->text_runs[0].rect.x);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Per-side borders offset the content box by each side's own width. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { width: 100px; height: 50px; border-style: solid; border-width: 1px 2px 3px 4px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL);
+        if (box != NULL) {
+            TBOX_TEST_ASSERT(box->content_box.x - box->border_box.x == 4.0);
+            TBOX_TEST_ASSERT(box->content_box.y - box->border_box.y == 1.0);
+            TBOX_TEST_ASSERT(box->border_box.width == 106.0 && box->border_box.height == 54.0);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* text-align: justify stretches every line but the last to the full
+     * width; the last line stays left-aligned. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>aa bb cc dd ee ff gg hh ii jj</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("p { width: 100px; text-align: justify; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL && box->text_run_count > 2);
+        if (box != NULL && box->text_run_count > 2) {
+            double right = box->content_box.x + box->content_box.width;
+            double last_y = box->text_runs[box->text_run_count - 1].rect.y;
+            size_t full_lines = 0;
+            for (size_t i = 0; i + 1 < box->text_run_count; i++) {
+                const tbox_layout_text_run *run = &box->text_runs[i];
+                const tbox_layout_text_run *next = &box->text_runs[i + 1];
+                if (next->rect.y != run->rect.y) {
+                    TBOX_TEST_ASSERT(tbox_test_double_approx_equal(run->rect.x + run->rect.width, right));
+                    full_lines++;
+                }
+            }
+            TBOX_TEST_ASSERT(full_lines >= 1);
+            const tbox_layout_text_run *last = &box->text_runs[box->text_run_count - 1];
+            TBOX_TEST_ASSERT(last->rect.y == last_y && last->rect.x + last->rect.width < right - 1.0);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Anonymous text boxes inherit text properties from their container
+     * (here text-transform and letter-spacing on the bare text next to an
+     * inline element). */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>abc <b>def</b></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { text-transform: uppercase; letter-spacing: 2px; } b { display: inline; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *anon = box != NULL ? box->first_child : NULL;
+        TBOX_TEST_ASSERT(anon != NULL && anon->node == NULL && anon->text_run_count == 2);
+        if (anon != NULL && anon->text_run_count == 2) {
+            TBOX_TEST_ASSERT(string_view_equal_cstr(anon->text_runs[0].text, "ABC"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(anon->text_runs[1].text, "DEF"));
+            TBOX_TEST_ASSERT(anon->style->letter_spacing == 2.0);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* An absolute box with auto size stretches between left/right and
+     * top/bottom. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><section></section></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { position: relative; width: 300px; height: 100px; }"
+            " section { position: absolute; inset: 10px 20px 30px 40px; padding: 5px; border: 1px solid; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *abs = box != NULL ? box->first_child : NULL;
+        TBOX_TEST_ASSERT(abs != NULL);
+        if (abs != NULL) {
+            TBOX_TEST_ASSERT(abs->border_box.x == box->padding_box.x + 40.0);
+            TBOX_TEST_ASSERT(abs->border_box.y == box->padding_box.y + 10.0);
+            TBOX_TEST_ASSERT(abs->border_box.width == 240.0);
+            TBOX_TEST_ASSERT(abs->border_box.height == 60.0);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
     }
 
     /* 34: NOVO v8 -- <ul><li></li></ul>, an EMPTY <li>: intentional

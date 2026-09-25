@@ -38,7 +38,13 @@ static const tbox_style tbox_layout_default_style = {
     .background_color = { 0, 0, 0, 0 },
     .font_size         = 16.0,
     .font_weight_bold  = false,
+    .opacity           = 1.0,
 };
+
+/* `nowrap` and `pre` never wrap at the box width. */
+static bool tbox_layout_white_space_nowrap(const tbox_style *style) {
+    return style->white_space == TBOX_STYLE_WHITE_SPACE_NOWRAP || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE;
+}
 
 static const tbox_style *tbox_layout_style_or_default(const tbox_style_table *styles, const tbox_html_node *node) {
     const tbox_style *style = tbox_style_table_find(styles, node);
@@ -322,11 +328,6 @@ static tbox_string_view tbox_layout_transform_text(tbox_arena *arena, tbox_strin
     return tbox_string_view_make(out, (size_t)(write - out));
 }
 
-static void tbox_layout_push_text_words(tbox_arena *arena, tbox_vector *words, tbox_string_view collapsed,
-                                        const tbox_font_face *face, const tbox_style *style) {
-    tbox_layout_push_words(words, tbox_layout_transform_text(arena, collapsed, style->text_transform), face, style);
-}
-
 /* NOVO v11: pushes one tbox_layout_word marking a FORCED end of line --
  * `<br>` (see tbox_layout_collect_words below), or the boundary between two
  * physical lines inside a `<pre>` (see tbox_layout_collect_preformatted_words
@@ -349,6 +350,84 @@ static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face
     entry->image_height     = 0.0;
     entry->hard_break       = true;
     entry->no_space_before  = false;
+}
+
+/* Pushes one word glued to whatever precedes it (no break opportunity, no
+ * collapsed space) unless `space_before`, which adds a single space's
+ * advance and a break opportunity. Empty text is skipped. */
+static void tbox_layout_push_preserved_word(tbox_vector *words, tbox_string_view text, bool space_before,
+                                            const tbox_font_face *face, const tbox_style *style) {
+    if (text.size == 0) return;
+    static const tbox_string_view space = { " ", 1 };
+    tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
+    entry->text             = text;
+    entry->face             = face;
+    entry->style            = style;
+    entry->width            = tbox_font_measure_text_spaced(face, text, style->letter_spacing);
+    entry->space_width      = space_before ? tbox_font_measure_text_spaced(face, space, style->letter_spacing) +
+        style->word_spacing : 0.0;
+    entry->image            = NULL;
+    entry->image_height     = 0.0;
+    entry->hard_break       = false;
+    entry->no_space_before  = !space_before;
+}
+
+/* One newline-free segment under `pre-wrap`: every space is kept. A gap of
+ * k spaces becomes one break opportunity plus k-1 spaces glued to the end
+ * of the word before it (so they hang at a line end instead of indenting
+ * the next line); leading spaces are glued to the first word and trailing
+ * ones to the last. A run's text only ever joins words with ONE space,
+ * which is why the extra spaces must live inside the words' own text. */
+static void tbox_layout_push_pre_wrap_segment(tbox_vector *words, tbox_string_view segment,
+                                              const tbox_font_face *face, const tbox_style *style) {
+    size_t start = 0;
+    bool space_before = false;
+    while (start < segment.size) {
+        size_t end = start;
+        while (end < segment.size && segment.data[end] == ' ') end++;       /* leading spaces (first word only) */
+        while (end < segment.size && segment.data[end] != ' ') end++;       /* the word itself */
+        size_t gap_end = end;
+        while (gap_end < segment.size && segment.data[gap_end] == ' ') gap_end++;
+        /* Keep all but one space of the gap, or the whole gap at the end. */
+        size_t word_end = gap_end == segment.size ? gap_end : gap_end - 1;
+        if (word_end < end) word_end = end;
+        tbox_layout_push_preserved_word(words, tbox_string_view_make(segment.data + start, word_end - start),
+                                        space_before, face, style);
+        space_before = gap_end < segment.size && gap_end > end;
+        start = gap_end;
+    }
+}
+
+/* Turns a text node's raw text into words per the style's `white-space`:
+ * `normal`/`nowrap` collapse every whitespace run, `pre-line` collapses
+ * spaces but breaks at each newline, and `pre`/`pre-wrap` keep every space
+ * and break at each newline (`pre` as one unbreakable word per line; the
+ * text box itself decides whether lines may wrap). `text-transform` is
+ * applied before measuring. */
+static void tbox_layout_push_text_words(tbox_arena *arena, tbox_vector *words, tbox_string_view raw,
+                                        const tbox_font_face *face, const tbox_style *style) {
+    if (face == NULL) return;
+    tbox_string_view text = tbox_layout_transform_text(arena, raw, style->text_transform);
+    tbox_style_white_space mode = style->white_space;
+    if (mode != TBOX_STYLE_WHITE_SPACE_PRE && mode != TBOX_STYLE_WHITE_SPACE_PRE_WRAP &&
+        mode != TBOX_STYLE_WHITE_SPACE_PRE_LINE) {
+        tbox_layout_push_words(words, tbox_string_collapse_whitespace(arena, text), face, style);
+        return;
+    }
+    size_t line_start = 0;
+    for (size_t i = 0; i <= text.size; i++) {
+        if (i < text.size && text.data[i] != '\n') continue;
+        size_t line_end = i > line_start && text.data[i - 1] == '\r' ? i - 1 : i;
+        tbox_string_view segment = tbox_string_view_make(text.data + line_start, line_end - line_start);
+        if (mode == TBOX_STYLE_WHITE_SPACE_PRE_LINE)
+            tbox_layout_push_words(words, tbox_string_collapse_whitespace(arena, segment), face, style);
+        else if (mode == TBOX_STYLE_WHITE_SPACE_PRE_WRAP)
+            tbox_layout_push_pre_wrap_segment(words, segment, face, style);
+        else
+            tbox_layout_push_preserved_word(words, segment, false, face, style);
+        if (i < text.size) tbox_layout_push_hard_break(words, face, style);
+        line_start = i + 1;
+    }
 }
 
 /* Pushes one tbox_layout_word for an <img> element (see
@@ -393,8 +472,7 @@ static void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node 
     if (image == NULL) {
         const tbox_html_attribute *alt_attr = tbox_html_node_get_attribute(img_node, tbox_string_view_make("alt", 3));
         if (alt_attr != NULL && alt_attr->value.size > 0) {
-            tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, alt_attr->value);
-            tbox_layout_push_text_words(arena, words, collapsed, context_face, img_style);
+            tbox_layout_push_text_words(arena, words, alt_attr->value, context_face, img_style);
         }
         return;
     }
@@ -470,9 +548,8 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
         }
 
         if (child->type == TBOX_HTML_NODE_TEXT) {
-            tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, child->text.text);
             const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
-            tbox_layout_push_text_words(arena, words, collapsed, face, style);
+            tbox_layout_push_text_words(arena, words, child->text.text, face, style);
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
             if (tbox_string_view_equal_cstr(child->element.tag_name, "img")) {
@@ -482,9 +559,8 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
                 if (tbox_layout_has_img_child(child)) {
                     for (const tbox_html_node *grandchild = child->first_child; grandchild != NULL; grandchild = grandchild->next_sibling) {
                         if (grandchild->type == TBOX_HTML_NODE_TEXT) {
-                            tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, grandchild->text.text);
                             const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
-                            tbox_layout_push_text_words(arena, words, collapsed, face, child_style);
+                            tbox_layout_push_text_words(arena, words, grandchild->text.text, face, child_style);
                         } else if (grandchild->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(grandchild->element.tag_name, "img")) {
                             const tbox_style *img_style = tbox_layout_style_or_default(styles, grandchild);
                             const tbox_font_face *face  = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
@@ -494,9 +570,8 @@ static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *f
                     }
                 } else {
                     tbox_string_view raw       = tbox_html_node_text_content(arena, child);
-                    tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, raw);
                     const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
-                    tbox_layout_push_text_words(arena, words, collapsed, face, child_style);
+                    tbox_layout_push_text_words(arena, words, raw, face, child_style);
                 }
             }
         }
@@ -727,7 +802,7 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
  * run's own reduced size -- a deliberate simplification, see
  * ARCHITECTURE.md. `run->style` is set to the SAME style that decided
  * `run_face`, for the reasons above. */
-static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, tbox_vector *runs) {
+static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs) {
     double cursor_x                  = 0.0;
     double run_start_x               = 0.0;
     double run_end_x                 = 0.0;
@@ -746,8 +821,12 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
     for (size_t i = line->start; i < line->end; i++) {
         const tbox_layout_word *word = &words[i];
 
+        /* `justify_gap` widens every real word gap (text-align: justify);
+         * each such word then opens its own run, since a run's text can
+         * only carry single, unwidened spaces. */
+        bool justified = justify_gap != 0.0 && i != line->start && word->space_width > 0.0;
         if (i != line->start) {
-            cursor_x += word->space_width;
+            cursor_x += word->space_width + (justified ? justify_gap : 0.0);
         }
 
         /* An image word never merges with a neighbor -- forced by
@@ -757,7 +836,7 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
          * `<mark>` word already gets today via the `style` mismatch, just
          * unconditional here since an image's face/style are otherwise
          * ordinary values that could otherwise coincidentally match. */
-        bool new_run = !have_run || word->face != run_face || word->style != run_style || word->image != NULL || run_is_image || word->style->word_spacing != 0.0;
+        bool new_run = !have_run || word->face != run_face || word->style != run_style || word->image != NULL || run_is_image || word->style->word_spacing != 0.0 || justified;
         if (new_run) {
             if (have_run) {
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
@@ -1145,7 +1224,11 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
  * passes (node, node->first_child, NULL, ...), behavior identical to
  * before. */
 static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box) {
-    bool is_preformatted = node != NULL && tbox_string_view_equal_cstr(node->element.tag_name, "pre");
+    /* <pre> keeps its own verbatim path (whole-subtree text in the <pre>'s
+     * face) for AUTO/`pre`; any other white-space mode on a <pre> goes
+     * through the general per-node collection like every other element. */
+    bool is_preformatted = node != NULL && tbox_string_view_equal_cstr(node->element.tag_name, "pre") &&
+        (style->white_space == TBOX_STYLE_WHITE_SPACE_AUTO || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE);
     bool is_input = node != NULL && tbox_string_view_equal_cstr(node->element.tag_name, "input");
     bool is_select = node != NULL && (tbox_string_view_equal_cstr(node->element.tag_name, "select") ||
         tbox_string_view_equal_cstr(node->element.tag_name, "textarea"));
@@ -1216,7 +1299,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
     double indent = style->text_indent.kind == TBOX_STYLE_LENGTH_PX ? style->text_indent.value :
         style->text_indent.kind == TBOX_STYLE_LENGTH_PERCENT ?
         available_width * style->text_indent.value / 100.0 : 0.0;
-    bool no_wrap = is_preformatted || is_input || style->white_space_nowrap;
+    bool no_wrap = is_preformatted || is_input || tbox_layout_white_space_nowrap(style);
     if (!no_wrap) tbox_layout_split_overlong_words(arena, &words, available_width, indent);
     const tbox_layout_word *word_items = (const tbox_layout_word *)words.data;
     word_count = tbox_vector_length(&words);
@@ -1238,10 +1321,22 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         const tbox_layout_line *line = &line_items[li];
 
         size_t runs_before = tbox_vector_length(&runs);
+        double justify_gap = 0.0;
+        if (style->text_align == TBOX_STYLE_TEXT_ALIGN_JUSTIFY && !no_wrap && li + 1 < line_count &&
+            !(line->end < word_count && word_items[line->end].hard_break)) {
+            double used = li == 0 ? indent : 0.0;
+            size_t gaps = 0;
+            for (size_t w = line->start; w < line->end; w++) {
+                used += word_items[w].width;
+                if (w != line->start) used += word_items[w].space_width;
+                if (w != line->start && word_items[w].space_width > 0.0) gaps++;
+            }
+            if (gaps > 0 && used < available_width) justify_gap = (available_width - used) / (double)gaps;
+        }
         tbox_layout_build_line_runs(arena, word_items, line, cumulative_y,
-            content_x + (li == 0 ? indent : 0.0), block_face, &runs);
+            content_x + (li == 0 ? indent : 0.0), block_face, justify_gap, &runs);
         if (style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS &&
-            style->white_space_nowrap && style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN &&
+            tbox_layout_white_space_nowrap(style) && style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN &&
             !is_input && !is_select) {
             const tbox_font_face *face = tbox_font_face_cache_get(fonts,
                 tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
@@ -1251,7 +1346,8 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         }
         size_t runs_after = tbox_vector_length(&runs);
 
-        if (style->text_align != TBOX_STYLE_TEXT_ALIGN_LEFT && runs_after > runs_before) {
+        if ((style->text_align == TBOX_STYLE_TEXT_ALIGN_CENTER || style->text_align == TBOX_STYLE_TEXT_ALIGN_RIGHT) &&
+            runs_after > runs_before) {
             tbox_layout_text_run *run_items = (tbox_layout_text_run *)runs.data;
             const tbox_layout_text_run *last_run = &run_items[runs_after - 1];
             double line_width = (last_run->rect.x + last_run->rect.width) - content_x;
@@ -1522,8 +1618,9 @@ static const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *ru
  * from `container_style` (see
  * include/tbox/style.h's "inheritable" comments on each field): `color`,
  * `font_family` (the whole fixed buffer, via memcpy -- not a pointer),
- * `font_weight_bold`, `font_italic`, `font_size`, `text_align`,
- * `overflow_wrap_break_word`, and `pointer_events_none`. This is
+ * and every other field style.h marks inheritable (text layout, text
+ * painting, table and form-control properties) except `text_indent`, which
+ * only indents the block's own first line, not each anonymous box. This is
  * exactly what a real, undeclared child element would resolve to against
  * this same parent, computed here without calling back into the Style
  * layer (which already ran and has no entry point for "resolve a style with
@@ -1544,6 +1641,26 @@ static tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const
     anon.text_align       = container_style->text_align;
     anon.overflow_wrap_break_word = container_style->overflow_wrap_break_word;
     anon.pointer_events_none = container_style->pointer_events_none;
+    anon.visibility_hidden = container_style->visibility_hidden;
+    anon.white_space       = container_style->white_space;
+    anon.word_break_all    = container_style->word_break_all;
+    anon.text_transform    = container_style->text_transform;
+    anon.list_style_type   = container_style->list_style_type;
+    anon.word_spacing      = container_style->word_spacing;
+    anon.letter_spacing    = container_style->letter_spacing;
+    anon.line_height_kind  = container_style->line_height_kind;
+    anon.line_height_value = container_style->line_height_value;
+    anon.text_underline_offset = container_style->text_underline_offset;
+    anon.text_shadow_offset_x  = container_style->text_shadow_offset_x;
+    anon.text_shadow_offset_y  = container_style->text_shadow_offset_y;
+    anon.text_shadow_blur      = container_style->text_shadow_blur;
+    anon.text_shadow_color     = container_style->text_shadow_color;
+    anon.caption_side      = container_style->caption_side;
+    anon.border_collapse   = container_style->border_collapse;
+    anon.border_spacing_x  = container_style->border_spacing_x;
+    anon.border_spacing_y  = container_style->border_spacing_y;
+    anon.accent_color      = container_style->accent_color;
+    anon.caret_color       = container_style->caret_color;
 
     /* `box->style` is a pointer that must outlive this call -- unlike `anon`
      * itself (a local), the synthesized style needs arena-backed storage,
@@ -1629,7 +1746,7 @@ static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbo
             const tbox_style *cell_style = tbox_layout_style_or_default(styles, cell);
             double padding_left          = tbox_layout_resolve_edge(cell_style->padding[3], *content_width);
             double padding_right         = tbox_layout_resolve_edge(cell_style->padding[1], *content_width);
-            double effective_border      = (cell_style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID) ? cell_style->border_width : 0.0;
+            double border_x              = tbox_style_border_side_width(cell_style, 1) + tbox_style_border_side_width(cell_style, 3);
 
             double text_width          = 0.0;
             double word_width          = 0.0;
@@ -1662,7 +1779,7 @@ static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbo
                 }
             }
 
-            double edges = padding_left + padding_right + 2.0 * effective_border;
+            double edges = padding_left + padding_right + border_x;
             double natural_width = text_width + edges;
             double minimum_width = word_width + edges;
             if (cell_style->min_width.kind != TBOX_STYLE_LENGTH_AUTO) {
@@ -1948,11 +2065,13 @@ static bool tbox_layout_table_extended(const tbox_html_node *table, const tbox_s
     return false;
 }
 
-static void tbox_layout_table_choose_border(const tbox_style *style, double *width, tbox_css_rgba *color) {
-    if (style != NULL && style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID &&
-        style->border_width >= *width && style->border_width > 0.0) {
-        *width = style->border_width;
-        *color = style->border_color;
+/* Collapsed borders: the widest `side` (0 top, 1 right, 2 bottom, 3 left)
+ * among the boxes meeting at an edge wins; later calls win ties. */
+static void tbox_layout_table_choose_border(const tbox_style *style, size_t side, double *width, tbox_css_rgba *color) {
+    double side_width = tbox_style_border_side_width(style, side);
+    if (style != NULL && side_width >= *width && side_width > 0.0) {
+        *width = side_width;
+        *color = tbox_style_border_side_color(style, side);
     }
 }
 
@@ -2077,7 +2196,7 @@ static double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_htm
         double css_width = tbox_layout_table_css_width(style, *table_width);
         double edges = tbox_layout_resolve_edge(style->padding[1], *table_width) +
             tbox_layout_resolve_edge(style->padding[3], *table_width) +
-            (style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID ? 2.0 * style->border_width : 0.0);
+            tbox_style_border_side_width(style, 1) + tbox_style_border_side_width(style, 3);
         double minimum = 0.0;
         const tbox_font_face *face = tbox_font_face_cache_get(fonts,
             tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
@@ -2250,14 +2369,15 @@ static double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_htm
                     double width = 0.0;
                     tbox_css_rgba color = {0, 0, 0, 255};
                     if (c == 0 || c == column_count) {
-                        tbox_layout_table_choose_border(table_style, &width, &color);
+                        size_t side = c == 0 ? 3 : 1;
+                        tbox_layout_table_choose_border(table_style, side, &width, &color);
                         if (row->group != NULL)
                             tbox_layout_table_choose_border(tbox_layout_style_or_default(styles, row->group),
-                                &width, &color);
-                        tbox_layout_table_choose_border(row->box->style, &width, &color);
+                                side, &width, &color);
+                        tbox_layout_table_choose_border(row->box->style, side, &width, &color);
                     }
-                    if (left != NULL) tbox_layout_table_choose_border(left->box->style, &width, &color);
-                    if (right != NULL) tbox_layout_table_choose_border(right->box->style, &width, &color);
+                    if (left != NULL) tbox_layout_table_choose_border(left->box->style, 1, &width, &color);
+                    if (right != NULL) tbox_layout_table_choose_border(right->box->style, 3, &width, &color);
                     if (width <= 0.0) continue;
                     double boundary = c == column_count ?
                         columns[c - 1].x + columns[c - 1].width : columns[c].x;
@@ -2273,27 +2393,27 @@ static double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_htm
                     double width = 0.0;
                     tbox_css_rgba color = {0, 0, 0, 255};
                     if (r == 0 || r == rows.length)
-                        tbox_layout_table_choose_border(table_style, &width, &color);
+                        tbox_layout_table_choose_border(table_style, r == 0 ? 0 : 2, &width, &color);
                     if (r > 0) {
                         const tbox_table_row *row = tbox_vector_at(&rows, r - 1);
-                        tbox_layout_table_choose_border(row->box->style, &width, &color);
+                        tbox_layout_table_choose_border(row->box->style, 2, &width, &color);
                         if (r == rows.length || row->group !=
                             ((tbox_table_row *)tbox_vector_at(&rows, r))->group)
                             if (row->group != NULL)
                                 tbox_layout_table_choose_border(tbox_layout_style_or_default(styles, row->group),
-                                    &width, &color);
+                                    2, &width, &color);
                     }
                     if (r < rows.length) {
                         const tbox_table_row *row = tbox_vector_at(&rows, r);
-                        tbox_layout_table_choose_border(row->box->style, &width, &color);
+                        tbox_layout_table_choose_border(row->box->style, 0, &width, &color);
                         if (r == 0 || row->group !=
                             ((tbox_table_row *)tbox_vector_at(&rows, r - 1))->group)
                             if (row->group != NULL)
                                 tbox_layout_table_choose_border(tbox_layout_style_or_default(styles, row->group),
-                                    &width, &color);
+                                    0, &width, &color);
                     }
-                    if (above != NULL) tbox_layout_table_choose_border(above->box->style, &width, &color);
-                    if (below != NULL) tbox_layout_table_choose_border(below->box->style, &width, &color);
+                    if (above != NULL) tbox_layout_table_choose_border(above->box->style, 2, &width, &color);
+                    if (below != NULL) tbox_layout_table_choose_border(below->box->style, 0, &width, &color);
                     if (width <= 0.0) continue;
                     double boundary = r == rows.length ?
                         ((tbox_table_row *)tbox_vector_at(&rows, r - 1))->y +
@@ -2591,9 +2711,12 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
      * `border-style: solid` actually applies; a declared border-width/color
      * without `solid` (or with the initial `none`) occupies zero space,
      * same as not declaring `border` at all. */
-    double effective_border = (style->border_style == TBOX_STYLE_BORDER_STYLE_SOLID) ? style->border_width : 0.0;
-    double horizontal_edges = padding_left + padding_right + 2.0 * effective_border;
-    double vertical_edges = padding_top + padding_bottom + 2.0 * effective_border;
+    double border_top    = tbox_style_border_side_width(style, 0);
+    double border_right  = tbox_style_border_side_width(style, 1);
+    double border_bottom = tbox_style_border_side_width(style, 2);
+    double border_left   = tbox_style_border_side_width(style, 3);
+    double horizontal_edges = padding_left + padding_right + border_left + border_right;
+    double vertical_edges = padding_top + padding_bottom + border_top + border_bottom;
 
     /* Width: the same rule for every node, text-tag or not -- see
      * ARCHITECTURE.md's clarification that measured text never resizes the
@@ -2612,6 +2735,12 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     case TBOX_STYLE_LENGTH_AUTO:
     default:
         content_width = container.width - margin_left - margin_right - horizontal_edges;
+        /* An absolute/fixed box with both `left` and `right` stretches
+         * between them (CSS2.1 10.3.7), instead of taking the whole width. */
+        if (is_out_of_flow && style->offset[1].kind != TBOX_STYLE_LENGTH_AUTO &&
+            style->offset[3].kind != TBOX_STYLE_LENGTH_AUTO)
+            content_width -= tbox_layout_resolve_edge(style->offset[1], container.width) +
+                tbox_layout_resolve_edge(style->offset[3], container.width);
         if (is_image_input) {
             content_width = input_image != NULL ? (double)input_image->width :
                 fallback_face != NULL ? tbox_font_measure_text(fallback_face, fallback_text) : 16.0;
@@ -2637,7 +2766,7 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     }
     if (row_column_widths != NULL && row_column_count == 0 && tbox_layout_table_cell_node(node))
         content_width = container.width - margin_left - margin_right - padding_left - padding_right -
-            2.0 * effective_border;
+            border_left - border_right;
     if (content_width < 0.0) content_width = 0.0;
     /* Grid cells take their final width from the column algorithm, where
      * min-width is included as a column constraint. Clamping a cell alone
@@ -2659,11 +2788,11 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         /* Horizontal: never circular -- content_width above is already
          * resolved against container.width regardless of position, so
          * margin_box.width is known outright before positioning. */
-        double border_box_width = content_width + padding_left + padding_right + 2.0 * effective_border;
+        double border_box_width = content_width + horizontal_edges;
         double margin_box_width = border_box_width + margin_left + margin_right;
         double margin_box_x     = tbox_layout_resolve_absolute_edge(style->offset[3], style->offset[1], container.x, container.width, margin_box_width);
         double border_box_x     = margin_box_x + margin_left;
-        content_x                = border_box_x + effective_border + padding_left;
+        content_x                = border_box_x + border_left + padding_left;
 
         /* Vertical: `top` non-AUTO resolves outright, no circularity (children
          * are laid out normally afterwards, and an AUTO content_height still
@@ -2696,7 +2825,7 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
                         early_content_height - vertical_edges : 0.0;
                 early_content_height = tbox_layout_constrain_height(style, early_content_height,
                     container.height, container.height_definite, vertical_edges);
-                double early_border_box_height = early_content_height + padding_top + padding_bottom + 2.0 * effective_border;
+                double early_border_box_height = early_content_height + vertical_edges;
                 margin_box_height              = early_border_box_height + margin_top + margin_bottom;
             }
             margin_box_y = tbox_layout_resolve_absolute_edge(style->offset[0], style->offset[2], container.y, container.height, margin_box_height);
@@ -2705,10 +2834,10 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         }
 
         double border_box_y = margin_box_y + margin_top;
-        content_y            = border_box_y + effective_border + padding_top;
+        content_y            = border_box_y + border_top + padding_top;
     } else {
-        content_x = container.x + margin_left + padding_left + effective_border;
-        content_y = cursor_y + margin_top + padding_top + effective_border;
+        content_x = container.x + margin_left + padding_left + border_left;
+        content_y = cursor_y + margin_top + padding_top + border_top;
     }
 
     /* NOVO v4: `position: relative` -- a pure visual-coordinate shift, no
@@ -2735,6 +2864,15 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         content_y += dy;
     }
 
+    /* Same stretch vertically (CSS2.1 10.6.4): auto height with both `top`
+     * and `bottom` fills the containing block between them. */
+    bool stretch_height = is_out_of_flow && style->height.kind == TBOX_STYLE_LENGTH_AUTO &&
+        style->offset[0].kind != TBOX_STYLE_LENGTH_AUTO && style->offset[2].kind != TBOX_STYLE_LENGTH_AUTO &&
+        container.height_definite;
+    double stretched_height = container.height - margin_top - margin_bottom - vertical_edges -
+        tbox_layout_resolve_edge(style->offset[0], container.height) -
+        tbox_layout_resolve_edge(style->offset[2], container.height);
+    if (stretched_height < 0.0) stretched_height = 0.0;
     double content_height;
     if (is_image_input) {
         content_height = input_image != NULL ? (double)input_image->height :
@@ -2823,6 +2961,10 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         case TBOX_STYLE_LENGTH_AUTO:
         default:
             content_height = 0.0; /* placeholder; replaced by the children sum below */
+            if (stretch_height) {
+                content_height  = stretched_height;
+                height_definite = true;
+            }
             break;
         }
 
@@ -2868,6 +3010,7 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
         }
     }
 
+    if (stretch_height) content_height = stretched_height; /* text boxes too, not only blocks */
     content_height = tbox_layout_constrain_height(style, content_height, container.height,
         container.height_definite, vertical_edges);
 
@@ -2877,21 +3020,21 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     box->content_box.height = content_height;
 
     /* padding_box is content_box grown back out by padding (note:
-     * content_x/content_y already include effective_border -- see above --
+     * content_x/content_y already include the left/top border -- see above --
      * so subtracting only padding_left/padding_top here correctly lands on
      * the padding_box edge, between border and padding). NOVO v4:
-     * border_box is padding_box grown back out by effective_border on all 4
-     * sides (0.0 when there's no effective border, preserving the v0-v3
+     * border_box is padding_box grown back out by each side's own border
+     * width (0.0 when there's no effective border, preserving the v0-v3
      * identity border_box == padding_box exactly). */
     box->padding_box.x      = content_x - padding_left;
     box->padding_box.y      = content_y - padding_top;
     box->padding_box.width  = content_width + padding_left + padding_right;
     box->padding_box.height = content_height + padding_top + padding_bottom;
 
-    box->border_box.x      = box->padding_box.x - effective_border;
-    box->border_box.y      = box->padding_box.y - effective_border;
-    box->border_box.width  = box->padding_box.width + 2.0 * effective_border;
-    box->border_box.height = box->padding_box.height + 2.0 * effective_border;
+    box->border_box.x      = box->padding_box.x - border_left;
+    box->border_box.y      = box->padding_box.y - border_top;
+    box->border_box.width  = box->padding_box.width + border_left + border_right;
+    box->border_box.height = box->padding_box.height + border_top + border_bottom;
 
     /* margin_box is border_box grown back out by margin -- its x/y land back
      * on (container.x, cursor_y) exactly for a flow box, per the geometry

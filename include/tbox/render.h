@@ -38,8 +38,9 @@ typedef struct tbox_paint_op {
      * tbox_raster_image). */
     tbox_rect rect;
 
-    /* FILL_RECT: the background color. TEXT_RUN: the text color. Unused for
-     * IMAGE (an image paints its own decoded pixels, not a solid color). */
+    /* FILL_RECT: the background color. TEXT_RUN: the text color. IMAGE: only
+     * `color.a` is used, as the image's opacity (255 = as decoded; an
+     * `opacity` ancestor lowers it). */
     tbox_css_rgba color;
 
     /* TEXT_RUN only (left at their empty/NULL default for FILL_RECT/IMAGE):
@@ -77,11 +78,11 @@ typedef struct tbox_display_list {
  * approximating a soft shadow behind border_box (see
  * tbox_render_push_box_shadow); then, when every corner radius is 0.0
  * (the common case, unchanged since v4): if background_color is
- * non-transparent, a FILL_RECT over its border_box, then if
- * `effective_border > 0` (re-derived here from `style->border_style`/
- * `border_width`, same formula as Layout Tree's Tarefa 2 -- only `solid`
- * ever paints) up to 4 more FILL_RECTs in `style->border_color`, one per
- * side, each covering the strip between `border_box` and `padding_box`
+ * non-transparent, a FILL_RECT over its border_box, then up to 4 more
+ * FILL_RECTs, one per side whose tbox_style_border_side_width is positive
+ * (only `solid` ever paints, same value the Layout Tree reserved), in that
+ * side's tbox_style_border_side_color, each covering the strip between
+ * `border_box` and `padding_box`
  * (top/bottom span the full border_box width including corners; left/right
  * span only the padding_box height); when any corner radius is positive, one
  * or two ROUNDED FILL_RECTs replace that whole background+border step (see

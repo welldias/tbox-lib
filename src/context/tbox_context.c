@@ -2069,7 +2069,7 @@ bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_
         "textarea { display: block; border: 1px solid gray; padding: 4px; background-color: white; }\n"
         "textarea:focus { border: 2px solid blue; }\n"
         "hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"
-        "pre { display: block; font-family: monospace; }\n"
+        "pre { display: block; font-family: monospace; white-space: pre; }\n"
         "b, strong { display: inline; font-weight: bold; }\n"
         "i, em { display: inline; font-style: italic; }\n"
         "span { display: inline; }\n"

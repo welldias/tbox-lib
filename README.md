@@ -67,9 +67,13 @@ percentages; `letter-spacing` accepts pixels and `em`. `visibility: hidden`
 preserves layout while hiding the element, and a descendant can explicitly
 set `visibility: visible`. `text-overflow: ellipsis` truncates a single line
 when paired with `white-space: nowrap` and `overflow: hidden`.
-Uniform `border-width`, `border-style` (`solid`/`none`),
-and `border-color` work alongside the `border` shorthand with normal cascade
-precedence. Other white-space modes and per-side borders are not yet implemented.
+`border-width`, `border-style` (`solid`, `dashed`, `dotted`, `double`,
+`none`, `hidden`; `groove`/`ridge`/`inset`/`outset` paint solid), and
+`border-color` take one to four values and work alongside the `border`
+shorthand, the per-side `border-top`/`-right`/`-bottom`/`-left` shorthands,
+and their `-width`/`-style`/`-color` longhands, with normal cascade
+precedence. `white-space` accepts `normal`, `nowrap`, `pre`, `pre-wrap`,
+and `pre-line`.
 
 `min-height` and `max-height` constrain box height in pixels, `em`, or
 percentages when the containing block has a definite height. They work with
@@ -85,8 +89,10 @@ oblique` uses the italic face. `background` and `background-color` accept
 `smaller` and `larger` scale the inherited size by 1/1.2 and 1.2.
 `border-radius` accepts one to four circular values in pixels or `em`, plus
 `border-top-left-radius`, `border-top-right-radius`,
-`border-bottom-right-radius`, and `border-bottom-left-radius`. Percentage
-and elliptical radii are not supported.
+`border-bottom-right-radius`, and `border-bottom-left-radius`. Percentages
+resolve against the smaller side of the border box, so `50%` makes a square
+a circle; elliptical radii are not supported, so a rectangle becomes a pill
+rather than an ellipse.
 
 `overflow-wrap: break-word` breaks a text word at UTF-8 codepoint boundaries
 when it cannot fit on an empty line; `normal` restores the default overflow.
@@ -113,7 +119,16 @@ line-height. `accent-color` colors checked checkboxes and radio buttons, and
 `lowercase`, and `capitalize`. `text-shadow` paints one shadow with an
 optional approximated blur, `box-shadow` accepts a spread radius and
 defaults its color to `currentColor`, and `word-break: break-all` breaks
-lines between any two characters.
+lines between any two characters. `opacity` (a number or percentage) fades
+an element and its descendants; overlapping descendants blend individually
+rather than as one flattened group.
+
+`text-align` also accepts `justify`, `start`, and `end`. The `font`
+shorthand sets style, weight, size, line-height, and family (variant and
+stretch keywords are accepted and ignored; system fonts are not supported).
+An absolutely positioned box with auto width or height stretches between
+`left`/`right` or `top`/`bottom`. Outlines accept the same dashed, dotted,
+and double styles as borders.
 
 ## Build and checks
 
