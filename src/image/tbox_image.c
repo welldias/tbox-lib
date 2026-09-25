@@ -142,7 +142,7 @@ const tbox_image *tbox_image_cache_get(tbox_image_cache *cache, tbox_string_view
     }
 
     int width, height, source_channels;
-    unsigned char *pixels = stbi_load(path, &width, &height, &source_channels, 4);
+    const unsigned char *pixels = stbi_load(path, &width, &height, &source_channels, 4);
     if (pixels == NULL) {
         /* Nothing cached on failure -- a later retry with the same `src`
          * tries again rather than being permanently stuck, same contract as

@@ -124,6 +124,8 @@ typedef struct tbox_css_stylesheet tbox_css_stylesheet;
  * allocation failure. */
 tbox_css_stylesheet *tbox_css_parse(const char *input, size_t length);
 
+/* Both accessors accept NULL (e.g. a failed tbox_css_parse) and report an
+ * empty stylesheet. */
 size_t tbox_css_stylesheet_ruleset_count(const tbox_css_stylesheet *stylesheet);
 
 /* Array of tbox_css_stylesheet_ruleset_count(stylesheet) elements, in source

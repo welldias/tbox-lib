@@ -23,11 +23,11 @@ tbox_css_stylesheet *tbox_css_parse(const char *input, size_t length) {
 }
 
 size_t tbox_css_stylesheet_ruleset_count(const tbox_css_stylesheet *stylesheet) {
-    return stylesheet->ruleset_count;
+    return stylesheet != NULL ? stylesheet->ruleset_count : 0;
 }
 
 const tbox_css_ruleset *tbox_css_stylesheet_rulesets(const tbox_css_stylesheet *stylesheet) {
-    return stylesheet->rulesets;
+    return stylesheet != NULL ? stylesheet->rulesets : NULL;
 }
 
 void tbox_css_stylesheet_destroy(tbox_css_stylesheet *stylesheet) {

@@ -30,7 +30,7 @@ int tbox_test_list_run(void) {
 
         int expected = 0;
         TBOX_LIST_FOR_EACH(cursor, &list) {
-            tbox_test_item *item = TBOX_LIST_ENTRY(cursor, tbox_test_item, node);
+            const tbox_test_item *item = TBOX_LIST_ENTRY(cursor, tbox_test_item, node);
             TBOX_TEST_ASSERT(item->value == expected);
             expected++;
         }
@@ -50,7 +50,7 @@ int tbox_test_list_run(void) {
 
         int expected = 2;
         TBOX_LIST_FOR_EACH(cursor, &list) {
-            tbox_test_item *item = TBOX_LIST_ENTRY(cursor, tbox_test_item, node);
+            const tbox_test_item *item = TBOX_LIST_ENTRY(cursor, tbox_test_item, node);
             TBOX_TEST_ASSERT(item->value == expected);
             expected--;
         }
@@ -102,7 +102,7 @@ int tbox_test_list_run(void) {
         tbox_list_push_front(&list, &b.node);
         tbox_list_push_back(&list, &c.node);
         /* expected order: b, a, c */
-        int expected[3] = {2, 1, 3};
+        const int expected[3] = {2, 1, 3};
         int index        = 0;
         TBOX_LIST_FOR_EACH(cursor, &list) {
             TBOX_TEST_ASSERT(TBOX_LIST_ENTRY(cursor, tbox_test_item, node)->value == expected[index]);

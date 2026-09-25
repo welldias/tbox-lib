@@ -14,7 +14,7 @@ typedef struct tbox_font_source_embedded {
 static bool tbox_font_source_embedded_resolve(void *self, tbox_font_query query, const void **out_data, size_t *out_size) {
     (void)query;
 
-    tbox_font_source_embedded *embedded = self;
+    const tbox_font_source_embedded *embedded = self;
     *out_data = embedded->data;
     *out_size = embedded->size;
     return true;

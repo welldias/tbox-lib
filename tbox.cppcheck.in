@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cppcheck project file template for tbox.
+
+  CMake configures this into <build>/tbox.cppcheck. cppcheck resolves every
+  path below relative to that generated file, i.e. the build directory, so
+  it works with any build directory:
+
+      cmake --build build --target cppcheck           # via CMake
+      cppcheck --project=build/tbox.cppcheck \
+               --enable=warning,style,performance,portability --inline-suppr
+
+  Include paths and defines come from the compile database, so they always
+  match the real build.
+-->
+<project version="1">
+    <!-- Incremental analysis cache: re-runs only re-check changed files. -->
+    <builddir>cppcheck</builddir>
+    <importproject>compile_commands.json</importproject>
+
+    <platform>unix64</platform>
+    <analyze-all-vs-configs>false</analyze-all-vs-configs>
+    <check-headers>true</check-headers>
+    <check-level-exhaustive/>
+    <max-ctu-depth>4</max-ctu-depth>
+
+    <libraries>
+        <library>posix</library>
+        <library>gnu</library>
+    </libraries>
+
+    <!-- Third-party and generated code: not ours to fix. -->
+    <exclude>
+        <path name="_deps/"/>
+        <path name="generated/"/>
+        <path name="@TBOX_CPPCHECK_SOURCE_DIR@/external/"/>
+    </exclude>
+
+    <suppressions>
+        <!-- System headers are intentionally not passed to cppcheck. -->
+        <suppression>missingIncludeSystem</suppression>
+        <!-- Public API functions are used by consumers, not inside the lib. -->
+        <suppression>unusedFunction</suppression>
+        <!-- Callback parameters must match the signature the caller (tbox,
+             Wayland, xkbcommon) defines, so they can't be made const. -->
+        <suppression>constParameterCallback</suppression>
+        <!-- Findings inside bundled single-header libraries (stb_image,
+             utf8.h) and generated/fetched code reached through #include
+             from our own sources. Like everything else here, fileName is
+             resolved relative to this (generated) file. -->
+        <suppression fileName="@TBOX_CPPCHECK_SOURCE_DIR@/external/*">*</suppression>
+        <suppression fileName="_deps/*">*</suppression>
+        <suppression fileName="generated/*">*</suppression>
+    </suppressions>
+</project>

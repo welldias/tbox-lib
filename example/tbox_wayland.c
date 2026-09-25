@@ -384,7 +384,9 @@ static void draw_and_attach(tbox_wayland_app *app) {
     uint32_t *pixels = data;
     for (int32_t y = 0; y < height; y++) {
         for (int32_t x = 0; x < width; x++) {
-            bool light_square                             = ((x / TBOX_WAYLAND_CHECKER_SIZE) + (y / TBOX_WAYLAND_CHECKER_SIZE)) % 2 == 0;
+            bool light_square = ((x / TBOX_WAYLAND_CHECKER_SIZE) + (y / TBOX_WAYLAND_CHECKER_SIZE)) % 2 == 0;
+            /* mmap reports failure as MAP_FAILED (checked above), never NULL. */
+            /* cppcheck-suppress nullPointerOutOfMemory */
             pixels[(size_t)y * (size_t)width + (size_t)x] = light_square ? light : dark;
         }
     }

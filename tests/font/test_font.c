@@ -140,8 +140,7 @@ int tbox_test_font_run(void) {
         };
         TBOX_TEST_ASSERT(tbox_font_source_resolve(source, serif_bold_italic, &resolved_data, &resolved_size));
         TBOX_TEST_ASSERT(resolved_size == font_size);
-        TBOX_TEST_ASSERT(resolved_data != NULL);
-        TBOX_TEST_ASSERT(memcmp(resolved_data, font_data, font_size) == 0);
+        TBOX_TEST_ASSERT(resolved_data != NULL && memcmp(resolved_data, font_data, font_size) == 0);
 
         tbox_font_query sans_plain = {
             .family = tbox_test_font_view_from_cstr("sans-serif"),

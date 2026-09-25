@@ -42,11 +42,11 @@ tbox_css_selector_node_set tbox_css_selector_query_evaluate(const tbox_css_selec
     tbox_vector_init(&matches, &scratch, sizeof(const tbox_html_node *), 0);
     tbox_css_selector_collect_matching_nodes(root, query->selectors, query->selector_count, &matches);
 
-    size_t count = tbox_vector_length(&matches);
-    if (count > 0) {
-        tbox_arena *out_arena = malloc(sizeof(tbox_arena));
-        *out_arena            = tbox_arena_create(0);
-        result.items          = tbox_arena_alloc(out_arena, count * sizeof(const tbox_html_node *));
+    size_t count          = tbox_vector_length(&matches);
+    tbox_arena *out_arena = count > 0 ? malloc(sizeof(tbox_arena)) : NULL;
+    if (out_arena != NULL) {
+        *out_arena   = tbox_arena_create(0);
+        result.items = tbox_arena_alloc(out_arena, count * sizeof(const tbox_html_node *));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_html_node **)tbox_vector_at_const(&matches, i);
         }
@@ -111,11 +111,11 @@ tbox_css_selector_match_set tbox_css_selector_match_stylesheet(const tbox_css_st
         }
     }
 
-    size_t count = tbox_vector_length(&matches);
-    if (count > 0) {
-        tbox_arena *out_arena = malloc(sizeof(tbox_arena));
-        *out_arena            = tbox_arena_create(0);
-        result.items          = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_selector_match));
+    size_t count          = tbox_vector_length(&matches);
+    tbox_arena *out_arena = count > 0 ? malloc(sizeof(tbox_arena)) : NULL;
+    if (out_arena != NULL) {
+        *out_arena   = tbox_arena_create(0);
+        result.items = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_selector_match));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_css_selector_match *)tbox_vector_at_const(&matches, i);
         }

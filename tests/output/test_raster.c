@@ -288,7 +288,7 @@ static bool tbox_test_raster_read_png(const char *path, int32_t expected_width, 
             break;
         }
         uint32_t length = tbox_test_raster_read_u32_be(header);
-        char type[5]    = { (char)header[4], (char)header[5], (char)header[6], (char)header[7], '\0' };
+        const char type[5] = { (char)header[4], (char)header[5], (char)header[6], (char)header[7], '\0' };
 
         unsigned char *data = length > 0 ? (unsigned char *)malloc(length) : NULL;
         if (length > 0 && (data == NULL || fread(data, 1, length, file) != length)) {
@@ -395,7 +395,7 @@ static void tbox_test_raster_write_png_round_trip(int *failures_ptr) {
     int failures = *failures_ptr;
 
     const int32_t width = 3, height = 2;
-    uint32_t pixels[6] = {
+    const uint32_t pixels[6] = {
         tbox_test_raster_xrgb(255, 0, 0), tbox_test_raster_xrgb(0, 255, 0), tbox_test_raster_xrgb(0, 0, 255),
         tbox_test_raster_xrgb(255, 255, 0), tbox_test_raster_xrgb(0, 255, 255), tbox_test_raster_xrgb(17, 34, 51),
     };

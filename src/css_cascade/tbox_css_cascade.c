@@ -325,11 +325,11 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
         }
     }
 
-    size_t count = tbox_vector_length(&winners);
-    if (count > 0) {
-        tbox_arena *out_arena = malloc(sizeof(tbox_arena));
-        *out_arena            = tbox_arena_create(0);
-        result.items          = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_resolved_declaration));
+    size_t count          = tbox_vector_length(&winners);
+    tbox_arena *out_arena = count > 0 ? malloc(sizeof(tbox_arena)) : NULL;
+    if (out_arena != NULL) {
+        *out_arena   = tbox_arena_create(0);
+        result.items = tbox_arena_alloc(out_arena, count * sizeof(tbox_css_resolved_declaration));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_css_resolved_declaration *)tbox_vector_at_const(&winners, i);
 

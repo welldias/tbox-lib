@@ -326,7 +326,7 @@ int tbox_test_style_run(void) {
         tbox_style_table table  = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), sources, 2);
         const tbox_style *style = tbox_style_table_find(&table, div);
         TBOX_TEST_ASSERT(style != NULL);
-        TBOX_TEST_ASSERT_MSG(style->font_size == 30.0, "author origin should win over user-agent origin through the multi-source signature");
+        TBOX_TEST_ASSERT_MSG(style != NULL && style->font_size == 30.0, "author origin should win over user-agent origin through the multi-source signature");
 
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(author_sheet);

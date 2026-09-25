@@ -478,6 +478,9 @@ bool tbox_app_backend_available(void) {
     return true;
 }
 
+/* Kept non-const to match the public header and the other tbox_app_*
+ * entry points; the returned context is mutable either way. */
+/* cppcheck-suppress constParameterPointer */
 tbox_context *tbox_app_context(tbox_app *app) {
     if (app == NULL) {
         return NULL;

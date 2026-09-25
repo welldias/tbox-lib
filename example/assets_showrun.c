@@ -56,7 +56,7 @@ static bool showrun_scan(showrun *state) {
     bool complete = true;
     for (;;) {
         errno = 0;
-        struct dirent *entry = readdir(directory);
+        const struct dirent *entry = readdir(directory);
         if (entry == NULL) {
             if (errno != 0) complete = false;
             break;

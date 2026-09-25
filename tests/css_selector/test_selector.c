@@ -204,7 +204,7 @@ int tbox_test_css_selector_run(void) {
     /* 12: tbox_css_selector_compile reports a syntax error via NULL + offset. */
     {
         size_t error_offset            = 0;
-        tbox_css_selector_query *query = tbox_css_selector_compile(">", strlen(">"), &error_offset);
+        const tbox_css_selector_query *query = tbox_css_selector_compile(">", strlen(">"), &error_offset);
 
         TBOX_TEST_ASSERT(query == NULL);
         TBOX_TEST_ASSERT(error_offset == 0);
@@ -212,7 +212,7 @@ int tbox_test_css_selector_run(void) {
 
     /* 13: trailing garbage after a valid selector-group is also a syntax error. */
     {
-        tbox_css_selector_query *query = tbox_css_selector_compile("div}", strlen("div}"), NULL);
+        const tbox_css_selector_query *query = tbox_css_selector_compile("div}", strlen("div}"), NULL);
         TBOX_TEST_ASSERT(query == NULL);
     }
 

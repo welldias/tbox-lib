@@ -15,8 +15,10 @@ int tbox_test_arena_run(void) {
         tbox_arena arena = tbox_arena_create(0);
         int *value        = tbox_arena_alloc(&arena, sizeof(int));
         TBOX_TEST_ASSERT(value != NULL);
-        *value = 42;
-        TBOX_TEST_ASSERT(*value == 42);
+        if (value != NULL) {
+            *value = 42;
+            TBOX_TEST_ASSERT(*value == 42);
+        }
         tbox_arena_destroy(&arena);
     }
 
@@ -41,7 +43,7 @@ int tbox_test_arena_run(void) {
         tbox_arena arena = tbox_arena_create(0);
         for (int i = 0; i < 16; i++) {
             tbox_arena_alloc(&arena, (size_t)(i + 1));
-            void *ptr = tbox_arena_alloc(&arena, sizeof(max_align_t));
+            const void *ptr = tbox_arena_alloc(&arena, sizeof(max_align_t));
             TBOX_TEST_ASSERT((uintptr_t)ptr % alignof(max_align_t) == 0);
         }
         tbox_arena_destroy(&arena);
@@ -68,7 +70,7 @@ int tbox_test_arena_run(void) {
     /* 5: an allocation larger than the default block size succeeds. */
     {
         tbox_arena arena = tbox_arena_create(64);
-        void *big         = tbox_arena_alloc(&arena, 4096);
+        const void *big         = tbox_arena_alloc(&arena, 4096);
         TBOX_TEST_ASSERT(big != NULL);
         tbox_arena_destroy(&arena);
     }
@@ -79,7 +81,7 @@ int tbox_test_arena_run(void) {
         tbox_arena_alloc(&arena, 128);
         tbox_arena_reset(&arena);
         TBOX_TEST_ASSERT(tbox_arena_bytes_used(&arena) == 0);
-        void *ptr = tbox_arena_alloc(&arena, 8);
+        const void *ptr = tbox_arena_alloc(&arena, 8);
         TBOX_TEST_ASSERT(ptr != NULL);
         tbox_arena_destroy(&arena);
     }
@@ -87,7 +89,7 @@ int tbox_test_arena_run(void) {
     /* 7: alloc_zero returns zeroed memory. */
     {
         tbox_arena arena  = tbox_arena_create(0);
-        unsigned char *ptr = tbox_arena_alloc_zero(&arena, 64);
+        const unsigned char *ptr = tbox_arena_alloc_zero(&arena, 64);
         bool all_zero      = true;
         for (int i = 0; i < 64; i++) {
             if (ptr[i] != 0) {
@@ -101,7 +103,7 @@ int tbox_test_arena_run(void) {
     /* 8: size == 0 still returns a usable pointer. */
     {
         tbox_arena arena = tbox_arena_create(0);
-        void *ptr         = tbox_arena_alloc(&arena, 0);
+        const void *ptr         = tbox_arena_alloc(&arena, 0);
         TBOX_TEST_ASSERT(ptr != NULL);
         tbox_arena_destroy(&arena);
     }

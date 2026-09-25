@@ -215,11 +215,11 @@ tbox_xpath_node_set tbox_xpath_eval_run(const tbox_xpath_query *query, const tbo
         current = next;
     }
 
-    size_t count = tbox_vector_length(&current);
-    if (count > 0) {
-        tbox_arena *out_arena = malloc(sizeof(tbox_arena));
-        *out_arena            = tbox_arena_create(0);
-        result.items          = tbox_arena_alloc(out_arena, count * sizeof(tbox_xpath_item));
+    size_t count          = tbox_vector_length(&current);
+    tbox_arena *out_arena = count > 0 ? malloc(sizeof(tbox_arena)) : NULL;
+    if (out_arena != NULL) {
+        *out_arena   = tbox_arena_create(0);
+        result.items = tbox_arena_alloc(out_arena, count * sizeof(tbox_xpath_item));
         for (size_t i = 0; i < count; i++) {
             result.items[i] = *(const tbox_xpath_item *)tbox_vector_at_const(&current, i);
         }

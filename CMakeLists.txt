@@ -213,3 +213,43 @@ if(TBOX_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# Static analysis: `cmake --build build --target cppcheck`. Optional, same
+# graceful-skip pattern as the other tools above -- without cppcheck the
+# target simply doesn't exist. tbox.cppcheck.in is configured into the build
+# directory so the project file points at this build's compile_commands.json
+# regardless of where the build directory lives. Findings are written as
+# plain text to <build>/cppcheck-report.txt instead of the terminal; any
+# finding still fails the target (--error-exitcode), so it can gate CI.
+find_program(TBOX_CPPCHECK_EXECUTABLE cppcheck)
+
+if(TBOX_CPPCHECK_EXECUTABLE)
+    # cppcheck resolves project-file paths relative to the project file
+    # itself (even absolute ones), so the source dir is passed relative too.
+    file(RELATIVE_PATH TBOX_CPPCHECK_SOURCE_DIR "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}")
+    string(REGEX REPLACE "/$" "" TBOX_CPPCHECK_SOURCE_DIR "${TBOX_CPPCHECK_SOURCE_DIR}")
+    if(TBOX_CPPCHECK_SOURCE_DIR STREQUAL "")
+        set(TBOX_CPPCHECK_SOURCE_DIR ".")
+    endif()
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/cppcheck")
+    configure_file(tbox.cppcheck.in "${CMAKE_BINARY_DIR}/tbox.cppcheck" @ONLY)
+
+    cmake_host_system_information(RESULT TBOX_CPPCHECK_JOBS QUERY NUMBER_OF_LOGICAL_CORES)
+
+    add_custom_target(cppcheck
+        COMMAND "${TBOX_CPPCHECK_EXECUTABLE}"
+                "--project=${CMAKE_BINARY_DIR}/tbox.cppcheck"
+                --enable=warning,style,performance,portability
+                --inline-suppr
+                --error-exitcode=1
+                "--output-file=${CMAKE_BINARY_DIR}/cppcheck-report.txt"
+                --quiet
+                -j ${TBOX_CPPCHECK_JOBS}
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Running cppcheck static analysis (report: ${CMAKE_BINARY_DIR}/cppcheck-report.txt)"
+        USES_TERMINAL
+        VERBATIM
+    )
+else()
+    message(STATUS "cppcheck not found: the 'cppcheck' target is unavailable.")
+endif()

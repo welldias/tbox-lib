@@ -193,10 +193,10 @@ int tbox_test_html_xpath_run(void) {
     /* 11: syntax errors are rejected at compile time. */
     {
         size_t offset = 0;
-        tbox_xpath_query *unterminated_bracket = tbox_xpath_compile("//div[", strlen("//div["), &offset);
+        const tbox_xpath_query *unterminated_bracket = tbox_xpath_compile("//div[", strlen("//div["), &offset);
         TBOX_TEST_ASSERT(unterminated_bracket == NULL);
 
-        tbox_xpath_query *attr_not_last = tbox_xpath_compile("//a/@href/b", strlen("//a/@href/b"), NULL);
+        const tbox_xpath_query *attr_not_last = tbox_xpath_compile("//a/@href/b", strlen("//a/@href/b"), NULL);
         TBOX_TEST_ASSERT(attr_not_last == NULL);
     }
 

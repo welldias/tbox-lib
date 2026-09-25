@@ -126,7 +126,7 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox
 
     size_t entry_count = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < entry_count; i++) {
-        tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
+        const tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
         if (entry->bold == bold && entry->italic == italic && entry->size_px == size_px && strcmp(entry->family, family_buf) == 0) {
             return entry->face;
         }
@@ -159,10 +159,10 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox
          * exists, otherwise resolve it once via `resolver` and cache the
          * bytes so later size_px values for this same (family, bold,
          * italic) never call the resolver again. */
-        tbox_font_face_cache_family_blob *blob = NULL;
-        size_t blob_count                      = tbox_vector_length(&cache->family_blobs);
+        const tbox_font_face_cache_family_blob *blob = NULL;
+        size_t blob_count                            = tbox_vector_length(&cache->family_blobs);
         for (size_t i = 0; i < blob_count; i++) {
-            tbox_font_face_cache_family_blob *candidate = tbox_vector_at(&cache->family_blobs, i);
+            const tbox_font_face_cache_family_blob *candidate = tbox_vector_at(&cache->family_blobs, i);
             if (candidate->bold == bold && candidate->italic == italic && strcmp(candidate->family, family_buf) == 0) {
                 blob = candidate;
                 break;

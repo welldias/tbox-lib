@@ -529,7 +529,9 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT_MSG(capture.call_count == 1, "the handler must fire exactly once");
             if (capture.call_count == 1) {
                 TBOX_TEST_ASSERT_MSG(capture.node != NULL && capture.node->type == TBOX_HTML_NODE_ELEMENT, "the handler must receive an ELEMENT node");
-                TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(capture.node->element.tag_name, "button"), "the handler must receive the <button> node that was actually clicked");
+                if (capture.node != NULL) {
+                    TBOX_TEST_ASSERT_MSG(string_view_equal_cstr(capture.node->element.tag_name, "button"), "the handler must receive the <button> node that was actually clicked");
+                }
             }
 
             tbox_context_close(ctx);
