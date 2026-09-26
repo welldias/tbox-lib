@@ -44,7 +44,50 @@ typedef enum tbox_style_display {
     TBOX_STYLE_DISPLAY_BLOCK,
     TBOX_STYLE_DISPLAY_INLINE,
     TBOX_STYLE_DISPLAY_NONE,
+    TBOX_STYLE_DISPLAY_INLINE_BLOCK, /* NOVO v15: an atomic box inside a line */
+    TBOX_STYLE_DISPLAY_FLEX,         /* NOVO v16: block-level flex container */
+    TBOX_STYLE_DISPLAY_INLINE_FLEX,  /* NOVO v16: flex container placed like an inline-block */
 } tbox_style_display;
+
+/* NOVO v16: flexbox. Every enum's zero value is the CSS initial value. */
+typedef enum tbox_style_flex_direction {
+    TBOX_STYLE_FLEX_DIRECTION_ROW, /* initial */
+    TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE,
+    TBOX_STYLE_FLEX_DIRECTION_COLUMN,
+    TBOX_STYLE_FLEX_DIRECTION_COLUMN_REVERSE,
+} tbox_style_flex_direction;
+
+typedef enum tbox_style_flex_wrap {
+    TBOX_STYLE_FLEX_WRAP_NOWRAP, /* initial */
+    TBOX_STYLE_FLEX_WRAP_WRAP,
+    TBOX_STYLE_FLEX_WRAP_WRAP_REVERSE,
+} tbox_style_flex_wrap;
+
+/* `justify-content` and `align-content`. NORMAL is the initial value: it
+ * packs at the start for justify-content and stretches the lines for
+ * align-content. `left`/`start` map to START, `right`/`end` to END. */
+typedef enum tbox_style_flex_justify {
+    TBOX_STYLE_FLEX_JUSTIFY_NORMAL, /* initial */
+    TBOX_STYLE_FLEX_JUSTIFY_START,
+    TBOX_STYLE_FLEX_JUSTIFY_END,
+    TBOX_STYLE_FLEX_JUSTIFY_CENTER,
+    TBOX_STYLE_FLEX_JUSTIFY_SPACE_BETWEEN,
+    TBOX_STYLE_FLEX_JUSTIFY_SPACE_AROUND,
+    TBOX_STYLE_FLEX_JUSTIFY_SPACE_EVENLY,
+    TBOX_STYLE_FLEX_JUSTIFY_STRETCH,
+} tbox_style_flex_justify;
+
+/* `align-items` and `align-self`. NORMAL is the initial value of both:
+ * `stretch` for align-items, `auto` (use the container's align-items) for
+ * align-self. `start`/`self-start` map to START, `end`/`self-end` to END. */
+typedef enum tbox_style_flex_align {
+    TBOX_STYLE_FLEX_ALIGN_NORMAL, /* initial */
+    TBOX_STYLE_FLEX_ALIGN_STRETCH,
+    TBOX_STYLE_FLEX_ALIGN_START,
+    TBOX_STYLE_FLEX_ALIGN_END,
+    TBOX_STYLE_FLEX_ALIGN_CENTER,
+    TBOX_STYLE_FLEX_ALIGN_BASELINE,
+} tbox_style_flex_align;
 
 typedef enum tbox_style_overflow_y {
     TBOX_STYLE_OVERFLOW_Y_VISIBLE,
@@ -300,6 +343,18 @@ typedef struct tbox_style {
      * same "alpha 0 means absent" convention as box_shadow_color. */
     tbox_css_rgba accent_color; /* checked checkbox mark and radio dot */
     tbox_css_rgba caret_color;  /* text insertion caret */
+    /* NOVO v16: flexbox, none inheritable. Container properties: */
+    tbox_style_flex_direction flex_direction;
+    tbox_style_flex_wrap flex_wrap;
+    tbox_style_flex_justify justify_content, align_content;
+    tbox_style_flex_align align_items;
+    tbox_style_length row_gap, column_gap; /* PX or PERCENT; AUTO (`normal`) = 0 */
+    /* Item properties. flex_basis AUTO means `auto` (and `content`). A
+     * hand-built, zero-initialized style has flex-shrink 0, not CSS's 1. */
+    tbox_style_flex_align align_self;
+    double flex_grow, flex_shrink; /* initial 0 and 1 */
+    tbox_style_length flex_basis;
+    int order;
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
@@ -313,7 +368,7 @@ typedef struct tbox_style {
  * properties (currently just `color`); NULL falls back to that property's
  * own initial value instead of inheriting.
  *
- * Scope (v0): `display` (`block`/`inline`/`none`, case-insensitive
+ * Scope (v0): `display` (`block`/`inline`/`none`, NOVO v15 `inline-block`, case-insensitive
  * keywords), `width`, `height` (`auto`, a bare number followed by `px`, or
  * a bare number followed by `%` -- no `em`/`rem`, those are out of scope
  * until the font/text layer exists; an unparsable value falls back to the
@@ -391,7 +446,11 @@ typedef struct tbox_style {
  * `lowercase`, `capitalize`, `none`; inheritable), one `text-shadow`
  * (inheritable), an optional `box-shadow` spread radius (a shadow color
  * defaults to currentColor), `word-break: break-all` (inheritable), and
- * `opacity` (0..1 or a percentage, clamped; not inheritable).
+ * `opacity` (0..1 or a percentage, clamped; not inheritable), and NOVO v16
+ * flexbox: `display: flex|inline-flex`, `flex-direction`, `flex-wrap`,
+ * `flex-flow`, `justify-content`, `align-items`, `align-self`,
+ * `align-content`, `gap`/`row-gap`/`column-gap`, `flex-grow`,
+ * `flex-shrink`, `flex-basis`, the `flex` shorthand and `order`.
  * Out of scope: `float`, flex/grid, `z-index`, `break-spaces`, `tab-size`. */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 

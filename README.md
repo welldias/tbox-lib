@@ -37,8 +37,8 @@ in C. A JavaScript bridge is a later milestone.
 The supported HTML/CSS subset is defined by the public headers under
 `include/tbox/`; unsupported properties and elements may be ignored. There
 is currently no multi-select, `<select size>`, `<optgroup>`, IME composition,
-horizontal container scrolling, flex/grid
-layout, accessibility tree, or Windows/macOS window backend. The library is
+horizontal container scrolling, grid layout, floats, accessibility tree, or
+Windows/macOS window backend. The library is
 not yet suitable for a complete desktop application.
 
 Tables support `<caption>`, `<colgroup>`, `<col>`, `<thead>`, `<tbody>`,
@@ -122,6 +122,22 @@ defaults its color to `currentColor`, and `word-break: break-all` breaks
 lines between any two characters. `opacity` (a number or percentage) fades
 an element and its descendants; overlapping descendants blend individually
 rather than as one flattened group.
+
+`display: inline-block` places a box inside a line of text: it shrinks to
+its content (or keeps its declared width), wraps with the words around it,
+sits on their baseline (its last line's baseline), and accepts
+`vertical-align: top|middle|bottom`. Inline elements nest to any depth,
+each keeping its own style, and words from different elements are only
+separated where the source has whitespace.
+
+`display: flex` and `inline-flex` lay out children as flex items with
+`flex-direction` (including reversed), `flex-wrap`, `flex-flow`,
+`justify-content`, `align-items`, `align-self`, `align-content`,
+`gap`/`row-gap`/`column-gap`, `flex-grow`, `flex-shrink`, `flex-basis`, the
+`flex` shorthand, `order`, auto margins, and min/max sizes (with the
+automatic minimum size of flex items). Loose text in a flex container
+becomes an anonymous item. A column container only grows or shrinks its
+items, and only wraps, when it has a definite height.
 
 `text-align` also accepts `justify`, `start`, and `end`. The `font`
 shorthand sets style, weight, size, line-height, and family (variant and

@@ -1483,6 +1483,293 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* NOVO v15: inline elements nest to any depth, each keeping its own
+     * style, and display:none inside an inline element hides its text. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>a <b>b <i>c</i><span>x</span></b></p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("b, i { display: inline; } b { font-weight: bold; }"
+                                                    " i { font-size: 20px; } span { display: none; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL && box->text_run_count == 3);
+        if (box != NULL && box->text_run_count == 3) {
+            TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[1].text, "b"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[2].text, "c"));
+            TBOX_TEST_ASSERT(box->text_runs[2].style->font_size == 20.0 && box->text_runs[2].style->font_weight_bold);
+            TBOX_TEST_ASSERT(box->text_runs[1].style->font_size == 16.0 && box->text_runs[1].style->font_weight_bold);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* NOVO v15: words from different nodes only get a space between them
+     * when the source has whitespace there: "a<b>b</b>" touches, " c"
+     * doesn't. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>a<b>b</b> c</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("b { display: inline; font-weight: bold; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(box != NULL && box->text_run_count == 3);
+        if (box != NULL && box->text_run_count == 3) {
+            const tbox_layout_text_run *r = box->text_runs;
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(r[1].rect.x, r[0].rect.x + r[0].rect.width));
+            TBOX_TEST_ASSERT(r[2].rect.x > r[1].rect.x + r[1].rect.width + 1.0);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* NOVO v15: an inline-block shrinks to its content, sits between the
+     * surrounding words, shares their baseline and becomes a child box of
+     * the text box. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>ab <span>cd</span> ef</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "span { display: inline-block; padding: 5px; border: 1px solid; margin: 0 3px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *ib = box != NULL ? box->first_child : NULL;
+        TBOX_TEST_ASSERT(box != NULL && box->text_run_count == 2 && ib != NULL && ib->parent == box);
+        if (box != NULL && box->text_run_count == 2 && ib != NULL && ib->text_run_count == 1) {
+            const tbox_layout_text_run *ab = &box->text_runs[0], *ef = &box->text_runs[1];
+            const tbox_layout_text_run *cd = &ib->text_runs[0];
+            double cd_width = tbox_font_measure_text(cd->font, tbox_string_view_make("cd", 2));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(ib->border_box.width, cd_width + 12.0));
+            TBOX_TEST_ASSERT(ib->margin_box.x > ab->rect.x + ab->rect.width);
+            TBOX_TEST_ASSERT(ef->rect.x > ib->margin_box.x + ib->margin_box.width);
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(ib->border_box.x, ib->margin_box.x + 3.0));
+            TBOX_TEST_ASSERT(tbox_test_double_approx_equal(cd->rect.y + tbox_font_face_ascent(cd->font),
+                                                           ab->rect.y + tbox_font_face_ascent(ab->font)));
+            TBOX_TEST_ASSERT(box->content_box.height >= ib->margin_box.height);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* NOVO v15: loose inline-blocks in a block container go through the
+     * anonymous box; a sized one keeps its size, wraps to the next line when
+     * it doesn't fit, honours vertical-align: middle, and an auto-width one
+     * is as wide as its widest block child but never wider than the line. */
+    {
+        tbox_html_document *doc    = parse_html_cstr(
+            "<div>xx <em></em> <u><div id=a></div><div id=b></div></u> <s>word word word word word word word word word</s></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { width: 200px; } em, u, s { display: inline-block; }"
+            " em { width: 150px; height: 20px; vertical-align: middle; }"
+            " #a { width: 80px; height: 5px; } #b { width: 120px; height: 5px; } s { text-decoration: none; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *anon = box != NULL ? box->first_child : NULL;
+        const tbox_layout_box *em = anon != NULL ? anon->first_child : NULL;
+        const tbox_layout_box *u = em != NULL ? em->next_sibling : NULL;
+        const tbox_layout_box *s_box = u != NULL ? u->next_sibling : NULL;
+        TBOX_TEST_ASSERT(anon != NULL && anon->node == NULL && em != NULL && u != NULL && s_box != NULL);
+        if (s_box != NULL) {
+            TBOX_TEST_ASSERT(em->border_box.width == 150.0 && em->border_box.height == 20.0);
+            TBOX_TEST_ASSERT(u->border_box.width == 120.0);
+            TBOX_TEST_ASSERT(u->border_box.y > em->border_box.y + 10.0); /* wrapped below */
+            const tbox_layout_box *s_text = s_box->first_child;
+            TBOX_TEST_ASSERT(s_box->border_box.width <= 200.0 && s_text != NULL && s_text->text_run_count > 1);
+            const tbox_layout_text_run *xx = &anon->text_runs[0];
+            double center = em->border_box.y + em->border_box.height / 2.0;
+            double baseline = xx->rect.y + tbox_font_face_ascent(xx->font);
+            TBOX_TEST_ASSERT(center < baseline && center > xx->rect.y);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* NOVO v15: text-align centers a line holding only an inline-block. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p><span></span></p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "p { width: 300px; text-align: center; } span { display: inline-block; width: 100px; height: 10px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *ib = box != NULL ? box->first_child : NULL;
+        TBOX_TEST_ASSERT(ib != NULL);
+        if (ib != NULL) TBOX_TEST_ASSERT(tbox_test_double_approx_equal(ib->border_box.x, box->content_box.x + 100.0));
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* NOVO v16: flexbox. Each case lays out `html` against `css` in an
+     * 800px viewport and checks the resulting geometry of the flex
+     * container's children (found through the container, the first box
+     * with node id "c"). */
+    {
+        static const struct {
+            const char *html, *css;
+            size_t children;
+            double x[4], y[4], w[4], h[4]; /* border boxes relative to the container's content box; NAN-free: -1 = skip */
+        } cases[] = {
+            /* grow: basis 0, 1:2 */
+            {"<div id=c><i></i><b></b></div>",
+             "#c { display: flex; width: 300px; } i, b { display: block; flex-basis: 0; height: 10px; }"
+             " i { flex-grow: 1; } b { flex-grow: 2; }",
+             2, {0, 100}, {0, 0}, {100, 200}, {10, 10}},
+            /* shrink with a min-width that freezes the first item */
+            {"<div id=c><i></i><b></b></div>",
+             "#c { display: flex; width: 200px; } i, b { display: block; width: 150px; height: 10px; }"
+             " i { min-width: 120px; }",
+             2, {0, 120}, {0, 0}, {120, 80}, {10, 10}},
+            /* gap + space-between, and align-items center in a definite height */
+            {"<div id=c><i></i><b></b><u></u></div>",
+             "#c { display: flex; width: 300px; height: 50px; gap: 10px; justify-content: space-between;"
+             " align-items: center; } i, b, u { display: block; width: 20px; height: 10px; }",
+             3, {0, 140, 280}, {20, 20, 20}, {20, 20, 20}, {10, 10, 10}},
+            /* stretch (default) fills the line; flex-end on one item */
+            {"<div id=c><i></i><b></b></div>",
+             "#c { display: flex; height: 40px; } i, b { display: block; width: 20px; }"
+             " b { height: 10px; align-self: flex-end; }",
+             2, {0, 20}, {0, 30}, {20, 20}, {40, 10}},
+            /* wrap: the third item starts a second line */
+            {"<div id=c><i></i><b></b><u></u></div>",
+             "#c { display: flex; flex-wrap: wrap; width: 300px; row-gap: 5px; }"
+             " i, b, u { display: block; width: 120px; height: 10px; }",
+             3, {0, 120, 0}, {0, 0, 15}, {120, 120, 120}, {10, 10, 10}},
+            /* column: stacking, stretch in width, auto container height */
+            {"<div id=c><i></i><b></b></div>",
+             "#c { display: flex; flex-direction: column; width: 100px; gap: 4px; }"
+             " i, b { display: block; height: 10px; } b { height: 20px; }",
+             2, {0, 0}, {0, 14}, {100, 100}, {10, 20}},
+            /* column with a definite height grows its items */
+            {"<div id=c><i></i><b></b></div>",
+             "#c { display: flex; flex-direction: column; width: 100px; height: 100px; }"
+             " i, b { display: block; flex: 1; }",
+             2, {0, 0}, {0, 50}, {100, 100}, {50, 50}},
+            /* an auto margin pushes the rest to the end */
+            {"<div id=c><i></i><b></b><u></u></div>",
+             "#c { display: flex; width: 300px; } i, b, u { display: block; width: 20px; height: 10px; }"
+             " b { margin-left: auto; }",
+             3, {0, 260, 280}, {0, 0, 0}, {20, 20, 20}, {10, 10, 10}},
+            /* order and row-reverse: children follow order, placed from the right */
+            {"<div id=c><i></i><b></b></div>",
+             "#c { display: flex; flex-direction: row-reverse; width: 300px; }"
+             " i, b { display: block; width: 20px; height: 10px; } i { order: 1; }",
+             2, {280, 260}, {0, 0}, {20, 20}, {10, 10}},
+            /* an absolute child is not an item */
+            {"<div id=c><i></i><b></b></div>",
+             "#c { display: flex; position: relative; width: 300px; height: 30px; }"
+             " i { display: block; width: 20px; height: 10px; }"
+             " b { display: block; position: absolute; left: 50px; top: 5px; width: 10px; height: 10px; }",
+             2, {0, 50}, {0, 5}, {20, 10}, {10, 10}},
+        };
+        for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+            tbox_html_document *doc    = parse_html_cstr(cases[c].html);
+            const tbox_html_node *root = tbox_html_document_root(doc);
+            tbox_css_stylesheet *sheet = parse_css_cstr(cases[c].css);
+            tbox_arena arena               = tbox_arena_create(0);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+            const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+            size_t i = 0;
+            for (const tbox_layout_box *child = box != NULL ? box->first_child : NULL; child != NULL;
+                 child = child->next_sibling, i++) {
+                if (i >= cases[c].children) break;
+                double x = child->border_box.x - box->content_box.x, y = child->border_box.y - box->content_box.y;
+                char message[160];
+                snprintf(message, sizeof(message), "case %zu child %zu: got %.2f %.2f %.2f %.2f", c, i, x, y,
+                         child->border_box.width, child->border_box.height);
+                TBOX_TEST_ASSERT_MSG(tbox_test_double_approx_equal(x, cases[c].x[i]) &&
+                                     tbox_test_double_approx_equal(y, cases[c].y[i]) &&
+                                     tbox_test_double_approx_equal(child->border_box.width, cases[c].w[i]) &&
+                                     tbox_test_double_approx_equal(child->border_box.height, cases[c].h[i]), message);
+            }
+            TBOX_TEST_ASSERT_MSG(i == cases[c].children, cases[c].css);
+            tbox_arena_destroy(&arena);
+            tbox_css_stylesheet_destroy(sheet);
+            tbox_html_document_destroy(doc);
+        }
+    }
+
+    /* NOVO v16: an absolute descendant of a flex item resolves against the
+     * right containing block whether the item is rebuilt in place (its
+     * containing block is the flex container) or moved (the item itself
+     * is positioned). */
+    {
+        tbox_html_document *doc    = parse_html_cstr(
+            "<div id=c><div id=a></div><div id=b><em></em></div><div id=r><em></em></div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "#c { display: flex; position: relative; width: 300px; height: 40px; padding: 5px; }"
+            " #a { width: 50px; } #b, #r { flex: 1; } #r { position: relative; }"
+            " em { display: block; position: absolute; left: 10px; top: 2px; width: 5px; height: 5px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *a = box != NULL ? box->first_child : NULL;
+        const tbox_layout_box *b = a != NULL ? a->next_sibling : NULL;
+        const tbox_layout_box *r = b != NULL ? b->next_sibling : NULL;
+        TBOX_TEST_ASSERT(r != NULL && b->first_child != NULL && r->first_child != NULL);
+        if (r != NULL && b->first_child != NULL && r->first_child != NULL) {
+            TBOX_TEST_ASSERT(b->first_child->border_box.x == box->padding_box.x + 10.0);
+            TBOX_TEST_ASSERT(b->first_child->border_box.y == box->padding_box.y + 2.0);
+            TBOX_TEST_ASSERT(r->first_child->border_box.x == r->padding_box.x + 10.0);
+            TBOX_TEST_ASSERT(r->border_box.x == box->content_box.x + 175.0);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* NOVO v16: loose text in a flex container is an anonymous item; a
+     * nowrap row's auto height follows its tallest item; inline-flex
+     * shrinks to its items and flows inside the line. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><div id=c>text <i></i></div><p>a <span><b></b><u></u></span> z</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "#c { display: flex; width: 300px; } i { display: block; width: 30px; height: 40px; }"
+            " span { display: inline-flex; column-gap: 5px; } b, u { display: block; width: 10px; height: 10px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *body = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *flex = body != NULL ? body->first_child : NULL;
+        const tbox_layout_box *p = flex != NULL ? flex->next_sibling : NULL;
+        TBOX_TEST_ASSERT(flex != NULL && p != NULL);
+        if (flex != NULL && p != NULL) {
+            const tbox_layout_box *text = flex->first_child;
+            const tbox_layout_box *item = text != NULL ? text->next_sibling : NULL;
+            TBOX_TEST_ASSERT(text != NULL && text->node == NULL && text->text_run_count == 1 && item != NULL);
+            if (item != NULL) {
+                TBOX_TEST_ASSERT(tbox_test_double_approx_equal(item->border_box.x, text->border_box.x + text->border_box.width));
+                TBOX_TEST_ASSERT(flex->content_box.height == 40.0);
+            }
+            const tbox_layout_box *span = p->first_child;
+            TBOX_TEST_ASSERT(span != NULL && span->border_box.width == 25.0);
+            if (span != NULL && p->text_run_count == 2)
+                TBOX_TEST_ASSERT(span->border_box.x > p->text_runs[0].rect.x + p->text_runs[0].rect.width &&
+                                 span->border_box.x < p->text_runs[1].rect.x);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* 34: NOVO v8 -- <ul><li></li></ul>, an EMPTY <li>: intentional
      * behavior change from v7 -- an empty text-tag box used to have
      * word_count == 0 and thus text_run_count == 0 (the "no words at all"

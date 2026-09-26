@@ -1701,5 +1701,55 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* NOVO v16: flexbox properties, their shorthands and defaults. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW && style.flex_wrap == TBOX_STYLE_FLEX_WRAP_NOWRAP);
+        TBOX_TEST_ASSERT(style.flex_grow == 0.0 && style.flex_shrink == 1.0 && style.flex_basis.kind == TBOX_STYLE_LENGTH_AUTO);
+        TBOX_TEST_ASSERT(style.align_items == TBOX_STYLE_FLEX_ALIGN_NORMAL && style.order == 0);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("div { display: inline-flex; flex-flow: column wrap; flex-direction: row-reverse;"
+                               " justify-content: space-between; align-items: first baseline; align-self: flex-end;"
+                               " align-content: center; gap: 4px 2em; row-gap: 10%; order: -2; font-size: 10px; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.display == TBOX_STYLE_DISPLAY_INLINE_FLEX);
+        TBOX_TEST_ASSERT(style.flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE);
+        TBOX_TEST_ASSERT(style.flex_wrap == TBOX_STYLE_FLEX_WRAP_WRAP);
+        TBOX_TEST_ASSERT(style.justify_content == TBOX_STYLE_FLEX_JUSTIFY_SPACE_BETWEEN);
+        TBOX_TEST_ASSERT(style.align_items == TBOX_STYLE_FLEX_ALIGN_BASELINE);
+        TBOX_TEST_ASSERT(style.align_self == TBOX_STYLE_FLEX_ALIGN_END);
+        TBOX_TEST_ASSERT(style.align_content == TBOX_STYLE_FLEX_JUSTIFY_CENTER);
+        TBOX_TEST_ASSERT(style.row_gap.kind == TBOX_STYLE_LENGTH_PERCENT && style.row_gap.value == 10.0);
+        TBOX_TEST_ASSERT(style.column_gap.kind == TBOX_STYLE_LENGTH_PX && style.column_gap.value == 20.0);
+        TBOX_TEST_ASSERT(style.order == -2);
+        tbox_css_stylesheet_destroy(sheet);
+
+        static const struct { const char *css; double grow, shrink; tbox_style_length_kind kind; double basis; } flex[] = {
+            {"div { flex: 1; }", 1.0, 1.0, TBOX_STYLE_LENGTH_PERCENT, 0.0},
+            {"div { flex: 2 3; }", 2.0, 3.0, TBOX_STYLE_LENGTH_PERCENT, 0.0},
+            {"div { flex: 30px; }", 1.0, 1.0, TBOX_STYLE_LENGTH_PX, 30.0},
+            {"div { flex: 2 40%; }", 2.0, 1.0, TBOX_STYLE_LENGTH_PERCENT, 40.0},
+            {"div { flex: 10px 2 0; }", 2.0, 0.0, TBOX_STYLE_LENGTH_PX, 10.0},
+            {"div { flex: none; }", 0.0, 0.0, TBOX_STYLE_LENGTH_AUTO, 0.0},
+            {"div { flex: auto; }", 1.0, 1.0, TBOX_STYLE_LENGTH_AUTO, 0.0},
+            {"div { flex: 1 2 3 4; }", 0.0, 1.0, TBOX_STYLE_LENGTH_AUTO, 0.0},
+            {"div { flex: 1 10px 2; }", 0.0, 1.0, TBOX_STYLE_LENGTH_AUTO, 0.0},
+            {"div { flex: 1; flex-grow: 5; flex-basis: content; }", 5.0, 1.0, TBOX_STYLE_LENGTH_AUTO, 0.0},
+        };
+        for (size_t i = 0; i < sizeof(flex) / sizeof(flex[0]); i++) {
+            sheet = parse_css_cstr(flex[i].css);
+            style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.flex_grow == flex[i].grow && style.flex_shrink == flex[i].shrink &&
+                                 style.flex_basis.kind == flex[i].kind && style.flex_basis.value == flex[i].basis,
+                                 flex[i].css);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

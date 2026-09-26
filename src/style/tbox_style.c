@@ -315,6 +315,18 @@ static bool tbox_style_parse_display(tbox_string_view raw, tbox_style_display *o
         *out = TBOX_STYLE_DISPLAY_NONE;
         return true;
     }
+    if (tbox_string_view_equal_ascii_ci(raw, tbox_string_view_from_cstr("inline-block"))) {
+        *out = TBOX_STYLE_DISPLAY_INLINE_BLOCK;
+        return true;
+    }
+    if (tbox_string_view_equal_ascii_ci(raw, tbox_string_view_from_cstr("flex"))) {
+        *out = TBOX_STYLE_DISPLAY_FLEX;
+        return true;
+    }
+    if (tbox_string_view_equal_ascii_ci(raw, tbox_string_view_from_cstr("inline-flex"))) {
+        *out = TBOX_STYLE_DISPLAY_INLINE_FLEX;
+        return true;
+    }
     return false;
 }
 
@@ -1034,6 +1046,232 @@ static tbox_style_list_style_type tbox_style_resolve_list_style_type(const tbox_
     return result;
 }
 
+/* ---- NOVO v16: flexbox ---- */
+
+typedef struct tbox_style_keyword {
+    const char *name;
+    int value;
+} tbox_style_keyword;
+
+static bool tbox_style_lookup(tbox_string_view raw, const tbox_style_keyword *table, size_t count, int *out) {
+    tbox_string_view value = tbox_style_trim(raw);
+    for (size_t i = 0; i < count; i++) {
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr(table[i].name))) {
+            *out = table[i].value;
+            return true;
+        }
+    }
+    return false;
+}
+
+static const tbox_style_keyword tbox_style_flex_directions[] = {
+    {"row", TBOX_STYLE_FLEX_DIRECTION_ROW}, {"row-reverse", TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE},
+    {"column", TBOX_STYLE_FLEX_DIRECTION_COLUMN}, {"column-reverse", TBOX_STYLE_FLEX_DIRECTION_COLUMN_REVERSE},
+};
+static const tbox_style_keyword tbox_style_flex_wraps[] = {
+    {"nowrap", TBOX_STYLE_FLEX_WRAP_NOWRAP}, {"wrap", TBOX_STYLE_FLEX_WRAP_WRAP},
+    {"wrap-reverse", TBOX_STYLE_FLEX_WRAP_WRAP_REVERSE},
+};
+/* justify-content: `stretch` behaves as `flex-start` there. */
+static const tbox_style_keyword tbox_style_flex_justifies[] = {
+    {"normal", TBOX_STYLE_FLEX_JUSTIFY_NORMAL}, {"flex-start", TBOX_STYLE_FLEX_JUSTIFY_START},
+    {"start", TBOX_STYLE_FLEX_JUSTIFY_START}, {"left", TBOX_STYLE_FLEX_JUSTIFY_START},
+    {"stretch", TBOX_STYLE_FLEX_JUSTIFY_START}, {"flex-end", TBOX_STYLE_FLEX_JUSTIFY_END},
+    {"end", TBOX_STYLE_FLEX_JUSTIFY_END}, {"right", TBOX_STYLE_FLEX_JUSTIFY_END},
+    {"center", TBOX_STYLE_FLEX_JUSTIFY_CENTER}, {"space-between", TBOX_STYLE_FLEX_JUSTIFY_SPACE_BETWEEN},
+    {"space-around", TBOX_STYLE_FLEX_JUSTIFY_SPACE_AROUND}, {"space-evenly", TBOX_STYLE_FLEX_JUSTIFY_SPACE_EVENLY},
+};
+static const tbox_style_keyword tbox_style_flex_align_contents[] = {
+    {"normal", TBOX_STYLE_FLEX_JUSTIFY_NORMAL}, {"stretch", TBOX_STYLE_FLEX_JUSTIFY_STRETCH},
+    {"flex-start", TBOX_STYLE_FLEX_JUSTIFY_START}, {"start", TBOX_STYLE_FLEX_JUSTIFY_START},
+    {"flex-end", TBOX_STYLE_FLEX_JUSTIFY_END}, {"end", TBOX_STYLE_FLEX_JUSTIFY_END},
+    {"center", TBOX_STYLE_FLEX_JUSTIFY_CENTER}, {"space-between", TBOX_STYLE_FLEX_JUSTIFY_SPACE_BETWEEN},
+    {"space-around", TBOX_STYLE_FLEX_JUSTIFY_SPACE_AROUND}, {"space-evenly", TBOX_STYLE_FLEX_JUSTIFY_SPACE_EVENLY},
+};
+/* align-items/align-self; `auto` (align-self only) is NORMAL. `last
+ * baseline` aligns first baselines, the only kind supported. */
+static const tbox_style_keyword tbox_style_flex_aligns[] = {
+    {"normal", TBOX_STYLE_FLEX_ALIGN_NORMAL}, {"auto", TBOX_STYLE_FLEX_ALIGN_NORMAL},
+    {"stretch", TBOX_STYLE_FLEX_ALIGN_STRETCH}, {"flex-start", TBOX_STYLE_FLEX_ALIGN_START},
+    {"start", TBOX_STYLE_FLEX_ALIGN_START}, {"self-start", TBOX_STYLE_FLEX_ALIGN_START},
+    {"flex-end", TBOX_STYLE_FLEX_ALIGN_END}, {"end", TBOX_STYLE_FLEX_ALIGN_END},
+    {"self-end", TBOX_STYLE_FLEX_ALIGN_END}, {"center", TBOX_STYLE_FLEX_ALIGN_CENTER},
+    {"baseline", TBOX_STYLE_FLEX_ALIGN_BASELINE}, {"first baseline", TBOX_STYLE_FLEX_ALIGN_BASELINE},
+    {"last baseline", TBOX_STYLE_FLEX_ALIGN_BASELINE},
+};
+#define TBOX_STYLE_COUNT(table) (sizeof(table) / sizeof((table)[0]))
+
+/* A keyword property: the declared value when it's in `table`, else
+ * `initial` (these properties are not inherited). */
+static int tbox_style_resolve_keyword(const tbox_css_computed_style *computed, const char *property,
+                                      const tbox_style_keyword *table, size_t count, int initial) {
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(property));
+    int value = initial;
+    if (decl != NULL) tbox_style_lookup(decl->value, table, count, &value);
+    return value;
+}
+
+/* A nonnegative number (flex-grow/flex-shrink). */
+static bool tbox_style_parse_flex_factor(tbox_string_view raw, double *out) {
+    double value;
+    if (!tbox_style_parse_number(tbox_style_trim(raw), &value) || value < 0.0) return false;
+    *out = value;
+    return true;
+}
+
+/* A gap: `normal` (AUTO, i.e. 0) or a nonnegative px/em/percentage. */
+static bool tbox_style_parse_gap(tbox_string_view raw, double font_size, tbox_style_length *out) {
+    tbox_string_view value = tbox_style_trim(raw);
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal"))) {
+        *out = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
+        return true;
+    }
+    return tbox_style_parse_spacing_length(value, font_size, out) && out->kind != TBOX_STYLE_LENGTH_AUTO &&
+        out->value >= 0.0;
+}
+
+/* flex-basis: `auto`/`content` (AUTO) or a nonnegative length/percentage. */
+static bool tbox_style_parse_flex_basis(tbox_string_view raw, double font_size, tbox_style_length *out) {
+    tbox_string_view value = tbox_style_trim(raw);
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("content"))) {
+        *out = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
+        return true;
+    }
+    return tbox_style_parse_spacing_length(value, font_size, out) && out->value >= 0.0;
+}
+
+/* The `flex` shorthand: `none` (0 0 auto), `auto` (1 1 auto), `initial`
+ * (0 1 auto), or up to two numbers (grow, then shrink) and a basis in any
+ * order; with a number but no basis the basis is 0%, and an omitted shrink
+ * is 1. */
+static bool tbox_style_parse_flex(tbox_string_view raw, double font_size, double *grow, double *shrink,
+                                  tbox_style_length *basis) {
+    tbox_string_view value = tbox_style_trim(raw);
+    const tbox_style_length auto_basis = {TBOX_STYLE_LENGTH_AUTO, 0.0};
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("none"))) {
+        *grow = 0.0, *shrink = 0.0, *basis = auto_basis;
+        return true;
+    }
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("auto"))) {
+        *grow = 1.0, *shrink = 1.0, *basis = auto_basis;
+        return true;
+    }
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("initial"))) {
+        *grow = 0.0, *shrink = 1.0, *basis = auto_basis;
+        return true;
+    }
+    tbox_string_view tokens[4];
+    size_t count;
+    if (!tbox_style_split_box_shorthand(value, tokens, &count) || count > 3) return false;
+    /* [<grow> <shrink>?] || <basis>: the two factors must be adjacent. */
+    double factors[2];
+    size_t factor_count = 0;
+    bool has_basis = false, previous_was_factor = false;
+    tbox_style_length parsed_basis = {TBOX_STYLE_LENGTH_PERCENT, 0.0};
+    for (size_t i = 0; i < count; i++) {
+        double factor;
+        bool can_take_factor = factor_count == 0 || (factor_count == 1 && previous_was_factor);
+        if (can_take_factor && tbox_style_parse_flex_factor(tokens[i], &factor)) {
+            factors[factor_count++] = factor;
+            previous_was_factor = true;
+        } else if (!has_basis && tbox_style_parse_flex_basis(tokens[i], font_size, &parsed_basis)) {
+            has_basis = true;
+            previous_was_factor = false;
+        } else {
+            return false;
+        }
+    }
+    *grow = factor_count > 0 ? factors[0] : 1.0;
+    *shrink = factor_count > 1 ? factors[1] : 1.0;
+    *basis = parsed_basis;
+    return true;
+}
+
+static void tbox_style_resolve_flex(const tbox_css_computed_style *computed, double font_size, tbox_style *style) {
+    const tbox_css_resolved_declaration *flow = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("flex-flow"));
+    style->flex_direction = TBOX_STYLE_FLEX_DIRECTION_ROW;
+    style->flex_wrap = TBOX_STYLE_FLEX_WRAP_NOWRAP;
+    if (flow != NULL) {
+        tbox_string_view tokens[4];
+        size_t count;
+        if (tbox_style_split_box_shorthand(flow->value, tokens, &count) && count <= 2) {
+            for (size_t i = 0; i < count; i++) {
+                int value;
+                if (tbox_style_lookup(tokens[i], tbox_style_flex_directions, TBOX_STYLE_COUNT(tbox_style_flex_directions), &value))
+                    style->flex_direction = (tbox_style_flex_direction)value;
+                else if (tbox_style_lookup(tokens[i], tbox_style_flex_wraps, TBOX_STYLE_COUNT(tbox_style_flex_wraps), &value))
+                    style->flex_wrap = (tbox_style_flex_wrap)value;
+            }
+        }
+    }
+    const tbox_css_resolved_declaration *direction = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("flex-direction"));
+    int value;
+    if (tbox_style_border_longhand_wins(direction, flow) &&
+        tbox_style_lookup(direction->value, tbox_style_flex_directions, TBOX_STYLE_COUNT(tbox_style_flex_directions), &value))
+        style->flex_direction = (tbox_style_flex_direction)value;
+    const tbox_css_resolved_declaration *wrap = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("flex-wrap"));
+    if (tbox_style_border_longhand_wins(wrap, flow) &&
+        tbox_style_lookup(wrap->value, tbox_style_flex_wraps, TBOX_STYLE_COUNT(tbox_style_flex_wraps), &value))
+        style->flex_wrap = (tbox_style_flex_wrap)value;
+
+    style->justify_content = (tbox_style_flex_justify)tbox_style_resolve_keyword(computed, "justify-content",
+        tbox_style_flex_justifies, TBOX_STYLE_COUNT(tbox_style_flex_justifies), TBOX_STYLE_FLEX_JUSTIFY_NORMAL);
+    style->align_content = (tbox_style_flex_justify)tbox_style_resolve_keyword(computed, "align-content",
+        tbox_style_flex_align_contents, TBOX_STYLE_COUNT(tbox_style_flex_align_contents), TBOX_STYLE_FLEX_JUSTIFY_NORMAL);
+    style->align_items = (tbox_style_flex_align)tbox_style_resolve_keyword(computed, "align-items",
+        tbox_style_flex_aligns, TBOX_STYLE_COUNT(tbox_style_flex_aligns), TBOX_STYLE_FLEX_ALIGN_NORMAL);
+    style->align_self = (tbox_style_flex_align)tbox_style_resolve_keyword(computed, "align-self",
+        tbox_style_flex_aligns, TBOX_STYLE_COUNT(tbox_style_flex_aligns), TBOX_STYLE_FLEX_ALIGN_NORMAL);
+
+    /* gap: one value for both axes, or row then column. */
+    style->row_gap = style->column_gap = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
+    const tbox_css_resolved_declaration *gap = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("gap"));
+    if (gap != NULL) {
+        tbox_string_view tokens[4];
+        size_t count;
+        tbox_style_length row, column;
+        if (tbox_style_split_box_shorthand(gap->value, tokens, &count) && count <= 2 &&
+            tbox_style_parse_gap(tokens[0], font_size, &row) &&
+            tbox_style_parse_gap(tokens[count - 1], font_size, &column)) {
+            style->row_gap = row;
+            style->column_gap = column;
+        }
+    }
+    const tbox_css_resolved_declaration *row_gap = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("row-gap"));
+    tbox_style_length parsed_gap;
+    if (tbox_style_border_longhand_wins(row_gap, gap) && tbox_style_parse_gap(row_gap->value, font_size, &parsed_gap))
+        style->row_gap = parsed_gap;
+    const tbox_css_resolved_declaration *column_gap = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("column-gap"));
+    if (tbox_style_border_longhand_wins(column_gap, gap) && tbox_style_parse_gap(column_gap->value, font_size, &parsed_gap))
+        style->column_gap = parsed_gap;
+
+    style->flex_grow = 0.0;
+    style->flex_shrink = 1.0;
+    style->flex_basis = (tbox_style_length){TBOX_STYLE_LENGTH_AUTO, 0.0};
+    const tbox_css_resolved_declaration *flex = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("flex"));
+    if (flex != NULL && !tbox_style_parse_flex(flex->value, font_size, &style->flex_grow, &style->flex_shrink,
+                                               &style->flex_basis))
+        flex = NULL; /* invalid: the longhands decide alone */
+    const tbox_css_resolved_declaration *grow = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("flex-grow"));
+    double factor;
+    if (tbox_style_border_longhand_wins(grow, flex) && tbox_style_parse_flex_factor(grow->value, &factor))
+        style->flex_grow = factor;
+    const tbox_css_resolved_declaration *shrink = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("flex-shrink"));
+    if (tbox_style_border_longhand_wins(shrink, flex) && tbox_style_parse_flex_factor(shrink->value, &factor))
+        style->flex_shrink = factor;
+    const tbox_css_resolved_declaration *basis = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("flex-basis"));
+    tbox_style_length parsed_basis;
+    if (tbox_style_border_longhand_wins(basis, flex) && tbox_style_parse_flex_basis(basis->value, font_size, &parsed_basis))
+        style->flex_basis = parsed_basis;
+
+    style->order = 0;
+    const tbox_css_resolved_declaration *order = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("order"));
+    double parsed_order;
+    if (order != NULL && tbox_style_parse_number(tbox_style_trim(order->value), &parsed_order) &&
+        parsed_order == (double)(int)parsed_order)
+        style->order = (int)parsed_order;
+}
+
 /* `accent-color`/`caret-color`: inheritable, `auto` stored as alpha 0 (see
  * tbox_style.accent_color). An unparsable value keeps the inherited one. */
 static tbox_css_rgba tbox_style_resolve_control_color(const tbox_css_computed_style *computed, const char *property,
@@ -1639,6 +1877,7 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
 
     style.accent_color = tbox_style_resolve_control_color(computed, "accent-color", parent_style != NULL ?
         parent_style->accent_color : (tbox_css_rgba){0, 0, 0, 0}, style.color);
+    tbox_style_resolve_flex(computed, style.font_size, &style);
     style.caret_color = tbox_style_resolve_control_color(computed, "caret-color", parent_style != NULL ?
         parent_style->caret_color : (tbox_css_rgba){0, 0, 0, 0}, style.color);
 

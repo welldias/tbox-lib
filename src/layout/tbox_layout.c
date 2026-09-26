@@ -53,6 +53,27 @@ static const tbox_style *tbox_layout_style_or_default(const tbox_style_table *st
 
 static double tbox_layout_constrain_width(const tbox_style *style, double width, double base, double edges);
 
+/* NOVO v15: moves an already-built box and its whole subtree -- every rect,
+ * text run and collapsed-table edge -- by (dx, dy). Lets a box be built at
+ * a provisional position (inline-block, flex item) and placed afterwards. */
+static void tbox_layout_translate(tbox_layout_box *box, double dx, double dy) {
+    tbox_rect *rects[4] = {&box->margin_box, &box->border_box, &box->padding_box, &box->content_box};
+    for (size_t i = 0; i < 4; i++) {
+        rects[i]->x += dx;
+        rects[i]->y += dy;
+    }
+    for (size_t i = 0; i < box->text_run_count; i++) {
+        box->text_runs[i].rect.x += dx;
+        box->text_runs[i].rect.y += dy;
+    }
+    for (size_t i = 0; i < box->table_edge_count; i++) {
+        box->table_edges[i].rect.x += dx;
+        box->table_edges[i].rect.y += dy;
+    }
+    for (tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
+        tbox_layout_translate(child, dx, dy);
+}
+
 static bool tbox_layout_is_hidden_input(const tbox_html_node *node) {
     if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
         !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
@@ -226,7 +247,28 @@ typedef struct tbox_layout_word {
      * this explicitly to false -- never left to tbox_vector's zero-init,
      * per ARCHITECTURE.md's "v11" section. */
     bool hard_break;
+
+    /* NOVO v15: an `inline-block` placed as one unbreakable word. `atomic`
+     * is its box, already built at the origin and moved onto its line by
+     * tbox_layout_build_line_runs; `width`/`image_height` are its margin
+     * box size and `atomic_ascent` its baseline, measured from the margin
+     * box top. NULL for every other word. */
+    struct tbox_layout_box *atomic;
+    double atomic_ascent;
+    /* NOVO v15: min-content width when it differs from `width` (an
+     * inline-block measured for intrinsic sizing); see
+     * tbox_layout_measure_words. */
+    bool has_min_width;
+    double min_width;
 } tbox_layout_word;
+
+/* Every word starts zeroed, so fields a pusher doesn't know about stay
+ * empty (tbox_vector_push does not clear memory). */
+static tbox_layout_word *tbox_layout_new_word(tbox_vector *words) {
+    tbox_layout_word *word = (tbox_layout_word *)tbox_vector_push(words);
+    memset(word, 0, sizeof(*word));
+    return word;
+}
 
 /* A half-open range [start, end) into a tbox_layout_word array, one greedy
  * line's worth of words, plus that line's own height (max line-height among
@@ -270,7 +312,7 @@ static void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapse
 
         tbox_string_view word = tbox_string_view_make(collapsed.data + start, i - start);
         if (word.size > 0) {
-            tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
+            tbox_layout_word *entry = tbox_layout_new_word(words);
             entry->text             = word;
             entry->face             = face;
             entry->style            = style;
@@ -340,7 +382,7 @@ static tbox_string_view tbox_layout_transform_text(tbox_arena *arena, tbox_strin
  * words in range" loop has nothing to iterate. See ARCHITECTURE.md's "v11 --
  * Layout Tree -- <br> (quebra forçada)". */
 static void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face *face, const tbox_style *style) {
-    tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
+    tbox_layout_word *entry = tbox_layout_new_word(words);
     entry->text             = tbox_string_view_make(NULL, 0);
     entry->face             = face;
     entry->style            = style;
@@ -359,7 +401,7 @@ static void tbox_layout_push_preserved_word(tbox_vector *words, tbox_string_view
                                             const tbox_font_face *face, const tbox_style *style) {
     if (text.size == 0) return;
     static const tbox_string_view space = { " ", 1 };
-    tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
+    tbox_layout_word *entry = tbox_layout_new_word(words);
     entry->text             = text;
     entry->face             = face;
     entry->style            = style;
@@ -481,7 +523,7 @@ static void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node 
     double height = img_style->height.kind == TBOX_STYLE_LENGTH_PX ? img_style->height.value : (double)image->height;
     width = tbox_layout_constrain_width(img_style, width, containing_width, 0.0);
 
-    tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
+    tbox_layout_word *entry = tbox_layout_new_word(words);
     entry->text             = tbox_string_view_make(NULL, 0);
     entry->face             = context_face;
     entry->style             = img_style;
@@ -493,91 +535,113 @@ static void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node 
     entry->no_space_before     = false;
 }
 
-/* True if `node` (an ELEMENT) has an `<img>` among its OWN direct children
- * -- used by tbox_layout_collect_words below to decide whether an inline
- * wrapper (e.g. `<a>`) needs its narrow one-level img-in-inline handling
- * instead of the ordinary flatten-to-text fast path. */
-static bool tbox_layout_has_img_child(const tbox_html_node *node) {
-    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
-        if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "img")) {
-            return true;
-        }
-    }
-    return false;
+/* Walks the sibling range [first_sibling, end_exclusive) in document order
+ * (see ARCHITECTURE.md's algorithm), pushing the words of an inline
+ * formatting context: a TEXT child contributes its words in `style`'s face
+ * (the text-bearing element itself, or -- NOVO v14 -- the container style
+ * synthesized for an anonymous box); `<br>` a hard break; `<img>` one image
+ * word (tbox_layout_push_image_word). NOVO v15: an inline ELEMENT child is
+ * walked recursively with ITS OWN style, to any depth (`<b><i>x</i></b>`
+ * keeps both), instead of being flattened to its text content one level
+ * down. Inside an inline element, any other non-`none` element is walked
+ * the same way (its text stays in the line, as before v15); directly under
+ * the text-bearing element, a block/none child contributes nothing, and a
+ * `display: none` element or hidden input is skipped at any depth.
+ *
+ * NOVO v15: an `inline-block` element, at any depth, becomes one atomic
+ * word (tbox_layout_push_atomic_word). `measure_only` (intrinsic sizing)
+ * gives it its min/max-content widths instead of building its box.
+ *
+ * NOVO v14: an explicit sibling range, so the SAME mechanism serves an
+ * anonymous box's [run_start, run_end) interval (see
+ * tbox_layout_build_anonymous_box below) as well as a whole node's
+ * children (node->first_child, NULL). */
+static void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node, const tbox_style *node_style, const tbox_font_face *context_face, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, bool measure_only, tbox_vector *words);
+
+/* NOVO v15: whether the inline content collected so far could be followed
+ * by a space. Words from different nodes are only separated by a space (and
+ * a break opportunity) when whitespace really sits between them in the
+ * source: `a<b>b</b>` is one word, `a <b>b</b>` two. */
+typedef struct tbox_layout_inline_state {
+    bool has_content;    /* a word was pushed since the start or the last hard break */
+    bool trailing_space; /* the source text since that word ended in whitespace */
+} tbox_layout_inline_state;
+
+static bool tbox_layout_is_ascii_space(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
 }
 
-/* Walks the sibling range [first_sibling, end_exclusive) in document order
- * (see ARCHITECTURE.md's algorithm): a TEXT child contributes its own words
- * in `style`'s own face (the h1-h6/p element itself, or -- NOVO v14 -- the
- * container style synthesized for an anonymous box); an `<img>` child
- * contributes one image word (tbox_layout_push_image_word); an ELEMENT
- * child whose OWN resolved style has display == INLINE recurses one level
- * -- via tbox_html_node_text_content, which already folds any further
- * nesting away -- contributing ITS whole text in ITS OWN face (this is how
- * e.g. a <b> renders bold within a regular <p>), UNLESS that inline child
- * itself directly contains an `<img>` (tbox_layout_has_img_child, e.g.
- * `<a href="..."><img ...></a>`), in which case ITS direct children are
- * walked instead with the same TEXT/`<img>` handling one level down (any
- * OTHER element nested in there is skipped, not flattened, not recursed
- * further -- a narrow, bounded extension of the "one level of inline
- * nesting" scope already established, never a general deep-nesting
- * mechanism). Any other child (a BLOCK/NONE element, COMMENT, DOCTYPE) is
- * skipped entirely -- no box, no text, no recursion.
- *
- * NOVO v14: generalized from always iterating `node->first_child` to NULL to
- * an explicit sibling range, so the SAME word-collection mechanism can be
- * reused for an anonymous box's [run_start, run_end) interval (see
- * tbox_layout_build_anonymous_box below) instead of always a whole node's
- * children. The only pre-v14 call site (inside tbox_layout_build_text_runs,
- * for a real text-tag element) passes (node->first_child, NULL, ...) --
- * behavior identical to before. */
-static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, tbox_vector *words) {
+/* Glues the first word pushed since index `first` to the content before
+ * it, unless whitespace separated them; then records the new content. */
+static void tbox_layout_join_words(tbox_vector *words, size_t first, bool leading_space,
+                                   tbox_layout_inline_state *state) {
+    if (words->length <= first) return;
+    tbox_layout_word *word = (tbox_layout_word *)tbox_vector_at(words, first);
+    if (state->has_content && !state->trailing_space && !leading_space && !word->hard_break) {
+        word->no_space_before = true;
+        word->space_width = 0.0;
+    }
+    state->has_content = true;
+    state->trailing_space = false;
+}
+
+static void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, bool inside_inline, bool measure_only, tbox_layout_inline_state *state, tbox_vector *words) {
     for (const tbox_html_node *child = first_sibling; child != end_exclusive; child = child->next_sibling) {
+        size_t first = words->length;
         if (tbox_layout_is_hidden_input(child)) continue;
         /* NOVO v11: a <br> child forces a line break -- checked BEFORE the
          * TEXT branch below and independently of the `display == INLINE`
          * gate an ELEMENT child otherwise needs (see ARCHITECTURE.md): <br>
          * does not need `display: inline` for this to work. Uses the
-         * text-bearing element's OWN face (`style`, not a child style --
-         * <br> has no style of its own worth resolving here), same call the
-         * TEXT branch below already makes. */
+         * enclosing element's face (`style`), same as the TEXT branch. */
         if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "br")) {
             const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
             tbox_layout_push_hard_break(words, face, style);
+            state->has_content = state->trailing_space = false;
             continue;
         }
 
         if (child->type == TBOX_HTML_NODE_TEXT) {
             const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
-            tbox_layout_push_text_words(arena, words, child->text.text, face, style);
+            tbox_string_view text = child->text.text;
+            tbox_layout_push_text_words(arena, words, text, face, style);
+            if (text.size == 0) continue;
+            bool preserved = style->white_space == TBOX_STYLE_WHITE_SPACE_PRE ||
+                style->white_space == TBOX_STYLE_WHITE_SPACE_PRE_WRAP;
+            bool trailing = !preserved && tbox_layout_is_ascii_space(text.data[text.size - 1]);
+            if (words->length > first) {
+                tbox_layout_join_words(words, first, !preserved && tbox_layout_is_ascii_space(text.data[0]), state);
+                const tbox_layout_word *last = (const tbox_layout_word *)tbox_vector_at(words, words->length - 1);
+                if (last->hard_break) state->has_content = false; /* pre-line/pre newlines */
+            }
+            if (trailing) state->trailing_space = true;
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
             if (tbox_string_view_equal_cstr(child->element.tag_name, "img")) {
                 const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
                 tbox_layout_push_image_word(arena, child, child_style, face, images, containing_width, words);
-            } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE) {
-                if (tbox_layout_has_img_child(child)) {
-                    for (const tbox_html_node *grandchild = child->first_child; grandchild != NULL; grandchild = grandchild->next_sibling) {
-                        if (grandchild->type == TBOX_HTML_NODE_TEXT) {
-                            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
-                            tbox_layout_push_text_words(arena, words, grandchild->text.text, face, child_style);
-                        } else if (grandchild->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(grandchild->element.tag_name, "img")) {
-                            const tbox_style *img_style = tbox_layout_style_or_default(styles, grandchild);
-                            const tbox_font_face *face  = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
-                            tbox_layout_push_image_word(arena, grandchild, img_style, face, images, containing_width, words);
-                        }
-                        /* else: skipped -- bounded one-level extension, no deeper nesting */
-                    }
-                } else {
-                    tbox_string_view raw       = tbox_html_node_text_content(arena, child);
-                    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(child_style->font_family), child_style->font_weight_bold, child_style->font_italic, child_style->font_size);
-                    tbox_layout_push_text_words(arena, words, raw, face, child_style);
-                }
+                tbox_layout_join_words(words, first, false, state);
+            } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK ||
+                       child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) {
+                const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+                tbox_layout_push_atomic_word(arena, child, child_style, face, styles, fonts, images, containing_width,
+                                             measure_only, words);
+                tbox_layout_join_words(words, first, false, state);
+            } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE ||
+                       (inside_inline && child_style->display != TBOX_STYLE_DISPLAY_NONE)) {
+                tbox_layout_collect_words_in(arena, child->first_child, NULL, child_style, styles, fonts, images,
+                                             containing_width, true, measure_only, state, words);
             }
         }
-        /* else: COMMENT/DOCTYPE, or an ELEMENT that isn't display:inline/img --
-         * contributes nothing, same as v0's "not a text tag" treatment. */
+        /* else: COMMENT/DOCTYPE, or a block/none ELEMENT directly under the
+         * text-bearing element -- contributes nothing. */
     }
+}
+
+static void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, tbox_vector *words) {
+    tbox_layout_inline_state state = {false, false};
+    tbox_layout_collect_words_in(arena, first_sibling, end_exclusive, style, styles, fonts, images, containing_width,
+                                 false, false, &state, words);
 }
 
 /* Greedy, per-word line breaking. Optional break-word preprocessing splits
@@ -634,15 +698,37 @@ static double tbox_layout_style_line_height(const tbox_style *style, const tbox_
 }
 
 static double tbox_layout_word_line_height(const tbox_layout_word *word) {
-    return word->image != NULL ? word->image_height :
+    return word->image != NULL || word->atomic != NULL ? word->image_height :
         tbox_layout_style_line_height(word->style, word->face);
 }
 
 static double tbox_layout_word_ascent(const tbox_layout_word *word) {
+    if (word->atomic != NULL) return word->atomic_ascent;
     if (word->image != NULL) return word->image_height;
     double leading = (tbox_layout_style_line_height(word->style, word->face) -
         tbox_font_face_line_height(word->face)) / 2.0;
     return tbox_font_face_ascent(word->face) + leading;
+}
+
+/* A line's height and dominant ascent over words [start, end): the max
+ * line-height and the max ascent among them. NOVO v15: with an inline-block
+ * on the line, whose content can hang below the baseline, the height also
+ * covers the max ascent plus the max descent (line-height minus ascent). */
+static void tbox_layout_line_metrics(const tbox_layout_word *words, size_t start, size_t end,
+                                     double *out_height, double *out_ascent) {
+    double height = 0.0, ascent = 0.0, descent = 0.0;
+    bool has_atomic = false;
+    for (size_t j = start; j < end; j++) {
+        double word_height = tbox_layout_word_line_height(&words[j]);
+        double word_ascent = tbox_layout_word_ascent(&words[j]);
+        if (word_height > height) height = word_height;
+        if (word_ascent > ascent) ascent = word_ascent;
+        if (word_height - word_ascent > descent) descent = word_height - word_ascent;
+        if (words[j].atomic != NULL) has_atomic = true;
+    }
+    if (has_atomic && ascent + descent > height) height = ascent + descent;
+    *out_height = height;
+    *out_ascent = ascent;
 }
 
 static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, double first_line_indent, bool no_wrap, tbox_vector *lines) {
@@ -655,18 +741,8 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
 
     for (size_t i = 0; i < word_count; i++) {
         if (words[i].hard_break) {
-            double height = 0.0;
-            double ascent = 0.0;
-            for (size_t j = line_start; j < i; j++) {
-                double face_height = tbox_layout_word_line_height(&words[j]);
-                if (face_height > height) {
-                    height = face_height;
-                }
-                double face_ascent = tbox_layout_word_ascent(&words[j]);
-                if (face_ascent > ascent) {
-                    ascent = face_ascent;
-                }
-            }
+            double height, ascent;
+            tbox_layout_line_metrics(words, line_start, i, &height, &ascent);
             if (i == line_start) {
                 height = tbox_layout_word_line_height(&words[i]);
                 ascent = tbox_layout_word_ascent(&words[i]);
@@ -686,18 +762,8 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
         double prospective = (i == line_start) ? line_width + words[i].width : line_width + words[i].space_width + words[i].width;
 
         if (!no_wrap && i > line_start && prospective > available_width) {
-            double height = 0.0;
-            double ascent = 0.0;
-            for (size_t j = line_start; j < i; j++) {
-                double face_height = tbox_layout_word_line_height(&words[j]);
-                if (face_height > height) {
-                    height = face_height;
-                }
-                double face_ascent = tbox_layout_word_ascent(&words[j]);
-                if (face_ascent > ascent) {
-                    ascent = face_ascent;
-                }
-            }
+            double height, ascent;
+            tbox_layout_line_metrics(words, line_start, i, &height, &ascent);
 
             tbox_layout_line *line = (tbox_layout_line *)tbox_vector_push(lines);
             line->start            = line_start;
@@ -713,18 +779,8 @@ static void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_c
     }
 
     if (line_start < word_count) {
-        double height = 0.0;
-        double ascent = 0.0;
-        for (size_t j = line_start; j < word_count; j++) {
-            double face_height = tbox_layout_word_line_height(&words[j]);
-            if (face_height > height) {
-                height = face_height;
-            }
-            double face_ascent = tbox_layout_word_ascent(&words[j]);
-            if (face_ascent > ascent) {
-                ascent = face_ascent;
-            }
-        }
+        double height, ascent;
+        tbox_layout_line_metrics(words, line_start, word_count, &height, &ascent);
         tbox_layout_line *line = (tbox_layout_line *)tbox_vector_push(lines);
         line->start            = line_start;
         line->end              = word_count;
@@ -802,7 +858,31 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
  * run's own reduced size -- a deliberate simplification, see
  * ARCHITECTURE.md. `run->style` is set to the SAME style that decided
  * `run_face`, for the reasons above. */
-static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs) {
+/* NOVO v15: the top y of an atomic inline (inline-block or image) of
+ * `height` whose baseline sits `ascent` below its top. `middle` centers it
+ * on the baseline raised by half an x-height (approximated as 55% of the
+ * block font's ascent); `top`/`bottom` align it with the line box's top/
+ * bottom; anything else uses the ordinary run offset. Only atomic inlines
+ * get middle/top/bottom here -- on a table cell those values align the
+ * cell's content instead, never the cell's own text runs. */
+static double tbox_layout_atomic_top(const tbox_style *style, const tbox_font_face *face, double ascent, double height,
+                                     const tbox_layout_line *line, double line_y, const tbox_font_face *block_face) {
+    switch (style->vertical_align) {
+    case TBOX_STYLE_VERTICAL_ALIGN_TOP:
+        return line_y;
+    case TBOX_STYLE_VERTICAL_ALIGN_BOTTOM:
+        return line_y + line->height - height;
+    case TBOX_STYLE_VERTICAL_ALIGN_MIDDLE: {
+        double x_height = block_face != NULL ? tbox_font_face_ascent(block_face) * 0.55 : 0.0;
+        return line_y + line->ascent - x_height / 2.0 - height / 2.0;
+    }
+    default:
+        return line_y + line->ascent - ascent +
+            tbox_layout_vertical_align_offset(style, face, ascent, height, block_face);
+    }
+}
+
+static double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs) {
     double cursor_x                  = 0.0;
     double run_start_x               = 0.0;
     double run_end_x                 = 0.0;
@@ -829,6 +909,35 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
             cursor_x += word->space_width + (justified ? justify_gap : 0.0);
         }
 
+        /* NOVO v15: an inline-block closes any open run and moves its
+         * already-built box onto the line: baseline on the line's baseline,
+         * then the same vertical-align offset a run would get. */
+        if (word->atomic != NULL) {
+            if (have_run) {
+                tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
+                run->rect.x               = content_x + run_start_x;
+                double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
+                run->rect.y               = run_is_image ?
+                    tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) :
+                    line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
+                        tbox_font_face_line_height(run_face), block_face);
+                run->rect.width           = run_end_x - run_start_x;
+                run->rect.height          = run_is_image ? run_image_height : line->height;
+                run->text                 = tbox_string_builder_finish(&run_builder);
+                run->font                 = run_face;
+                run->style                = run_style;
+                run->image                = run_is_image ? run_image : NULL;
+                have_run                  = false;
+            }
+            double x = content_x + cursor_x;
+            double y = tbox_layout_atomic_top(word->style, word->face, word->atomic_ascent, word->image_height,
+                                              line, line_y, block_face);
+            tbox_layout_translate(word->atomic, x - word->atomic->margin_box.x, y - word->atomic->margin_box.y);
+            cursor_x += word->width;
+            run_end_x = cursor_x;
+            continue;
+        }
+
         /* An image word never merges with a neighbor -- forced by
          * `word->image != NULL` (opening one) OR `run_is_image` (the
          * currently-open run already is one, so THIS word, whatever it is,
@@ -842,8 +951,10 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
                 run->rect.x               = content_x + run_start_x;
                 double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
-                run->rect.y               = line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
-                    run_is_image ? run_image_height : tbox_font_face_line_height(run_face), block_face);
+                run->rect.y               = run_is_image ?
+                    tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) :
+                    line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
+                        tbox_font_face_line_height(run_face), block_face);
                 run->rect.width           = run_end_x - run_start_x;
                 run->rect.height          = run_is_image ? run_image_height : line->height;
                 run->text                 = tbox_string_builder_finish(&run_builder);
@@ -873,8 +984,10 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
         tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
         run->rect.x               = content_x + run_start_x;
         double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
-        run->rect.y               = line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
-            run_is_image ? run_image_height : tbox_font_face_line_height(run_face), block_face);
+        run->rect.y               = run_is_image ?
+            tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) :
+            line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
+                tbox_font_face_line_height(run_face), block_face);
         run->rect.width           = run_end_x - run_start_x;
         run->rect.height          = run_is_image ? run_image_height : line->height;
         run->text                 = tbox_string_builder_finish(&run_builder);
@@ -882,6 +995,7 @@ static void tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_wor
         run->style                = run_style;
         run->image                = run_is_image ? run_image : NULL;
     }
+    return cursor_x;
 }
 
 static size_t tbox_layout_previous_codepoint(tbox_string_view text) {
@@ -908,7 +1022,8 @@ static void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *wor
          * glued to the previous one (no space), so the greedy line breaker
          * can break between any two characters and fill each line. Run
          * building merges the pieces back into one run per line. */
-        if (word->style->word_break_all && !word->hard_break && word->image == NULL && word->text.size > 0) {
+        if (word->style->word_break_all && !word->hard_break && word->image == NULL && word->atomic == NULL &&
+            word->text.size > 0) {
             size_t start = 0;
             while (start < word->text.size) {
                 size_t next = start + 1;
@@ -1165,7 +1280,7 @@ static void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox
 
         tbox_string_view line = tbox_string_view_make(text.data + line_start, i - line_start);
 
-        tbox_layout_word *entry = (tbox_layout_word *)tbox_vector_push(words);
+        tbox_layout_word *entry = tbox_layout_new_word(words);
         entry->text             = line;
         entry->face             = face;
         entry->style            = style;
@@ -1262,7 +1377,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
                     display = tbox_string_view_make(masked, count * unit);
                 }
             }
-            tbox_layout_word *word = (tbox_layout_word *)tbox_vector_push(&words);
+            tbox_layout_word *word = tbox_layout_new_word(&words);
             word->text = display;
             word->face = face;
             word->style = style;
@@ -1333,7 +1448,7 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
             }
             if (gaps > 0 && used < available_width) justify_gap = (available_width - used) / (double)gaps;
         }
-        tbox_layout_build_line_runs(arena, word_items, line, cumulative_y,
+        double line_used = tbox_layout_build_line_runs(arena, word_items, line, cumulative_y,
             content_x + (li == 0 ? indent : 0.0), block_face, justify_gap, &runs);
         if (style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS &&
             tbox_layout_white_space_nowrap(style) && style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN &&
@@ -1346,11 +1461,18 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
         }
         size_t runs_after = tbox_vector_length(&runs);
 
+        bool line_has_atomic = false;
+        for (size_t w = line->start; w < line->end; w++)
+            if (word_items[w].atomic != NULL) line_has_atomic = true;
         if ((style->text_align == TBOX_STYLE_TEXT_ALIGN_CENTER || style->text_align == TBOX_STYLE_TEXT_ALIGN_RIGHT) &&
-            runs_after > runs_before) {
+            (runs_after > runs_before || line_has_atomic)) {
             tbox_layout_text_run *run_items = (tbox_layout_text_run *)runs.data;
-            const tbox_layout_text_run *last_run = &run_items[runs_after - 1];
-            double line_width = (last_run->rect.x + last_run->rect.width) - content_x;
+            double line_width = (li == 0 ? indent : 0.0) + line_used;
+            if (runs_after > runs_before) {
+                const tbox_layout_text_run *last_run = &run_items[runs_after - 1];
+                double run_right = (last_run->rect.x + last_run->rect.width) - content_x;
+                if (run_right > line_width) line_width = run_right; /* an ellipsis mark */
+            }
 
             double offset = (style->text_align == TBOX_STYLE_TEXT_ALIGN_CENTER) ? (available_width - line_width) / 2.0 : (available_width - line_width);
 
@@ -1358,6 +1480,8 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
                 for (size_t ri = runs_before; ri < runs_after; ri++) {
                     run_items[ri].rect.x += offset;
                 }
+                for (size_t w = line->start; w < line->end; w++)
+                    if (word_items[w].atomic != NULL) tbox_layout_translate(word_items[w].atomic, offset, 0.0);
             }
         }
 
@@ -1367,6 +1491,17 @@ static double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_nod
 
     box->text_runs      = (tbox_layout_text_run *)runs.data;
     box->text_run_count = runs.length;
+
+    /* NOVO v15: inline-blocks become this box's children, in document
+     * order, so Render paints them and hit testing reaches them. */
+    for (size_t w = 0; w < word_count; w++) {
+        tbox_layout_box *atomic = word_items[w].atomic;
+        if (atomic == NULL) continue;
+        atomic->parent = box;
+        if (box->last_child == NULL) box->first_child = atomic;
+        else box->last_child->next_sibling = atomic;
+        box->last_child = atomic;
+    }
     return total_height;
 }
 
@@ -1509,6 +1644,18 @@ typedef struct tbox_layout_positioned_context {
  * the generic one. See ARCHITECTURE.md's table-support section. */
 static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count);
 
+/* NOVO v15: a border-box size imposed by the caller (inline-block
+ * shrink-to-fit, flex item main/cross sizes) instead of the box's own
+ * width/height resolution. An imposed size is final: min/max constraints
+ * are the caller's job, already applied. An imposed height is definite for
+ * the box's children, like a declared px height. */
+typedef struct tbox_layout_forced_size {
+    bool has_width, has_height;
+    double width, height;
+} tbox_layout_forced_size;
+
+static tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count, const tbox_layout_forced_size *forced);
+
 /* NOVO v5: resolves an `absolute`/`fixed` box's MARGIN BOX origin on one axis
  * -- a POSITION against the containing block's origin/size, not a delta like
  * tbox_layout_resolve_offset (v4, for `position: relative`) computes. `primary`
@@ -1556,7 +1703,9 @@ static bool tbox_layout_is_inline_run_trigger(tbox_arena *arena, const tbox_html
         if (tbox_layout_is_hidden_input(child)) return false;
         const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
         bool is_out_of_flow            = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED);
-        return child_style->display == TBOX_STYLE_DISPLAY_INLINE && !is_out_of_flow;
+        return (child_style->display == TBOX_STYLE_DISPLAY_INLINE ||
+                child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK ||
+                child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) && !is_out_of_flow;
     }
 
     return false;
@@ -1590,13 +1739,298 @@ static const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *ru
             break; /* terminates, NOT consumed -- built via the out-of-flow path instead */
         }
 
-        if (node_style->display == TBOX_STYLE_DISPLAY_INLINE) {
-            continue; /* in-flow inline: extends the sequence */
+        if (node_style->display == TBOX_STYLE_DISPLAY_INLINE ||
+            node_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK ||
+            node_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) {
+            continue; /* in-flow inline or inline-block: extends the sequence */
         }
 
         break; /* in-flow block terminates, NOT consumed */
     }
     return node;
+}
+
+/* ---- NOVO v15: intrinsic sizes (min-content / max-content widths) ----
+ *
+ * What a box needs horizontally when laid out without a width to fill:
+ * `max` is its widest line when nothing wraps except at forced breaks,
+ * `min` its widest unbreakable piece (a word, an image, a nested fixed or
+ * min-content width). Used for inline-block shrink-to-fit and flex base
+ * sizes. Approximations: percentages (widths, padding, margins, min/max)
+ * count as 0, `word-break: break-all` still measures whole words, and a
+ * table sums its widest row's cells. */
+typedef struct tbox_layout_intrinsic {
+    double min, max;
+} tbox_layout_intrinsic;
+
+static tbox_layout_intrinsic tbox_layout_intrinsic_outer(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images);
+static bool tbox_layout_tag(const tbox_html_node *node, const char *name);
+
+/* Min/max widths of a word sequence: lines end only at hard breaks; a
+ * piece stays unbreakable across words glued without a space. `no_wrap`
+ * (nowrap/pre text) makes every line unbreakable. */
+static tbox_layout_intrinsic tbox_layout_measure_words(const tbox_layout_word *words, size_t count, bool no_wrap) {
+    tbox_layout_intrinsic result = {0.0, 0.0};
+    double line = 0.0, piece = 0.0;
+    bool line_start = true;
+    for (size_t i = 0; i < count; i++) {
+        const tbox_layout_word *word = &words[i];
+        if (word->hard_break) {
+            line = piece = 0.0;
+            line_start = true;
+            continue;
+        }
+        double space = line_start ? 0.0 : word->space_width;
+        double min_width = word->has_min_width ? word->min_width : word->width;
+        line += space + word->width;
+        if (no_wrap || (!line_start && word->no_space_before)) piece += space + min_width;
+        else piece = min_width;
+        line_start = false;
+        if (line > result.max) result.max = line;
+        if (piece > result.min) result.min = piece;
+    }
+    if (result.min > result.max) result.max = result.min;
+    return result;
+}
+
+static double tbox_layout_px_or_zero(tbox_style_length length) {
+    return length.kind == TBOX_STYLE_LENGTH_PX ? length.value : 0.0;
+}
+
+/* The content-box min/max widths of `node`'s own content. */
+static tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images) {
+    tbox_layout_intrinsic result = {0.0, 0.0};
+    const tbox_style *style = tbox_layout_style_or_default(styles, node);
+    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family),
+        style->font_weight_bold, style->font_italic, style->font_size);
+
+    if (tbox_layout_is_image_input(node)) {
+        const tbox_html_attribute *src = tbox_html_node_get_attribute(node, tbox_string_view_make("src", 3));
+        const tbox_image *image = src != NULL ? tbox_image_cache_get(images, src->value) : NULL;
+        result.min = result.max = image != NULL ? (double)image->width : 16.0;
+        return result;
+    }
+    if (tbox_layout_tag(node, "textarea")) {
+        if (face != NULL) result.min = result.max = tbox_layout_textarea_size(node, "cols", 20) *
+            tbox_font_measure_text(face, tbox_string_view_make("0", 1));
+        return result;
+    }
+    if (tbox_layout_tag(node, "tr")) {
+        for (const tbox_html_node *cell = node->first_child; cell != NULL; cell = cell->next_sibling) {
+            if (cell->type != TBOX_HTML_NODE_ELEMENT) continue;
+            tbox_layout_intrinsic outer = tbox_layout_intrinsic_outer(arena, cell, styles, fonts, images);
+            result.min += outer.min;
+            result.max += outer.max;
+        }
+        return result;
+    }
+
+    /* NOVO v16: a row sums its items (a nowrap row also sums their minimums);
+     * a column, like a block, takes the widest item. */
+    if ((style->display == TBOX_STYLE_DISPLAY_FLEX || style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) &&
+        !tbox_layout_tag(node, "input") && !tbox_layout_tag(node, "select")) {
+        bool row = style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW ||
+            style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE;
+        bool wrap = style->flex_wrap != TBOX_STYLE_FLEX_WRAP_NOWRAP;
+        double gap = row && style->column_gap.kind == TBOX_STYLE_LENGTH_PX ? style->column_gap.value : 0.0;
+        size_t items = 0;
+        for (const tbox_html_node *child = node->first_child; child != NULL;) {
+            tbox_layout_intrinsic contribution = {0.0, 0.0};
+            bool is_item = false;
+            if (child->type == TBOX_HTML_NODE_TEXT) {
+                const tbox_html_node *end = child;
+                while (end != NULL && end->type != TBOX_HTML_NODE_ELEMENT) end = end->next_sibling;
+                tbox_vector words;
+                tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+                tbox_layout_inline_state state = {false, false};
+                tbox_layout_collect_words_in(arena, child, end, style, styles, fonts, images, 0.0, false, true,
+                                             &state, &words);
+                if (words.length > 0) {
+                    contribution = tbox_layout_measure_words((const tbox_layout_word *)words.data, words.length,
+                                                             tbox_layout_white_space_nowrap(style));
+                    is_item = true;
+                }
+                child = end;
+            } else {
+                if (child->type == TBOX_HTML_NODE_ELEMENT && !tbox_layout_is_hidden_input(child)) {
+                    const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
+                    if (child_style->display != TBOX_STYLE_DISPLAY_NONE &&
+                        child_style->position != TBOX_STYLE_POSITION_ABSOLUTE &&
+                        child_style->position != TBOX_STYLE_POSITION_FIXED) {
+                        if (tbox_layout_tag(child, "img")) {
+                            tbox_vector words;
+                            tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+                            tbox_layout_push_image_word(arena, child, child_style, NULL, images, 0.0, &words);
+                            contribution = tbox_layout_measure_words((const tbox_layout_word *)words.data,
+                                                                     words.length, false);
+                        } else {
+                            contribution = tbox_layout_intrinsic_outer(arena, child, styles, fonts, images);
+                        }
+                        is_item = true;
+                    }
+                }
+                child = child->next_sibling;
+            }
+            if (!is_item) continue;
+            if (row) {
+                result.max += contribution.max + (items > 0 ? gap : 0.0);
+                if (wrap) {
+                    if (contribution.min > result.min) result.min = contribution.min;
+                } else {
+                    result.min += contribution.min + (items > 0 ? gap : 0.0);
+                }
+            } else {
+                if (contribution.min > result.min) result.min = contribution.min;
+                if (contribution.max > result.max) result.max = contribution.max;
+            }
+            items++;
+        }
+        return result;
+    }
+
+    if (tbox_layout_is_text_tag(node)) {
+        tbox_vector words;
+        tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+        bool is_pre = tbox_layout_tag(node, "pre") &&
+            (style->white_space == TBOX_STYLE_WHITE_SPACE_AUTO || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE);
+        if (is_pre) {
+            tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
+        } else {
+            tbox_layout_push_list_marker(arena, node, style, fonts, &words);
+            tbox_layout_inline_state state = {false, false};
+            tbox_layout_collect_words_in(arena, node->first_child, NULL, style, styles, fonts, images, 0.0,
+                                         false, true, &state, &words);
+        }
+        return tbox_layout_measure_words((const tbox_layout_word *)words.data, words.length,
+                                         is_pre || tbox_layout_white_space_nowrap(style));
+    }
+
+    /* Block container: loose inline content measures like an anonymous
+     * box; each in-flow element child contributes its outer size. */
+    for (const tbox_html_node *child = node->first_child; child != NULL;) {
+        if (child->type != TBOX_HTML_NODE_ELEMENT && child->type != TBOX_HTML_NODE_TEXT) {
+            child = child->next_sibling;
+            continue;
+        }
+        if (tbox_layout_is_inline_run_trigger(arena, child, styles)) {
+            const tbox_html_node *run_end = tbox_layout_inline_run_end(child, styles);
+            tbox_vector words;
+            tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+            tbox_layout_inline_state state = {false, false};
+            tbox_layout_collect_words_in(arena, child, run_end, style, styles, fonts, images, 0.0, false, true,
+                                         &state, &words);
+            tbox_layout_intrinsic run = tbox_layout_measure_words((const tbox_layout_word *)words.data, words.length,
+                                                                  tbox_layout_white_space_nowrap(style));
+            if (run.min > result.min) result.min = run.min;
+            if (run.max > result.max) result.max = run.max;
+            child = run_end;
+            continue;
+        }
+        if (child->type == TBOX_HTML_NODE_ELEMENT && !tbox_layout_is_hidden_input(child)) {
+            const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
+            if (child_style->display != TBOX_STYLE_DISPLAY_NONE &&
+                child_style->position != TBOX_STYLE_POSITION_ABSOLUTE &&
+                child_style->position != TBOX_STYLE_POSITION_FIXED) {
+                tbox_layout_intrinsic outer = tbox_layout_intrinsic_outer(arena, child, styles, fonts, images);
+                if (outer.min > result.min) result.min = outer.min;
+                if (outer.max > result.max) result.max = outer.max;
+            }
+        }
+        child = child->next_sibling;
+    }
+    return result;
+}
+
+/* `node`'s min/max contribution to its parent: content plus padding,
+ * border and px margins, with a px `width` and px min/max-width applied. */
+static tbox_layout_intrinsic tbox_layout_intrinsic_outer(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images) {
+    const tbox_style *style = tbox_layout_style_or_default(styles, node);
+    tbox_layout_intrinsic result = {0.0, 0.0};
+    if (style->display == TBOX_STYLE_DISPLAY_NONE) return result;
+    double edges = tbox_layout_px_or_zero(style->padding[1]) + tbox_layout_px_or_zero(style->padding[3]) +
+        tbox_style_border_side_width(style, 1) + tbox_style_border_side_width(style, 3);
+    double margins = tbox_layout_px_or_zero(style->margin[1]) + tbox_layout_px_or_zero(style->margin[3]);
+    bool border_box = style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX;
+
+    if (style->width.kind == TBOX_STYLE_LENGTH_PX) {
+        double width = style->width.value - (border_box ? edges : 0.0);
+        result.min = result.max = width > 0.0 ? width : 0.0;
+    } else {
+        result = tbox_layout_intrinsic_content(arena, node, styles, fonts, images);
+    }
+    if (style->max_width.kind == TBOX_STYLE_LENGTH_PX) {
+        double maximum = style->max_width.value - (border_box ? edges : 0.0);
+        if (result.max > maximum) result.max = maximum;
+        if (result.min > maximum) result.min = maximum;
+    }
+    if (style->min_width.kind == TBOX_STYLE_LENGTH_PX) {
+        double minimum = style->min_width.value - (border_box ? edges : 0.0);
+        if (result.max < minimum) result.max = minimum;
+        if (result.min < minimum) result.min = minimum;
+    }
+    if (result.min < 0.0) result.min = 0.0;
+    if (result.max < result.min) result.max = result.min;
+    result.min += edges + margins;
+    result.max += edges + margins;
+    return result;
+}
+
+/* The baseline of a laid-out inline-block, from its margin box top: the
+ * baseline of its last text line (the lowest text run in its subtree), or
+ * its bottom margin edge when it has none or clips its overflow (CSS2.1
+ * 10.8.1). */
+static void tbox_layout_last_baseline(const tbox_layout_box *box, double *best_y, double *baseline) {
+    for (size_t i = 0; i < box->text_run_count; i++) {
+        const tbox_layout_text_run *run = &box->text_runs[i];
+        if (run->image != NULL || run->font == NULL || run->rect.y < *best_y) continue;
+        *best_y = run->rect.y;
+        *baseline = run->rect.y + tbox_font_face_ascent(run->font);
+    }
+    for (const tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
+        tbox_layout_last_baseline(child, best_y, baseline);
+}
+
+/* NOVO v15: pushes an `inline-block` as one atomic word. Its width is the
+ * declared one or, when auto, shrink-to-fit: min(max(min-content,
+ * available), max-content) per CSS2.1 10.3.9. The box is built at the
+ * origin (tbox_layout_build_line_runs moves it onto its line afterwards);
+ * absolute/fixed descendants whose containing block lies outside it are not
+ * supported and resolve against that provisional origin. */
+static void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node, const tbox_style *node_style, const tbox_font_face *context_face, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, bool measure_only, tbox_vector *words) {
+    tbox_layout_intrinsic outer = tbox_layout_intrinsic_outer(arena, node, styles, fonts, images);
+    tbox_layout_word *word = tbox_layout_new_word(words);
+    word->face          = context_face;
+    word->style         = node_style;
+    word->space_width   = context_face != NULL ? tbox_font_measure_text_spaced(context_face,
+        tbox_string_view_make(" ", 1), node_style->letter_spacing) + node_style->word_spacing : 0.0;
+    word->has_min_width = true;
+    word->min_width     = outer.min;
+    word->width         = outer.max;
+    if (measure_only) return;
+
+    tbox_layout_forced_size forced = {0};
+    if (node_style->width.kind == TBOX_STYLE_LENGTH_AUTO) {
+        double margins = tbox_layout_resolve_edge(node_style->margin[1], containing_width) +
+            tbox_layout_resolve_edge(node_style->margin[3], containing_width);
+        double available = containing_width - margins;
+        double width = outer.max - margins;
+        if (width > available) width = available;
+        if (width < outer.min - margins) width = outer.min - margins;
+        forced.has_width = true;
+        forced.width = width > 0.0 ? width : 0.0;
+    }
+    tbox_layout_containing_block container = {0.0, 0.0, containing_width, 0.0, false};
+    tbox_rect origin = {0.0, 0.0, containing_width, 0.0};
+    tbox_layout_positioned_context context = {origin, origin};
+    tbox_layout_box *box = tbox_layout_build_element_sized(arena, node, styles, fonts, images, container, 0.0,
+        context, NULL, 0, forced.has_width ? &forced : NULL);
+
+    double best_y = -1e300, baseline = box->margin_box.y + box->margin_box.height;
+    if (node_style->overflow_y == TBOX_STYLE_OVERFLOW_Y_VISIBLE) tbox_layout_last_baseline(box, &best_y, &baseline);
+    word->atomic        = box;
+    word->width         = box->margin_box.width;
+    word->image_height  = box->margin_box.height;
+    word->atomic_ascent = baseline - box->margin_box.y;
 }
 
 /* NOVO v14: builds ONE anonymous block box (`box->node == NULL`, a
@@ -2038,13 +2472,7 @@ static tbox_layout_box *tbox_layout_table_box(tbox_arena *arena, const tbox_html
 }
 
 static void tbox_layout_table_shift_y(tbox_layout_box *box, double amount) {
-    box->margin_box.y += amount;
-    box->border_box.y += amount;
-    box->padding_box.y += amount;
-    box->content_box.y += amount;
-    for (size_t i = 0; i < box->text_run_count; i++) box->text_runs[i].rect.y += amount;
-    for (tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
-        tbox_layout_table_shift_y(child, amount);
+    tbox_layout_translate(box, 0.0, amount);
 }
 
 static bool tbox_layout_table_extended(const tbox_html_node *table, const tbox_style_table *styles) {
@@ -2643,7 +3071,610 @@ static double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node
  * below). `positioned_context` (NOVO v5) is what this box's OWN descendants,
  * if any, will use to position themselves if they turn out to be
  * `absolute`/`fixed` -- see tbox_layout_positioned_context above. */
+/* ---- NOVO v16: flex formatting context ----
+ *
+ * A simplified CSS Flexbox Level 1 layout (§9): items (element children,
+ * plus each run of loose text as an anonymous item), `order`, flex base
+ * and hypothetical sizes with the automatic minimum size, line breaking
+ * for `flex-wrap`, the flexible-length resolution loop with min/max
+ * freezing, cross sizes with `stretch`, `align-content` for multi-line
+ * containers, auto margins, `justify-content`, `align-items`/`align-self`
+ * (first-baseline alignment for rows) and reversed directions. Each item is
+ * laid out with tbox_layout_build_element_sized once its sizes are known;
+ * a measuring build first gives its content height where needed.
+ * Simplifications: percentages in an item's padding/margins resolve
+ * against the container width; a column container without a definite
+ * height never grows or shrinks its items and never wraps; `visibility:
+ * collapse` items and fragmentation are not supported. */
+
+#define TBOX_LAYOUT_FLEX_INFINITE 1e300
+
+typedef struct tbox_layout_flex_item {
+    const tbox_html_node *node;    /* the element, or the first node of an anonymous text run */
+    const tbox_html_node *run_end; /* anonymous runs only: end of the run (exclusive) */
+    bool anonymous;
+    const tbox_style *style;       /* the element's style, or the container's for a text run */
+    int order;
+    size_t index;
+    double margin[4];              /* top right bottom left, auto as 0 */
+    bool margin_auto[4];
+    double edges[4];               /* padding + border, top right bottom left */
+    double base, hypothetical, min_main, max_main, target; /* border-box main sizes */
+    double violation;              /* clamping adjustment in the current resolution pass */
+    bool frozen;
+    double cross;                  /* border-box cross size */
+    bool stretch;
+    double baseline;               /* first baseline from the margin-box cross start */
+    double main_pos, cross_pos;    /* margin-box position, relative to the content box */
+    tbox_layout_box *box;          /* the step-5 build at the resolved main size, at the origin */
+} tbox_layout_flex_item;
+
+/* True when laying `node` out elsewhere and moving it would misplace a
+ * descendant: a `fixed` one (the viewport never moves), or an `absolute`
+ * one with no positioned ancestor at or below `node`. */
+static bool tbox_layout_has_escaping_positioned(const tbox_html_node *node, const tbox_style_table *styles,
+                                                bool contained) {
+    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+        if (child->type != TBOX_HTML_NODE_ELEMENT) continue;
+        const tbox_style *style = tbox_layout_style_or_default(styles, child);
+        if (style->display == TBOX_STYLE_DISPLAY_NONE) continue;
+        if (style->position == TBOX_STYLE_POSITION_FIXED) return true;
+        if (style->position == TBOX_STYLE_POSITION_ABSOLUTE && !contained) return true;
+        if (tbox_layout_has_escaping_positioned(child, styles,
+                contained || style->position != TBOX_STYLE_POSITION_STATIC)) return true;
+    }
+    return false;
+}
+
+typedef struct tbox_layout_flex_line {
+    size_t start, end;
+    double cross, max_baseline;
+} tbox_layout_flex_line;
+
+static void tbox_layout_first_baseline(const tbox_layout_box *box, double *best_y, double *baseline) {
+    for (size_t i = 0; i < box->text_run_count; i++) {
+        const tbox_layout_text_run *run = &box->text_runs[i];
+        if (run->image != NULL || run->font == NULL || run->rect.y >= *best_y) continue;
+        *best_y = run->rect.y;
+        *baseline = run->rect.y + tbox_font_face_ascent(run->font);
+    }
+    for (const tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
+        tbox_layout_first_baseline(child, best_y, baseline);
+}
+
+/* Anonymous items (text runs, images) neither grow nor shrink by more
+ * than the initial values: flex: 0 1 auto. */
+static double tbox_layout_flex_grow(const tbox_layout_flex_item *item) {
+    return item->anonymous ? 0.0 : item->style->flex_grow;
+}
+
+static double tbox_layout_flex_shrink(const tbox_layout_flex_item *item) {
+    return item->anonymous ? 1.0 : item->style->flex_shrink;
+}
+
+/* The item's effective `align-self`. */
+static tbox_style_flex_align tbox_layout_flex_align(const tbox_style *container, const tbox_layout_flex_item *item) {
+    tbox_style_flex_align align = item->anonymous ? TBOX_STYLE_FLEX_ALIGN_NORMAL : item->style->align_self;
+    if (align == TBOX_STYLE_FLEX_ALIGN_NORMAL) align = container->align_items;
+    return align == TBOX_STYLE_FLEX_ALIGN_NORMAL ? TBOX_STYLE_FLEX_ALIGN_STRETCH : align;
+}
+
+/* A border-box size from a px/percent content (or border-box) length. */
+static bool tbox_layout_flex_definite(tbox_style_length length, double base, bool base_definite,
+                                      const tbox_style *style, double edges, double *out) {
+    if (length.kind == TBOX_STYLE_LENGTH_PX) *out = length.value;
+    else if (length.kind == TBOX_STYLE_LENGTH_PERCENT && base_definite) *out = length.value / 100.0 * base;
+    else return false;
+    if (style->box_sizing != TBOX_STYLE_BOX_SIZING_BORDER_BOX) *out += edges;
+    if (*out < edges) *out = edges;
+    return true;
+}
+
+/* Builds one item with the given border-box sizes (negative = natural) at
+ * margin-box origin (x, y). */
+static tbox_layout_box *tbox_layout_flex_build_item(tbox_arena *arena, const tbox_layout_flex_item *item,
+        const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts,
+        tbox_image_cache *images, double x, double y, double width, double height, double content_width,
+        double content_height, bool height_definite, tbox_layout_positioned_context context) {
+    if (item->anonymous) {
+        return tbox_layout_build_anonymous_box(arena, item->node, item->run_end, container_style, styles, fonts,
+                                               images, x, y, width >= 0.0 ? width : content_width);
+    }
+    tbox_layout_forced_size forced = {width >= 0.0, height >= 0.0, width, height};
+    tbox_layout_containing_block container = {x, y, content_width, content_height, height_definite};
+    return tbox_layout_build_element_sized(arena, item->node, styles, fonts, images, container, y, context,
+                                           NULL, 0, &forced);
+}
+
+static double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style,
+        const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x,
+        double content_y, double content_width, double content_height, bool height_definite, tbox_layout_box *box,
+        tbox_layout_positioned_context context) {
+    bool row = style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW ||
+        style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE;
+    bool reverse = style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE ||
+        style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_COLUMN_REVERSE;
+    bool main_definite = row || height_definite;
+    double main_size = row ? content_width : (height_definite ? content_height : TBOX_LAYOUT_FLEX_INFINITE);
+    bool cross_definite = row ? height_definite : true;
+    double cross_size = row ? content_height : content_width;
+    double column_gap = style->column_gap.kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 :
+        tbox_layout_resolve_edge(style->column_gap, content_width);
+    double row_gap = style->row_gap.kind == TBOX_STYLE_LENGTH_PX ? style->row_gap.value :
+        style->row_gap.kind == TBOX_STYLE_LENGTH_PERCENT && height_definite ?
+            style->row_gap.value / 100.0 * content_height : 0.0;
+    double main_gap = row ? column_gap : row_gap, cross_gap = row ? row_gap : column_gap;
+    /* Axis indices into top/right/bottom/left arrays. */
+    size_t main_start = row ? 3 : 0, main_end = row ? 1 : 2;
+    size_t cross_start = row ? 0 : 3, cross_end = row ? 2 : 1;
+
+    /* 1. Items, in `order`-modified document order. */
+    tbox_vector items;
+    tbox_vector_init(&items, arena, sizeof(tbox_layout_flex_item), 0);
+    tbox_vector out_of_flow;
+    tbox_vector_init(&out_of_flow, arena, sizeof(const tbox_html_node *), 0);
+    for (const tbox_html_node *child = node->first_child; child != NULL;) {
+        if (child->type == TBOX_HTML_NODE_TEXT) {
+            const tbox_html_node *end = child;
+            bool visible = false;
+            while (end != NULL && end->type != TBOX_HTML_NODE_ELEMENT) {
+                if (end->type == TBOX_HTML_NODE_TEXT && tbox_string_collapse_whitespace(arena, end->text.text).size > 0)
+                    visible = true;
+                end = end->next_sibling;
+            }
+            if (visible) {
+                tbox_layout_flex_item *item = (tbox_layout_flex_item *)tbox_vector_push(&items);
+                memset(item, 0, sizeof(*item));
+                item->node = child;
+                item->run_end = end;
+                item->anonymous = true;
+                item->style = style;
+                item->index = items.length - 1;
+            }
+            child = end;
+            continue;
+        }
+        if (child->type == TBOX_HTML_NODE_ELEMENT && !tbox_layout_is_hidden_input(child)) {
+            const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
+            bool positioned_out = child_style->position == TBOX_STYLE_POSITION_ABSOLUTE ||
+                child_style->position == TBOX_STYLE_POSITION_FIXED;
+            if (tbox_layout_tag(child, "img") && child_style->display != TBOX_STYLE_DISPLAY_NONE && !positioned_out) {
+                /* An image is laid out as an image word, so it becomes an
+                 * anonymous item holding just that word. */
+                tbox_layout_flex_item *item = (tbox_layout_flex_item *)tbox_vector_push(&items);
+                memset(item, 0, sizeof(*item));
+                item->node = child;
+                item->run_end = child->next_sibling;
+                item->anonymous = true;
+                item->style = style;
+                item->order = child_style->order;
+                item->index = items.length - 1;
+            } else if (child_style->display == TBOX_STYLE_DISPLAY_NONE) {
+                /* no box */
+            } else if (positioned_out) {
+                *(const tbox_html_node **)tbox_vector_push(&out_of_flow) = child;
+            } else {
+                tbox_layout_flex_item *item = (tbox_layout_flex_item *)tbox_vector_push(&items);
+                memset(item, 0, sizeof(*item));
+                item->node = child;
+                item->style = child_style;
+                item->order = child_style->order;
+                item->index = items.length - 1;
+            }
+        }
+        child = child->next_sibling;
+    }
+    tbox_layout_flex_item *item_data = (tbox_layout_flex_item *)items.data;
+    size_t count = items.length;
+    for (size_t i = 1; i < count; i++) { /* stable insertion sort by order */
+        tbox_layout_flex_item key = item_data[i];
+        size_t j = i;
+        while (j > 0 && item_data[j - 1].order > key.order) {
+            item_data[j] = item_data[j - 1];
+            j--;
+        }
+        item_data[j] = key;
+    }
+
+    /* 2. Edges, flex base size, min/max and hypothetical main size. */
+    for (size_t i = 0; i < count; i++) {
+        tbox_layout_flex_item *item = &item_data[i];
+        const tbox_style *s = item->style;
+        if (!item->anonymous) {
+            for (size_t side = 0; side < 4; side++) {
+                item->margin_auto[side] = s->margin[side].kind == TBOX_STYLE_LENGTH_AUTO;
+                item->margin[side] = tbox_layout_resolve_edge(s->margin[side], content_width);
+                item->edges[side] = tbox_layout_resolve_edge(s->padding[side], content_width) +
+                    tbox_style_border_side_width(s, side);
+            }
+        }
+        double main_edges = item->edges[main_start] + item->edges[main_end];
+        double cross_edges = item->edges[cross_start] + item->edges[cross_end];
+        double cross_margins = item->margin[cross_start] + item->margin[cross_end];
+        tbox_style_length main_length = row ? s->width : s->height;
+        tbox_style_length cross_length = row ? s->height : s->width;
+        item->stretch = tbox_layout_flex_align(style, item) == TBOX_STYLE_FLEX_ALIGN_STRETCH &&
+            (item->anonymous || cross_length.kind == TBOX_STYLE_LENGTH_AUTO) &&
+            !item->margin_auto[cross_start] && !item->margin_auto[cross_end];
+
+        /* Content sizes along the main axis. A row measures intrinsic
+         * widths; a column lays the item out at its cross size. */
+        double content_min = 0.0, content_max = 0.0;
+        if (row) {
+            tbox_layout_intrinsic intrinsic;
+            if (item->anonymous) {
+                tbox_vector words;
+                tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+                tbox_layout_inline_state state = {false, false};
+                tbox_layout_collect_words_in(arena, item->node, item->run_end, style, styles, fonts, images, 0.0,
+                                             false, true, &state, &words);
+                intrinsic = tbox_layout_measure_words((const tbox_layout_word *)words.data, words.length,
+                                                      tbox_layout_white_space_nowrap(style));
+            } else {
+                intrinsic = tbox_layout_intrinsic_content(arena, item->node, styles, fonts, images);
+            }
+            content_min = intrinsic.min + main_edges;
+            content_max = intrinsic.max + main_edges;
+        } else {
+            double width = -1.0;
+            if (item->anonymous || cross_length.kind == TBOX_STYLE_LENGTH_AUTO) {
+                double available = cross_size - cross_margins;
+                if (item->stretch) {
+                    width = available;
+                } else {
+                    tbox_layout_intrinsic outer = item->anonymous ? (tbox_layout_intrinsic){available, available} :
+                        tbox_layout_intrinsic_outer(arena, item->node, styles, fonts, images);
+                    width = outer.max - cross_margins;
+                    if (width > available) width = available;
+                    if (width < outer.min - cross_margins) width = outer.min - cross_margins;
+                }
+                if (width < cross_edges) width = cross_edges;
+            }
+            tbox_layout_box *measured = tbox_layout_flex_build_item(arena, item, style, styles, fonts, images,
+                0.0, 0.0, width, -1.0, content_width, content_height, height_definite, context);
+            content_min = content_max = measured->border_box.height;
+            item->cross = measured->border_box.width;
+        }
+
+        double specified;
+        bool has_specified = !item->anonymous && tbox_layout_flex_definite(main_length, main_size, main_definite,
+                                                                            s, main_edges, &specified);
+        double basis;
+        if (!item->anonymous && tbox_layout_flex_definite(s->flex_basis, main_size, main_definite, s,
+                                                          main_edges, &basis)) {
+            /* definite flex-basis */
+        } else if (has_specified) {
+            basis = specified;
+        } else {
+            basis = content_max;
+        }
+        item->base = basis;
+
+        tbox_style_length min_length = row ? s->min_width : s->min_height;
+        tbox_style_length max_length = row ? s->max_width : s->max_height;
+        if (item->anonymous || min_length.kind == TBOX_STYLE_LENGTH_AUTO) {
+            /* Automatic minimum size: the content minimum, capped by a
+             * specified size; none for scroll containers. */
+            item->min_main = !item->anonymous && s->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE ? main_edges :
+                content_min;
+            if (has_specified && specified < item->min_main) item->min_main = specified;
+        } else if (!tbox_layout_flex_definite(min_length, main_size, main_definite, s, main_edges, &item->min_main)) {
+            item->min_main = main_edges;
+        }
+        if (item->anonymous || !tbox_layout_flex_definite(max_length, main_size, main_definite, s, main_edges,
+                                                           &item->max_main))
+            item->max_main = TBOX_LAYOUT_FLEX_INFINITE;
+        if (item->max_main < item->min_main) item->max_main = item->min_main;
+        double hypothetical = item->base;
+        if (hypothetical > item->max_main) hypothetical = item->max_main;
+        if (hypothetical < item->min_main) hypothetical = item->min_main;
+        item->hypothetical = hypothetical;
+    }
+
+    /* 3. Lines. */
+    tbox_vector lines;
+    tbox_vector_init(&lines, arena, sizeof(tbox_layout_flex_line), 0);
+    bool multi_line = style->flex_wrap != TBOX_STYLE_FLEX_WRAP_NOWRAP && main_definite;
+    size_t line_start = 0;
+    double line_used = 0.0;
+    for (size_t i = 0; i < count; i++) {
+        tbox_layout_flex_item *item = &item_data[i];
+        double outer = item->hypothetical + item->margin[main_start] + item->margin[main_end];
+        if (multi_line && i > line_start && line_used + main_gap + outer > main_size) {
+            *(tbox_layout_flex_line *)tbox_vector_push(&lines) = (tbox_layout_flex_line){line_start, i, 0.0, 0.0};
+            line_start = i;
+            line_used = outer;
+        } else {
+            line_used += (i > line_start ? main_gap : 0.0) + outer;
+        }
+    }
+    if (count > 0)
+        *(tbox_layout_flex_line *)tbox_vector_push(&lines) = (tbox_layout_flex_line){line_start, count, 0.0, 0.0};
+    tbox_layout_flex_line *line_data = (tbox_layout_flex_line *)lines.data;
+    size_t line_count = lines.length;
+
+    /* 4. Flexible lengths (§9.7), per line. */
+    double used_main = 0.0;
+    for (size_t l = 0; l < line_count; l++) {
+        tbox_layout_flex_line *line = &line_data[l];
+        size_t n = line->end - line->start;
+        double gaps = n > 1 ? main_gap * (double)(n - 1) : 0.0;
+        double sum_hypothetical = gaps;
+        for (size_t i = line->start; i < line->end; i++)
+            sum_hypothetical += item_data[i].hypothetical + item_data[i].margin[main_start] + item_data[i].margin[main_end];
+        bool grow = main_definite && sum_hypothetical < main_size;
+        for (size_t i = line->start; i < line->end; i++) {
+            tbox_layout_flex_item *item = &item_data[i];
+            double factor = grow ? tbox_layout_flex_grow(item) : tbox_layout_flex_shrink(item);
+            item->target = item->hypothetical;
+            item->frozen = !main_definite || factor == 0.0 || (grow && item->base > item->hypothetical) ||
+                (!grow && item->base < item->hypothetical);
+        }
+        double initial_free = 0.0;
+        if (main_definite) {
+            initial_free = main_size - gaps;
+            for (size_t i = line->start; i < line->end; i++) {
+                const tbox_layout_flex_item *item = &item_data[i];
+                initial_free -= (item->frozen ? item->target : item->base) + item->margin[main_start] + item->margin[main_end];
+            }
+        }
+        for (int iteration = 0; iteration < 64; iteration++) {
+            bool any_unfrozen = false;
+            double remaining = main_size - gaps, sum_factors = 0.0, sum_scaled = 0.0;
+            for (size_t i = line->start; i < line->end; i++) {
+                const tbox_layout_flex_item *item = &item_data[i];
+                remaining -= (item->frozen ? item->target : item->base) + item->margin[main_start] + item->margin[main_end];
+                if (item->frozen) continue;
+                any_unfrozen = true;
+                sum_factors += grow ? tbox_layout_flex_grow(item) : tbox_layout_flex_shrink(item);
+                sum_scaled += tbox_layout_flex_shrink(item) * item->base;
+            }
+            if (!any_unfrozen) break;
+            if (sum_factors < 1.0) {
+                double scaled_free = initial_free * sum_factors;
+                if ((scaled_free < 0.0 ? -scaled_free : scaled_free) < (remaining < 0.0 ? -remaining : remaining))
+                    remaining = scaled_free;
+            }
+            double total_violation = 0.0;
+            for (size_t i = line->start; i < line->end; i++) {
+                tbox_layout_flex_item *item = &item_data[i];
+                if (item->frozen) continue;
+                double target = item->base;
+                if (grow && sum_factors > 0.0)
+                    target += remaining * tbox_layout_flex_grow(item) / sum_factors;
+                else if (!grow && sum_scaled > 0.0)
+                    target += remaining * tbox_layout_flex_shrink(item) * item->base / sum_scaled;
+                double clamped = target;
+                if (clamped > item->max_main) clamped = item->max_main;
+                if (clamped < item->min_main) clamped = item->min_main;
+                item->violation = clamped - target;
+                total_violation += item->violation;
+                item->target = clamped;
+            }
+            /* Freeze everything when nothing was clamped, else only the
+             * items clamped in the direction of the total violation. */
+            for (size_t i = line->start; i < line->end; i++) {
+                tbox_layout_flex_item *item = &item_data[i];
+                if (item->frozen) continue;
+                if (total_violation == 0.0 || (total_violation > 0.0 && item->violation > 0.0) ||
+                    (total_violation < 0.0 && item->violation < 0.0))
+                    item->frozen = true;
+            }
+        }
+        double line_main = gaps;
+        for (size_t i = line->start; i < line->end; i++)
+            line_main += item_data[i].target + item_data[i].margin[main_start] + item_data[i].margin[main_end];
+        if (line_main > used_main) used_main = line_main;
+    }
+    double main_extent = main_definite ? main_size : used_main;
+
+    /* 5. Cross sizes and baselines, laid out at the resolved main size. */
+    for (size_t i = 0; i < count; i++) {
+        tbox_layout_flex_item *item = &item_data[i];
+        tbox_layout_box *measured;
+        if (row) {
+            measured = tbox_layout_flex_build_item(arena, item, style, styles, fonts, images, 0.0, 0.0,
+                item->target, -1.0, content_width, content_height, height_definite, context);
+            item->cross = measured->border_box.height;
+        } else {
+            measured = tbox_layout_flex_build_item(arena, item, style, styles, fonts, images, 0.0, 0.0,
+                item->cross, item->target, content_width, content_height, height_definite, context);
+        }
+        double best_y = TBOX_LAYOUT_FLEX_INFINITE;
+        double baseline = measured->border_box.y + measured->border_box.height;
+        tbox_layout_first_baseline(measured, &best_y, &baseline);
+        item->baseline = baseline - measured->border_box.y + item->margin[cross_start];
+        item->box = measured;
+    }
+    for (size_t l = 0; l < line_count; l++) {
+        tbox_layout_flex_line *line = &line_data[l];
+        double max_outer = 0.0, max_below = 0.0;
+        for (size_t i = line->start; i < line->end; i++) {
+            const tbox_layout_flex_item *item = &item_data[i];
+            double outer = item->cross + item->margin[cross_start] + item->margin[cross_end];
+            if (row && tbox_layout_flex_align(style, item) == TBOX_STYLE_FLEX_ALIGN_BASELINE) {
+                if (item->baseline > line->max_baseline) line->max_baseline = item->baseline;
+                if (outer - item->baseline > max_below) max_below = outer - item->baseline;
+            } else if (outer > max_outer) {
+                max_outer = outer;
+            }
+        }
+        line->cross = line->max_baseline + max_below > max_outer ? line->max_baseline + max_below : max_outer;
+        if (!multi_line && cross_definite) line->cross = cross_size;
+    }
+
+    /* 6. align-content: distribute leftover cross space between lines. */
+    double lines_cross = line_count > 1 ? cross_gap * (double)(line_count - 1) : 0.0;
+    for (size_t l = 0; l < line_count; l++) lines_cross += line_data[l].cross;
+    double cross_free = multi_line && cross_definite ? cross_size - lines_cross : 0.0;
+    double cross_offset = 0.0, cross_spacing = cross_gap;
+    if (cross_free > 0.0 && line_count > 0) {
+        switch (style->align_content) {
+        case TBOX_STYLE_FLEX_JUSTIFY_NORMAL:
+        case TBOX_STYLE_FLEX_JUSTIFY_STRETCH:
+            for (size_t l = 0; l < line_count; l++) line_data[l].cross += cross_free / (double)line_count;
+            break;
+        case TBOX_STYLE_FLEX_JUSTIFY_END: cross_offset = cross_free; break;
+        case TBOX_STYLE_FLEX_JUSTIFY_CENTER: cross_offset = cross_free / 2.0; break;
+        case TBOX_STYLE_FLEX_JUSTIFY_SPACE_BETWEEN:
+            if (line_count > 1) cross_spacing += cross_free / (double)(line_count - 1);
+            break;
+        case TBOX_STYLE_FLEX_JUSTIFY_SPACE_AROUND:
+            cross_offset = cross_free / (double)line_count / 2.0;
+            cross_spacing += cross_free / (double)line_count;
+            break;
+        case TBOX_STYLE_FLEX_JUSTIFY_SPACE_EVENLY:
+            cross_offset = cross_free / (double)(line_count + 1);
+            cross_spacing += cross_free / (double)(line_count + 1);
+            break;
+        default:
+            break;
+        }
+    }
+    double cross_extent = cross_definite ? cross_size : lines_cross;
+
+    /* 7. Positions: auto margins, justify-content, align-self. */
+    double line_cross_pos = cross_offset;
+    for (size_t l = 0; l < line_count; l++) {
+        tbox_layout_flex_line *line = &line_data[l];
+        size_t n = line->end - line->start;
+        double free = main_extent - (n > 1 ? main_gap * (double)(n - 1) : 0.0);
+        size_t auto_margins = 0;
+        for (size_t i = line->start; i < line->end; i++) {
+            const tbox_layout_flex_item *item = &item_data[i];
+            free -= item->target + item->margin[main_start] + item->margin[main_end];
+            auto_margins += item->margin_auto[main_start] + item->margin_auto[main_end];
+        }
+        double auto_share = 0.0;
+        if (free > 0.0 && auto_margins > 0) {
+            auto_share = free / (double)auto_margins;
+            free = 0.0;
+        }
+        double offset = 0.0, spacing = main_gap;
+        switch (style->justify_content) {
+        case TBOX_STYLE_FLEX_JUSTIFY_END: offset = free; break;
+        case TBOX_STYLE_FLEX_JUSTIFY_CENTER: offset = free / 2.0; break;
+        case TBOX_STYLE_FLEX_JUSTIFY_SPACE_BETWEEN:
+            if (free > 0.0 && n > 1) spacing += free / (double)(n - 1);
+            break;
+        case TBOX_STYLE_FLEX_JUSTIFY_SPACE_AROUND:
+            if (free > 0.0) {
+                offset = free / (double)n / 2.0;
+                spacing += free / (double)n;
+            } else {
+                offset = free / 2.0;
+            }
+            break;
+        case TBOX_STYLE_FLEX_JUSTIFY_SPACE_EVENLY:
+            if (free > 0.0) {
+                offset = free / (double)(n + 1);
+                spacing += free / (double)(n + 1);
+            } else {
+                offset = free / 2.0;
+            }
+            break;
+        default:
+            break;
+        }
+        double pos = offset;
+        for (size_t i = line->start; i < line->end; i++) {
+            tbox_layout_flex_item *item = &item_data[i];
+            double lead = item->margin_auto[main_start] ? auto_share : 0.0;
+            double trail = item->margin_auto[main_end] ? auto_share : 0.0;
+            double outer = item->target + item->margin[main_start] + item->margin[main_end] + lead + trail;
+            item->main_pos = pos + lead;
+            if (reverse) item->main_pos = main_extent - pos - outer + lead;
+            pos += outer + spacing;
+
+            /* Cross axis within the line. */
+            double outer_cross = item->cross + item->margin[cross_start] + item->margin[cross_end];
+            if (item->stretch) {
+                double stretched = line->cross - item->margin[cross_start] - item->margin[cross_end];
+                tbox_style_length min_length = row ? item->style->min_height : item->style->min_width;
+                tbox_style_length max_length = row ? item->style->max_height : item->style->max_width;
+                double cross_edges = item->edges[cross_start] + item->edges[cross_end], limit;
+                if (!item->anonymous && tbox_layout_flex_definite(max_length, cross_size, cross_definite,
+                        item->style, cross_edges, &limit) && stretched > limit) stretched = limit;
+                if (!item->anonymous && tbox_layout_flex_definite(min_length, cross_size, cross_definite,
+                        item->style, cross_edges, &limit) && stretched < limit) stretched = limit;
+                if (stretched < cross_edges) stretched = cross_edges;
+                item->cross = stretched;
+                outer_cross = item->cross + item->margin[cross_start] + item->margin[cross_end];
+            }
+            double cross_free_item = line->cross - outer_cross;
+            double shift = 0.0;
+            if (item->margin_auto[cross_start] && item->margin_auto[cross_end]) {
+                shift = cross_free_item > 0.0 ? cross_free_item / 2.0 : 0.0;
+            } else if (item->margin_auto[cross_start]) {
+                shift = cross_free_item > 0.0 ? cross_free_item : 0.0;
+            } else if (!item->margin_auto[cross_end]) {
+                switch (tbox_layout_flex_align(style, item)) {
+                case TBOX_STYLE_FLEX_ALIGN_END: shift = cross_free_item; break;
+                case TBOX_STYLE_FLEX_ALIGN_CENTER: shift = cross_free_item / 2.0; break;
+                case TBOX_STYLE_FLEX_ALIGN_BASELINE: shift = row ? line->max_baseline - item->baseline : 0.0; break;
+                default: break;
+                }
+            }
+            item->cross_pos = line_cross_pos + shift;
+            if (style->flex_wrap == TBOX_STYLE_FLEX_WRAP_WRAP_REVERSE)
+                item->cross_pos = cross_extent - line_cross_pos - line->cross + shift;
+        }
+        line_cross_pos += line->cross + cross_spacing;
+    }
+
+    /* 8. Final boxes, children in order-modified document order. */
+    tbox_layout_box *previous = NULL;
+    for (size_t i = 0; i < count; i++) {
+        const tbox_layout_flex_item *item = &item_data[i];
+        double x = content_x + (row ? item->main_pos : item->cross_pos);
+        double y = content_y + (row ? item->cross_pos : item->main_pos);
+        double width = row ? item->target : item->cross;
+        double height = row ? (item->stretch ? item->cross : -1.0) : item->target;
+        /* Reuse the step-5 build when its size is final and moving it is
+         * safe; otherwise lay the item out again in place. */
+        tbox_layout_box *child_box = item->box;
+        bool same_size = child_box != NULL && child_box->border_box.width == width &&
+            (height < 0.0 || child_box->border_box.height == height);
+        bool movable = item->anonymous || !tbox_layout_has_escaping_positioned(item->node, styles,
+            item->style->position != TBOX_STYLE_POSITION_STATIC);
+        if (same_size && movable) {
+            tbox_layout_translate(child_box, x - child_box->margin_box.x, y - child_box->margin_box.y);
+        } else {
+            child_box = tbox_layout_flex_build_item(arena, item, style, styles, fonts, images, x, y, width, height,
+                content_width, content_height, height_definite, context);
+        }
+        child_box->parent = box;
+        if (previous == NULL) box->first_child = child_box;
+        else previous->next_sibling = child_box;
+        box->last_child = child_box;
+        previous = child_box;
+    }
+    for (size_t i = 0; i < out_of_flow.length; i++) {
+        const tbox_html_node *child = *(const tbox_html_node **)tbox_vector_at(&out_of_flow, i);
+        const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
+        tbox_rect basis = child_style->position == TBOX_STYLE_POSITION_ABSOLUTE ? context.nearest_ancestor :
+            context.viewport;
+        tbox_layout_containing_block container = {basis.x, basis.y, basis.width, basis.height, true};
+        tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, images, container,
+                                                               content_y, context, NULL, 0);
+        child_box->parent = box;
+        if (previous == NULL) box->first_child = child_box;
+        else previous->next_sibling = child_box;
+        box->last_child = child_box;
+        previous = child_box;
+    }
+
+    double extent = row ? cross_extent : main_extent;
+    box->scroll_content_height = row ? lines_cross : used_main;
+    return extent;
+}
+
 static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count) {
+    return tbox_layout_build_element_sized(arena, node, styles, fonts, images, container, cursor_y,
+                                           positioned_context, row_column_widths, row_column_count, NULL);
+}
+
+static tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count, const tbox_layout_forced_size *forced) {
     const tbox_style *style = tbox_layout_style_or_default(styles, node);
     bool is_text_tag        = tbox_layout_is_text_tag(node);
     if (tbox_layout_table_cell_node(node)) {
@@ -2688,6 +3719,11 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
      * and STICKY (== RELATIVE, see ARCHITECTURE.md's scope) still flow
      * normally and only shift visually, unchanged since v4. */
     bool is_out_of_flow = (style->position == TBOX_STYLE_POSITION_ABSOLUTE || style->position == TBOX_STYLE_POSITION_FIXED);
+    /* NOVO v16: a flex container lays out its children as flex items --
+     * except form controls and tables, which keep their own layout. */
+    bool is_flex = (style->display == TBOX_STYLE_DISPLAY_FLEX || style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) &&
+        !is_image_input && !is_table && !is_table_row && !tbox_layout_tag(node, "input") &&
+        !tbox_layout_tag(node, "select") && !tbox_layout_tag(node, "textarea");
 
     /* Zero-initialized: text_runs/text_run_count/parent/first_child/
      * last_child/next_sibling all start at their empty/NULL default and are
@@ -2773,6 +3809,8 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
      * would leave gaps or overlap its neighbors. */
     if (!is_table_row && !tbox_layout_table_cell_node(node))
         content_width = tbox_layout_constrain_width(style, content_width, container.width, horizontal_edges);
+    if (forced != NULL && forced->has_width)
+        content_width = forced->width > horizontal_edges ? forced->width - horizontal_edges : 0.0;
 
     double content_x;
     double content_y;
@@ -2886,6 +3924,36 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
             (style->height.kind == TBOX_STYLE_LENGTH_PX ||
              (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)))
             content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
+    } else if (is_flex) {
+        bool height_definite = false;
+        if (forced != NULL && forced->has_height) {
+            content_height  = forced->height > vertical_edges ? forced->height - vertical_edges : 0.0;
+            height_definite = true;
+        } else if (style->height.kind == TBOX_STYLE_LENGTH_PX ||
+                   (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)) {
+            content_height = style->height.kind == TBOX_STYLE_LENGTH_PX ? style->height.value :
+                style->height.value / 100.0 * container.height;
+            if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+                content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
+            height_definite = true;
+        } else if (stretch_height) {
+            content_height  = stretched_height;
+            height_definite = true;
+        } else {
+            content_height = 0.0;
+        }
+        /* A definite max-height caps a column container's main size. */
+        if (height_definite)
+            content_height = tbox_layout_constrain_height(style, content_height, container.height,
+                container.height_definite, vertical_edges);
+        tbox_layout_positioned_context context_for_children = positioned_context;
+        if (style->position != TBOX_STYLE_POSITION_STATIC) {
+            context_for_children.nearest_ancestor = (tbox_rect){content_x - padding_left, content_y - padding_top,
+                content_width + padding_left + padding_right, content_height + padding_top + padding_bottom};
+        }
+        double extent = tbox_layout_build_flex(arena, node, style, styles, fonts, images, content_x, content_y,
+            content_width, content_height, height_definite, box, context_for_children);
+        if (!height_definite) content_height = extent;
     } else if (is_text_tag) {
         /* Text-tag leaf: no child boxes even though the DOM node may have
          * element descendants (e.g. <b> inside a <p>) -- those only
@@ -2941,7 +4009,10 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
          * that PERCENT fallback) is shrink-to-fit: the sum of every child's
          * margin_box.height, which requires children to be laid out first. */
         bool height_definite = false;
-        switch (style->height.kind) {
+        if (forced != NULL && forced->has_height) {
+            content_height  = forced->height > vertical_edges ? forced->height - vertical_edges : 0.0;
+            height_definite = true;
+        } else switch (style->height.kind) {
         case TBOX_STYLE_LENGTH_PX:
             content_height  = style->height.value;
             if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
@@ -3013,6 +4084,8 @@ static tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_
     if (stretch_height) content_height = stretched_height; /* text boxes too, not only blocks */
     content_height = tbox_layout_constrain_height(style, content_height, container.height,
         container.height_definite, vertical_edges);
+    if (forced != NULL && forced->has_height)
+        content_height = forced->height > vertical_edges ? forced->height - vertical_edges : 0.0;
 
     box->content_box.x      = content_x;
     box->content_box.y      = content_y;

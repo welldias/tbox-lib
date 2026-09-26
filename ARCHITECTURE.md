@@ -4681,6 +4681,84 @@ Duas provas, uma nova e uma já existente:
   vivem no mesmo `tbox_arena` de qualquer outra caixa/style dessa
   chamada de `tbox_layout_build`.
 
+## v15 — Infraestrutura de layout e `inline-block`
+
+**Motivação**: preparar a Layout Tree para layouts em que um box precisa
+ser medido antes de posicionado (inline-block, flex), e corrigir a coleta
+inline, que só respeitava um nível de aninhamento.
+
+### Infraestrutura
+
+- **Coleta inline recursiva** (`tbox_layout_collect_words_in`): elementos
+  inline são percorridos recursivamente, cada um com o próprio estilo
+  (`<b><i>x</i></b>` mantém os dois). `display: none` dentro de um inline
+  some. Palavras de nós diferentes só são separadas por espaço (e ganham
+  oportunidade de quebra) quando há espaço em branco no fonte
+  (`tbox_layout_inline_state`): `a<b>b</b>` é uma palavra.
+- **`tbox_layout_translate`**: desloca uma subárvore já construída
+  (retângulos, text runs, bordas de tabela colapsadas). Substitui o antigo
+  deslocamento só em Y das tabelas.
+- **`tbox_layout_build_element_sized`**: `tbox_layout_build_element` com
+  um tamanho de border-box imposto (`tbox_layout_forced_size`). Um tamanho
+  imposto é final (min/max são responsabilidade de quem chama) e uma
+  altura imposta é definida para os filhos.
+- **Tamanhos intrínsecos** (`tbox_layout_intrinsic_content`/`_outer`):
+  min-content e max-content de qualquer elemento (texto, blocos aninhados,
+  linhas de tabela, imagens, textarea, containers flex). Percentuais contam
+  como 0; `break-all` ainda mede palavras inteiras.
+- **Palavras zeradas** (`tbox_layout_new_word`): `tbox_vector_push` não
+  limpa memória; todo push de palavra passa a zerar, para campos novos
+  nascerem vazios.
+
+### `inline-block` (e `inline-flex`)
+
+Vira uma **palavra atômica**: o box é construído na origem (largura
+declarada, ou shrink-to-fit `min(max(min-content, disponível),
+max-content)`), a palavra carrega o tamanho da margin box e a baseline
+(última linha de texto do box; a borda inferior se não houver texto ou se
+`overflow` não for `visible`). `tbox_layout_build_line_runs` move o box
+para a linha; o box vira filho da caixa de texto (render e hit test o
+alcançam sem mudança). Numa linha com box atômico, a altura da linha cobre
+maior ascent + maior descent. `vertical-align: middle|top|bottom` passa a
+valer para boxes atômicos e imagens (nunca para o texto próprio de uma
+célula).
+
+**Fora de escopo**: descendentes `absolute`/`fixed` de um inline-block cujo
+bloco de contenção está fora dele resolvem contra a origem provisória;
+`middle` não aumenta a linha; formulários (`button`, `input`) continuam
+`block` no UA stylesheet.
+
+## v16 — Flexbox
+
+Um ramo novo em `tbox_layout_build_element_sized` para `display:
+flex|inline-flex` (exceto controles de formulário e tabelas) chama
+`tbox_layout_build_flex`, que segue o CSS Flexbox Level 1 §9:
+
+1. Itens: filhos elemento em fluxo, cada sequência de texto solto como item
+   anônimo, `<img>` como item anônimo (imagens só existem como palavras);
+   ordenados por `order` (estável). Absolutos são construídos à parte.
+2. Tamanho base (`flex-basis`, senão `width`/`height`, senão conteúdo:
+   max-content na linha, altura medida na coluna), mínimo automático
+   (min-content limitado pelo tamanho especificado; 0 se `overflow` não for
+   `visible`), min/max e tamanho hipotético.
+3. Linhas (`flex-wrap`), só com eixo principal definido.
+4. Resolução dos comprimentos flexíveis (§9.7) com congelamento por
+   violação de min/max.
+5. Tamanho cruzado medido no tamanho principal resolvido; baseline da
+   primeira linha.
+6. `align-content` para várias linhas com eixo cruzado definido.
+7. Margens automáticas, `justify-content`, `align-self` (inclusive
+   `baseline` em linha), direções reversas, `wrap-reverse`.
+8. Boxes finais: o box medido no passo 5 é reaproveitado (deslocado) quando
+   o tamanho final coincide e nenhum descendente `absolute`/`fixed` depende
+   de um bloco de contenção fora do item; senão o item é reconstruído no
+   lugar.
+
+**Simplificações**: percentuais de padding/margin dos itens contra a
+largura do container; container em coluna sem altura definida não
+cresce/encolhe itens nem quebra linhas; sem `visibility: collapse`; itens
+anônimos têm `flex: 0 1 auto` e ignoram margens.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi

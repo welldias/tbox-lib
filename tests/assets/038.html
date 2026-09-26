@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #f7f7f5;
+            color: #262c36;
+            font-size: 16px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        h3 {
+            margin-top: 14px;
+            margin-bottom: 6px;
+        }
+
+        p {
+            margin: 0;
+        }
+
+        .para {
+            width: 380px;
+            padding: 6px;
+            background: #ffffff;
+            border: 1px solid #ced4da;
+        }
+
+        .chip {
+            display: inline-block;
+            padding: 2px 10px;
+            margin: 0 2px;
+            background: #d0ebff;
+            border: 1px solid #1c7ed6;
+            border-radius: 10px;
+        }
+
+        .row {
+            width: 520px;
+            padding: 6px;
+            background: #ffffff;
+            border: 1px solid #ced4da;
+        }
+
+        .swatch {
+            display: inline-block;
+            width: 60px;
+            height: 40px;
+            background: #ffc9c9;
+            border: 2px solid #e03131;
+        }
+
+        .top {
+            vertical-align: top;
+        }
+
+        .middle {
+            vertical-align: middle;
+        }
+
+        .bottom {
+            vertical-align: bottom;
+        }
+
+        .card {
+            display: inline-block;
+            padding: 6px;
+            margin-right: 6px;
+            background: #e6fcf5;
+            border: 1px solid #0ca678;
+        }
+
+        .card p {
+            font-weight: bold;
+        }
+
+        .centered {
+            width: 520px;
+            text-align: center;
+            background: #fff4e6;
+        }
+
+        .tag {
+            display: inline-block;
+            width: 90px;
+            margin: 4px;
+            padding: 6px 0;
+            background: #fd7e14;
+            color: #ffffff;
+        }
+
+        .nested b {
+            color: #c2255c;
+        }
+
+        .nested b i {
+            color: #1971c2;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>inline-block</h2>
+
+    <h3>Chips flowing with the text</h3>
+    <p class="para">Filter by <span class="chip">design</span> or <span class="chip">layout <b>css</b></span> and
+        keep reading; chips wrap with the words like <span class="chip">any other</span> word.</p>
+
+    <h3>vertical-align: baseline / top / middle / bottom</h3>
+    <div class="row">Base <span class="swatch"></span> top <span class="swatch top"></span> middle
+        <span class="swatch middle"></span> bottom <span class="swatch bottom"></span> end</div>
+
+    <h3>Shrink-to-fit cards with block content</h3>
+    <div class="row">
+        <div class="card">
+            <p>Title</p>
+            A short card
+        </div>
+        <div class="card">
+            <p>Another title</p>
+            Wider content line
+        </div>
+    </div>
+
+    <h3>text-align: center with fixed-width inline-blocks</h3>
+    <div class="centered">
+        <span class="tag">one</span><span class="tag">two</span><span class="tag">three</span>
+    </div>
+
+    <h3>Nested inline styles</h3>
+    <p class="nested">plain <b>bold <i>bold italic</i> bold</b> plain</p>
+</body>
+
+</html>

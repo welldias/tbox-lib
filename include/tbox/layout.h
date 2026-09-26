@@ -16,8 +16,9 @@ extern "C" {
  * Builds a box tree from the DOM + resolved styles and computes each box's
  * geometry (position and size, in px relative to the viewport) per a
  * deliberately simplified CSS2.1 block formatting context with inline text,
- * images, positioned boxes and a table grid. Flexbox, grid and floats remain
- * unsupported. */
+ * images, positioned boxes and a table grid, NOVO v15 inline-blocks and NOVO
+ * v16 a flex formatting context (see ARCHITECTURE.md's v15/v16 sections).
+ * Grid and floats remain unsupported. */
 
 typedef struct tbox_rect {
     double x, y, width, height;
@@ -76,7 +77,9 @@ typedef struct tbox_layout_box {
      * v0/v1) and a text tag whose own text collapses to nothing. Multiple
      * runs happen once the text wraps onto more than one line, or once the
      * face changes mid-line (e.g. a <b> inside a <p>) -- see
-     * tbox_layout_text_run above. */
+     * tbox_layout_text_run above. NOVO v15: a text-bearing box's
+     * inline-blocks (and inline-flex containers) are its child boxes, placed
+     * on its lines between its runs. */
     tbox_layout_text_run *text_runs;
     size_t text_run_count;
 

@@ -89,6 +89,16 @@ static const tbox_layout_box *find_layout_box(const tbox_layout_box *box, const 
     return NULL;
 }
 
+static const tbox_layout_box *find_box_by_tag(const tbox_layout_box *box, const char *tag) {
+    for (; box != NULL; box = box->next_sibling) {
+        if (box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT &&
+            string_view_equal_cstr(box->node->element.tag_name, tag)) return box;
+        const tbox_layout_box *child = find_box_by_tag(box->first_child, tag);
+        if (child != NULL) return child;
+    }
+    return NULL;
+}
+
 static const tbox_layout_box *find_context_box(const tbox_context *ctx, const tbox_html_node *node) {
     const tbox_layout_box *root = tbox_context_hit_test(ctx, 10.0, 10.0);
     while (root != NULL && root->parent != NULL) root = root->parent;
@@ -3507,6 +3517,30 @@ int tbox_test_context_run(void) {
             const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, 10.0);
             TBOX_TEST_ASSERT(hit != NULL && hit->node != NULL &&
                 string_view_equal_cstr(hit->node->element.tag_name, "button"));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* NOVO v15: a point inside an inline-block hits its own box (it is a
+     * child of the text box around it), and the box sits inside the line. */
+    {
+        tbox_context *ctx = open_cstr("<p>ab <span>cd</span></p>",
+            "span { display: inline-block; width: 60px; height: 30px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            const tbox_layout_box *root = tbox_context_hit_test(ctx, 5.0, 20.0); /* inside the <p> */
+            while (root != NULL && root->parent != NULL) root = root->parent;
+            const tbox_layout_box *p = find_box_by_tag(root, "p");
+            const tbox_layout_box *span = p != NULL ? p->first_child : NULL;
+            TBOX_TEST_ASSERT(span != NULL && span->node != NULL);
+            if (span != NULL) {
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, span->border_box.x + 30.0,
+                                                                   span->border_box.y + 15.0);
+                TBOX_TEST_ASSERT(hit == span || (hit != NULL && hit->node == NULL && hit->parent == span));
+                TBOX_TEST_ASSERT(span->border_box.x > p->content_box.x);
+            }
             tbox_context_close(ctx);
         }
     }
