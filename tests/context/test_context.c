@@ -89,6 +89,24 @@ static const tbox_layout_box *find_layout_box(const tbox_layout_box *box, const 
     return NULL;
 }
 
+/* Finds a point, scanning the viewport row by row, where the hit test lands
+ * on `node`'s own box. Form controls are inline-blocks, so a control can
+ * sit anywhere along its line, not just at a fixed x. */
+static bool hit_point_for(const tbox_context *ctx, const tbox_html_node *node, double width, double height,
+                          double *out_x, double *out_y) {
+    for (int y = 0; y < (int)height; y++) {
+        for (int x = 0; x < (int)width; x++) {
+            const tbox_layout_box *hit = tbox_context_hit_test(ctx, (double)x, (double)y);
+            if (hit != NULL && hit->node == node) {
+                *out_x = (double)x;
+                *out_y = (double)y;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static const tbox_layout_box *find_box_by_tag(const tbox_layout_box *box, const char *tag) {
     for (; box != NULL; box = box->next_sibling) {
         if (box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT &&
@@ -1638,14 +1656,11 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
             tbox_context_run_frame(ctx, 320.0, 200.0, &list);
-            bool clicked_two = false;
-            for (int y = 0; y < 200 && !clicked_two; y++) {
-                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 8.0, (double)y);
-                if (hit != NULL && hit->node == two) {
-                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, 8.0, (double)y));
-                    TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
-                    clicked_two = true;
-                }
+            double two_x, two_y;
+            bool clicked_two = hit_point_for(ctx, two, 320.0, 200.0, &two_x, &two_y);
+            if (clicked_two) {
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, two_x, two_y));
+                TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
             }
             TBOX_TEST_ASSERT_MSG(clicked_two, "pointer click must focus a rendered button without a handler");
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, true, false}));
@@ -1890,18 +1905,11 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
 
-            bool clicked_action = false, clicked_disabled = false;
-            for (int y = 0; y < 180; y++) {
-                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, (double)y);
-                if (hit != NULL && hit->node == action && !clicked_action) {
-                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, 10.0, (double)y));
-                    clicked_action = true;
-                }
-                if (hit != NULL && hit->node == disabled && !clicked_disabled) {
-                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, 10.0, (double)y));
-                    clicked_disabled = true;
-                }
-            }
+            double hx, hy;
+            bool clicked_action = hit_point_for(ctx, action, 320.0, 180.0, &hx, &hy);
+            if (clicked_action) TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, hx, hy));
+            bool clicked_disabled = hit_point_for(ctx, disabled, 320.0, 180.0, &hx, &hy);
+            if (clicked_disabled) TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, hx, hy));
             TBOX_TEST_ASSERT(clicked_action && clicked_disabled);
             TBOX_TEST_ASSERT(capture.call_count == 3 && capture.node == action);
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == NULL);
@@ -2013,15 +2021,10 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(on, tbox_string_view_make("checked", 7)) != NULL);
 
             tbox_rect off_content = {0};
-            bool found_off = false, found_disabled = false;
-            for (int y = 0; y < 180; y++) {
-                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, (double)y);
-                if (hit != NULL && hit->node == off) {
-                    off_content = hit->content_box;
-                    found_off = true;
-                }
-                if (hit != NULL && hit->node == disabled) found_disabled = true;
-            }
+            double hx, hy;
+            bool found_off = hit_point_for(ctx, off, 320.0, 180.0, &hx, &hy);
+            if (found_off) off_content = tbox_context_hit_test(ctx, hx, hy)->content_box;
+            bool found_disabled = hit_point_for(ctx, disabled, 320.0, 180.0, &hx, &hy);
             TBOX_TEST_ASSERT(found_off && found_disabled);
             TBOX_TEST_ASSERT(off_content.width == 12.0 && off_content.height == 12.0);
 
@@ -2072,18 +2075,11 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == disabled->next_sibling);
 
             tbox_context_run_frame(ctx, 160.0, 180.0, &list);
-            bool clicked_off = false, clicked_disabled = false;
-            for (int y = 0; y < 180; y++) {
-                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 10.0, (double)y);
-                if (hit != NULL && hit->node == off && !clicked_off) {
-                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, 10.0, (double)y));
-                    clicked_off = true;
-                }
-                if (hit != NULL && hit->node == disabled && !clicked_disabled) {
-                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, 10.0, (double)y));
-                    clicked_disabled = true;
-                }
-            }
+            double cx, cy;
+            bool clicked_off = hit_point_for(ctx, off, 320.0, 180.0, &cx, &cy);
+            if (clicked_off) TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, cx, cy));
+            bool clicked_disabled = hit_point_for(ctx, disabled, 320.0, 180.0, &cx, &cy);
+            if (clicked_disabled) TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, cx, cy));
             TBOX_TEST_ASSERT(clicked_off && clicked_disabled);
             TBOX_TEST_ASSERT(capture.count == 4 && capture.node == off && capture.checked);
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(disabled, tbox_string_view_make("checked", 7)) != NULL);
@@ -2448,14 +2444,12 @@ int tbox_test_context_run(void) {
             const tbox_html_node *invalid = chosen->next_sibling;
             const tbox_html_node *disabled = invalid->next_sibling;
             tbox_rect chosen_rect = {0}, invalid_rect = {0};
-            bool found_chosen = false, found_invalid = false, found_disabled = false;
-            for (int y = 0; y < 220; y++) {
-                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)y);
-                if (hit == NULL) continue;
-                if (hit->node == chosen) { chosen_rect = hit->content_box; found_chosen = true; }
-                if (hit->node == invalid) { invalid_rect = hit->content_box; found_invalid = true; }
-                if (hit->node == disabled) found_disabled = true;
-            }
+            double hx, hy;
+            bool found_chosen = hit_point_for(ctx, chosen, 240.0, 220.0, &hx, &hy);
+            if (found_chosen) chosen_rect = tbox_context_hit_test(ctx, hx, hy)->content_box;
+            bool found_invalid = hit_point_for(ctx, invalid, 240.0, 220.0, &hx, &hy);
+            if (found_invalid) invalid_rect = tbox_context_hit_test(ctx, hx, hy)->content_box;
+            bool found_disabled = hit_point_for(ctx, disabled, 240.0, 220.0, &hx, &hy);
             TBOX_TEST_ASSERT(found_chosen && found_invalid && found_disabled);
             TBOX_TEST_ASSERT(chosen_rect.width == 48.0 && chosen_rect.height == 24.0);
             bool painted_chosen = false, painted_invalid = false;
@@ -2545,14 +2539,9 @@ int tbox_test_context_run(void) {
                 TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx,
                     (tbox_key_event){TBOX_KEY_ESCAPE, true, false, false}));
             }
-            bool clicked_disabled = false;
-            for (int y = 0; y < 220 && !clicked_disabled; y++) {
-                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 12.0, (double)y);
-                if (hit != NULL && hit->node == disabled) {
-                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, 12.0, (double)y));
-                    clicked_disabled = true;
-                }
-            }
+            double dx, dy;
+            bool clicked_disabled = hit_point_for(ctx, disabled, 240.0, 220.0, &dx, &dy);
+            if (clicked_disabled) TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, dx, dy));
             TBOX_TEST_ASSERT(clicked_disabled && tbox_context_focused_node(ctx) == NULL);
             tbox_context_close(ctx);
         }
@@ -3090,7 +3079,9 @@ int tbox_test_context_run(void) {
             const tbox_layout_box *second_box = find_context_box(ctx, second);
             TBOX_TEST_ASSERT(first_box != NULL && second_box != NULL);
             if (first_box != NULL && second_box != NULL)
-                TBOX_TEST_ASSERT(second_box->margin_box.y == first_box->margin_box.y + first_box->margin_box.height);
+                /* The hidden input takes no room: the inline-block buttons touch. */
+                TBOX_TEST_ASSERT(second_box->margin_box.y == first_box->margin_box.y &&
+                    second_box->margin_box.x == first_box->margin_box.x + first_box->margin_box.width);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == first);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));

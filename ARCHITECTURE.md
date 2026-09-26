@@ -4723,10 +4723,9 @@ maior ascent + maior descent. `vertical-align: middle|top|bottom` passa a
 valer para boxes atômicos e imagens (nunca para o texto próprio de uma
 célula).
 
-**Fora de escopo**: descendentes `absolute`/`fixed` de um inline-block cujo
-bloco de contenção está fora dele resolvem contra a origem provisória;
-`middle` não aumenta a linha; formulários (`button`, `input`) continuam
-`block` no UA stylesheet.
+**Fora de escopo** (resolvido na v17, ver abaixo): descendentes
+`absolute`/`fixed` fora do inline-block, `middle` aumentando a linha e
+formulários como `inline-block`.
 
 ## v16 — Flexbox
 
@@ -4754,10 +4753,39 @@ flex|inline-flex` (exceto controles de formulário e tabelas) chama
    de um bloco de contenção fora do item; senão o item é reconstruído no
    lugar.
 
-**Simplificações**: percentuais de padding/margin dos itens contra a
-largura do container; container em coluna sem altura definida não
-cresce/encolhe itens nem quebra linhas; sem `visibility: collapse`; itens
-anônimos têm `flex: 0 1 auto` e ignoram margens.
+**Comportamento conforme a especificação** (não são simplificações):
+percentuais de padding/margin dos itens resolvem contra a largura do
+container; itens anônimos de texto usam os valores iniciais (`flex: 0 1
+auto`, sem margens). **Simplificações**: sem `visibility: collapse`; o
+container em coluna sem altura nem min/max-height não cresce/encolhe itens
+(a altura é a soma deles, como no CSS).
+
+## v17 — Fechando as limitações da v15/v16
+
+- **`<img>` como caixa própria**: `display: block` ou item flex passa pelo
+  mesmo caminho de elemento substituído de `<input type=image>`
+  (`tbox_layout_is_image_input`): tamanho da imagem, proporção preservada
+  com só uma dimensão declarada, margens e propriedades flex próprias. Antes
+  o item virava um item anônimo e um `<img>` com `display: block` não
+  desenhava nada. Em linha continua sendo uma palavra.
+- **Inline-block com descendentes posicionados**:
+  `tbox_layout_build_text_runs`/`tbox_layout_build_anonymous_box` recebem o
+  contexto posicionado; um inline-block cujos descendentes `absolute`/
+  `fixed` dependem de um bloco de contenção fora dele
+  (`tbox_layout_has_escaping_positioned`) é reconstruído na posição final.
+- **`vertical-align` aumentando a linha** (`tbox_layout_line_metrics`): um
+  box atômico ou imagem em `middle` contribui a extensão em torno da
+  baseline elevada de meia altura-x; em `top`/`bottom`, a linha fica pelo
+  menos tão alta quanto ele.
+- **Flex com min/max-height sem altura definida**: a coluna quebra linhas
+  em `max-height` e flexiona os itens dentro do tamanho limitado (§9.3); uma
+  linha única em row limita a altura da linha por min/max-height (§9.4),
+  então `stretch`/`center` usam essa altura; várias linhas distribuem o
+  excesso por `align-content`.
+- **Formulários `inline-block`** no UA stylesheet (`button`, `input`,
+  `select`, `textarea`), como nos navegadores. Os testes do context que
+  procuravam controles numa coluna fixa passaram a varrer o viewport
+  (`hit_point_for`).
 
 ## Perguntas em aberto (consolidado)
 

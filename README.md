@@ -126,7 +126,10 @@ rather than as one flattened group.
 `display: inline-block` places a box inside a line of text: it shrinks to
 its content (or keeps its declared width), wraps with the words around it,
 sits on their baseline (its last line's baseline), and accepts
-`vertical-align: top|middle|bottom`. Inline elements nest to any depth,
+`vertical-align: top|middle|bottom`, which also grow the line when needed.
+Buttons, inputs, selects, and textareas are inline-blocks by default, as in
+browsers. An `<img>` with `display: block`, or as a flex item, is a
+replaced box sized from its image (keeping its aspect ratio). Inline elements nest to any depth,
 each keeping its own style, and words from different elements are only
 separated where the source has whitespace.
 
@@ -136,8 +139,10 @@ separated where the source has whitespace.
 `gap`/`row-gap`/`column-gap`, `flex-grow`, `flex-shrink`, `flex-basis`, the
 `flex` shorthand, `order`, auto margins, and min/max sizes (with the
 automatic minimum size of flex items). Loose text in a flex container
-becomes an anonymous item. A column container only grows or shrinks its
-items, and only wraps, when it has a definite height.
+becomes an anonymous item. Without a definite height, a container still
+honours its `min-height`/`max-height`: a column flexes its items into that
+range (and wraps at `max-height`), and a single-line row stretches and
+aligns its items within it.
 
 `text-align` also accepts `justify`, `start`, and `end`. The `font`
 shorthand sets style, weight, size, line-height, and family (variant and
