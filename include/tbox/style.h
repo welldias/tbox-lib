@@ -44,12 +44,12 @@ typedef enum tbox_style_display {
     TBOX_STYLE_DISPLAY_BLOCK,
     TBOX_STYLE_DISPLAY_INLINE,
     TBOX_STYLE_DISPLAY_NONE,
-    TBOX_STYLE_DISPLAY_INLINE_BLOCK, /* NOVO v15: an atomic box inside a line */
-    TBOX_STYLE_DISPLAY_FLEX,         /* NOVO v16: block-level flex container */
-    TBOX_STYLE_DISPLAY_INLINE_FLEX,  /* NOVO v16: flex container placed like an inline-block */
+    TBOX_STYLE_DISPLAY_INLINE_BLOCK, /* an atomic box inside a line */
+    TBOX_STYLE_DISPLAY_FLEX,         /* block-level flex container */
+    TBOX_STYLE_DISPLAY_INLINE_FLEX,  /* flex container placed like an inline-block */
 } tbox_style_display;
 
-/* NOVO v16: flexbox. Every enum's zero value is the CSS initial value. */
+/* flexbox. Every enum's zero value is the CSS initial value. */
 typedef enum tbox_style_flex_direction {
     TBOX_STYLE_FLEX_DIRECTION_ROW, /* initial */
     TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE,
@@ -122,7 +122,7 @@ typedef enum tbox_style_border_style {
     TBOX_STYLE_BORDER_STYLE_DOUBLE,
 } tbox_style_border_style;
 
-/* NOVO v4: the visual-offset axis of `position: relative`. NOVO v5:
+/* the visual-offset axis of `position: relative`.
  * `absolute`/`fixed`/`sticky` -- see ARCHITECTURE.md's v5 Style section.
  * `STICKY` is treated as an exact synonym of `RELATIVE` everywhere outside
  * the Style layer (Layout Tree, Render Pipeline, Orchestration); here it is
@@ -130,12 +130,12 @@ typedef enum tbox_style_border_style {
 typedef enum tbox_style_position {
     TBOX_STYLE_POSITION_STATIC, /* initial */
     TBOX_STYLE_POSITION_RELATIVE,
-    TBOX_STYLE_POSITION_ABSOLUTE, /* NOVO v5 */
-    TBOX_STYLE_POSITION_FIXED,    /* NOVO v5 */
-    TBOX_STYLE_POSITION_STICKY,   /* NOVO v5 -- treated as RELATIVE outside the Style layer, see above */
+    TBOX_STYLE_POSITION_ABSOLUTE, /*  */
+    TBOX_STYLE_POSITION_FIXED,    /*  */
+    TBOX_STYLE_POSITION_STICKY,   /* treated as RELATIVE outside the Style layer, see above */
 } tbox_style_position;
 
-/* NOVO v11: `text-align`. `start`/`end` map to LEFT/RIGHT (text is always
+/* `text-align`. `start`/`end` map to LEFT/RIGHT (text is always
  * left-to-right). JUSTIFY stretches the gaps between words on every line
  * but the last one of a paragraph and lines ended by a forced break. `LEFT`
  * is the initial value and the enum's first/zero member. */
@@ -219,29 +219,29 @@ typedef struct tbox_style {
      * block until `display` is taught to read a per-tag table. See
      * ARCHITECTURE.md's Style section. */
     tbox_style_display display;
-    tbox_style_overflow_y overflow_y; /* initial: visible; auto scrolls, auto/hidden clip */
-    tbox_style_box_sizing box_sizing; /* initial: content-box */
-    bool visibility_hidden;           /* inheritable; hidden keeps layout */
-    tbox_style_text_overflow text_overflow; /* clip or ellipsis; not inheritable */
-    tbox_style_white_space white_space; /* inheritable; initial AUTO */
-    bool overflow_wrap_break_word;    /* inheritable; normal by default */
-    bool word_break_all;              /* inheritable; `word-break: break-all` */
-    tbox_style_text_transform text_transform; /* inheritable; initial NONE */
-    tbox_style_list_style_type list_style_type; /* inheritable */
-    bool pointer_events_none;         /* inheritable; auto by default */
-    tbox_style_length width, height; /* initial: AUTO */
-    tbox_style_length min_width, max_width; /* AUTO means no constraint; em resolves to px */
-    tbox_style_length min_height, max_height; /* AUTO means no constraint; em resolves to px */
-    tbox_style_length margin[4];     /* top right bottom left; initial: 0px each */
-    tbox_style_length padding[4];    /* top right bottom left; initial: 0px each */
-    tbox_style_length text_indent;   /* inheritable; first line, px or %; initial 0px */
-    double word_spacing;             /* inheritable; px; initial 0 */
-    double letter_spacing;           /* inheritable; px; initial 0 */
+    tbox_style_overflow_y overflow_y;             /* initial: visible; auto scrolls, auto/hidden clip */
+    tbox_style_box_sizing box_sizing;             /* initial: content-box */
+    bool visibility_hidden;                       /* inheritable; hidden keeps layout */
+    tbox_style_text_overflow text_overflow;       /* clip or ellipsis; not inheritable */
+    tbox_style_white_space white_space;           /* inheritable; initial AUTO */
+    bool overflow_wrap_break_word;                /* inheritable; normal by default */
+    bool word_break_all;                          /* inheritable; `word-break: break-all` */
+    tbox_style_text_transform text_transform;     /* inheritable; initial NONE */
+    tbox_style_list_style_type list_style_type;   /* inheritable */
+    bool pointer_events_none;                     /* inheritable; auto by default */
+    tbox_style_length width, height;              /* initial: AUTO */
+    tbox_style_length min_width, max_width;       /* AUTO means no constraint; em resolves to px */
+    tbox_style_length min_height, max_height;     /* AUTO means no constraint; em resolves to px */
+    tbox_style_length margin[4];                  /* top right bottom left; initial: 0px each */
+    tbox_style_length padding[4];                 /* top right bottom left; initial: 0px each */
+    tbox_style_length text_indent;                /* inheritable; first line, px or %; initial 0px */
+    double word_spacing;                          /* inheritable; px; initial 0 */
+    double letter_spacing;                        /* inheritable; px; initial 0 */
     tbox_style_line_height_kind line_height_kind; /* inheritable */
-    double line_height_value;        /* multiplier or absolute px */
-    tbox_css_rgba color;             /* inheritable; initial (no parent): opaque black */
-    tbox_css_rgba background_color;  /* not inheritable; initial: transparent, i.e. {0, 0, 0, 0} */
-    /* NOVO v2: always absolute px, never a tbox_style_length -- unlike
+    double line_height_value;                     /* multiplier or absolute px */
+    tbox_css_rgba color;                          /* inheritable; initial (no parent): opaque black */
+    tbox_css_rgba background_color;               /* not inheritable; initial: transparent, i.e. {0, 0, 0, 0} */
+    /* always absolute px, never a tbox_style_length -- unlike
      * width/height (PERCENT deferred to the Layout Tree, whose containing
      * block doesn't exist yet at Style-resolve time), font-size in em/%
      * resolves against the parent's already-resolved font_size right here,
@@ -253,7 +253,7 @@ typedef struct tbox_style {
     /* Only the bold/not-bold axis: bold/600-900 versus normal/100-500.
      * Inheritable like `color`; initial value (no parent): false. */
     bool font_weight_bold;
-    /* NOVO v4: `border` shorthand (width + style + color, order-free, each
+    /* `border` shorthand (width + style + color, order-free, each
      * optional -- only `solid` is ever painted). Not inheritable, same
      * treatment as `width`/`background-color`: always cascade-or-initial,
      * never looks at the parent. See ARCHITECTURE.md's v4 Style section. */
@@ -270,18 +270,18 @@ typedef struct tbox_style {
     tbox_style_border_style border_styles[4];
     tbox_css_rgba border_colors[4];
     bool border_per_side;
-    double outline_width;                 /* px; initial 3 (medium); style NONE means no paint */
+    double outline_width;                  /* px; initial 3 (medium); style NONE means no paint */
     tbox_style_border_style outline_style; /* none or solid */
-    tbox_css_rgba outline_color;          /* initial: current text color */
-    double outline_offset;                /* px; may be negative; initial 0 */
-    /* NOVO v4: `position: relative` + offsets. Not inheritable. */
+    tbox_css_rgba outline_color;           /* initial: current text color */
+    double outline_offset;                 /* px; may be negative; initial 0 */
+    /* `position: relative` + offsets. Not inheritable. */
     tbox_style_position position; /* initial STATIC */
     tbox_style_length offset[4];  /* top right bottom left; initial: AUTO, same type as margin/padding */
-    /* NOVO v11: `text-align`. Inheritable, same mechanism as `color`/
+    /* `text-align`. Inheritable, same mechanism as `color`/
      * `font_weight_bold` above (herda do pai já resolvido se não
      * declarado/reconhecido; `LEFT` -- o valor inicial -- sem pai). */
     tbox_style_text_align text_align;
-    /* NOVO v12: `font-family`. Fixed buffer, NOT a tbox_string_view -- every
+    /* `font-family`. Fixed buffer, NOT a tbox_string_view -- every
      * field of tbox_style is copied by value, pointing at no external memory;
      * a view would dangle for the synthetic `style=""` stylesheet (v9),
      * created and destroyed entirely inside tbox_css_cascade_resolve (see
@@ -289,10 +289,10 @@ typedef struct tbox_style {
      * `color` above. `""` = no override anywhere in the inheritance chain --
      * the initial value. */
     char font_family[64];
-    /* NOVO v13: `font-style: italic`. Inheritable, same mechanism as
+    /* `font-style: italic`. Inheritable, same mechanism as
      * `font_weight_bold` above; initial value (no parent): false. */
     bool font_italic;
-    /* NOVO v13: `text-decoration`. NOT inheritable (same posture as
+    /* `text-decoration`. NOT inheritable (same posture as
      * `background_color`); initial value NONE. */
     tbox_style_text_decoration text_decoration;
     tbox_css_rgba text_decoration_color; /* initial: current text color */
@@ -300,7 +300,7 @@ typedef struct tbox_style {
     /* Inheritable. AUTO keeps the default underline position; PX is the
      * distance from the baseline to the underline's top edge. */
     tbox_style_length text_underline_offset;
-    /* NOVO v13: `vertical-align`. NOT inheritable; initial value BASELINE. */
+    /* `vertical-align`. NOT inheritable; initial value BASELINE. */
     tbox_style_vertical_align vertical_align;
     /* Only meaningful for VERTICAL_ALIGN_LENGTH: PX, or PERCENT of the
      * element's own line-height, resolved by the Layout Tree. Positive
@@ -327,8 +327,8 @@ typedef struct tbox_style {
      * that's also the initial value, so an undeclared box-shadow paints
      * nothing. */
     double box_shadow_offset_x, box_shadow_offset_y, box_shadow_blur; /* px; initial 0.0 */
-    double box_shadow_spread;                                        /* px, may be negative; initial 0.0 */
-    tbox_css_rgba box_shadow_color;                                  /* initial transparent */
+    double box_shadow_spread;                                         /* px, may be negative; initial 0.0 */
+    tbox_css_rgba box_shadow_color;                                   /* initial transparent */
     /* `text-shadow`: one shadow, `<x> <y> [<blur>] [<color>]`. Inheritable;
      * text_shadow_color.a == 0 means none (the initial value). */
     double text_shadow_offset_x, text_shadow_offset_y, text_shadow_blur; /* px */
@@ -343,7 +343,7 @@ typedef struct tbox_style {
      * same "alpha 0 means absent" convention as box_shadow_color. */
     tbox_css_rgba accent_color; /* checked checkbox mark and radio dot */
     tbox_css_rgba caret_color;  /* text insertion caret */
-    /* NOVO v16: flexbox, none inheritable. Container properties: */
+    /* flexbox, none inheritable. Container properties: */
     tbox_style_flex_direction flex_direction;
     tbox_style_flex_wrap flex_wrap;
     tbox_style_flex_justify justify_content, align_content;
@@ -368,7 +368,7 @@ typedef struct tbox_style {
  * properties (currently just `color`); NULL falls back to that property's
  * own initial value instead of inheriting.
  *
- * Scope (v0): `display` (`block`/`inline`/`none`, NOVO v15 `inline-block`, case-insensitive
+ * Scope (v0): `display` (`block`/`inline`/`none`,  `inline-block`, case-insensitive
  * keywords), `width`, `height` (`auto`, a bare number followed by `px`, or
  * a bare number followed by `%` -- no `em`/`rem`, those are out of scope
  * until the font/text layer exists; an unparsable value falls back to the
@@ -386,7 +386,7 @@ typedef struct tbox_style {
  * the parent's size, or use 16px with no parent), `font-weight` (`bold` selects bold;
  * `normal` and `100` through `500` select regular; `600` through `900` select
  * bold; absent inherits), `border`
- * (NOVO v4: width/style/color shorthand, order-free, each optional;
+ * (width/style/color shorthand, order-free, each optional;
  * see tbox_style_border_style and ARCHITECTURE.md's v4 Style section for the
  * exact per-token classification; uniform `border-width`/`border-style`/
  * `border-color` longhands, now with 1-4 values, are supported with normal
@@ -394,16 +394,16 @@ typedef struct tbox_style {
  * `-left` shorthands and their `-width`/`-style`/`-color` longhands; styles
  * `solid`, `dashed`, `dotted`, `double`, `none`, `hidden`, with the 3D
  * styles painted solid), `position`
- * (NOVO v4: `static`/`relative`; NOVO v5: `absolute`/`fixed`/`sticky`, all
+ * (`static`/`relative`; `absolute`/`fixed`/`sticky`, all
  * case-insensitive; any other value falls back to the initial value
  * `STATIC`, same posture as `display` since v0), `top`, `right`, `bottom`,
- * `left` (NOVO v4: same length parser as `width`/`margin` -- `auto`, px, or
+ * `left` (same length parser as `width`/`margin` -- `auto`, px, or
  * `%` -- only meaningful when `position` is non-`static`, but always
- * resolved regardless of `position`), `text-align` (NOVO v11: `left`/
+ * resolved regardless of `position`), `text-align` (`left`/
  * `center`/`right`/`justify`/`start`/`end`, case-insensitive; any other
  * value falls back to the same "not recognized =
  * inherits" treatment `font-weight` already gets, or the initial value
- * `LEFT` with no parent), `font-family` (NOVO v12: only the FIRST name of a
+ * `LEFT` with no parent), `font-family` (only the FIRST name of a
  * comma-separated list is used -- a full list is never kept for fallback --
  * a name in quotes (`"Courier New"`) is recognized with the quotes stripped;
  * inheritable, same mechanism as `color`, falling back to `""` -- no
@@ -446,7 +446,7 @@ typedef struct tbox_style {
  * `lowercase`, `capitalize`, `none`; inheritable), one `text-shadow`
  * (inheritable), an optional `box-shadow` spread radius (a shadow color
  * defaults to currentColor), `word-break: break-all` (inheritable), and
- * `opacity` (0..1 or a percentage, clamped; not inheritable), and NOVO v16
+ * `opacity` (0..1 or a percentage, clamped; not inheritable), and
  * flexbox: `display: flex|inline-flex`, `flex-direction`, `flex-wrap`,
  * `flex-flow`, `justify-content`, `align-items`, `align-self`,
  * `align-content`, `gap`/`row-gap`/`column-gap`, `flex-grow`,
@@ -487,7 +487,7 @@ typedef struct tbox_style_table {
  * intermediate tbox_css_computed_style is destroyed as soon as
  * tbox_style_resolve has consumed it -- its lifetime is not the table's.
  *
- * NOVO v2: takes a `tbox_css_cascade_source` array instead of a single
+ * takes a `tbox_css_cascade_source` array instead of a single
  * `tbox_css_stylesheet*` (mirrors tbox_css_cascade_resolve's own signature)
  * so a user-agent stylesheet can be layered under the author one -- see
  * ARCHITECTURE.md's Style section. A single-source, AUTHOR-origin caller

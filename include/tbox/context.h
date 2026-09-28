@@ -6,8 +6,8 @@
 
 #include <tbox/font.h>
 #include <tbox/html_parser.h>
-#include <tbox/input.h>
 #include <tbox/image.h>
+#include <tbox/input.h>
 #include <tbox/layout.h>
 #include <tbox/render.h>
 
@@ -41,7 +41,7 @@ extern "C" {
  * codebase. */
 typedef struct tbox_context tbox_context;
 
-/* NOVO v2 -- Orchestration's user-agent stylesheet configuration (see
+/* Orchestration's user-agent stylesheet configuration (see
  * ARCHITECTURE.md's "CSS Cascade / Orchestration -- folha de estilo
  * user-agent" -> "Configuração da UA stylesheet"). Every number the UA
  * stylesheet text embeds (see tbox_context_open_with_config) comes from one
@@ -77,23 +77,23 @@ typedef struct tbox_ua_style_margin_config {
     double heading_px[6]; /* same indexing as tbox_ua_style_font_config::heading_em */
     double paragraph_px;
     double body_px;
-    double list_px; /* NOVO v8: margin (top/bottom) of <ul>/<ol> -- same unit/semantics as paragraph_px */
-    double hr_px; /* NOVO v11: margin (top/bottom) of <hr> -- same unit/semantics as list_px/paragraph_px */
+    double list_px; /* margin (top/bottom) of <ul>/<ol> -- same unit/semantics as paragraph_px */
+    double hr_px;   /* margin (top/bottom) of <hr> -- same unit/semantics as list_px/paragraph_px */
 } tbox_ua_style_margin_config;
 
 typedef struct tbox_ua_style_config {
     tbox_ua_style_font_config font;
     tbox_ua_style_margin_config margin;
-    double list_padding_left_px; /* NOVO v8: <ul>/<ol> indentation (padding-left) -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, because it is a padding value, not a margin one, and that sub-struct is specifically for margin fields */
-    double hr_height_px; /* NOVO v11: <hr>'s explicit height -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, same reasoning as list_padding_left_px above: it is a height value, not a margin one */
+    double list_padding_left_px; /* <ul>/<ol> indentation (padding-left) -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, because it is a padding value, not a margin one, and that sub-struct is specifically for margin fields */
+    double hr_height_px;         /* <hr>'s explicit height -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, same reasoning as list_padding_left_px above: it is a height value, not a margin one */
 } tbox_ua_style_config;
 
 /* The classic browser values ARCHITECTURE.md documents (heading em scale
  * 2/1.5/1.17/1/0.83/0.67 for h1..h6; heading margins, approximated in px,
  * 21/19/18/21/22/25; paragraph margin 16px; body margin 8px; base_px 16;
- * NOVO v8: list margin (top/bottom of <ul>/<ol>) 16px, same as
+ * list margin (top/bottom of <ul>/<ol>) 16px, same as
  * paragraph_px; list padding-left (indentation of <ul>/<ol>) 40px, the
- * classic value used by every real browser; NOVO v11: <hr> margin
+ * classic value used by every real browser; <hr> margin
  * (top/bottom) 8px, approximating the `margin-block: 0.5em` real browsers
  * use for <hr> at the default 16px base_px; <hr> height 2px).
  * Never fails, never allocates -- plain field assignment. */
@@ -112,14 +112,12 @@ tbox_context_options tbox_context_options_default(void);
 
 /* The context parses and owns a copy of control_css. The caller's buffer
  * need only remain valid for this call. */
-tbox_context *tbox_context_open_with_options(const char *html, size_t html_length,
-    const char *css, size_t css_length, tbox_font_face_cache *fonts,
-    tbox_image_cache *images, tbox_context_options options);
+tbox_context *tbox_context_open_with_options(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_context_options options);
 
 /* Parses `html`/`css` (tbox_html_parse/tbox_css_parse) and stores the
  * result. Both of those tolerate malformed markup/CSS themselves (see
  * their own docs) and only return NULL on allocation failure, which is
- * therefore also the only way this function fails. `fonts` (NOVO v2: a
+ * therefore also the only way this function fails. `fonts` (a
  * tbox_font_face_cache, not a single tbox_font_face -- see <tbox/font.h>)
  * and `images` (a tbox_image_cache -- see <tbox/image.h>; may be NULL, "no
  * images", same as a NULL font resolver) are both borrowed: the caller
@@ -128,7 +126,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
  * layout exists yet after this call returns (tbox_context_hit_test returns
  * NULL until the first tbox_context_run_frame).
  *
- * NOVO v2: internally a thin wrapper over tbox_context_open_with_config,
+ * internally a thin wrapper over tbox_context_open_with_config,
  * passing tbox_ua_style_config_default() -- the caller of this function
  * never needs to know tbox_ua_style_config exists. */
 tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images);
@@ -141,7 +139,7 @@ tbox_context *tbox_context_open(const char *html, size_t html_length, const char
  * tbox_context_open. */
 tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config);
 
-/* Destroys the parsed document/stylesheet/user-agent-stylesheet (NOVO v2)
+/* Destroys the parsed document/stylesheet/user-agent-stylesheet
  * and the frame arena -- every tbox_style_table/tbox_layout_box/
  * tbox_display_list this context ever produced becomes invalid at that
  * point -- then frees `ctx` itself. Does NOT destroy `fonts`/`images` (see
@@ -156,7 +154,7 @@ void tbox_context_close(tbox_context *ctx);
  * (see "Convenções" in ARCHITECTURE.md) -- then runs
  * tbox_style_resolve_tree -> tbox_layout_build ->
  * tbox_render_build_display_list in sequence, against TWO cascade sources
- * (NOVO v2: this context's ua_stylesheet as TBOX_CSS_ORIGIN_USER_AGENT,
+ * (this context's ua_stylesheet as TBOX_CSS_ORIGIN_USER_AGENT,
  * then its author stylesheet as TBOX_CSS_ORIGIN_AUTHOR -- v0/v1 only ever
  * had the author one). The result is written into `*out_list` (`out_list`
  * must be non-NULL). If the
@@ -238,7 +236,7 @@ bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, d
  * to mutate the tree (e.g. via tbox_html_node_set_attribute, which needs a
  * non-const node).
  *
- * NOVO v3 -- Interatividade Avançada: returns bool instead of void. true
+ * Interatividade Avançada: returns bool instead of void. true
  * means "keep propagating" (other bindings that match at a farther
  * ancestor can still fire); false means "stop propagation immediately"
  * (stopPropagation) -- no other binding fires for this click at all,
@@ -256,7 +254,7 @@ typedef bool (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *no
  * every tbox_context_run_frame's arena reset (same array + linear-scan
  * shape as tbox_style_table, not an index).
  *
- * NOVO v3 -- Interatividade Avançada: returns an int binding handle (a
+ * Interatividade Avançada: returns an int binding handle (a
  * monotonically increasing id, scoped to `ctx`, never reused even after a
  * tbox_context_unbind_click -- so a stale handle from a removed binding can
  * never accidentally collide with a newly created one) instead of v1's
@@ -268,7 +266,7 @@ typedef bool (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *no
  * tbox_context_close. */
 int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata);
 
-/* NOVO v3 -- Interatividade Avançada: removes the registration identified
+/* Interatividade Avançada: removes the registration identified
  * by `binding` (a handle previously returned by tbox_context_on_click) from
  * `ctx`'s internal table -- its compiled query is destroyed at this point,
  * same cleanup tbox_context_close already performs for whatever bindings
@@ -284,7 +282,7 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding);
  * v0/v1/v2 because no anonymous box is in real use yet) -- real bubbling
  * order, nearest ancestor to farthest.
  *
- * NOVO v3 -- Interatividade Avançada: at each ancestor level, EVERY
+ * Interatividade Avançada: at each ancestor level, EVERY
  * currently-active tbox_context_on_click binding's compiled selector is
  * tested against that node (tbox_css_selector_query_matches); every
  * binding that matches at this level fires (in registration order among
@@ -371,8 +369,7 @@ bool tbox_context_number_valid(const tbox_html_node *input);
  * single-line field. `submitter` is NULL for Enter in a field. The library
  * does not navigate or send a network request; the application reads values
  * from the form's DOM controls. */
-typedef void (*tbox_context_submit_handler)(tbox_context *ctx, tbox_html_node *form,
-                                             tbox_html_node *submitter, void *userdata);
+typedef void (*tbox_context_submit_handler)(tbox_context *ctx, tbox_html_node *form, tbox_html_node *submitter, void *userdata);
 void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata);
 
 /* Absolute path chosen by the user for input type=file, or an empty view.

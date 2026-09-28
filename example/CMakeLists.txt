@@ -178,7 +178,7 @@ if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
         ${FONTCONFIG_LIBRARY_DIRS}
     )
 
-    # NOVO v3: tbox_app.c now loads its own dedicated fixture files via
+    # tbox_app.c now loads its own dedicated fixture files via
     # tbox_app_create_from_files instead of inline C-string HTML/CSS -- same
     # TBOX_EXAMPLE_HTML_PATH/TBOX_EXAMPLE_CSS_PATH pattern already used above
     # for html_parser/css_parser/etc, own names since these fixtures are

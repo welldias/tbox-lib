@@ -1,13 +1,13 @@
 #include "tbox_layout_internal.h"
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
-/* Walks `node`'s children (NOVO v14: TEXT children are no longer always
+/* Walks `node`'s children (TEXT children are no longer always
  * ignored, see below), skipping any ELEMENT whose resolved style->display
  * == TBOX_STYLE_DISPLAY_NONE entirely -- no box, no recursion into its
  * subtree, no contribution to the height sum returned.
  *
- * NOVO v4: adjacent siblings now collapse their touching margins (CSS2.1
+ * adjacent siblings now collapse their touching margins (CSS2.1
  * 8.3.1's sibling case -- see ARCHITECTURE.md) instead of always summing
  * them. In place of a single running `cursor_y`, this tracks `border_bottom`
  * (the y just past the last positioned sibling's OWN border_box -- not its
@@ -36,7 +36,7 @@
  * anything after it (parent/last-child collapsing is out of scope), so it's
  * added in full to the returned total.
  *
- * NOVO v5: `positioned_context` (see tbox_layout_positioned_context above)
+ * `positioned_context` (see tbox_layout_positioned_context above)
  * is threaded through so descendants deeper in the recursion know what
  * `absolute`/`fixed` boxes must position against. Before building each
  * child, `child_style->position` is now ALSO peeked (same pattern as
@@ -58,7 +58,7 @@
  * `style->position != STATIC/RELATIVE/STICKY` there takes the
  * `container.x`/`container.y`-based path instead.
  *
- * NOVO v14: gains `container_style` -- `node`'s OWN already-resolved style
+ * gains `container_style` -- `node`'s OWN already-resolved style
  * (the caller, tbox_layout_build_element, already has this as its local
  * `style`), used exclusively to synthesize an eventual anonymous box's style
  * (see tbox_layout_build_anonymous_box above), never for `node`'s ELEMENT
@@ -89,7 +89,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
     double pending_margin_bottom = 0.0;
     tbox_layout_box *previous    = NULL;
 
-    /* NOVO v14: `<script>`/`<style>` are HTML5 "raw text" elements -- the
+    /* `<script>`/`<style>` are HTML5 "raw text" elements -- the
      * HTML parser already treats them specially, tokenizing their content
      * as opaque text rather than markup (see
      * src/html_parser/tbox_html_tree_builder.c). Their one TEXT child (CSS/
@@ -114,9 +114,9 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
             const tbox_html_node *run_start = child;
             const tbox_html_node *run_end   = tbox_layout_inline_run_end(run_start, styles);
 
-            double cursor_y             = border_bottom + pending_margin_bottom;
-            tbox_layout_box *child_box  = tbox_layout_build_anonymous_box(arena, run_start, run_end, container_style, styles, fonts, images, children_container.x, cursor_y, children_container.width, &positioned_context);
-            child_box->parent           = parent_box;
+            double cursor_y            = border_bottom + pending_margin_bottom;
+            tbox_layout_box *child_box = tbox_layout_build_anonymous_box(arena, run_start, run_end, container_style, styles, fonts, images, children_container.x, cursor_y, children_container.width, &positioned_context);
+            child_box->parent          = parent_box;
             if (previous == NULL) {
                 parent_box->first_child = child_box;
             } else {
@@ -125,8 +125,8 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
             parent_box->last_child = child_box;
             previous               = child_box;
 
-            border_bottom          = cursor_y + child_box->margin_box.height;
-            pending_margin_bottom  = 0.0;
+            border_bottom         = cursor_y + child_box->margin_box.height;
+            pending_margin_bottom = 0.0;
 
             child = run_end;
             continue;
@@ -146,7 +146,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
         }
 
         if (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED) {
-            tbox_rect basis = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE) ? positioned_context.nearest_ancestor : positioned_context.viewport;
+            tbox_rect basis                                    = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE) ? positioned_context.nearest_ancestor : positioned_context.viewport;
             tbox_layout_containing_block out_of_flow_container = {
                 .x               = basis.x,
                 .y               = basis.y,
@@ -202,9 +202,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
     return (border_bottom - start_y) + pending_margin_bottom;
 }
 
-
-
-/* NOVO v14: builds ONE anonymous block box (`box->node == NULL`, a
+/* builds ONE anonymous block box (`box->node == NULL`, a
  * convention documented since v2 and already handled safely by the Context
  * layer's hit-test, see src/context/tbox_context.c) covering the sibling
  * range [run_start, run_end) -- a contiguous sequence of loose inline
@@ -237,37 +235,36 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
  * box) are all identical: `{content_x, cursor_y, available_width, height}`,
  * `height` coming straight out of tbox_layout_build_text_runs. */
 
-
 tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double cursor_y, double available_width, const tbox_layout_positioned_context *context) {
     tbox_style anon = tbox_layout_default_style;
-    anon.color            = container_style->color;
+    anon.color      = container_style->color;
     memcpy(anon.font_family, container_style->font_family, sizeof(anon.font_family));
-    anon.font_weight_bold = container_style->font_weight_bold;
-    anon.font_italic      = container_style->font_italic;
-    anon.font_size        = container_style->font_size;
-    anon.text_align       = container_style->text_align;
+    anon.font_weight_bold         = container_style->font_weight_bold;
+    anon.font_italic              = container_style->font_italic;
+    anon.font_size                = container_style->font_size;
+    anon.text_align               = container_style->text_align;
     anon.overflow_wrap_break_word = container_style->overflow_wrap_break_word;
-    anon.pointer_events_none = container_style->pointer_events_none;
-    anon.visibility_hidden = container_style->visibility_hidden;
-    anon.white_space       = container_style->white_space;
-    anon.word_break_all    = container_style->word_break_all;
-    anon.text_transform    = container_style->text_transform;
-    anon.list_style_type   = container_style->list_style_type;
-    anon.word_spacing      = container_style->word_spacing;
-    anon.letter_spacing    = container_style->letter_spacing;
-    anon.line_height_kind  = container_style->line_height_kind;
-    anon.line_height_value = container_style->line_height_value;
-    anon.text_underline_offset = container_style->text_underline_offset;
-    anon.text_shadow_offset_x  = container_style->text_shadow_offset_x;
-    anon.text_shadow_offset_y  = container_style->text_shadow_offset_y;
-    anon.text_shadow_blur      = container_style->text_shadow_blur;
-    anon.text_shadow_color     = container_style->text_shadow_color;
-    anon.caption_side      = container_style->caption_side;
-    anon.border_collapse   = container_style->border_collapse;
-    anon.border_spacing_x  = container_style->border_spacing_x;
-    anon.border_spacing_y  = container_style->border_spacing_y;
-    anon.accent_color      = container_style->accent_color;
-    anon.caret_color       = container_style->caret_color;
+    anon.pointer_events_none      = container_style->pointer_events_none;
+    anon.visibility_hidden        = container_style->visibility_hidden;
+    anon.white_space              = container_style->white_space;
+    anon.word_break_all           = container_style->word_break_all;
+    anon.text_transform           = container_style->text_transform;
+    anon.list_style_type          = container_style->list_style_type;
+    anon.word_spacing             = container_style->word_spacing;
+    anon.letter_spacing           = container_style->letter_spacing;
+    anon.line_height_kind         = container_style->line_height_kind;
+    anon.line_height_value        = container_style->line_height_value;
+    anon.text_underline_offset    = container_style->text_underline_offset;
+    anon.text_shadow_offset_x     = container_style->text_shadow_offset_x;
+    anon.text_shadow_offset_y     = container_style->text_shadow_offset_y;
+    anon.text_shadow_blur         = container_style->text_shadow_blur;
+    anon.text_shadow_color        = container_style->text_shadow_color;
+    anon.caption_side             = container_style->caption_side;
+    anon.border_collapse          = container_style->border_collapse;
+    anon.border_spacing_x         = container_style->border_spacing_x;
+    anon.border_spacing_y         = container_style->border_spacing_y;
+    anon.accent_color             = container_style->accent_color;
+    anon.caret_color              = container_style->caret_color;
 
     /* `box->style` is a pointer that must outlive this call -- unlike `anon`
      * itself (a local), the synthesized style needs arena-backed storage,
@@ -280,12 +277,12 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
      * first_child/last_child/next_sibling all start NULL, only overwritten
      * by the caller (tbox_layout_build_children) for the sibling links. */
     tbox_layout_box *box = (tbox_layout_box *)tbox_arena_alloc_zero(arena, sizeof(tbox_layout_box));
-    box->node             = NULL;
-    box->style             = anon_style;
+    box->node            = NULL;
+    box->style           = anon_style;
 
     double height = tbox_layout_build_text_runs(arena, NULL, run_start, run_end, anon_style, styles, fonts, images, content_x, cursor_y, available_width, box, context);
 
-    tbox_rect rect      = { content_x, cursor_y, available_width, height };
+    tbox_rect rect   = { content_x, cursor_y, available_width, height };
     box->content_box = rect;
     box->padding_box = rect;
     box->border_box  = rect;
@@ -294,9 +291,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     return box;
 }
 
-
-
-/* NOVO v14: true when `child` alone would START a new anonymous inline-box
+/* true when `child` alone would START a new anonymous inline-box
  * sequence inside tbox_layout_build_children (see ARCHITECTURE.md's v14
  * "Algoritmo de tbox_layout_build_children"): non-whitespace-only TEXT, or
  * an ELEMENT whose resolved style is display:inline AND in flow (not
@@ -305,7 +300,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
  * own -- even though whitespace TEXT and display:none still EXTEND an
  * already-triggered sequence, see tbox_layout_inline_run_end below. */
 
-/* NOVO v14: scans forward from `run_start` (itself already known to be an
+/* scans forward from `run_start` (itself already known to be an
  * inline-run trigger, see tbox_layout_is_inline_run_trigger above) for the
  * first sibling that must NOT be consumed by the sequence -- the first
  * in-flow ELEMENT with display != inline, the first out-of-flow ELEMENT, or
@@ -315,7 +310,6 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
  * COMMENT/DOCTYPE nodes are all transparent and extend the sequence without
  * ever starting or ending it on their own. */
 
-
 bool tbox_layout_is_inline_run_trigger(tbox_arena *arena, const tbox_html_node *child, const tbox_style_table *styles) {
     if (child->type == TBOX_HTML_NODE_TEXT) {
         tbox_string_view collapsed = tbox_string_collapse_whitespace(arena, child->text.text);
@@ -323,17 +317,15 @@ bool tbox_layout_is_inline_run_trigger(tbox_arena *arena, const tbox_html_node *
     }
 
     if (child->type == TBOX_HTML_NODE_ELEMENT) {
-        if (tbox_layout_is_hidden_input(child)) return false;
+        if (tbox_layout_is_hidden_input(child))
+            return false;
         const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
-        bool is_out_of_flow            = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED);
-        return (child_style->display == TBOX_STYLE_DISPLAY_INLINE ||
-                child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK ||
-                child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) && !is_out_of_flow;
+        bool is_out_of_flow           = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED);
+        return (child_style->display == TBOX_STYLE_DISPLAY_INLINE || child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) && !is_out_of_flow;
     }
 
     return false;
 }
-
 
 const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start, const tbox_style_table *styles) {
     const tbox_html_node *node;
@@ -342,7 +334,8 @@ const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start
             continue; /* TEXT (any content), COMMENT, DOCTYPE: transparent */
         }
 
-        if (tbox_layout_is_hidden_input(node)) continue;
+        if (tbox_layout_is_hidden_input(node))
+            continue;
 
         const tbox_style *node_style = tbox_layout_style_or_default(styles, node);
         if (node_style->display == TBOX_STYLE_DISPLAY_NONE) {
@@ -354,9 +347,7 @@ const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start
             break; /* terminates, NOT consumed -- built via the out-of-flow path instead */
         }
 
-        if (node_style->display == TBOX_STYLE_DISPLAY_INLINE ||
-            node_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK ||
-            node_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) {
+        if (node_style->display == TBOX_STYLE_DISPLAY_INLINE || node_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || node_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) {
             continue; /* in-flow inline or inline-block: extends the sequence */
         }
 
@@ -364,4 +355,3 @@ const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start
     }
     return node;
 }
-

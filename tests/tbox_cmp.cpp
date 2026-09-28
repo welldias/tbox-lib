@@ -49,9 +49,9 @@ struct ComparisonResult {
     bool is_equal;
 };
 
-static constexpr int kInkThreshold = 24;
-static constexpr int kPositionTolerance = 8;
-static constexpr int kMinimumRegionInk = 32;
+static constexpr int kInkThreshold       = 24;
+static constexpr int kPositionTolerance  = 8;
+static constexpr int kMinimumRegionInk   = 32;
 static constexpr double kMinimumCoverage = 0.80;
 
 // Count a pixel as content when at least one channel differs visibly from
@@ -83,15 +83,11 @@ struct ContentRegion {
 // supplies the ink count, so the closing operation cannot invent content.
 static std::vector<ContentRegion> content_regions(const cv::Mat &mask) {
     cv::Mat grouped, labels, stats, centroids;
-    cv::morphologyEx(mask, grouped, cv::MORPH_CLOSE,
-        cv::getStructuringElement(cv::MORPH_RECT, cv::Size(17, 3)));
+    cv::morphologyEx(mask, grouped, cv::MORPH_CLOSE, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(17, 3)));
     int count = cv::connectedComponentsWithStats(grouped, labels, stats, centroids, 8);
     std::vector<ContentRegion> regions;
     for (int label = 1; label < count; label++) {
-        cv::Rect bounds(stats.at<int>(label, cv::CC_STAT_LEFT),
-            stats.at<int>(label, cv::CC_STAT_TOP),
-            stats.at<int>(label, cv::CC_STAT_WIDTH),
-            stats.at<int>(label, cv::CC_STAT_HEIGHT));
+        cv::Rect bounds(stats.at<int>(label, cv::CC_STAT_LEFT), stats.at<int>(label, cv::CC_STAT_TOP), stats.at<int>(label, cv::CC_STAT_WIDTH), stats.at<int>(label, cv::CC_STAT_HEIGHT));
         int ink = cv::countNonZero(mask(bounds));
         if (ink >= kMinimumRegionInk) {
             regions.push_back({ bounds });
@@ -111,12 +107,10 @@ static double coverage(const cv::Mat &source, const cv::Mat &near_target) {
 }
 
 static cv::Rect expanded_to_image(cv::Rect bounds, cv::Size size) {
-    return (bounds + cv::Size(2 * kPositionTolerance, 2 * kPositionTolerance)
-        - cv::Point(kPositionTolerance, kPositionTolerance)) & cv::Rect(cv::Point(), size);
+    return (bounds + cv::Size(2 * kPositionTolerance, 2 * kPositionTolerance) - cv::Point(kPositionTolerance, kPositionTolerance)) & cv::Rect(cv::Point(), size);
 }
 
-static int failed_region_count(const cv::Mat &source, const cv::Mat &near_target,
-    const std::vector<ContentRegion> &regions, cv::Mat &annotation) {
+static int failed_region_count(const cv::Mat &source, const cv::Mat &near_target, const std::vector<ContentRegion> &regions, cv::Mat &annotation) {
     int failures = 0;
     for (const ContentRegion &region : regions) {
         if (coverage(source(region.bounds), near_target(region.bounds)) >= kMinimumCoverage) {
@@ -176,7 +170,7 @@ static double compute_ssim(const cv::Mat &img1, const cv::Mat &img2) {
     return mssim[0];
 }
 
-/* `diff_output_path` == "" skips writing the difference image (NOVO v10 --
+/* `diff_output_path` == "" skips writing the difference image ( --
  * replaces the fixed "resultado_diferencas_c.png" name the original code
  * had; always saving under that same name would make each asset overwrite
  * the previous one's difference image while iterating a whole directory). */
@@ -193,8 +187,7 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
     }
 
     if (img1.size() != img2.size()) {
-        fprintf(stderr, "Dimension mismatch: golden %dx%d, render %dx%d.\n",
-            img1.cols, img1.rows, img2.cols, img2.rows);
+        fprintf(stderr, "Dimension mismatch: golden %dx%d, render %dx%d.\n", img1.cols, img1.rows, img2.cols, img2.rows);
         return result;
     }
     result.completed = true;
@@ -209,8 +202,7 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
     cv::Mat golden_mask = content_mask(img1);
     cv::Mat render_mask = content_mask(img2);
     cv::Mat near_golden, near_render;
-    cv::Mat proximity = cv::getStructuringElement(cv::MORPH_RECT,
-        cv::Size(2 * kPositionTolerance + 1, 2 * kPositionTolerance + 1));
+    cv::Mat proximity = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2 * kPositionTolerance + 1, 2 * kPositionTolerance + 1));
     cv::dilate(golden_mask, near_golden, proximity);
     cv::dilate(render_mask, near_render, proximity);
 
@@ -218,10 +210,8 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
     result.render_coverage = coverage(render_mask, near_golden);
 
     cv::Mat annotation = img2.clone();
-    result.failed_regions += failed_region_count(golden_mask, near_render,
-        content_regions(golden_mask), annotation);
-    result.failed_regions += failed_region_count(render_mask, near_golden,
-        content_regions(render_mask), annotation);
+    result.failed_regions += failed_region_count(golden_mask, near_render, content_regions(golden_mask), annotation);
+    result.failed_regions += failed_region_count(render_mask, near_golden, content_regions(render_mask), annotation);
 
     cv::Mat golden_edges = edge_mask(gray1);
     cv::Mat render_edges = edge_mask(gray2);
@@ -230,10 +220,8 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
     cv::dilate(render_edges, near_render_edges, proximity);
     result.golden_edge_coverage = coverage(golden_edges, near_render_edges);
     result.render_edge_coverage = coverage(render_edges, near_golden_edges);
-    result.failed_regions += failed_region_count(golden_edges, near_render_edges,
-        content_regions(golden_edges), annotation);
-    result.failed_regions += failed_region_count(render_edges, near_golden_edges,
-        content_regions(render_edges), annotation);
+    result.failed_regions += failed_region_count(golden_edges, near_render_edges, content_regions(golden_edges), annotation);
+    result.failed_regions += failed_region_count(render_edges, near_golden_edges, content_regions(render_edges), annotation);
 
     // A flat colored area has the same silhouette after changing color. Only
     // compare interior pixels, leaving antialiased edges to the ink check.
@@ -259,23 +247,18 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
     // A small solid color change must remain visible even when a large
     // matching background makes its share of the total image tiny.
     cv::Mat solid_color_diff, labels, stats, centroids;
-    cv::morphologyEx(wrong_color, solid_color_diff, cv::MORPH_OPEN,
-        cv::getStructuringElement(cv::MORPH_RECT, cv::Size(9, 9)));
+    cv::morphologyEx(wrong_color, solid_color_diff, cv::MORPH_OPEN, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(9, 9)));
     int color_regions = cv::connectedComponentsWithStats(solid_color_diff, labels, stats, centroids, 8);
     for (int label = 1; label < color_regions; label++) {
         if (stats.at<int>(label, cv::CC_STAT_AREA) < 64) {
             continue;
         }
-        cv::Rect bounds(stats.at<int>(label, cv::CC_STAT_LEFT), stats.at<int>(label, cv::CC_STAT_TOP),
-            stats.at<int>(label, cv::CC_STAT_WIDTH), stats.at<int>(label, cv::CC_STAT_HEIGHT));
+        cv::Rect bounds(stats.at<int>(label, cv::CC_STAT_LEFT), stats.at<int>(label, cv::CC_STAT_TOP), stats.at<int>(label, cv::CC_STAT_WIDTH), stats.at<int>(label, cv::CC_STAT_HEIGHT));
         cv::rectangle(annotation, expanded_to_image(bounds, img1.size()), cv::Scalar(0, 0, 255), 2);
         result.failed_regions++;
     }
 
-    result.is_equal = result.failed_regions == 0 && result.golden_coverage >= kMinimumCoverage
-        && result.render_coverage >= kMinimumCoverage
-        && result.golden_edge_coverage >= kMinimumCoverage
-        && result.render_edge_coverage >= kMinimumCoverage;
+    result.is_equal = result.failed_regions == 0 && result.golden_coverage >= kMinimumCoverage && result.render_coverage >= kMinimumCoverage && result.golden_edge_coverage >= kMinimumCoverage && result.render_edge_coverage >= kMinimumCoverage;
 
     // Global coverage can fail when every individual mismatch is small.
     if (!result.is_equal && result.failed_regions == 0) {
@@ -295,10 +278,8 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
 
     printf("==================================================\n");
     printf("SSIM index: %.4f (diagnostic only)\n", result.ssim_score);
-    printf("Content coverage: golden %.1f%%, render %.1f%%\n",
-        result.golden_coverage * 100.0, result.render_coverage * 100.0);
-    printf("Edge coverage: golden %.1f%%, render %.1f%%\n",
-        result.golden_edge_coverage * 100.0, result.render_edge_coverage * 100.0);
+    printf("Content coverage: golden %.1f%%, render %.1f%%\n", result.golden_coverage * 100.0, result.render_coverage * 100.0);
+    printf("Edge coverage: golden %.1f%%, render %.1f%%\n", result.golden_edge_coverage * 100.0, result.render_edge_coverage * 100.0);
     printf("Failed local checks: %d\n", result.failed_regions);
     printf("Status: %s\n", result.is_equal ? "EQUAL" : "DIFFERENT");
     printf("==================================================\n");
@@ -314,7 +295,7 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
     return result;
 }
 
-/* NOVO v10: reads only the dimensions of an already-existing PNG (the
+/* reads only the dimensions of an already-existing PNG (the
  * golden) -- used as the exact viewport to render the corresponding HTML
  * with, so the golden and the render are directly comparable without
  * silently cropping or resizing a mismatch. */
@@ -328,7 +309,7 @@ static bool read_png_size(const std::string &path, int *out_width, int *out_heig
     return true;
 }
 
-/* NOVO v10: renders html_path via tbox_app_screenshot_from_files (v7 --
+/* renders html_path via tbox_app_screenshot_from_files (v7 --
  * offscreen, no Wayland at runtime) at golden_path's exact dimensions,
  * compares it against golden_path, and prints that pair's result. Returns
  * true if the comparison COMPLETED (even with a DIFFERENT verdict -- see
@@ -369,7 +350,7 @@ static bool has_html_suffix(const char *name) {
     return len > 5 && strcmp(name + len - 5, ".html") == 0;
 }
 
-/* NOVO v10: walks `assets_dir` looking for every *.html with a sibling
+/* walks `assets_dir` looking for every *.html with a sibling
  * *.png (same name, different extension) -- pairs with no matching golden
  * are skipped with a warning, not treated as an error (an HTML fixture may
  * not have a captured golden yet). Returns false only if the directory
@@ -418,14 +399,11 @@ static bool run_directory(const char *assets_dir, int *out_total, int *out_equal
         char golden_path[PATH_MAX];
         char render_path[PATH_MAX];
         char diff_path[PATH_MAX];
-        int html_length = snprintf(html_path, sizeof(html_path), "%s/%s", assets_dir, name.c_str());
+        int html_length   = snprintf(html_path, sizeof(html_path), "%s/%s", assets_dir, name.c_str());
         int golden_length = snprintf(golden_path, sizeof(golden_path), "%s/%.*s.png", assets_dir, (int)stem_length, name.c_str());
         int render_length = snprintf(render_path, sizeof(render_path), "%s/%.*s_render.png", output_dir, (int)stem_length, name.c_str());
-        int diff_length = snprintf(diff_path, sizeof(diff_path), "%s/%.*s_diff.png", output_dir, (int)stem_length, name.c_str());
-        if (html_length < 0 || (size_t)html_length >= sizeof(html_path)
-            || golden_length < 0 || (size_t)golden_length >= sizeof(golden_path)
-            || render_length < 0 || (size_t)render_length >= sizeof(render_path)
-            || diff_length < 0 || (size_t)diff_length >= sizeof(diff_path)) {
+        int diff_length   = snprintf(diff_path, sizeof(diff_path), "%s/%.*s_diff.png", output_dir, (int)stem_length, name.c_str());
+        if (html_length < 0 || (size_t)html_length >= sizeof(html_path) || golden_length < 0 || (size_t)golden_length >= sizeof(golden_path) || render_length < 0 || (size_t)render_length >= sizeof(render_path) || diff_length < 0 || (size_t)diff_length >= sizeof(diff_path)) {
             fprintf(stderr, "Path too long for fixture %s.\n", name.c_str());
             operational_failures++;
             total++;
@@ -462,10 +440,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     if (argc == 3) {
-        char *end = NULL;
+        char *end               = NULL;
         double legacy_threshold = strtod(argv[2], &end);
-        if (end == argv[2] || *end != '\0' || !std::isfinite(legacy_threshold)
-            || legacy_threshold < 0.0 || legacy_threshold > 1.0) {
+        if (end == argv[2] || *end != '\0' || !std::isfinite(legacy_threshold) || legacy_threshold < 0.0 || legacy_threshold > 1.0) {
             fprintf(stderr, "Invalid legacy SSIM threshold: %s\n", argv[2]);
             return 1;
         }

@@ -233,7 +233,7 @@ void tbox_font_face_cache_destroy(tbox_font_face_cache *cache);
  * `family.size == 0` (the empty/default family) with `italic == false` uses
  * the bytes given to tbox_font_face_cache_create (regular_data/bold_data)
  * directly -- the fast path this function has always had, no resolver call.
- * `family.size == 0` with `italic == true` (NOVO v13) does NOT take that
+ * `family.size == 0` with `italic == true`  does NOT take that
  * fast path -- regular_data/bold_data have no italic variant of their own --
  * and instead resolves on demand exactly like any other family (see below),
  * with `family` passed to the resolver unchanged: a resolver backed by

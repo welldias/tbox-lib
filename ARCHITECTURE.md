@@ -1188,8 +1188,8 @@ typedef struct tbox_style {
     tbox_style_length padding[4];
     tbox_css_rgba color;
     tbox_css_rgba background_color;
-    double font_size;       /* NOVO v2: sempre px absoluto -- ver resolução abaixo */
-    bool font_weight_bold;  /* NOVO v2: só normal/bold -- ver escopo */
+    double font_size;       /* sempre px absoluto -- ver resolução abaixo */
+    bool font_weight_bold;  /* só normal/bold -- ver escopo */
 } tbox_style;
 ```
 
@@ -2042,9 +2042,9 @@ Escopo deliberadamente contido:
 typedef enum tbox_style_position {
     TBOX_STYLE_POSITION_STATIC,   /* initial */
     TBOX_STYLE_POSITION_RELATIVE,
-    TBOX_STYLE_POSITION_ABSOLUTE, /* NOVO v5 */
-    TBOX_STYLE_POSITION_FIXED,    /* NOVO v5 */
-    TBOX_STYLE_POSITION_STICKY,   /* NOVO v5 -- tratado como RELATIVE em todo lugar fora da Style layer, ver acima */
+    TBOX_STYLE_POSITION_ABSOLUTE, /*  */
+    TBOX_STYLE_POSITION_FIXED,    /*  */
+    TBOX_STYLE_POSITION_STICKY,   /* tratado como RELATIVE em todo lugar fora da Style layer, ver acima */
 } tbox_style_position;
 ```
 `tbox_style_resolve` passa a reconhecer `absolute`/`fixed`/`sticky`
@@ -2060,7 +2060,7 @@ O conceito central desta versão: em vez de só `tbox_layout_containing_block`
 recursão passa a carregar também um `tbox_layout_positioned_context`:
 
 ```c
-/* NOVO v5: rastreia, durante a recursão top-down da Layout Tree, contra o
+/* rastreia, durante a recursão top-down da Layout Tree, contra o
  * que um descendente `absolute`/`fixed` deve se posicionar.
  * `nearest_ancestor` é o padding_box do ancestral posicionado mais próximo
  * (relative/absolute/fixed/sticky) já visitado -- ou o viewport inteiro, se
@@ -2098,7 +2098,7 @@ espiado (mesmo padrão já usado pra `margin[0]` no v4) ANTES de decidir como
 montar cada filho:
 - `display: none` continua descartando o filho inteiramente, sem box —
   checado primeiro, sem mudança.
-- `ABSOLUTE`/`FIXED` (NOVO v5): o filho é construído com um `container` de
+- `ABSOLUTE`/`FIXED` : o filho é construído com um `container` de
   FLUXO diferente do normal -- em vez de `children_container` (o content
   box do pai), monta-se um `tbox_layout_containing_block` a partir de
   `positioned_context.nearest_ancestor` (pra `ABSOLUTE`) ou
@@ -2139,7 +2139,7 @@ O que muda de verdade é como `content_x`/`content_y` (e por extensão
 `right`/`top`/`bottom` contra `container` (que já é o containing block
 posicionado certo nesse ponto):
 ```c
-/* NOVO v5: `left` (ou `right`, negado e a partir da borda direita) é
+/* `left` (ou `right`, negado e a partir da borda direita) é
  * medido do containing block até a MARGIN edge da caixa (CSS 10.3.7) --
  * por isso o resultado aqui é margin_box.x, não border_box.x diretamente;
  * border_box.x = margin_box.x + margin_left, mesma relação que todo o
@@ -3194,13 +3194,13 @@ typedef struct tbox_ua_style_margin_config {
     double heading_px[6];
     double paragraph_px;
     double body_px;
-    double list_px; /* NOVO v8: margin (top/bottom) de <ul>/<ol> */
+    double list_px; /* margin (top/bottom) de <ul>/<ol> */
 } tbox_ua_style_margin_config;
 
 typedef struct tbox_ua_style_config {
     tbox_ua_style_font_config font;
     tbox_ua_style_margin_config margin;
-    double list_padding_left_px; /* NOVO v8: indentação de <ul>/<ol> -- não é "margin", por isso fora de tbox_ua_style_margin_config */
+    double list_padding_left_px; /* indentação de <ul>/<ol> -- não é "margin", por isso fora de tbox_ua_style_margin_config */
 } tbox_ua_style_config;
 ```
 `tbox_ua_style_config_default()` preenche `margin.list_px = 16.0` (mesmo
@@ -3413,7 +3413,7 @@ automaticamente, de graça, sem precisar saber que a feature existe.
 
 `struct tbox_context` (`src/context/tbox_context.c`) ganha um campo:
 ```c
-tbox_css_stylesheet *internal_stylesheet; /* NOVO v9: owned, mesmo ciclo de vida de `stylesheet` -- NULL se o documento não tem nenhum <style> */
+tbox_css_stylesheet *internal_stylesheet; /* owned, mesmo ciclo de vida de `stylesheet` -- NULL se o documento não tem nenhum <style> */
 ```
 Em `tbox_context_open_with_config`, depois do HTML já parseado
 (`tbox_html_parse` bem-sucedido) e antes de `stylesheet` (o CSS externo)
@@ -4061,7 +4061,7 @@ desatualizadas com essa mudança.
 
 `include/tbox/style.h`: `tbox_style` ganha
 ```c
-char font_family[64]; /* NOVO v12: "" = sem override em toda a cadeia de herança */
+char font_family[64]; /* "" = sem override em toda a cadeia de herança */
 ```
 `tbox_style_resolve`/`tbox_style_resolve_tree` **não mudam de
 assinatura**.
@@ -4328,9 +4328,9 @@ typedef enum tbox_style_vertical_align {
 ```
 `tbox_style` ganha três campos:
 ```c
-bool font_italic;                                /* NOVO v13: inheritable, mesmo padrão de font_weight_bold; initial false */
-tbox_style_text_decoration text_decoration;       /* NOVO v13: NÃO herdável (mesma postura de background_color); initial NONE */
-tbox_style_vertical_align vertical_align;         /* NOVO v13: NÃO herdável; initial BASELINE */
+bool font_italic;                                /* inheritable, mesmo padrão de font_weight_bold; initial false */
+tbox_style_text_decoration text_decoration;       /* NÃO herdável (mesma postura de background_color); initial NONE */
+tbox_style_vertical_align vertical_align;         /* NÃO herdável; initial BASELINE */
 ```
 `font_italic` segue o padrão de três ramos de `font_weight_bold`/
 `text-align` (declaração `font-style: italic` reconhecida — comparação
@@ -4354,7 +4354,7 @@ typedef struct tbox_layout_text_run {
     tbox_rect rect;
     tbox_string_view text;
     const tbox_font_face *font;
-    const tbox_style *style; /* NOVO v13: o mesmo style que já decidiu `font` pra este run -- nunca NULL */
+    const tbox_style *style; /* o mesmo style que já decidiu `font` pra este run -- nunca NULL */
 } tbox_layout_text_run;
 ```
 `tbox_layout_line` ganha `double ascent;` ao lado de `height` já existente

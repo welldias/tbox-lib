@@ -19,54 +19,60 @@ double tbox_layout_style_line_height(const tbox_style *style, const tbox_font_fa
 }
 
 static double tbox_layout_word_line_height(const tbox_layout_word *word) {
-    return word->image != NULL || word->atomic != NULL ? word->image_height :
-        tbox_layout_style_line_height(word->style, word->face);
+    return word->image != NULL || word->atomic != NULL ? word->image_height : tbox_layout_style_line_height(word->style, word->face);
 }
 
 static double tbox_layout_word_ascent(const tbox_layout_word *word) {
-    if (word->atomic != NULL) return word->atomic_ascent;
-    if (word->image != NULL) return word->image_height;
-    double leading = (tbox_layout_style_line_height(word->style, word->face) -
-        tbox_font_face_line_height(word->face)) / 2.0;
+    if (word->atomic != NULL)
+        return word->atomic_ascent;
+    if (word->image != NULL)
+        return word->image_height;
+    double leading = (tbox_layout_style_line_height(word->style, word->face) - tbox_font_face_line_height(word->face)) / 2.0;
     return tbox_font_face_ascent(word->face) + leading;
 }
 
 /* A line's height and dominant ascent over words [start, end): the max
- * line-height and the max ascent among them. NOVO v15: with an inline-block
+ * line-height and the max ascent among them. with an inline-block
  * on the line, whose content can hang below the baseline, the height also
  * covers the max ascent plus the max descent (line-height minus ascent).
- * NOVO v17: an inline-block or image aligned `middle` contributes its
+ * an inline-block or image aligned `middle` contributes its
  * extent around the baseline raised by half an x-height (the same 55%-of-
  * ascent approximation tbox_layout_atomic_top uses), and one aligned `top`
  * or `bottom` makes the line at least as tall as itself. */
-static void tbox_layout_line_metrics(const tbox_layout_word *words, size_t start, size_t end,
-                                     const tbox_font_face *block_face, double *out_height, double *out_ascent) {
+static void tbox_layout_line_metrics(const tbox_layout_word *words, size_t start, size_t end, const tbox_font_face *block_face, double *out_height, double *out_ascent) {
     double height = 0.0, ascent = 0.0, descent = 0.0, edge_aligned = 0.0;
     bool compose = false;
     for (size_t j = start; j < end; j++) {
-        const tbox_layout_word *word = &words[j];
-        double word_height = tbox_layout_word_line_height(word);
-        bool atomic_like = word->atomic != NULL || word->image != NULL;
+        const tbox_layout_word *word    = &words[j];
+        double word_height              = tbox_layout_word_line_height(word);
+        bool atomic_like                = word->atomic != NULL || word->image != NULL;
         tbox_style_vertical_align align = word->style->vertical_align;
         if (atomic_like && (align == TBOX_STYLE_VERTICAL_ALIGN_TOP || align == TBOX_STYLE_VERTICAL_ALIGN_BOTTOM)) {
-            if (word_height > edge_aligned) edge_aligned = word_height;
+            if (word_height > edge_aligned)
+                edge_aligned = word_height;
             continue;
         }
         double word_ascent;
         if (atomic_like && align == TBOX_STYLE_VERTICAL_ALIGN_MIDDLE) {
             double x_height = block_face != NULL ? tbox_font_face_ascent(block_face) * 0.55 : 0.0;
-            word_ascent = word_height / 2.0 + x_height / 2.0;
-            compose = true;
+            word_ascent     = word_height / 2.0 + x_height / 2.0;
+            compose         = true;
         } else {
             word_ascent = tbox_layout_word_ascent(word);
-            if (word_height > height) height = word_height;
+            if (word_height > height)
+                height = word_height;
         }
-        if (word_ascent > ascent) ascent = word_ascent;
-        if (word_height - word_ascent > descent) descent = word_height - word_ascent;
-        if (word->atomic != NULL) compose = true;
+        if (word_ascent > ascent)
+            ascent = word_ascent;
+        if (word_height - word_ascent > descent)
+            descent = word_height - word_ascent;
+        if (word->atomic != NULL)
+            compose = true;
     }
-    if (compose && ascent + descent > height) height = ascent + descent;
-    if (edge_aligned > height) height = edge_aligned;
+    if (compose && ascent + descent > height)
+        height = ascent + descent;
+    if (edge_aligned > height)
+        height = edge_aligned;
     *out_height = height;
     *out_ascent = ascent;
 }
@@ -84,7 +90,7 @@ static void tbox_layout_line_metrics(const tbox_layout_word *words, size_t start
  * tbox_layout_line per line onto `lines`, each carrying its own height
  * (the max line-height among the faces used by the words in its range).
  *
- * NOVO v11: `no_wrap` (true for `<pre>`, see
+ * `no_wrap` (true for `<pre>`, see
  * tbox_layout_collect_preformatted_words/tbox_layout_build_text_runs) turns
  * off the width-based fit check entirely -- `<pre>` never wraps by width
  * (CSS `white-space: pre`, not `pre-wrap`), only at an explicit hard break.
@@ -166,7 +172,7 @@ void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, d
     }
 }
 
-/* NOVO v13: the extra vertical offset (px) `vertical_align: sub`/`super`
+/* the extra vertical offset (px) `vertical_align: sub`/`super`
  * adds ON TOP OF baseline alignment (see tbox_layout_build_line_runs below)
  * -- `0.0` for the initial BASELINE, the universal case through v12 (zero
  * visual change). `0.15`/`0.35` are fixed fractions of `style->font_size`,
@@ -184,9 +190,7 @@ void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, d
  * raises the run by that many px; a percentage is of the run's own used
  * line-height. The line box's height is not grown for any of these, same
  * simplification as `sub`/`super`. */
-static double tbox_layout_vertical_align_offset(const tbox_style *style, const tbox_font_face *run_face,
-                                                double run_ascent, double run_height,
-                                                const tbox_font_face *block_face) {
+static double tbox_layout_vertical_align_offset(const tbox_style *style, const tbox_font_face *run_face, double run_ascent, double run_height, const tbox_font_face *block_face) {
     switch (style->vertical_align) {
     case TBOX_STYLE_VERTICAL_ALIGN_SUB:
         return 0.15 * style->font_size;
@@ -195,12 +199,10 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
     case TBOX_STYLE_VERTICAL_ALIGN_TEXT_TOP:
         return block_face != NULL ? run_ascent - tbox_font_face_ascent(block_face) : 0.0;
     case TBOX_STYLE_VERTICAL_ALIGN_TEXT_BOTTOM:
-        return block_face != NULL ? run_ascent - run_height + tbox_font_face_line_height(block_face) -
-            tbox_font_face_ascent(block_face) : 0.0;
+        return block_face != NULL ? run_ascent - run_height + tbox_font_face_line_height(block_face) - tbox_font_face_ascent(block_face) : 0.0;
     case TBOX_STYLE_VERTICAL_ALIGN_LENGTH:
         if (style->vertical_align_length.kind == TBOX_STYLE_LENGTH_PERCENT)
-            return run_face != NULL ? -tbox_layout_style_line_height(style, run_face) *
-                style->vertical_align_length.value / 100.0 : 0.0;
+            return run_face != NULL ? -tbox_layout_style_line_height(style, run_face) * style->vertical_align_length.value / 100.0 : 0.0;
         return -style->vertical_align_length.value;
     case TBOX_STYLE_VERTICAL_ALIGN_BASELINE:
     default:
@@ -212,7 +214,7 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
  * `line_y` is this line's already-computed absolute top (content_y plus
  * every earlier line's height); `content_x` is the text box's content-box
  * left edge. Consecutive words sharing the exact same face AND style
- * (NOVO v13 -- previously face alone) merge into one tbox_layout_text_run
+ * ( -- previously face alone) merge into one tbox_layout_text_run
  * (their text joined by single spaces, matching
  * tbox_string_collapse_whitespace's own separator); a new run starts when
  * EITHER changes (a line boundary is handled by the caller looping per
@@ -226,7 +228,7 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
  * each run's absolute x position but deliberately belongs to neither run's
  * own text/width -- unchanged since before v13.
  *
- * NOVO v13: `rect.y` is no longer `line_y` alone -- every run's baseline is
+ * `rect.y` is no longer `line_y` alone -- every run's baseline is
  * aligned with the LINE's dominant baseline first (`line->ascent -
  * tbox_font_face_ascent(run_face)`, zero when every run on the line shares
  * one face/size, the universal case through v12), then shifted further by
@@ -235,15 +237,14 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
  * run's own reduced size -- a deliberate simplification, see
  * ARCHITECTURE.md. `run->style` is set to the SAME style that decided
  * `run_face`, for the reasons above. */
-/* NOVO v15: the top y of an atomic inline (inline-block or image) of
+/* the top y of an atomic inline (inline-block or image) of
  * `height` whose baseline sits `ascent` below its top. `middle` centers it
  * on the baseline raised by half an x-height (approximated as 55% of the
  * block font's ascent); `top`/`bottom` align it with the line box's top/
  * bottom; anything else uses the ordinary run offset. Only atomic inlines
  * get middle/top/bottom here -- on a table cell those values align the
  * cell's content instead, never the cell's own text runs. */
-static double tbox_layout_atomic_top(const tbox_style *style, const tbox_font_face *face, double ascent, double height,
-                                     const tbox_layout_line *line, double line_y, const tbox_font_face *block_face) {
+static double tbox_layout_atomic_top(const tbox_style *style, const tbox_font_face *face, double ascent, double height, const tbox_layout_line *line, double line_y, const tbox_font_face *block_face) {
     switch (style->vertical_align) {
     case TBOX_STYLE_VERTICAL_ALIGN_TOP:
         return line_y;
@@ -254,17 +255,16 @@ static double tbox_layout_atomic_top(const tbox_style *style, const tbox_font_fa
         return line_y + line->ascent - x_height / 2.0 - height / 2.0;
     }
     default:
-        return line_y + line->ascent - ascent +
-            tbox_layout_vertical_align_offset(style, face, ascent, height, block_face);
+        return line_y + line->ascent - ascent + tbox_layout_vertical_align_offset(style, face, ascent, height, block_face);
     }
 }
 
 double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs) {
-    double cursor_x                  = 0.0;
-    double run_start_x               = 0.0;
-    double run_end_x                 = 0.0;
-    const tbox_font_face *run_face   = NULL;
-    const tbox_style *run_style      = NULL;
+    double cursor_x                = 0.0;
+    double run_start_x             = 0.0;
+    double run_end_x               = 0.0;
+    const tbox_font_face *run_face = NULL;
+    const tbox_style *run_style    = NULL;
     /* An image word (see tbox_layout_push_image_word) always closes its own
      * singleton run -- `run_is_image`/`run_image`/`run_image_height` are
      * only ever set alongside `run_face`/`run_style` below, at a run's
@@ -286,7 +286,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
             cursor_x += word->space_width + (justified ? justify_gap : 0.0);
         }
 
-        /* NOVO v15: an inline-block closes any open run and moves its
+        /* an inline-block closes any open run and moves its
          * already-built box onto the line: baseline on the line's baseline,
          * then the same vertical-align offset a run would get. */
         if (word->atomic != NULL) {
@@ -294,10 +294,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
                 run->rect.x               = content_x + run_start_x;
                 double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
-                run->rect.y               = run_is_image ?
-                    tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) :
-                    line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
-                        tbox_font_face_line_height(run_face), block_face);
+                run->rect.y               = run_is_image ? tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) : line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent, tbox_font_face_line_height(run_face), block_face);
                 run->rect.width           = run_end_x - run_start_x;
                 run->rect.height          = run_is_image ? run_image_height : line->height;
                 run->text                 = tbox_string_builder_finish(&run_builder);
@@ -307,8 +304,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
                 have_run                  = false;
             }
             double x = content_x + cursor_x;
-            double y = tbox_layout_atomic_top(word->style, word->face, word->atomic_ascent, word->image_height,
-                                              line, line_y, block_face);
+            double y = tbox_layout_atomic_top(word->style, word->face, word->atomic_ascent, word->image_height, line, line_y, block_face);
             tbox_layout_translate(word->atomic, x - word->atomic->margin_box.x, y - word->atomic->margin_box.y);
             cursor_x += word->width;
             run_end_x = cursor_x;
@@ -328,10 +324,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
                 run->rect.x               = content_x + run_start_x;
                 double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
-                run->rect.y               = run_is_image ?
-                    tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) :
-                    line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
-                        tbox_font_face_line_height(run_face), block_face);
+                run->rect.y               = run_is_image ? tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) : line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent, tbox_font_face_line_height(run_face), block_face);
                 run->rect.width           = run_end_x - run_start_x;
                 run->rect.height          = run_is_image ? run_image_height : line->height;
                 run->text                 = tbox_string_builder_finish(&run_builder);
@@ -361,10 +354,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
         tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
         run->rect.x               = content_x + run_start_x;
         double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
-        run->rect.y               = run_is_image ?
-            tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) :
-            line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent,
-                tbox_font_face_line_height(run_face), block_face);
+        run->rect.y               = run_is_image ? tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) : line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent, tbox_font_face_line_height(run_face), block_face);
         run->rect.width           = run_end_x - run_start_x;
         run->rect.height          = run_is_image ? run_image_height : line->height;
         run->text                 = tbox_string_builder_finish(&run_builder);
@@ -377,46 +367,47 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
 
 static size_t tbox_layout_previous_codepoint(tbox_string_view text) {
     size_t at = text.size;
-    if (at == 0) return 0;
+    if (at == 0)
+        return 0;
     at--;
-    while (at > 0 && ((unsigned char)text.data[at] & 0xc0) == 0x80) at--;
+    while (at > 0 && ((unsigned char)text.data[at] & 0xc0) == 0x80)
+        at--;
     return at;
 }
 
 /* Split only text words too wide for an empty line. Each piece is a UTF-8
  * codepoint-aligned view into the original word; continuation pieces carry
  * no preceding space, so both measurement and painted text stay intact. */
-void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words,
-                                              double available_width, double first_indent) {
-    if (available_width <= 0.0) return;
+void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, double available_width, double first_indent) {
+    if (available_width <= 0.0)
+        return;
     tbox_vector expanded;
     tbox_vector_init(&expanded, arena, sizeof(tbox_layout_word), words->length);
     const tbox_layout_word *source = (const tbox_layout_word *)words->data;
     for (size_t i = 0; i < words->length; i++) {
         const tbox_layout_word *word = &source[i];
-        double first_limit = i == 0 ? available_width - first_indent : available_width;
+        double first_limit           = i == 0 ? available_width - first_indent : available_width;
         /* word-break: break-all -- every codepoint becomes its own word
          * glued to the previous one (no space), so the greedy line breaker
          * can break between any two characters and fill each line. Run
          * building merges the pieces back into one run per line. */
-        if (word->style->word_break_all && !word->hard_break && word->image == NULL && word->atomic == NULL &&
-            word->text.size > 0) {
+        if (word->style->word_break_all && !word->hard_break && word->image == NULL && word->atomic == NULL && word->text.size > 0) {
             size_t start = 0;
             while (start < word->text.size) {
                 size_t next = start + 1;
-                while (next < word->text.size && ((unsigned char)word->text.data[next] & 0xc0) == 0x80) next++;
+                while (next < word->text.size && ((unsigned char)word->text.data[next] & 0xc0) == 0x80)
+                    next++;
                 tbox_layout_word *part = (tbox_layout_word *)tbox_vector_push(&expanded);
-                *part = *word;
-                part->text = tbox_string_view_make(word->text.data + start, next - start);
-                part->width = tbox_font_measure_text_spaced(word->face, part->text, word->style->letter_spacing);
-                part->space_width = start == 0 ? word->space_width : 0.0;
-                part->no_space_before = start == 0 ? word->no_space_before : true;
-                start = next;
+                *part                  = *word;
+                part->text             = tbox_string_view_make(word->text.data + start, next - start);
+                part->width            = tbox_font_measure_text_spaced(word->face, part->text, word->style->letter_spacing);
+                part->space_width      = start == 0 ? word->space_width : 0.0;
+                part->no_space_before  = start == 0 ? word->no_space_before : true;
+                start                  = next;
             }
             continue;
         }
-        if (word->hard_break || word->image != NULL || word->text.size == 0 ||
-            !word->style->overflow_wrap_break_word || word->width <= first_limit) {
+        if (word->hard_break || word->image != NULL || word->text.size == 0 || !word->style->overflow_wrap_break_word || word->width <= first_limit) {
             *(tbox_layout_word *)tbox_vector_push(&expanded) = *word;
             continue;
         }
@@ -427,69 +418,63 @@ void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words,
             double best_width = 0.0;
             while (end < word->text.size) {
                 size_t next = end + 1;
-                while (next < word->text.size &&
-                    ((unsigned char)word->text.data[next] & 0xc0) == 0x80) next++;
+                while (next < word->text.size && ((unsigned char)word->text.data[next] & 0xc0) == 0x80)
+                    next++;
                 tbox_string_view piece = tbox_string_view_make(word->text.data + start, next - start);
-                double measured = tbox_font_measure_text_spaced(word->face, piece,
-                    word->style->letter_spacing);
-                if (measured > limit && best > start) break;
-                best = next;
+                double measured        = tbox_font_measure_text_spaced(word->face, piece, word->style->letter_spacing);
+                if (measured > limit && best > start)
+                    break;
+                best       = next;
                 best_width = measured;
-                end = next;
-                if (measured > limit) break; /* one glyph exceeds the line */
+                end        = next;
+                if (measured > limit)
+                    break; /* one glyph exceeds the line */
             }
             tbox_layout_word *part = (tbox_layout_word *)tbox_vector_push(&expanded);
-            *part = *word;
-            part->text = tbox_string_view_make(word->text.data + start, best - start);
-            part->width = best_width;
-            part->space_width = start == 0 ? word->space_width : 0.0;
-            part->no_space_before = start != 0;
-            start = best;
+            *part                  = *word;
+            part->text             = tbox_string_view_make(word->text.data + start, best - start);
+            part->width            = best_width;
+            part->space_width      = start == 0 ? word->space_width : 0.0;
+            part->no_space_before  = start != 0;
+            start                  = best;
         }
     }
     *words = expanded;
 }
 
-void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_x,
-                                       double available_width, const tbox_style *style,
-                                       const tbox_font_face *face, const tbox_layout_line *line,
-                                       double line_y) {
-    if (runs->length == first || face == NULL) return;
+void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_x, double available_width, const tbox_style *style, const tbox_font_face *face, const tbox_layout_line *line, double line_y) {
+    if (runs->length == first || face == NULL)
+        return;
     tbox_layout_text_run *items = (tbox_layout_text_run *)runs->data;
-    tbox_layout_text_run *last = &items[runs->length - 1];
-    double right = content_x + available_width;
-    if (last->rect.x + last->rect.width <= right) return;
+    tbox_layout_text_run *last  = &items[runs->length - 1];
+    double right                = content_x + available_width;
+    if (last->rect.x + last->rect.width <= right)
+        return;
 
-    tbox_string_view ellipsis = tbox_font_face_has_glyph(face, 0x2026) ?
-        tbox_string_view_make("\xe2\x80\xa6", 3) : tbox_string_view_make("...", 3);
-    double glyph_width = tbox_font_measure_text_spaced(face, ellipsis, style->letter_spacing);
-    double limit = right - glyph_width;
+    tbox_string_view ellipsis = tbox_font_face_has_glyph(face, 0x2026) ? tbox_string_view_make("\xe2\x80\xa6", 3) : tbox_string_view_make("...", 3);
+    double glyph_width        = tbox_font_measure_text_spaced(face, ellipsis, style->letter_spacing);
+    double limit              = right - glyph_width;
     while (runs->length > first) {
         items = (tbox_layout_text_run *)runs->data;
-        last = &items[runs->length - 1];
+        last  = &items[runs->length - 1];
         if (last->image != NULL || last->rect.x >= limit) {
             runs->length--;
             continue;
         }
-        while (last->text.size > 0 && last->rect.x +
-               tbox_font_measure_text_spaced(last->font, last->text,
-                   last->style->letter_spacing) > limit) {
+        while (last->text.size > 0 && last->rect.x + tbox_font_measure_text_spaced(last->font, last->text, last->style->letter_spacing) > limit) {
             last->text.size = tbox_layout_previous_codepoint(last->text);
         }
         if (last->text.size == 0) {
             runs->length--;
             continue;
         }
-        last->rect.width = tbox_font_measure_text_spaced(last->font, last->text,
-            last->style->letter_spacing);
+        last->rect.width = tbox_font_measure_text_spaced(last->font, last->text, last->style->letter_spacing);
         break;
     }
     tbox_layout_text_run *mark = (tbox_layout_text_run *)tbox_vector_push(runs);
-    mark->rect = (tbox_rect){right - glyph_width > content_x ? right - glyph_width : content_x,
-        line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height};
-    mark->text = ellipsis;
-    mark->font = face;
-    mark->style = style;
-    mark->image = NULL;
+    mark->rect                 = (tbox_rect){ right - glyph_width > content_x ? right - glyph_width : content_x, line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height };
+    mark->text                 = ellipsis;
+    mark->font                 = face;
+    mark->style                = style;
+    mark->image                = NULL;
 }
-

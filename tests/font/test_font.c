@@ -191,7 +191,7 @@ int tbox_test_font_run(void) {
         TBOX_TEST_ASSERT(regular_32 != NULL);
         TBOX_TEST_ASSERT(regular_32 != regular_16);
 
-        /* 11b: NOVO v13 -- an empty family with italic=true no longer takes
+        /* 11b:  -- an empty family with italic=true no longer takes
          * the default (regular_data/bold_data) fast path (those have no
          * italic variant of their own): it falls through to the same
          * on-demand resolution as any other family, so on a cache with
@@ -268,7 +268,7 @@ int tbox_test_font_run(void) {
         TBOX_TEST_ASSERT(default_16 != NULL);
         TBOX_TEST_ASSERT(resolver_state.calls == 2);
 
-        /* 18b: NOVO v13 -- an empty family WITH italic=true, on a cache with
+        /* 18b:  -- an empty family WITH italic=true, on a cache with
          * a resolver configured, DOES invoke the resolver (empty `family` is
          * passed through unchanged -- see tbox_font_face_cache_get's doc
          * comment) and returns a face DIFFERENT from default_16 (a distinct

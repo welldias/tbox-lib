@@ -1,10 +1,8 @@
 #include "tbox_layout_internal.h"
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
-
-
-/* NOVO v8: prepends the <li> marker word (bullet or number), if any, as the
+/* prepends the <li> marker word (bullet or number), if any, as the
  * FIRST entry of `words` -- called before tbox_layout_collect_words so the
  * marker always lands ahead of the <li>'s own text. A no-op unless `node` is
  * an ELEMENT `<li>` whose DIRECT parent is an ELEMENT `<ul>` or `<ol>` (see
@@ -19,25 +17,36 @@
  * and fall back to decimal outside that range, like browsers do. Returns
  * the length written (without a NUL), 0 on failure. */
 
-
-
 static size_t tbox_layout_format_list_counter(tbox_style_list_style_type type, size_t index, char *buffer, size_t size) {
     char digits[20];
     size_t count = 0;
-    bool upper = type == TBOX_STYLE_LIST_STYLE_UPPER_ALPHA || type == TBOX_STYLE_LIST_STYLE_UPPER_ROMAN;
+    bool upper   = type == TBOX_STYLE_LIST_STYLE_UPPER_ALPHA || type == TBOX_STYLE_LIST_STYLE_UPPER_ROMAN;
     if ((type == TBOX_STYLE_LIST_STYLE_LOWER_ALPHA || type == TBOX_STYLE_LIST_STYLE_UPPER_ALPHA) && index > 0) {
         for (size_t n = index; n > 0 && count < sizeof(digits); n = (n - 1) / 26)
             digits[count++] = (char)((upper ? 'A' : 'a') + (n - 1) % 26);
         for (size_t i = 0; i < count / 2; i++) {
-            char tmp = digits[i];
-            digits[i] = digits[count - 1 - i];
+            char tmp              = digits[i];
+            digits[i]             = digits[count - 1 - i];
             digits[count - 1 - i] = tmp;
         }
-    } else if ((type == TBOX_STYLE_LIST_STYLE_LOWER_ROMAN || type == TBOX_STYLE_LIST_STYLE_UPPER_ROMAN) &&
-               index > 0 && index < 4000) {
-        static const struct { size_t value; const char *text; } numerals[] = {
-            {1000, "m"}, {900, "cm"}, {500, "d"}, {400, "cd"}, {100, "c"}, {90, "xc"},
-            {50, "l"}, {40, "xl"}, {10, "x"}, {9, "ix"}, {5, "v"}, {4, "iv"}, {1, "i"},
+    } else if ((type == TBOX_STYLE_LIST_STYLE_LOWER_ROMAN || type == TBOX_STYLE_LIST_STYLE_UPPER_ROMAN) && index > 0 && index < 4000) {
+        static const struct {
+            size_t value;
+            const char *text;
+        } numerals[] = {
+            { 1000, "m"  },
+            { 900,  "cm" },
+            { 500,  "d"  },
+            { 400,  "cd" },
+            { 100,  "c"  },
+            { 90,   "xc" },
+            { 50,   "l"  },
+            { 40,   "xl" },
+            { 10,   "x"  },
+            { 9,    "ix" },
+            { 5,    "v"  },
+            { 4,    "iv" },
+            { 1,    "i"  },
         };
         size_t n = index;
         for (size_t i = 0; i < sizeof(numerals) / sizeof(numerals[0]); i++) {
@@ -47,15 +56,16 @@ static size_t tbox_layout_format_list_counter(tbox_style_list_style_type type, s
         }
     } else {
         int written = snprintf(digits, sizeof(digits), "%zu", index);
-        if (written <= 0) return 0;
+        if (written <= 0)
+            return 0;
         count = (size_t)written < sizeof(digits) ? (size_t)written : sizeof(digits) - 1;
     }
-    if (count + 1 > size) return 0;
+    if (count + 1 > size)
+        return 0;
     memcpy(buffer, digits, count);
     buffer[count] = '.';
     return count + 1;
 }
-
 
 void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words) {
     if (node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(node->element.tag_name, "li")) {
@@ -90,14 +100,15 @@ void tbox_layout_push_list_marker(tbox_arena *arena, const tbox_html_node *node,
 
     /* Glyph markers fall back to the plain bullet when the face lacks
      * U+25E6 (white bullet) or U+25AA (small black square). */
-    if (type == TBOX_STYLE_LIST_STYLE_DISC || type == TBOX_STYLE_LIST_STYLE_CIRCLE ||
-        type == TBOX_STYLE_LIST_STYLE_SQUARE) {
+    if (type == TBOX_STYLE_LIST_STYLE_DISC || type == TBOX_STYLE_LIST_STYLE_CIRCLE || type == TBOX_STYLE_LIST_STYLE_SQUARE) {
         static const tbox_string_view bullet = { "\xE2\x80\xA2", 3 };
         static const tbox_string_view circle = { "\xE2\x97\xA6", 3 };
         static const tbox_string_view square = { "\xE2\x96\xAA", 3 };
-        tbox_string_view marker = bullet;
-        if (type == TBOX_STYLE_LIST_STYLE_CIRCLE && tbox_font_face_has_glyph(face, 0x25E6)) marker = circle;
-        if (type == TBOX_STYLE_LIST_STYLE_SQUARE && tbox_font_face_has_glyph(face, 0x25AA)) marker = square;
+        tbox_string_view marker              = bullet;
+        if (type == TBOX_STYLE_LIST_STYLE_CIRCLE && tbox_font_face_has_glyph(face, 0x25E6))
+            marker = circle;
+        if (type == TBOX_STYLE_LIST_STYLE_SQUARE && tbox_font_face_has_glyph(face, 0x25AA))
+            marker = square;
         tbox_layout_push_words(words, marker, face, style);
         return;
     }

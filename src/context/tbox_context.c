@@ -5,15 +5,13 @@ static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_li
 static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder);
 
 static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_list *list) {
-    if (ctx->select_fields == NULL && ctx->open_select == NULL &&
-        ctx->open_color == NULL && ctx->open_date == NULL &&
-        ctx->open_file == NULL && !ctx->has_file_input && !ctx->has_number_input &&
-        !ctx->has_range_input && !ctx->has_search_input) return;
+    if (ctx->select_fields == NULL && ctx->open_select == NULL && ctx->open_color == NULL && ctx->open_date == NULL && ctx->open_file == NULL && !ctx->has_file_input && !ctx->has_number_input && !ctx->has_range_input && !ctx->has_search_input)
+        return;
     tbox_vector items;
     tbox_vector_init(&items, &ctx->frame_arena, sizeof(tbox_paint_op), list->count + 32);
     for (size_t i = 0; i < list->count; i++) {
         tbox_paint_op *op = tbox_vector_push(&items);
-        *op = list->items[i];
+        *op               = list->items[i];
     }
     tbox_context_paint_select_arrows(ctx->root, &items);
     tbox_context_paint_number_steppers(ctx->root, &items);
@@ -28,7 +26,7 @@ static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_li
     list->count = items.length;
 }
 
-/* NOVO v9: pre-order traversal of the WHOLE document tree (starting at
+/* pre-order traversal of the WHOLE document tree (starting at
  * tbox_html_document_root -- the real root, which may have several
  * top-level children such as <head> and <body>, not the single "first
  * top-level element" tbox_layout_build isolates for itself in a separate
@@ -54,17 +52,18 @@ static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_ht
 }
 
 tbox_context_options tbox_context_options_default(void) {
-    return (tbox_context_options){.ua_style = tbox_ua_style_config_default()};
+    return (tbox_context_options){ .ua_style = tbox_ua_style_config_default() };
 }
 
 tbox_context *tbox_context_open_with_options(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_context_options options) {
-    if (options.control_css != NULL && options.control_css_length == SIZE_MAX) return NULL;
+    if (options.control_css != NULL && options.control_css_length == SIZE_MAX)
+        return NULL;
     tbox_html_document *document = tbox_html_parse(html, html_length);
     if (document == NULL) {
         return NULL;
     }
 
-    /* NOVO v9: gathers every <style> element's raw text from the WHOLE
+    /* gathers every <style> element's raw text from the WHOLE
      * document (not just what Layout later renders) into one concatenated
      * buffer, parsed as a single extra author stylesheet below. `scratch`
      * only needs to survive long enough for tbox_css_parse to copy the
@@ -101,8 +100,8 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
         return NULL;
     }
 
-    const char *control_css = options.control_css != NULL ? options.control_css : tbox_context_default_control_css();
-    size_t control_css_length = options.control_css != NULL ? options.control_css_length : strlen(control_css);
+    const char *control_css                 = options.control_css != NULL ? options.control_css : tbox_context_default_control_css();
+    size_t control_css_length               = options.control_css != NULL ? options.control_css_length : strlen(control_css);
     tbox_css_stylesheet *control_stylesheet = tbox_css_parse(control_css, control_css_length);
     if (control_stylesheet == NULL) {
         tbox_css_stylesheet_destroy(ua_stylesheet);
@@ -144,34 +143,34 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->open_color      = NULL;
     ctx->color_channel   = 0;
     ctx->open_date       = NULL;
-    ctx->date_cursor     = (tbox_date){0};
+    ctx->date_cursor     = (tbox_date){ 0 };
     ctx->date_hour       = 0;
     ctx->date_minute     = 0;
     ctx->open_file       = NULL;
     ctx->file_directory  = NULL;
     ctx->file_entries    = NULL;
     ctx->file_count = ctx->file_first = ctx->file_highlight = 0;
-    ctx->has_file_input  = false;
-    ctx->has_number_input = false;
-    ctx->has_range_input = false;
-    ctx->has_search_input = false;
-    ctx->range_drag_node = NULL;
-    ctx->popup_highlight = NULL;
-    ctx->popup_first     = 0;
-    ctx->viewport_width  = 0.0;
-    ctx->viewport_height = 0.0;
-    ctx->select_handler = NULL;
-    ctx->select_userdata = NULL;
-    ctx->scroll_states   = NULL;
-    ctx->scroll_drag_node = NULL;
-    ctx->scroll_drag_grab_y = 0.0;
-    ctx->scroll_pointer_consumed = false;
-    ctx->focus_scroll_pending = false;
-    ctx->input_handler   = NULL;
-    ctx->input_userdata  = NULL;
-    ctx->submit_handler  = NULL;
-    ctx->submit_userdata = NULL;
-    ctx->styles          = (tbox_style_table){0};
+    ctx->has_file_input                                     = false;
+    ctx->has_number_input                                   = false;
+    ctx->has_range_input                                    = false;
+    ctx->has_search_input                                   = false;
+    ctx->range_drag_node                                    = NULL;
+    ctx->popup_highlight                                    = NULL;
+    ctx->popup_first                                        = 0;
+    ctx->viewport_width                                     = 0.0;
+    ctx->viewport_height                                    = 0.0;
+    ctx->select_handler                                     = NULL;
+    ctx->select_userdata                                    = NULL;
+    ctx->scroll_states                                      = NULL;
+    ctx->scroll_drag_node                                   = NULL;
+    ctx->scroll_drag_grab_y                                 = 0.0;
+    ctx->scroll_pointer_consumed                            = false;
+    ctx->focus_scroll_pending                               = false;
+    ctx->input_handler                                      = NULL;
+    ctx->input_userdata                                     = NULL;
+    ctx->submit_handler                                     = NULL;
+    ctx->submit_userdata                                    = NULL;
+    ctx->styles                                             = (tbox_style_table){ 0 };
 
     tbox_context_sanitize_inputs(ctx, (tbox_html_node *)tbox_html_document_root(document));
     tbox_context_capture_form_defaults(ctx, tbox_html_document_root(document));
@@ -181,7 +180,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
 
 tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config) {
     tbox_context_options options = tbox_context_options_default();
-    options.ua_style = config;
+    options.ua_style             = config;
     return tbox_context_open_with_options(html, html_length, css, css_length, fonts, images, options);
 }
 
@@ -220,7 +219,7 @@ void tbox_context_close(tbox_context *ctx) {
 
     /* Each binding owns its compiled query's own arena (see
      * tbox_css_selector_query_destroy) -- distinct from handler_arena,
-     * which only backs the `handlers` vector itself. NOVO v3: a binding
+     * which only backs the `handlers` vector itself. a binding
      * already removed via tbox_context_unbind_click has query == NULL (its
      * query was destroyed there) -- skip it here to avoid a double
      * destroy. */
@@ -248,36 +247,30 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * ARCHITECTURE.md). Must happen before ctx->root is overwritten below:
      * the old tree lives in this same arena. */
     tbox_arena_reset(&ctx->frame_arena);
-    ctx->styles = (tbox_style_table){0};
+    ctx->styles = (tbox_style_table){ 0 };
 
     if (ctx->focused_node != NULL && !tbox_context_node_attached(ctx, ctx->focused_node)) {
         ctx->focused_node = NULL;
     }
     if (ctx->open_select != NULL && !tbox_context_node_attached(ctx, ctx->open_select)) {
-        ctx->open_select = NULL;
+        ctx->open_select     = NULL;
         ctx->popup_highlight = NULL;
     }
-    if (ctx->open_color != NULL && (!tbox_context_node_attached(ctx, ctx->open_color) ||
-        !tbox_context_is_color_input(ctx->open_color) ||
-        tbox_html_node_get_attribute(ctx->open_color, tbox_string_view_make("disabled", 8)) != NULL))
+    if (ctx->open_color != NULL && (!tbox_context_node_attached(ctx, ctx->open_color) || !tbox_context_is_color_input(ctx->open_color) || tbox_html_node_get_attribute(ctx->open_color, tbox_string_view_make("disabled", 8)) != NULL))
         ctx->open_color = NULL;
-    if (ctx->open_date != NULL && (!tbox_context_node_attached(ctx, ctx->open_date) ||
-        !tbox_context_is_calendar_input(ctx->open_date) ||
-        tbox_html_node_get_attribute(ctx->open_date, tbox_string_view_make("disabled", 8)) != NULL))
+    if (ctx->open_date != NULL && (!tbox_context_node_attached(ctx, ctx->open_date) || !tbox_context_is_calendar_input(ctx->open_date) || tbox_html_node_get_attribute(ctx->open_date, tbox_string_view_make("disabled", 8)) != NULL))
         ctx->open_date = NULL;
-    if (ctx->open_file != NULL && (!tbox_context_node_attached(ctx, ctx->open_file) ||
-        !tbox_context_is_file_input(ctx->open_file) ||
-        tbox_html_node_get_attribute(ctx->open_file, tbox_string_view_make("disabled", 8)) != NULL))
+    if (ctx->open_file != NULL && (!tbox_context_node_attached(ctx, ctx->open_file) || !tbox_context_is_file_input(ctx->open_file) || tbox_html_node_get_attribute(ctx->open_file, tbox_string_view_make("disabled", 8)) != NULL))
         tbox_context_file_close(ctx);
 
     const tbox_html_node *root = tbox_html_document_root(ctx->document);
-    ctx->has_file_input = false;
-    ctx->has_number_input = false;
-    ctx->has_range_input = false;
-    ctx->has_search_input = false;
+    ctx->has_file_input        = false;
+    ctx->has_number_input      = false;
+    ctx->has_range_input       = false;
+    ctx->has_search_input      = false;
     tbox_context_sanitize_inputs(ctx, (tbox_html_node *)root);
 
-    /* NOVO v3: must happen before every tbox_style_resolve_tree call,
+    /* must happen before every tbox_style_resolve_tree call,
      * unconditionally (not only on ticks where the hover state actually
      * changed) -- the cascade needs to see the CURRENT hover state every
      * time it resolves styles, not just as of whenever it last changed.
@@ -287,8 +280,8 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     tbox_css_selector_set_hover_context(ctx->hovered_node);
     tbox_css_selector_set_focus_context(ctx->focused_node);
 
-    /* NOVO v2: three cascade sources -- the user-agent stylesheet, the
-     * external author stylesheet, and (NOVO v9) the internal stylesheet
+    /* three cascade sources -- the user-agent stylesheet, the
+     * external author stylesheet, and  the internal stylesheet
      * assembled from every <style> element found in the document -- replacing
      * the 1-element placeholder array TASKS.md's Tarefa 1/Tarefa 3 left here.
      * Order in this array does not affect cascade priority BETWEEN DIFFERENT
@@ -302,12 +295,12 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * placed after `stylesheet` on purpose, so an embedded <style> wins ties
      * against the external CSS (see ARCHITECTURE.md's v9 "Escopo"). */
     tbox_css_cascade_source sources[3] = {
-        { ctx->ua_stylesheet, TBOX_CSS_ORIGIN_USER_AGENT },
-        { ctx->stylesheet, TBOX_CSS_ORIGIN_AUTHOR },
-        { ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR },
+        { ctx->ua_stylesheet,       TBOX_CSS_ORIGIN_USER_AGENT },
+        { ctx->stylesheet,          TBOX_CSS_ORIGIN_AUTHOR     },
+        { ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR     },
     };
     tbox_style_table styles = tbox_style_resolve_tree(&ctx->frame_arena, root, sources, 3);
-    ctx->styles = styles;
+    ctx->styles             = styles;
 
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
      * so tbox_context_hit_test has something to search (or not) between
@@ -317,7 +310,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     tbox_context_reveal_focused(ctx);
     tbox_context_sync_select_boxes(ctx, ctx->root);
     tbox_context_layout_textareas(ctx, ctx->root);
-    ctx->viewport_width = viewport_width;
+    ctx->viewport_width  = viewport_width;
     ctx->viewport_height = viewport_height;
 
     /* tbox_render_build_display_list already treats a NULL root as "empty
@@ -330,14 +323,16 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
 }
 
 void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata) {
-    if (ctx == NULL) return;
-    ctx->input_handler = handler;
+    if (ctx == NULL)
+        return;
+    ctx->input_handler  = handler;
     ctx->input_userdata = userdata;
 }
 
 void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata) {
-    if (ctx == NULL) return;
-    ctx->submit_handler = handler;
+    if (ctx == NULL)
+        return;
+    ctx->submit_handler  = handler;
     ctx->submit_userdata = userdata;
 }
 

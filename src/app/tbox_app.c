@@ -105,7 +105,7 @@ static bool tbox_app_font_resolver(void *userdata, tbox_font_query query, const 
     return tbox_font_source_resolve(source, query, out_data, out_size);
 }
 
-/* NOVO v12: shared by tbox_app_create_impl and tbox_app_screenshot_from_files
+/* shared by tbox_app_create_impl and tbox_app_screenshot_from_files
  * -- both used to duplicate this exact "resolve regular, resolve bold,
  * tbox_font_face_cache_create" sequence independently (see
  * ARCHITECTURE.md's "Limpeza recomendada, junto"); now there is one copy.
@@ -199,7 +199,8 @@ static void tbox_app_dirname(const char *path, char *out, size_t out_size) {
  * allocated first; never crashes either way. */
 #if TBOX_HAS_WINDOW_BACKEND
 static tbox_app *tbox_app_create_impl(const char *html, const char *css, const char *base_dir, int32_t width, int32_t height, tbox_context_options options) {
-    if (options.control_css != NULL && options.control_css_length == SIZE_MAX) return NULL;
+    if (options.control_css != NULL && options.control_css_length == SIZE_MAX)
+        return NULL;
     tbox_font_source *resolver_source = NULL;
     tbox_font_face_cache *fonts       = tbox_app_build_font_cache(&resolver_source);
     if (fonts == NULL) {
@@ -265,9 +266,9 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
         }
         memcpy(app->control_css_copy, options.control_css, options.control_css_length);
         app->control_css_copy[options.control_css_length] = '\0';
-        app->options.control_css = app->control_css_copy;
+        app->options.control_css                          = app->control_css_copy;
     }
-    app->key_handler      = NULL;
+    app->key_handler          = NULL;
     app->key_handler_userdata = NULL;
 
     return app;
@@ -279,7 +280,7 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
 
 tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
     tbox_context_options options = tbox_context_options_default();
-    options.ua_style = config;
+    options.ua_style             = config;
     return tbox_app_create_impl(html, css, NULL, width, height, options);
 }
 tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options) {
@@ -287,7 +288,7 @@ tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_
 }
 #endif
 
-/* NOVO v3: reads `path` fully into a malloc'd, NUL-terminated buffer -- same
+/* reads `path` fully into a malloc'd, NUL-terminated buffer -- same
  * read-whole-file shape as tests/context/test_context.c's read_file() and
  * example/css_cascade_origins.c's own copy (see ARCHITECTURE.md's
  * "Application -- leitura de arquivo externo" on this being a small helper
@@ -384,7 +385,7 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
 
 tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
     tbox_context_options options = tbox_context_options_default();
-    options.ua_style = config;
+    options.ua_style             = config;
     return tbox_app_create_from_files_impl(html_path, css_path, width, height, options);
 }
 tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
@@ -392,9 +393,11 @@ tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const c
 }
 
 bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path) {
-    if (app == NULL || html_path == NULL) return false;
+    if (app == NULL || html_path == NULL)
+        return false;
     char *html = tbox_app_read_file(html_path);
-    if (html == NULL) return false;
+    if (html == NULL)
+        return false;
     char *css = css_path != NULL ? tbox_app_read_file(css_path) : NULL;
     if (css_path != NULL && css == NULL) {
         free(html);
@@ -403,11 +406,10 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
     char base_dir[TBOX_APP_PATH_BUF_SIZE];
     tbox_app_dirname(html_path, base_dir, sizeof(base_dir));
     tbox_image_cache *images = tbox_image_cache_create(base_dir);
-    tbox_context *ctx = NULL;
+    tbox_context *ctx        = NULL;
     if (images != NULL) {
         const char *css_text = css != NULL ? css : "";
-        ctx = tbox_context_open_with_options(html, strlen(html), css_text,
-            strlen(css_text), app->fonts, images, app->options);
+        ctx                  = tbox_context_open_with_options(html, strlen(html), css_text, strlen(css_text), app->fonts, images, app->options);
     }
     free(css);
     free(html);
@@ -417,9 +419,9 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
     }
     tbox_context_close(app->ctx);
     tbox_image_cache_destroy(app->images);
-    app->ctx = ctx;
-    app->images = images;
-    app->paste_target = NULL;
+    app->ctx              = ctx;
+    app->images           = images;
+    app->paste_target     = NULL;
     app->redraw_requested = true;
     return true;
 }
@@ -496,8 +498,7 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
 }
 
 bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path) {
-    return tbox_app_screenshot_from_files_with_options(html_path, css_path, width, height,
-        png_path, tbox_context_options_default());
+    return tbox_app_screenshot_from_files_with_options(html_path, css_path, width, height, png_path, tbox_context_options_default());
 }
 
 #if TBOX_HAS_WINDOW_BACKEND
@@ -516,8 +517,9 @@ tbox_context *tbox_app_context(tbox_app *app) {
 }
 
 void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata) {
-    if (app == NULL) return;
-    app->key_handler = handler;
+    if (app == NULL)
+        return;
+    app->key_handler          = handler;
     app->key_handler_userdata = userdata;
 }
 
@@ -580,8 +582,7 @@ void tbox_app_step(tbox_app *app) {
                 dirty = true;
             break;
         case TBOX_INPUT_KEY:
-            if (app->key_handler != NULL && app->key_handler(app, event.data.key,
-                    app->key_handler_userdata)) {
+            if (app->key_handler != NULL && app->key_handler(app, event.data.key, app->key_handler_userdata)) {
                 dirty = true;
                 break;
             }
@@ -635,7 +636,7 @@ void tbox_app_step(tbox_app *app) {
         }
     }
 
-    /* NOVO v3: pointer position, not just click -- :hover. Called every
+    /* pointer position, not just click -- :hover. Called every
      * tick unconditionally (no check for whether the pointer actually
      * moved since the last tick), same O(n) hit-test cost already accepted
      * elsewhere in this project; see tbox_context_update_hover's doc
@@ -705,7 +706,11 @@ tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t
     return NULL;
 }
 tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options) {
-    (void)html; (void)css; (void)width; (void)height; (void)options;
+    (void)html;
+    (void)css;
+    (void)width;
+    (void)height;
+    (void)options;
     return NULL;
 }
 
@@ -726,17 +731,25 @@ tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const ch
     return NULL;
 }
 tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
-    (void)html_path; (void)css_path; (void)width; (void)height; (void)options;
+    (void)html_path;
+    (void)css_path;
+    (void)width;
+    (void)height;
+    (void)options;
     return NULL;
 }
 
 bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path) {
-    (void)app; (void)html_path; (void)css_path;
+    (void)app;
+    (void)html_path;
+    (void)css_path;
     return false;
 }
 
 void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata) {
-    (void)app; (void)handler; (void)userdata;
+    (void)app;
+    (void)handler;
+    (void)userdata;
 }
 
 tbox_context *tbox_app_context(tbox_app *app) {

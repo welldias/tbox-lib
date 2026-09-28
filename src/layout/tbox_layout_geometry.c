@@ -1,6 +1,6 @@
 #include "tbox_layout_internal.h"
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 /* ---- Block formatting context (unchanged in spirit since v0, now
  * threading a tbox_font_face_cache instead of a single tbox_font_face) ---- */
@@ -29,41 +29,50 @@ double tbox_layout_resolve_edge(tbox_style_length length, double percent_base) {
 double tbox_layout_constrain_width(const tbox_style *style, double width, double base, double edges) {
     if (style->max_width.kind != TBOX_STYLE_LENGTH_AUTO) {
         double maximum = tbox_layout_resolve_edge(style->max_width, base);
-        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) maximum -= edges;
-        if (maximum < 0.0) maximum = 0.0;
-        if (width > maximum) width = maximum;
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+            maximum -= edges;
+        if (maximum < 0.0)
+            maximum = 0.0;
+        if (width > maximum)
+            width = maximum;
     }
     if (style->min_width.kind != TBOX_STYLE_LENGTH_AUTO) {
         double minimum = tbox_layout_resolve_edge(style->min_width, base);
-        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) minimum -= edges;
-        if (minimum < 0.0) minimum = 0.0;
-        if (width < minimum) width = minimum;
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+            minimum -= edges;
+        if (minimum < 0.0)
+            minimum = 0.0;
+        if (width < minimum)
+            width = minimum;
     }
     return width;
 }
 
 /* Height constraints use the containing block's height only when definite.
  * CSS min-height wins if it exceeds max-height, as with width constraints. */
-double tbox_layout_constrain_height(const tbox_style *style, double height,
-                                           double base, bool base_definite, double edges) {
-    if (style->max_height.kind == TBOX_STYLE_LENGTH_PX ||
-        (style->max_height.kind == TBOX_STYLE_LENGTH_PERCENT && base_definite)) {
+double tbox_layout_constrain_height(const tbox_style *style, double height, double base, bool base_definite, double edges) {
+    if (style->max_height.kind == TBOX_STYLE_LENGTH_PX || (style->max_height.kind == TBOX_STYLE_LENGTH_PERCENT && base_definite)) {
         double maximum = tbox_layout_resolve_edge(style->max_height, base);
-        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) maximum -= edges;
-        if (maximum < 0.0) maximum = 0.0;
-        if (height > maximum) height = maximum;
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+            maximum -= edges;
+        if (maximum < 0.0)
+            maximum = 0.0;
+        if (height > maximum)
+            height = maximum;
     }
-    if (style->min_height.kind == TBOX_STYLE_LENGTH_PX ||
-        (style->min_height.kind == TBOX_STYLE_LENGTH_PERCENT && base_definite)) {
+    if (style->min_height.kind == TBOX_STYLE_LENGTH_PX || (style->min_height.kind == TBOX_STYLE_LENGTH_PERCENT && base_definite)) {
         double minimum = tbox_layout_resolve_edge(style->min_height, base);
-        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) minimum -= edges;
-        if (minimum < 0.0) minimum = 0.0;
-        if (height < minimum) height = minimum;
+        if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
+            minimum -= edges;
+        if (minimum < 0.0)
+            minimum = 0.0;
+        if (height < minimum)
+            height = minimum;
     }
     return height;
 }
 
-/* NOVO v4: resolves one (primary, opposite) pair of `position: relative`
+/* resolves one (primary, opposite) pair of `position: relative`
  * offsets per CSS2.1 9.4.3 -- a non-AUTO primary side wins outright; else a
  * non-AUTO opposite side wins, negated (moving by `-opposite` is exactly
  * equivalent to moving by `+primary` when only one side is given); else 0
@@ -93,10 +102,7 @@ double tbox_layout_resolve_offset(tbox_style_length primary, tbox_style_length o
     return 0.0;
 }
 
-
-
-
-/* NOVO v5: resolves an `absolute`/`fixed` box's MARGIN BOX origin on one axis
+/* resolves an `absolute`/`fixed` box's MARGIN BOX origin on one axis
  * -- a POSITION against the containing block's origin/size, not a delta like
  * tbox_layout_resolve_offset (v4, for `position: relative`) computes. `primary`
  * is `left`/`top`; `opposite` is `right`/`bottom`. Per CSS2.1 10.3.7/10.6.4: a
@@ -124,4 +130,3 @@ double tbox_layout_resolve_absolute_edge(tbox_style_length primary, tbox_style_l
 
     return container_origin;
 }
-

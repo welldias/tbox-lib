@@ -176,7 +176,7 @@
  * visibly changes color (example/tbox_app_demo.css gives .off/.on different
  * background-color) without the window closing.
  *
- * NOVO v3: returns bool, not void (tbox_context_click_handler's signature
+ * returns bool, not void (tbox_context_click_handler's signature
  * changed -- see <tbox/context.h>); true means "keep propagating", and
  * nothing else in the tree matches ".box" at a farther ancestor anyway, so
  * the return value has no observable effect here beyond satisfying the new
@@ -197,7 +197,7 @@ static bool on_box_click(tbox_context *ctx, tbox_html_node *node, void *userdata
     return true;
 }
 
-/* NOVO v3 -- bubbling demo, half 1 of 2. Registered on ".bubble-inner",
+/* bubbling demo, half 1 of 2. Registered on ".bubble-inner",
  * an empty div nested inside ".bubble-outer" (see
  * example/tbox_app_demo.html/.css -- a plain <div> never renders text
  * regardless of TEXT children, see that CSS file's own top comment, so
@@ -223,7 +223,7 @@ static bool on_bubble_inner_click(tbox_context *ctx, tbox_html_node *node, void 
     return true;
 }
 
-/* NOVO v3 -- bubbling demo, half 2 of 2. Registered on ".bubble-outer",
+/* bubbling demo, half 2 of 2. Registered on ".bubble-outer",
  * the farther ancestor. Only reachable because on_bubble_inner_click above
  * returned true -- fires SECOND, proving dispatch walks ancestors nearest
  * to farthest and tests every registration at each level (real bubbling
@@ -239,7 +239,7 @@ static bool on_bubble_outer_click(tbox_context *ctx, tbox_html_node *node, void 
     return true;
 }
 
-/* NOVO v3 -- stopPropagation demo, half 1 of 2. A deliberately SEPARATE
+/* stopPropagation demo, half 1 of 2. A deliberately SEPARATE
  * nested div pair from the bubbling one above (.stop-outer/.stop-inner,
  * not .bubble-*), so the two scenarios never get tangled with each other.
  * Registered on ".stop-inner"; fires and recolors itself
@@ -257,7 +257,7 @@ static bool on_stop_inner_click(tbox_context *ctx, tbox_html_node *node, void *u
     return false;
 }
 
-/* NOVO v3 -- stopPropagation demo, half 2 of 2. If this ever logs or
+/* stopPropagation demo, half 2 of 2. If this ever logs or
  * recolors .stop-outer, stopPropagation is broken -- on_stop_inner_click
  * above always returns false first, so tbox_context_dispatch_click's
  * ancestor walk must stop before it ever reaches (or even tests) this
@@ -274,7 +274,7 @@ static bool on_stop_outer_click(tbox_context *ctx, tbox_html_node *node, void *u
     return true;
 }
 
-/* NOVO v3 -- tbox_context_unbind_click demo. `userdata` points at a plain
+/* tbox_context_unbind_click demo. `userdata` points at a plain
  * int living in main()'s stack frame (see below) -- tbox_context_on_click
  * hands back this handler's own binding handle, which main() stores into
  * that int immediately after registering, before the loop (hence before
@@ -297,7 +297,7 @@ static bool on_unbind_target_click(tbox_context *ctx, tbox_html_node *node, void
     return true;
 }
 
-/* NOVO v3 -- tbox_html_node_set_text_content demo, independent of the
+/* tbox_html_node_set_text_content demo, independent of the
  * unbind one above (this one stays bound and keeps firing on every click,
  * just to show set_text_content in isolation). Swaps the element's text to
  * a fixed string -- reflected on screen by the very next tbox_app_step
@@ -314,7 +314,7 @@ static bool on_rename_target_click(tbox_context *ctx, tbox_html_node *node, void
     return true;
 }
 
-/* NOVO v5 -- Orchestration hit-test fix (Tarefa 2) interactive proof.
+/* Orchestration hit-test fix (Tarefa 2) interactive proof.
  * Registered on ".v5-escaped-child" (example/tbox_app_demo.html/.css): a
  * `position: absolute` box whose top/left deliberately place it well
  * outside its own DOM parent's (.v5-escape-parent, a small 80x50 box)

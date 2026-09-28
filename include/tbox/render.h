@@ -1,8 +1,8 @@
 #ifndef TBOX_RENDER_H
 #define TBOX_RENDER_H
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include <tbox/font.h>
 #include <tbox/image.h>
@@ -44,12 +44,12 @@ typedef struct tbox_paint_op {
     tbox_css_rgba color;
 
     /* TEXT_RUN only (left at their empty/NULL default for FILL_RECT/IMAGE):
-     * NOVO v2 -- one paint op per tbox_layout_text_run, not per text-bearing
+     * one paint op per tbox_layout_text_run, not per text-bearing
      * box, since a box's text may now wrap onto multiple lines and/or mix
      * faces (see ARCHITECTURE.md's "Render Pipeline" section). */
     tbox_string_view text;
     const tbox_font_face *face; /* injected by whoever builds the display list, never loaded here */
-    double letter_spacing; /* TEXT_RUN only; px after each codepoint */
+    double letter_spacing;      /* TEXT_RUN only; px after each codepoint */
 
     /* IMAGE only (NULL for FILL_RECT/TEXT_RUN): the decoded image to
      * composite into `rect` -- see tbox_raster_image. */
@@ -87,7 +87,7 @@ typedef struct tbox_display_list {
  * span only the padding_box height); when any corner radius is positive, one
  * or two ROUNDED FILL_RECTs replace that whole background+border step (see
  * tbox_render_walk in src/render/tbox_render.c for the exact two-nested-
- * rounded-rects technique) -- then (NOVO v2) one TEXT_RUN -- or (NOVO,
+ * rounded-rects technique) -- then  one TEXT_RUN -- or (NOVO,
  * image support) one IMAGE, for a run whose `image` is non-NULL, i.e. built
  * from an `<img>` word -- per entry of box->text_runs, in the order Layout
  * Tree built them (already line-order, left-to-right/top-to-bottom) -- in

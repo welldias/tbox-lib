@@ -24,7 +24,7 @@ bool tbox_app_backend_available(void);
  * is built. The current backend is Linux/Wayland. */
 tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height);
 
-/* NOVO v2: same as tbox_app_create, plus an explicit tbox_ua_style_config
+/* same as tbox_app_create, plus an explicit tbox_ua_style_config
  * this app's tbox_context is opened with (via tbox_context_open_with_config
  * instead of tbox_context_open -- see ARCHITECTURE.md's "Application /
  * Orchestration -- fiação do cache de fontes e do config"). Application
@@ -39,7 +39,7 @@ tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t
  * copies control_css so a later tbox_app_load_from_files keeps the theme. */
 tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options);
 
-/* NOVO v3: same as tbox_app_create, but html_path/css_path are paths to
+/* same as tbox_app_create, but html_path/css_path are paths to
  * files read fully into memory (a local helper in tbox_app.c, same
  * read-whole-file-into-a-malloc'd-buffer shape already used by
  * tests/context/test_context.c's read_file()/example/css_cascade_origins.c's
@@ -58,7 +58,7 @@ tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_
  * load failure, or the window failing to open). */
 tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height);
 
-/* NOVO v3: same as tbox_app_create_from_files, plus an explicit
+/* same as tbox_app_create_from_files, plus an explicit
  * tbox_ua_style_config this app's tbox_context is opened with -- same
  * relationship tbox_app_create_with_config has to tbox_app_create. Fails
  * under the same conditions as tbox_app_create_from_files. */
@@ -85,8 +85,7 @@ tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const c
  * Fontconfig is unavailable the symbol remains linkable and returns false. */
 bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path);
 /* Offscreen counterpart accepting the separate picker theme. */
-bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path,
-    int32_t width, int32_t height, const char *png_path, tbox_context_options options);
+bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, tbox_context_options options);
 
 /* Access to the internal tbox_context -- for registering click handlers via
  * tbox_context_on_click, at any point before or after the first

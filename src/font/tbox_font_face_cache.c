@@ -143,7 +143,7 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox
         size = bold ? cache->bold_size : cache->regular_size;
     } else {
         /* Non-default family, OR the default family with italic requested
-         * (NOVO v13: regular_data/bold_data have no italic variant of their
+         * (regular_data/bold_data have no italic variant of their
          * own -- resolving one on demand, same mechanism as any other
          * family, is what lets `<i>`/`<em>` render truly slanted without a
          * `font-family` declared anywhere in the ancestor chain, the

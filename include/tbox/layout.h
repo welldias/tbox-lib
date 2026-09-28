@@ -16,7 +16,7 @@ extern "C" {
  * Builds a box tree from the DOM + resolved styles and computes each box's
  * geometry (position and size, in px relative to the viewport) per a
  * deliberately simplified CSS2.1 block formatting context with inline text,
- * images, positioned boxes and a table grid, NOVO v15 inline-blocks and NOVO
+ * images, positioned boxes and a table grid,  inline-blocks and NOVO
  * v16 a flex formatting context (see ARCHITECTURE.md's v15/v16 sections).
  * Grid and floats remain unsupported. */
 
@@ -32,7 +32,7 @@ typedef struct tbox_layout_text_run {
     tbox_rect rect;             /* this run's absolute position/size, already placed on the right line */
     tbox_string_view text;      /* the longest contiguous sequence of words sharing the same resolved face AND style AND fitting on the same line */
     const tbox_font_face *font; /* tbox_font_face_cache_get(fonts, ..., ...) for the element that originated this run */
-    /* NOVO v13: the SAME tbox_style that already decided `font` above
+    /* the SAME tbox_style that already decided `font` above
      * (font_family/font_weight_bold/font_italic/font_size) for this run --
      * never NULL, a pointer into the tbox_style_table the caller already
      * passed to tbox_layout_build (or tbox_layout_default_style's address,
@@ -65,7 +65,7 @@ typedef struct tbox_layout_box {
 
     tbox_rect margin_box, border_box, padding_box, content_box;
     double scroll_content_height; /* laid-out children extent before viewport clipping */
-    bool table_suppress_border;       /* collapsed tables paint shared edges once */
+    bool table_suppress_border;   /* collapsed tables paint shared edges once */
     struct tbox_table_edge *table_edges;
     size_t table_edge_count;
 
@@ -74,7 +74,7 @@ typedef struct tbox_layout_box {
      * boxes and replaced images; empty when a box has no visible runs. Multiple
      * runs happen once the text wraps onto more than one line, or once the
      * face changes mid-line (e.g. a <b> inside a <p>) -- see
-     * tbox_layout_text_run above. NOVO v15: a text-bearing box's
+     * tbox_layout_text_run above. a text-bearing box's
      * inline-blocks (and inline-flex containers) are its child boxes, placed
      * on its lines between its runs. */
     tbox_layout_text_run *text_runs;

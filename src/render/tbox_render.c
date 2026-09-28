@@ -9,7 +9,7 @@
 #include "base/tbox_vector.h"
 
 /* Pushes one FILL_RECT of `color` covering `rect` onto `items` -- shared by
- * the background fill and the (NOVO v4) 4 border strips below, since none
+ * the background fill and the  4 border strips below, since none
  * of them carry text. `radius` always 0.0 here -- every caller of THIS
  * helper wants a plain rectangle; see tbox_render_push_fill_rect_rounded
  * below for the border-radius/box-shadow paths. */
@@ -22,17 +22,16 @@ static void tbox_render_push_fill_rect(tbox_vector *items, tbox_rect rect, tbox_
     op->face          = NULL;
     op->image         = NULL;
     op->radius        = 0.0;
-    for (size_t i = 0; i < 4; i++) op->corner_radii[i] = 0.0;
-    op->has_clip      = false;
+    for (size_t i = 0; i < 4; i++)
+        op->corner_radii[i] = 0.0;
+    op->has_clip = false;
 }
 
 static bool tbox_render_checked_checkbox(const tbox_html_node *node) {
-    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
-        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(node->element.tag_name, "input"))
+        return false;
     const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
-    return type != NULL &&
-           tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("checkbox", 8)) &&
-           tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
+    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("checkbox", 8)) && tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
 }
 
 /* `accent-color: auto` (alpha 0) paints form marks in the text color. */
@@ -41,20 +40,19 @@ static tbox_css_rgba tbox_render_accent_color(const tbox_style *style) {
 }
 
 static bool tbox_render_checked_radio(const tbox_html_node *node) {
-    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
-        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(node->element.tag_name, "input"))
+        return false;
     const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
-    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("radio", 5)) &&
-        tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
+    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("radio", 5)) && tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;
 }
 
 static bool tbox_render_color_input(const tbox_html_node *node, tbox_css_rgba *out_color) {
-    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
-        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(node->element.tag_name, "input"))
+        return false;
     const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
     if (type == NULL || !tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("color", 5)))
         return false;
-    *out_color = (tbox_css_rgba){0, 0, 0, 255};
+    *out_color                       = (tbox_css_rgba){ 0, 0, 0, 255 };
     const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
     if (value != NULL && value->value.size == 7)
         tbox_css_hex_to_rgba(value->value, out_color);
@@ -69,18 +67,20 @@ static bool tbox_render_color_input(const tbox_html_node *node, tbox_css_rgba *o
  * at radius 0.0 via tbox_render_push_fill_rect). `radius` is clamped here
  * to at most half of `min(rect.width, rect.height)`, standard CSS
  * border-radius behavior -- callers never need to clamp it themselves. */
-static void tbox_render_push_fill_rect_corners(tbox_vector *items, tbox_rect rect,
-                                                const double corners[4], tbox_css_rgba color) {
+static void tbox_render_push_fill_rect_corners(tbox_vector *items, tbox_rect rect, const double corners[4], tbox_css_rgba color) {
     double radii[4];
-    for (size_t i = 0; i < 4; i++) radii[i] = corners[i] > 0.0 ? corners[i] : 0.0;
-    double scale = 1.0;
-    const double sums[4] = {radii[0] + radii[1], radii[2] + radii[3],
-                            radii[0] + radii[3], radii[1] + radii[2]};
-    const double limits[4] = {rect.width, rect.width, rect.height, rect.height};
     for (size_t i = 0; i < 4; i++)
-        if (sums[i] > 0.0 && limits[i] / sums[i] < scale) scale = limits[i] / sums[i];
-    if (scale < 0.0) scale = 0.0;
-    for (size_t i = 0; i < 4; i++) radii[i] *= scale;
+        radii[i] = corners[i] > 0.0 ? corners[i] : 0.0;
+    double scale           = 1.0;
+    const double sums[4]   = { radii[0] + radii[1], radii[2] + radii[3], radii[0] + radii[3], radii[1] + radii[2] };
+    const double limits[4] = { rect.width, rect.width, rect.height, rect.height };
+    for (size_t i = 0; i < 4; i++)
+        if (sums[i] > 0.0 && limits[i] / sums[i] < scale)
+            scale = limits[i] / sums[i];
+    if (scale < 0.0)
+        scale = 0.0;
+    for (size_t i = 0; i < 4; i++)
+        radii[i] *= scale;
 
     tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
     op->kind          = TBOX_PAINT_FILL_RECT;
@@ -89,15 +89,14 @@ static void tbox_render_push_fill_rect_corners(tbox_vector *items, tbox_rect rec
     op->text          = tbox_string_view_make(NULL, 0);
     op->face          = NULL;
     op->image         = NULL;
-    op->radius        = radii[0] == radii[1] && radii[0] == radii[2] && radii[0] == radii[3]
-        ? radii[0] : 0.0;
-    for (size_t i = 0; i < 4; i++) op->corner_radii[i] = radii[i];
-    op->has_clip      = false;
+    op->radius        = radii[0] == radii[1] && radii[0] == radii[2] && radii[0] == radii[3] ? radii[0] : 0.0;
+    for (size_t i = 0; i < 4; i++)
+        op->corner_radii[i] = radii[i];
+    op->has_clip = false;
 }
 
-static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rect,
-                                                double radius, tbox_css_rgba color) {
-    const double corners[4] = {radius, radius, radius, radius};
+static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rect, double radius, tbox_css_rgba color) {
+    const double corners[4] = { radius, radius, radius, radius };
     tbox_render_push_fill_rect_corners(items, rect, corners, color);
 }
 
@@ -108,24 +107,22 @@ static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rec
  * one fill. `dashed` uses dashes of 3x the thickness and `dotted` round dots
  * of 1x, both with gaps of at least 1x stretched so a mark lands on each
  * end of the side -- so corners are always covered. */
-static void tbox_render_push_border_side(tbox_vector *items, tbox_rect strip, bool horizontal,
-                                         tbox_style_border_style style, tbox_css_rgba color) {
-    if (strip.width <= 0.0 || strip.height <= 0.0) return;
+static void tbox_render_push_border_side(tbox_vector *items, tbox_rect strip, bool horizontal, tbox_style_border_style style, tbox_css_rgba color) {
+    if (strip.width <= 0.0 || strip.height <= 0.0)
+        return;
     double thickness = horizontal ? strip.height : strip.width;
     double length    = horizontal ? strip.width : strip.height;
 
     if (style == TBOX_STYLE_BORDER_STYLE_DASHED || style == TBOX_STYLE_BORDER_STYLE_DOTTED) {
-        bool dotted = style == TBOX_STYLE_BORDER_STYLE_DOTTED;
-        double mark = dotted ? thickness : 3.0 * thickness;
-        double gap  = thickness;
+        bool dotted  = style == TBOX_STYLE_BORDER_STYLE_DOTTED;
+        double mark  = dotted ? thickness : 3.0 * thickness;
+        double gap   = thickness;
         size_t count = (size_t)((length + gap) / (mark + gap));
         if (count >= 2) {
             double spacing = (length - (double)count * mark) / (double)(count - 1);
             for (size_t i = 0; i < count; i++) {
-                double start = (double)i * (mark + spacing);
-                tbox_rect piece = horizontal ?
-                    (tbox_rect){strip.x + start, strip.y, mark, strip.height} :
-                    (tbox_rect){strip.x, strip.y + start, strip.width, mark};
+                double start    = (double)i * (mark + spacing);
+                tbox_rect piece = horizontal ? (tbox_rect){ strip.x + start, strip.y, mark, strip.height } : (tbox_rect){ strip.x, strip.y + start, strip.width, mark };
                 if (dotted && thickness >= 2.0)
                     tbox_render_push_fill_rect_rounded(items, piece, thickness / 2.0, color);
                 else
@@ -143,21 +140,19 @@ static void tbox_render_push_border_side(tbox_vector *items, tbox_rect strip, bo
  * that the double sides together draw two nested rectangles. `widths` and
  * `doubles` describe all four sides: an inner band reaches across a corner
  * only as far as the neighbouring side's own inner band. */
-static void tbox_render_push_double_side(tbox_vector *items, size_t side, tbox_rect outer, tbox_rect inner,
-                                         const double widths[4], const bool doubles[4], tbox_css_rgba color) {
+static void tbox_render_push_double_side(tbox_vector *items, size_t side, tbox_rect outer, tbox_rect inner, const double widths[4], const bool doubles[4], tbox_css_rgba color) {
     double band[4];
-    for (size_t i = 0; i < 4; i++) band[i] = doubles[i] ? widths[i] / 3.0 : 0.0;
-    double b = widths[side] / 3.0;
+    for (size_t i = 0; i < 4; i++)
+        band[i] = doubles[i] ? widths[i] / 3.0 : 0.0;
+    double b           = widths[side] / 3.0;
     double inner_right = inner.x + inner.width, inner_bottom = inner.y + inner.height;
     tbox_rect outer_band, inner_band;
     if (side == 0 || side == 2) {
-        outer_band = (tbox_rect){outer.x, side == 0 ? outer.y : outer.y + outer.height - b, outer.width, b};
-        inner_band = (tbox_rect){inner.x - band[3], side == 0 ? inner.y - b : inner_bottom,
-                                 inner.width + band[3] + band[1], b};
+        outer_band = (tbox_rect){ outer.x, side == 0 ? outer.y : outer.y + outer.height - b, outer.width, b };
+        inner_band = (tbox_rect){ inner.x - band[3], side == 0 ? inner.y - b : inner_bottom, inner.width + band[3] + band[1], b };
     } else {
-        outer_band = (tbox_rect){side == 3 ? outer.x : outer.x + outer.width - b, outer.y, b, outer.height};
-        inner_band = (tbox_rect){side == 3 ? inner.x - b : inner_right, inner.y - band[0],
-                                 b, inner.height + band[0] + band[2]};
+        outer_band = (tbox_rect){ side == 3 ? outer.x : outer.x + outer.width - b, outer.y, b, outer.height };
+        inner_band = (tbox_rect){ side == 3 ? inner.x - b : inner_right, inner.y - band[0], b, inner.height + band[0] + band[2] };
     }
     tbox_render_push_fill_rect(items, outer_band, color);
     tbox_render_push_fill_rect(items, inner_band, color);
@@ -166,11 +161,11 @@ static void tbox_render_push_double_side(tbox_vector *items, size_t side, tbox_r
 static void tbox_render_style_corners(const tbox_style *style, tbox_rect border_box, double out[4]) {
     bool has_corner = false;
     for (size_t i = 0; i < 4; i++)
-        if (style->border_radius_corners[i] > 0.0 || style->border_radius_percent[i] > 0.0) has_corner = true;
+        if (style->border_radius_corners[i] > 0.0 || style->border_radius_percent[i] > 0.0)
+            has_corner = true;
     double base = border_box.width < border_box.height ? border_box.width : border_box.height;
     for (size_t i = 0; i < 4; i++)
-        out[i] = has_corner ? style->border_radius_corners[i] + style->border_radius_percent[i] / 100.0 * base :
-            style->border_radius;
+        out[i] = has_corner ? style->border_radius_corners[i] + style->border_radius_percent[i] / 100.0 * base : style->border_radius;
 }
 
 /* NOVO (visual fidelity): approximates `box-shadow`'s blur with a handful
@@ -198,7 +193,8 @@ static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box
      * corners stay square (CSS Backgrounds 3's spread rule, simplified to
      * "radius + spread, never below 0"). */
     double width = border_box.width + 2.0 * spread, height = border_box.height + 2.0 * spread;
-    if (width <= 0.0 || height <= 0.0) return;
+    if (width <= 0.0 || height <= 0.0)
+        return;
     tbox_rect base = { border_box.x + offset_x - spread, border_box.y + offset_y - spread, width, height };
     double corner_radii[4];
     for (size_t i = 0; i < 4; i++)
@@ -216,10 +212,11 @@ static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box
     }
 
     for (int step = TBOX_RENDER_BOX_SHADOW_STEPS; step >= 1; step--) {
-        double grow         = blur * (double)(step - 1) / (double)(TBOX_RENDER_BOX_SHADOW_STEPS - 1);
-        tbox_rect expanded  = { base.x - grow, base.y - grow, base.width + 2.0 * grow, base.height + 2.0 * grow };
+        double grow        = blur * (double)(step - 1) / (double)(TBOX_RENDER_BOX_SHADOW_STEPS - 1);
+        tbox_rect expanded = { base.x - grow, base.y - grow, base.width + 2.0 * grow, base.height + 2.0 * grow };
         double grown[4];
-        for (size_t i = 0; i < 4; i++) grown[i] = corner_radii[i] + grow;
+        for (size_t i = 0; i < 4; i++)
+            grown[i] = corner_radii[i] + grow;
         tbox_render_push_fill_rect_corners(items, expanded, grown, step_color);
     }
 }
@@ -227,8 +224,8 @@ static void tbox_render_push_box_shadow(tbox_vector *items, tbox_rect border_box
 /* Pre-order walk over `box` and its first_child/next_sibling chain, pushing
  * paint ops onto `items` (see tbox_render_build_display_list). A box's own
  * FILL_RECT (if its background isn't transparent) always precedes its own
- * (NOVO v4) border FILL_RECTs (one per side with a painted border), which in turn
- * precede its own TEXT_RUN/IMAGE ops (NOVO v2/image support: one per
+ *  border FILL_RECTs (one per side with a painted border), which in turn
+ * precede its own TEXT_RUN/IMAGE ops (/image support: one per
  * box->text_runs entry, in the order Layout Tree built them -- IMAGE for a
  * run whose `image` is non-NULL, TEXT_RUN otherwise), and all of that
  * precedes its children's ops -- see ARCHITECTURE.md's "Render Pipeline"
@@ -238,15 +235,16 @@ static tbox_rect tbox_render_intersect(tbox_rect a, tbox_rect b) {
     double y0 = a.y > b.y ? a.y : b.y;
     double x1 = a.x + a.width < b.x + b.width ? a.x + a.width : b.x + b.width;
     double y1 = a.y + a.height < b.y + b.height ? a.y + a.height : b.y + b.height;
-    return (tbox_rect){x0, y0, x1 > x0 ? x1 - x0 : 0.0, y1 > y0 ? y1 - y0 : 0.0};
+    return (tbox_rect){ x0, y0, x1 > x0 ? x1 - x0 : 0.0, y1 > y0 ? y1 - y0 : 0.0 };
 }
 
 static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, bool has_clip, tbox_rect clip) {
     for (; box != NULL; box = box->next_sibling) {
-        size_t own_start = items->length;
-        bool visible = box->style == NULL || !box->style->visibility_hidden;
-        double corners[4] = {0.0, 0.0, 0.0, 0.0};
-        if (box->style != NULL) tbox_render_style_corners(box->style, box->border_box, corners);
+        size_t own_start  = items->length;
+        bool visible      = box->style == NULL || !box->style->visibility_hidden;
+        double corners[4] = { 0.0, 0.0, 0.0, 0.0 };
+        if (box->style != NULL)
+            tbox_render_style_corners(box->style, box->border_box, corners);
         /* NOVO (visual fidelity): box-shadow, painted BEFORE the box's own
          * background/border so paint order alone makes them correctly cover
          * the shadow wherever the two overlap -- no explicit clipping
@@ -256,15 +254,16 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
             tbox_render_push_box_shadow(items, box->border_box, corners, box->style->box_shadow_offset_x, box->style->box_shadow_offset_y, box->style->box_shadow_blur, box->style->box_shadow_spread, box->style->box_shadow_color);
         }
 
-        /* NOVO v4: border painting. Render Pipeline isn't handed the
+        /* border painting. Render Pipeline isn't handed the
          * already-computed value from Layout Tree, so it re-derives it here
          * from `style` alone -- same formula as tbox_layout_build_element
          * (Tarefa 2): only `solid` ever paints. */
-        double border[4] = {0.0, 0.0, 0.0, 0.0};
-        bool has_border = false;
+        double border[4] = { 0.0, 0.0, 0.0, 0.0 };
+        bool has_border  = false;
         for (size_t i = 0; i < 4 && !box->table_suppress_border && box->style != NULL; i++) {
             border[i] = tbox_style_border_side_width(box->style, i);
-            if (border[i] > 0.0) has_border = true;
+            if (border[i] > 0.0)
+                has_border = true;
         }
         bool rounded = corners[0] > 0.0 || corners[1] > 0.0 || corners[2] > 0.0 || corners[3] > 0.0;
 
@@ -293,17 +292,21 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 /* One ring color: the first painted side's, clockwise from
                  * the top -- per-side colors are not split on a rounded box. */
                 size_t color_side = 0;
-                while (color_side < 3 && border[color_side] <= 0.0) color_side++;
-                tbox_render_push_fill_rect_corners(items, box->border_box, corners,
-                    tbox_style_border_side_color(box->style, color_side));
+                while (color_side < 3 && border[color_side] <= 0.0)
+                    color_side++;
+                tbox_render_push_fill_rect_corners(items, box->border_box, corners, tbox_style_border_side_color(box->style, color_side));
 
                 /* Each corner shrinks by the wider of its two sides. */
-                static const size_t adjacent[4][2] = {{0, 3}, {0, 1}, {2, 1}, {2, 3}};
+                static const size_t adjacent[4][2] = {
+                    { 0, 3 },
+                    { 0, 1 },
+                    { 2, 1 },
+                    { 2, 3 }
+                };
                 double inner[4];
                 for (size_t i = 0; i < 4; i++) {
-                    double side = border[adjacent[i][0]] > border[adjacent[i][1]] ?
-                        border[adjacent[i][0]] : border[adjacent[i][1]];
-                    inner[i] = corners[i] > side ? corners[i] - side : 0.0;
+                    double side = border[adjacent[i][0]] > border[adjacent[i][1]] ? border[adjacent[i][0]] : border[adjacent[i][1]];
+                    inner[i]    = corners[i] > side ? corners[i] - side : 0.0;
                 }
                 tbox_render_push_fill_rect_corners(items, box->padding_box, inner, box->style->background_color);
             } else if (box->style->background_color.a != 0) {
@@ -323,50 +326,46 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                  * height, so the 4 corners are each covered exactly once --
                  * by the top/bottom color when adjacent sides differ. */
                 const tbox_rect strips[4] = {
-                    { border_box.x, border_box.y, border_box.width, padding_box.y - border_box.y },
-                    { padding_box.x + padding_box.width, padding_box.y, (border_box.x + border_box.width) - (padding_box.x + padding_box.width), padding_box.height },
-                    { border_box.x, padding_box.y + padding_box.height, border_box.width, (border_box.y + border_box.height) - (padding_box.y + padding_box.height) },
-                    { border_box.x, padding_box.y, padding_box.x - border_box.x, padding_box.height },
+                    { border_box.x,                      border_box.y,                       border_box.width,                                                        padding_box.y - border_box.y                                              },
+                    { padding_box.x + padding_box.width, padding_box.y,                      (border_box.x + border_box.width) - (padding_box.x + padding_box.width), padding_box.height                                                        },
+                    { border_box.x,                      padding_box.y + padding_box.height, border_box.width,                                                        (border_box.y + border_box.height) - (padding_box.y + padding_box.height) },
+                    { border_box.x,                      padding_box.y,                      padding_box.x - border_box.x,                                            padding_box.height                                                        },
                 };
-                static const size_t order[4] = {0, 2, 3, 1}; /* top, bottom, left, right */
+                static const size_t order[4] = { 0, 2, 3, 1 }; /* top, bottom, left, right */
                 bool doubles[4];
                 for (size_t i = 0; i < 4; i++)
-                    doubles[i] = border[i] >= 3.0 &&
-                        tbox_style_border_side_style(box->style, i) == TBOX_STYLE_BORDER_STYLE_DOUBLE;
+                    doubles[i] = border[i] >= 3.0 && tbox_style_border_side_style(box->style, i) == TBOX_STYLE_BORDER_STYLE_DOUBLE;
                 for (size_t k = 0; k < 4; k++) {
                     size_t i = order[k];
                     if (doubles[i])
-                        tbox_render_push_double_side(items, i, border_box, padding_box, border, doubles,
-                            tbox_style_border_side_color(box->style, i));
+                        tbox_render_push_double_side(items, i, border_box, padding_box, border, doubles, tbox_style_border_side_color(box->style, i));
                     else if (border[i] > 0.0)
-                        tbox_render_push_border_side(items, strips[i], i == 0 || i == 2,
-                            tbox_style_border_side_style(box->style, i), tbox_style_border_side_color(box->style, i));
+                        tbox_render_push_border_side(items, strips[i], i == 0 || i == 2, tbox_style_border_side_style(box->style, i), tbox_style_border_side_color(box->style, i));
                 }
             }
         }
 
-        if (visible && box->style != NULL && box->style->outline_style != TBOX_STYLE_BORDER_STYLE_NONE &&
-            box->style->outline_width > 0.0) {
-            double w = box->style->outline_width;
-            tbox_rect b = box->border_box;
-            tbox_css_rgba c = box->style->outline_color;
-            double offset = box->style->outline_offset;
+        if (visible && box->style != NULL && box->style->outline_style != TBOX_STYLE_BORDER_STYLE_NONE && box->style->outline_width > 0.0) {
+            double w          = box->style->outline_width;
+            tbox_rect b       = box->border_box;
+            tbox_css_rgba c   = box->style->outline_color;
+            double offset     = box->style->outline_offset;
             double min_offset = -(b.width < b.height ? b.width : b.height) / 2.0;
-            if (offset < min_offset) offset = min_offset;
-            tbox_rect inner = {b.x - offset, b.y - offset,
-                               b.width + 2.0 * offset, b.height + 2.0 * offset};
+            if (offset < min_offset)
+                offset = min_offset;
+            tbox_rect inner            = { b.x - offset, b.y - offset, b.width + 2.0 * offset, b.height + 2.0 * offset };
             tbox_style_border_style st = box->style->outline_style;
             if (st == TBOX_STYLE_BORDER_STYLE_DOUBLE && w >= 3.0) {
-                const double widths[4] = {w, w, w, w};
-                const bool doubles[4] = {true, true, true, true};
-                tbox_rect outer = {inner.x - w, inner.y - w, inner.width + 2.0 * w, inner.height + 2.0 * w};
+                const double widths[4] = { w, w, w, w };
+                const bool doubles[4]  = { true, true, true, true };
+                tbox_rect outer        = { inner.x - w, inner.y - w, inner.width + 2.0 * w, inner.height + 2.0 * w };
                 for (size_t i = 0; i < 4; i++)
                     tbox_render_push_double_side(items, i, outer, inner, widths, doubles, c);
             } else {
-                tbox_render_push_border_side(items, (tbox_rect){inner.x - w, inner.y - w, inner.width + 2.0 * w, w}, true, st, c);
-                tbox_render_push_border_side(items, (tbox_rect){inner.x - w, inner.y + inner.height, inner.width + 2.0 * w, w}, true, st, c);
-                tbox_render_push_border_side(items, (tbox_rect){inner.x - w, inner.y, w, inner.height}, false, st, c);
-                tbox_render_push_border_side(items, (tbox_rect){inner.x + inner.width, inner.y, w, inner.height}, false, st, c);
+                tbox_render_push_border_side(items, (tbox_rect){ inner.x - w, inner.y - w, inner.width + 2.0 * w, w }, true, st, c);
+                tbox_render_push_border_side(items, (tbox_rect){ inner.x - w, inner.y + inner.height, inner.width + 2.0 * w, w }, true, st, c);
+                tbox_render_push_border_side(items, (tbox_rect){ inner.x - w, inner.y, w, inner.height }, false, st, c);
+                tbox_render_push_border_side(items, (tbox_rect){ inner.x + inner.width, inner.y, w, inner.height }, false, st, c);
             }
         }
 
@@ -376,11 +375,10 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
 
         if (visible && box->style != NULL && tbox_render_checked_radio(box->node)) {
             tbox_rect content = box->content_box;
-            double side = content.width < content.height ? content.width : content.height;
+            double side       = content.width < content.height ? content.width : content.height;
             side *= 0.5;
             if (side > 0.0) {
-                tbox_rect dot = {content.x + (content.width - side) / 2.0,
-                                 content.y + (content.height - side) / 2.0, side, side};
+                tbox_rect dot = { content.x + (content.width - side) / 2.0, content.y + (content.height - side) / 2.0, side, side };
                 tbox_render_push_fill_rect_rounded(items, dot, side / 2.0, tbox_render_accent_color(box->style));
             }
         }
@@ -389,22 +387,29 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
          * Keep the small geometric mark for embedded fonts without it. */
         if (visible && box->style != NULL && box->text_run_count == 0 && tbox_render_checked_checkbox(box->node)) {
             tbox_rect content = box->content_box;
-            double side = content.width < content.height ? content.width : content.height;
-            double unit = side / 8.0;
+            double side       = content.width < content.height ? content.width : content.height;
+            double unit       = side / 8.0;
             if (unit > 0.0) {
-                double x = content.x + (content.width - side) / 2.0;
-                double y = content.y + (content.height - side) / 2.0;
-                const unsigned char pixels[][2] = {{1, 4}, {2, 5}, {3, 6}, {4, 5}, {5, 4}, {6, 3}};
+                double x                        = content.x + (content.width - side) / 2.0;
+                double y                        = content.y + (content.height - side) / 2.0;
+                const unsigned char pixels[][2] = {
+                    { 1, 4 },
+                    { 2, 5 },
+                    { 3, 6 },
+                    { 4, 5 },
+                    { 5, 4 },
+                    { 6, 3 }
+                };
                 for (size_t i = 0; i < sizeof(pixels) / sizeof(pixels[0]); i++)
-                    tbox_render_push_fill_rect(items, (tbox_rect){x + pixels[i][0] * unit,
-                        y + pixels[i][1] * unit, unit, unit}, tbox_render_accent_color(box->style));
+                    tbox_render_push_fill_rect(items, (tbox_rect){ x + pixels[i][0] * unit, y + pixels[i][1] * unit, unit, unit }, tbox_render_accent_color(box->style));
             }
         }
 
         size_t text_start = items->length;
         for (size_t i = 0; i < box->text_run_count; i++) {
             const tbox_layout_text_run *run = &box->text_runs[i];
-            if (run->style != NULL && run->style->visibility_hidden) continue;
+            if (run->style != NULL && run->style->visibility_hidden)
+                continue;
 
             /* NOVO (image support): an <img> word's run paints its decoded
              * pixels instead of text -- no background highlight, no
@@ -422,12 +427,13 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 op->face          = NULL;
                 op->image         = run->image;
                 op->radius        = 0.0;
-                for (size_t j = 0; j < 4; j++) op->corner_radii[j] = 0.0;
-                op->has_clip      = false;
+                for (size_t j = 0; j < 4; j++)
+                    op->corner_radii[j] = 0.0;
+                op->has_clip = false;
                 continue;
             }
 
-            /* NOVO v13: <mark> highlight -- a FILL_RECT covering the run's
+            /* <mark> highlight -- a FILL_RECT covering the run's
              * own rect (not the whole box/line), painted before its
              * TEXT_RUN so the glyphs draw on top of it. Same helper as the
              * box background/border FILL_RECTs above.
@@ -449,32 +455,27 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 tbox_render_push_fill_rect(items, run->rect, run->style->background_color);
             }
 
-            tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
-            op->kind          = TBOX_PAINT_TEXT_RUN;
-            op->rect          = run->rect;
-            op->color         = tbox_render_checked_checkbox(box->node) ?
-                tbox_render_accent_color(run->style) : run->style->color; /* NOVO v13: per-run color (run->style, never NULL), replacing the one shared box->style->color -- see ARCHITECTURE.md's "v13" section */
-            op->text          = run->text;
-            op->face          = run->font;
+            tbox_paint_op *op  = (tbox_paint_op *)tbox_vector_push(items);
+            op->kind           = TBOX_PAINT_TEXT_RUN;
+            op->rect           = run->rect;
+            op->color          = tbox_render_checked_checkbox(box->node) ? tbox_render_accent_color(run->style) : run->style->color; /* per-run color (run->style, never NULL), replacing the one shared box->style->color -- see ARCHITECTURE.md's "v13" section */
+            op->text           = run->text;
+            op->face           = run->font;
             op->letter_spacing = run->style->letter_spacing;
-            op->image         = NULL;
-            op->radius        = 0.0;
-            for (size_t j = 0; j < 4; j++) op->corner_radii[j] = 0.0;
-            bool is_select = box->node != NULL &&
-                tbox_string_view_equal_cstr(box->node->element.tag_name, "select");
-            op->has_clip = box->node != NULL &&
-                (tbox_string_view_equal_cstr(box->node->element.tag_name, "input") || is_select ||
-                 tbox_string_view_equal_cstr(box->node->element.tag_name, "textarea"));
-            if (box->style != NULL && box->style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS &&
-                (box->style->white_space == TBOX_STYLE_WHITE_SPACE_NOWRAP ||
-                 box->style->white_space == TBOX_STYLE_WHITE_SPACE_PRE) &&
-                box->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN)
+            op->image          = NULL;
+            op->radius         = 0.0;
+            for (size_t j = 0; j < 4; j++)
+                op->corner_radii[j] = 0.0;
+            bool is_select = box->node != NULL && tbox_string_view_equal_cstr(box->node->element.tag_name, "select");
+            op->has_clip   = box->node != NULL && (tbox_string_view_equal_cstr(box->node->element.tag_name, "input") || is_select || tbox_string_view_equal_cstr(box->node->element.tag_name, "textarea"));
+            if (box->style != NULL && box->style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS && (box->style->white_space == TBOX_STYLE_WHITE_SPACE_NOWRAP || box->style->white_space == TBOX_STYLE_WHITE_SPACE_PRE) && box->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN)
                 op->has_clip = true;
             if (op->has_clip) {
                 op->clip = box->content_box;
                 if (is_select) {
                     op->clip.width -= 18.0;
-                    if (op->clip.width < 0.0) op->clip.width = 0.0;
+                    if (op->clip.width < 0.0)
+                        op->clip.width = 0.0;
                 }
             }
 
@@ -488,17 +489,18 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 tbox_paint_op text_op = *op;
                 items->length--;
                 tbox_css_rgba shadow = run->style->text_shadow_color;
-                double blur = run->style->text_shadow_blur;
-                int steps = blur > 0.0 ? 3 : 1;
+                double blur          = run->style->text_shadow_blur;
+                int steps            = blur > 0.0 ? 3 : 1;
                 if (steps > 1) {
                     shadow.a = (unsigned char)((double)shadow.a / 5.0 + 0.5);
-                    if (shadow.a == 0) shadow.a = 1;
+                    if (shadow.a == 0)
+                        shadow.a = 1;
                 }
                 for (int sy = 0; sy < steps; sy++) {
                     for (int sx = 0; sx < steps; sx++) {
                         tbox_paint_op *copy = (tbox_paint_op *)tbox_vector_push(items);
-                        *copy = text_op;
-                        copy->color = shadow;
+                        *copy               = text_op;
+                        copy->color         = shadow;
                         copy->rect.x += run->style->text_shadow_offset_x + (steps > 1 ? (sx - 1) * blur / 2.0 : 0.0);
                         copy->rect.y += run->style->text_shadow_offset_y + (steps > 1 ? (sy - 1) * blur / 2.0 : 0.0);
                     }
@@ -506,7 +508,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 *(tbox_paint_op *)tbox_vector_push(items) = text_op;
             }
 
-            /* NOVO v13: <del>/<ins> decoration line -- a thin (1px)
+            /* <del>/<ins> decoration line -- a thin (1px)
              * FILL_RECT spanning the run's width, positioned off its
              * baseline (same baseline tbox_raster_text_run/Output Display
              * already computes: rect.y + ascent). UNDERLINE sits a little
@@ -515,38 +517,32 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
              * ARCHITECTURE.md's "Fora de escopo"). Painted after the
              * TEXT_RUN, same color as the text. */
             if (run->style->text_decoration != TBOX_STYLE_TEXT_DECORATION_NONE) {
-                double baseline = run->rect.y + tbox_font_face_ascent(run->font);
-                double underline_offset = run->style->text_underline_offset.kind == TBOX_STYLE_LENGTH_PX ?
-                    run->style->text_underline_offset.value : 2.0;
-                double line_y = run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE
-                    ? baseline + underline_offset
-                    : run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_OVERLINE
-                        ? baseline - tbox_font_face_ascent(run->font)
-                        : baseline - tbox_font_face_ascent(run->font) * 0.3;
-                tbox_render_push_fill_rect(items, (tbox_rect){ run->rect.x, line_y, run->rect.width,
-                    run->style->text_decoration_thickness }, run->style->text_decoration_color);
+                double baseline         = run->rect.y + tbox_font_face_ascent(run->font);
+                double underline_offset = run->style->text_underline_offset.kind == TBOX_STYLE_LENGTH_PX ? run->style->text_underline_offset.value : 2.0;
+                double line_y           = run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE ? baseline + underline_offset : run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_OVERLINE ? baseline - tbox_font_face_ascent(run->font) : baseline - tbox_font_face_ascent(run->font) * 0.3;
+                tbox_render_push_fill_rect(items, (tbox_rect){ run->rect.x, line_y, run->rect.width, run->style->text_decoration_thickness }, run->style->text_decoration_color);
             }
         }
 
         if (box->style != NULL && box->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE) {
             for (size_t i = text_start; i < items->length; i++) {
                 tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, i);
-                op->clip = op->has_clip ? tbox_render_intersect(op->clip, box->padding_box) : box->padding_box;
-                op->has_clip = true;
+                op->clip          = op->has_clip ? tbox_render_intersect(op->clip, box->padding_box) : box->padding_box;
+                op->has_clip      = true;
             }
         }
 
         for (size_t i = own_start; i < items->length; i++) {
             tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, i);
             if (has_clip) {
-                op->clip = op->has_clip ? tbox_render_intersect(op->clip, clip) : clip;
+                op->clip     = op->has_clip ? tbox_render_intersect(op->clip, clip) : clip;
                 op->has_clip = true;
             }
         }
-        bool child_has_clip = has_clip;
+        bool child_has_clip  = has_clip;
         tbox_rect child_clip = clip;
         if (box->style != NULL && box->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE) {
-            child_clip = child_has_clip ? tbox_render_intersect(child_clip, box->padding_box) : box->padding_box;
+            child_clip     = child_has_clip ? tbox_render_intersect(child_clip, box->padding_box) : box->padding_box;
             child_has_clip = true;
         }
         tbox_render_walk(box->first_child, items, child_has_clip, child_clip);
@@ -555,8 +551,8 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
             tbox_render_push_fill_rect(items, box->table_edges[i].rect, box->table_edges[i].color);
             if (has_clip) {
                 tbox_paint_op *op = tbox_vector_at(items, index);
-                op->has_clip = true;
-                op->clip = clip;
+                op->has_clip      = true;
+                op->clip          = clip;
             }
         }
 
@@ -570,7 +566,7 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
             } else {
                 for (size_t i = own_start; i < items->length; i++) {
                     tbox_paint_op *op = tbox_vector_at(items, i);
-                    op->color.a = (unsigned char)(op->color.a * box->style->opacity + 0.5);
+                    op->color.a       = (unsigned char)(op->color.a * box->style->opacity + 0.5);
                 }
             }
         }
@@ -581,7 +577,7 @@ tbox_display_list tbox_render_build_display_list(tbox_arena *arena, const tbox_l
     tbox_vector items;
     tbox_vector_init(&items, arena, sizeof(tbox_paint_op), 0);
 
-    tbox_render_walk(root, &items, false, (tbox_rect){0});
+    tbox_render_walk(root, &items, false, (tbox_rect){ 0 });
 
     tbox_display_list list;
     list.items = (tbox_paint_op *)items.data;
