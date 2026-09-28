@@ -42,13 +42,13 @@ typedef struct tbox_layout_text_run {
      * -- Layout Tree" section: `<mark>`/`<del>`/`<ins>`/`<sub>`/`<sup>` all
      * need this, and it also fixes color varying only by box, a pre-existing
      * debt since v2). Also read internally by the Layout Tree itself (see
-     * src/layout/tbox_layout.c's tbox_layout_build_line_runs) BEFORE this
+     * src/layout/tbox_layout_inline.c's tbox_layout_build_line_runs) BEFORE this
      * struct is even filled in, to decide `rect.y`'s extra `vertical_align`
      * offset for `sub`/`sup`. */
     const tbox_style *style;
 
     /* NOVO (image support): non-NULL for a run built from an <img> word
-     * (tbox_layout_push_image_word in src/layout/tbox_layout.c) instead of
+     * (tbox_layout_push_image_word in src/layout/tbox_layout_image.c) instead of
      * text -- `text`/`font` are then meaningless (empty/whatever the
      * surrounding text context's face happened to be, never read for an
      * image run), and `rect` is the image's own resolved destination
@@ -60,7 +60,7 @@ typedef struct tbox_layout_text_run {
 } tbox_layout_text_run;
 
 typedef struct tbox_layout_box {
-    const tbox_html_node *node; /* NULL for anonymous boxes (unused in v2: inline elements still don't get their own box, see ARCHITECTURE.md's "Fora de escopo") */
+    const tbox_html_node *node; /* NULL for anonymous boxes that wrap loose inline content. */
     const tbox_style *style;
 
     tbox_rect margin_box, border_box, padding_box, content_box;
@@ -70,11 +70,8 @@ typedef struct tbox_layout_box {
     size_t table_edge_count;
 
     /* Text runs, for the Render Pipeline's TEXT_RUN paint ops (see
-     * ARCHITECTURE.md's "Render Pipeline" section). Populated only for a
-     * leaf box built from one of the fixed text tags (h1-h6, p) -- an empty
-     * array (text_run_count == 0, text_runs NULL) for every other box,
-     * including a <div> with text nodes inside (not shown, exactly like
-     * v0/v1) and a text tag whose own text collapses to nothing. Multiple
+     * ARCHITECTURE.md's "Render Pipeline" section). Populated for text-bearing
+     * boxes and replaced images; empty when a box has no visible runs. Multiple
      * runs happen once the text wraps onto more than one line, or once the
      * face changes mid-line (e.g. a <b> inside a <p>) -- see
      * tbox_layout_text_run above. NOVO v15: a text-bearing box's

@@ -351,6 +351,19 @@ Sem pergunta em aberto de curto prazo nesta camada — `em`/`%` de
 
 ## Layout Tree
 
+**Organização atual do código:** `src/layout/tbox_layout.c` é a entrada e
+classifica os nós. `tbox_layout_box.c`, `tbox_layout_common.c`,
+`tbox_layout_geometry.c`, `tbox_layout_flow.c` e `tbox_layout_sizing.c`
+implementam as operações compartilhadas. Texto em linha fica em
+`tbox_layout_inline_words.c` e `tbox_layout_inline.c`. Os tratamentos
+específicos ficam em `tbox_layout_text.c`, `tbox_layout_input.c`,
+`tbox_layout_select.c`, `tbox_layout_textarea.c`, `tbox_layout_image.c`,
+`tbox_layout_list.c`, `tbox_layout_table.c`, `tbox_layout_table_grid.c` e
+`tbox_layout_flex.c`. Tipos e protótipos usados entre esses arquivos ficam
+em `tbox_layout_internal.h`; a API pública permanece em `include/tbox/layout.h`.
+As seções históricas abaixo descrevem a evolução do projeto e podem citar
+os nomes e caminhos anteriores.
+
 **Responsabilidade:** a partir do DOM + `tbox_style` por nó, construir uma
 árvore de caixas (box tree) e resolver a geometria de cada uma (posição e
 tamanho, em px, relativa ao viewport) segundo o modelo de caixas CSS2.1
