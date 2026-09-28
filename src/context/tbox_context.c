@@ -53,7 +53,12 @@ static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_ht
     }
 }
 
-tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config) {
+tbox_context_options tbox_context_options_default(void) {
+    return (tbox_context_options){.ua_style = tbox_ua_style_config_default()};
+}
+
+tbox_context *tbox_context_open_with_options(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_context_options options) {
+    if (options.control_css != NULL && options.control_css_length == SIZE_MAX) return NULL;
     tbox_html_document *document = tbox_html_parse(html, html_length);
     if (document == NULL) {
         return NULL;
@@ -88,8 +93,19 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
         return NULL;
     }
 
-    tbox_css_stylesheet *ua_stylesheet = tbox_ua_stylesheet_create(config);
+    tbox_css_stylesheet *ua_stylesheet = tbox_ua_stylesheet_create(options.ua_style);
     if (ua_stylesheet == NULL) {
+        tbox_css_stylesheet_destroy(stylesheet);
+        tbox_css_stylesheet_destroy(internal_stylesheet);
+        tbox_html_document_destroy(document);
+        return NULL;
+    }
+
+    const char *control_css = options.control_css != NULL ? options.control_css : tbox_context_default_control_css();
+    size_t control_css_length = options.control_css != NULL ? options.control_css_length : strlen(control_css);
+    tbox_css_stylesheet *control_stylesheet = tbox_css_parse(control_css, control_css_length);
+    if (control_stylesheet == NULL) {
+        tbox_css_stylesheet_destroy(ua_stylesheet);
         tbox_css_stylesheet_destroy(stylesheet);
         tbox_css_stylesheet_destroy(internal_stylesheet);
         tbox_html_document_destroy(document);
@@ -98,6 +114,7 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
 
     tbox_context *ctx = (tbox_context *)malloc(sizeof(tbox_context));
     if (ctx == NULL) {
+        tbox_css_stylesheet_destroy(control_stylesheet);
         tbox_css_stylesheet_destroy(ua_stylesheet);
         tbox_css_stylesheet_destroy(stylesheet);
         tbox_css_stylesheet_destroy(internal_stylesheet);
@@ -108,6 +125,7 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     ctx->document            = document;
     ctx->stylesheet          = stylesheet;
     ctx->ua_stylesheet       = ua_stylesheet;
+    ctx->control_stylesheet  = control_stylesheet;
     ctx->internal_stylesheet = internal_stylesheet;
     ctx->fonts               = fonts;
     ctx->images              = images;
@@ -161,6 +179,12 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
     return ctx;
 }
 
+tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config) {
+    tbox_context_options options = tbox_context_options_default();
+    options.ua_style = config;
+    return tbox_context_open_with_options(html, html_length, css, css_length, fonts, images, options);
+}
+
 tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images) {
     return tbox_context_open_with_config(html, html_length, css, css_length, fonts, images, tbox_ua_style_config_default());
 }
@@ -210,6 +234,7 @@ void tbox_context_close(tbox_context *ctx) {
     tbox_arena_destroy(&ctx->handler_arena);
 
     tbox_css_stylesheet_destroy(ctx->ua_stylesheet);
+    tbox_css_stylesheet_destroy(ctx->control_stylesheet);
     tbox_css_stylesheet_destroy(ctx->stylesheet);
     tbox_css_stylesheet_destroy(ctx->internal_stylesheet);
     tbox_html_document_destroy(ctx->document);

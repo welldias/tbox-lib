@@ -1,0 +1,14 @@
+body {
+    margin: 20px;
+    color: #253545;
+    background-color: #f4f7fa;
+}
+
+h1 { font-size: 24px; margin: 0px 0px 12px 0px; }
+p { margin: 8px 0px; }
+.field { height: 52px; }
+.field label { display: inline-block; width: 160px; }
+.field input { width: 190px; margin: 0px 0px 0px 10px; }
+.field input[type=color] { width: 72px; height: 28px; padding: 2px; }
+.field input[type=datetime-local] { width: 215px; }
+.field input[type=file] { width: 275px; height: 28px; padding: 2px; }

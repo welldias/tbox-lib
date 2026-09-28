@@ -61,8 +61,8 @@ struct tbox_app {
     bool closed;
     bool redraw_requested;
     const tbox_html_node *paste_target;
-    bool use_config;
-    tbox_ua_style_config config;
+    tbox_context_options options;
+    char *control_css_copy;
     tbox_app_key_handler key_handler;
     void *key_handler_userdata;
 };
@@ -198,7 +198,8 @@ static void tbox_app_dirname(const char *path, char *out, size_t out_size) {
  * Returns NULL on any failure, cleaning up whatever had already been
  * allocated first; never crashes either way. */
 #if TBOX_HAS_WINDOW_BACKEND
-static tbox_app *tbox_app_create_impl(const char *html, const char *css, const char *base_dir, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
+static tbox_app *tbox_app_create_impl(const char *html, const char *css, const char *base_dir, int32_t width, int32_t height, tbox_context_options options) {
+    if (options.control_css != NULL && options.control_css_length == SIZE_MAX) return NULL;
     tbox_font_source *resolver_source = NULL;
     tbox_font_face_cache *fonts       = tbox_app_build_font_cache(&resolver_source);
     if (fonts == NULL) {
@@ -212,7 +213,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
         return NULL;
     }
 
-    tbox_context *ctx = use_config ? tbox_context_open_with_config(html, strlen(html), css, strlen(css), fonts, images, config) : tbox_context_open(html, strlen(html), css, strlen(css), fonts, images);
+    tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css, strlen(css), fonts, images, options);
     if (ctx == NULL) {
         tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
@@ -249,8 +250,23 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     app->closed           = false;
     app->redraw_requested = false;
     app->paste_target     = NULL;
-    app->use_config       = use_config;
-    app->config           = config;
+    app->options          = options;
+    app->control_css_copy = NULL;
+    if (options.control_css != NULL) {
+        app->control_css_copy = malloc(options.control_css_length + 1);
+        if (app->control_css_copy == NULL) {
+            tbox_window_backend_destroy(backend);
+            tbox_context_close(ctx);
+            tbox_image_cache_destroy(images);
+            tbox_font_face_cache_destroy(fonts);
+            tbox_font_source_destroy(resolver_source);
+            free(app);
+            return NULL;
+        }
+        memcpy(app->control_css_copy, options.control_css, options.control_css_length);
+        app->control_css_copy[options.control_css_length] = '\0';
+        app->options.control_css = app->control_css_copy;
+    }
     app->key_handler      = NULL;
     app->key_handler_userdata = NULL;
 
@@ -258,13 +274,16 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
 }
 
 tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height) {
-    tbox_ua_style_config unused_config; /* never read: use_config == false below */
-    memset(&unused_config, 0, sizeof(unused_config));
-    return tbox_app_create_impl(html, css, NULL, width, height, false, unused_config);
+    return tbox_app_create_impl(html, css, NULL, width, height, tbox_context_options_default());
 }
 
 tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
-    return tbox_app_create_impl(html, css, NULL, width, height, true, config);
+    tbox_context_options options = tbox_context_options_default();
+    options.ua_style = config;
+    return tbox_app_create_impl(html, css, NULL, width, height, options);
+}
+tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options) {
+    return tbox_app_create_impl(html, css, NULL, width, height, options);
 }
 #endif
 
@@ -329,7 +348,7 @@ static char *tbox_app_read_file(const char *path) {
  * already copy whatever they need into their own document/stylesheet
  * arenas, so these buffers don't need to outlive that call. */
 #if TBOX_HAS_WINDOW_BACKEND
-static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const char *css_path, int32_t width, int32_t height, bool use_config, tbox_ua_style_config config) {
+static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
     if (html_path == NULL) {
         return NULL;
     }
@@ -351,7 +370,7 @@ static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const ch
     char base_dir[TBOX_APP_PATH_BUF_SIZE];
     tbox_app_dirname(html_path, base_dir, sizeof(base_dir));
 
-    tbox_app *app = tbox_app_create_impl(html, css != NULL ? css : "", base_dir, width, height, use_config, config);
+    tbox_app *app = tbox_app_create_impl(html, css != NULL ? css : "", base_dir, width, height, options);
 
     free(css);
     free(html);
@@ -360,12 +379,16 @@ static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const ch
 }
 
 tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height) {
-    tbox_ua_style_config unused_config = { 0 };
-    return tbox_app_create_from_files_impl(html_path, css_path, width, height, false, unused_config);
+    return tbox_app_create_from_files_impl(html_path, css_path, width, height, tbox_context_options_default());
 }
 
 tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
-    return tbox_app_create_from_files_impl(html_path, css_path, width, height, true, config);
+    tbox_context_options options = tbox_context_options_default();
+    options.ua_style = config;
+    return tbox_app_create_from_files_impl(html_path, css_path, width, height, options);
+}
+tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
+    return tbox_app_create_from_files_impl(html_path, css_path, width, height, options);
 }
 
 bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path) {
@@ -383,9 +406,8 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
     tbox_context *ctx = NULL;
     if (images != NULL) {
         const char *css_text = css != NULL ? css : "";
-        ctx = app->use_config ? tbox_context_open_with_config(html, strlen(html), css_text,
-            strlen(css_text), app->fonts, images, app->config) :
-            tbox_context_open(html, strlen(html), css_text, strlen(css_text), app->fonts, images);
+        ctx = tbox_context_open_with_options(html, strlen(html), css_text,
+            strlen(css_text), app->fonts, images, app->options);
     }
     free(css);
     free(html);
@@ -412,7 +434,7 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
  * along the way (font cache, context, pixel buffer) is torn down before
  * returning, success or failure alike -- there is no handle for a caller to
  * hold onto afterward, unlike tbox_app_create*. */
-bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path) {
+bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, tbox_context_options options) {
     if (html_path == NULL || png_path == NULL || width <= 0 || height <= 0) {
         return false;
     }
@@ -441,7 +463,7 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
     if (fonts != NULL) {
         tbox_image_cache *images = tbox_image_cache_create(base_dir);
         if (images != NULL) {
-            tbox_context *ctx = tbox_context_open(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts, images);
+            tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts, images, options);
             if (ctx != NULL) {
                 tbox_display_list list;
                 tbox_context_run_frame(ctx, (double)width, (double)height, &list);
@@ -471,6 +493,11 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
     free(css);
     free(html);
     return ok;
+}
+
+bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path) {
+    return tbox_app_screenshot_from_files_with_options(html_path, css_path, width, height,
+        png_path, tbox_context_options_default());
 }
 
 #if TBOX_HAS_WINDOW_BACKEND
@@ -653,6 +680,7 @@ void tbox_app_close(tbox_app *app) {
     tbox_image_cache_destroy(app->images);
     tbox_font_face_cache_destroy(app->fonts);
     tbox_font_source_destroy(app->resolver_source);
+    free(app->control_css_copy);
     free(app);
 }
 #else
@@ -676,6 +704,10 @@ tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t
     (void)config;
     return NULL;
 }
+tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options) {
+    (void)html; (void)css; (void)width; (void)height; (void)options;
+    return NULL;
+}
 
 tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height) {
     (void)html_path;
@@ -691,6 +723,10 @@ tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const ch
     (void)width;
     (void)height;
     (void)config;
+    return NULL;
+}
+tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
+    (void)html_path; (void)css_path; (void)width; (void)height; (void)options;
     return NULL;
 }
 

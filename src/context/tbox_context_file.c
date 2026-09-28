@@ -176,7 +176,17 @@ static bool tbox_context_file_popup_geometry(tbox_context *ctx, tbox_file_popup_
     if (ctx->open_file == NULL) return false;
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_file);
     if (box == NULL) return false;
-    const double width = 320.0, height = 260.0;
+    tbox_style root_style = tbox_context_control_style(ctx, ctx->open_file, NULL, NULL);
+    tbox_style row_style = tbox_context_control_style(ctx, ctx->open_file, "row", NULL);
+    tbox_style back_style = tbox_context_control_style(ctx, ctx->open_file, "back", NULL);
+    double width = tbox_context_control_size(root_style.width, 320.0);
+    double row_height = tbox_context_control_size(row_style.height, 28.0);
+    double back_width = tbox_context_control_size(back_style.width, 26.0);
+    double back_height = tbox_context_control_size(back_style.height, 26.0);
+    if (width < back_width + 52.0) width = back_width + 52.0;
+    double height = tbox_context_control_size(root_style.height, 260.0);
+    double required_height = 40.0 + 7.0 * row_height + 24.0;
+    if (height < required_height) height = required_height;
     double x = box->border_box.x;
     if (x + width > ctx->viewport_width) x = ctx->viewport_width - width;
     if (x < 0.0) x = 0.0;
@@ -188,8 +198,8 @@ static bool tbox_context_file_popup_geometry(tbox_context *ctx, tbox_file_popup_
     size_t first = ctx->file_first;
     if (first + visible > ctx->file_count) first = ctx->file_count - visible;
     *out = (tbox_file_popup_geometry){
-        .rect = {x, y, width, height}, .back = {x + 7.0, y + 7.0, 26.0, 26.0},
-        .row_height = 28.0, .first = first, .visible = visible,
+        .rect = {x, y, width, height}, .back = {x + 7.0, y + 7.0, back_width, back_height},
+        .row_height = row_height, .first = first, .visible = visible,
     };
     return true;
 }
@@ -289,47 +299,46 @@ void tbox_context_paint_file_controls(tbox_context *ctx, const tbox_layout_box *
 void tbox_context_paint_file_popup(tbox_context *ctx, tbox_vector *items) {
     tbox_file_popup_geometry popup;
     if (!tbox_context_file_popup_geometry(ctx, &popup)) return;
-    const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_file);
-    const tbox_font_face *face = box != NULL && box->style != NULL ?
-        tbox_font_face_cache_get(ctx->fonts, tbox_string_view_from_cstr(box->style->font_family),
-            false, false, 13.0) : NULL;
-    tbox_context_push_fill(items, popup.rect, (tbox_css_rgba){105, 112, 122, 255}, false, (tbox_rect){0});
-    tbox_rect inner = {popup.rect.x + 1.0, popup.rect.y + 1.0,
-        popup.rect.width - 2.0, popup.rect.height - 2.0};
-    tbox_context_push_fill(items, inner, (tbox_css_rgba){255, 255, 255, 255}, false, (tbox_rect){0});
-    tbox_context_push_fill(items, popup.back, (tbox_css_rgba){235, 238, 243, 255}, false, (tbox_rect){0});
-    tbox_context_date_text(items, face, popup.back, tbox_string_view_make("<", 1),
-        (tbox_css_rgba){25, 25, 25, 255});
+    tbox_style root_style = tbox_context_control_style(ctx, ctx->open_file, NULL, NULL);
+    tbox_context_paint_control_box(items, popup.rect, &root_style, false, (tbox_rect){0});
+    tbox_style back_style = tbox_context_control_style(ctx, ctx->open_file, "back", NULL);
+    tbox_context_paint_control_box(items, popup.back, &back_style, false, (tbox_rect){0});
+    tbox_context_date_text(items, tbox_context_control_font(ctx, &back_style), popup.back,
+        tbox_string_view_make("<", 1), back_style.color);
     if (ctx->file_directory != NULL) {
+        tbox_style path_style = tbox_context_control_style(ctx, ctx->open_file, "path", NULL);
         tbox_rect header = {popup.rect.x + 42.0, popup.rect.y + 6.0, popup.rect.width - 52.0, 28.0};
-        tbox_context_file_push_text(items, face, header, tbox_string_view_from_cstr(ctx->file_directory),
-            (tbox_css_rgba){25, 25, 25, 255}, header);
+        tbox_context_file_push_text(items, tbox_context_control_font(ctx, &path_style), header,
+            tbox_string_view_from_cstr(ctx->file_directory), path_style.color, header);
     }
-    tbox_context_push_fill(items, (tbox_rect){popup.rect.x + 8.0, popup.rect.y + 38.0,
-        popup.rect.width - 16.0, 1.0}, (tbox_css_rgba){210, 213, 220, 255}, false, (tbox_rect){0});
+    tbox_style divider_style = tbox_context_control_style(ctx, ctx->open_file, "divider", NULL);
+    tbox_context_paint_control_box(items, (tbox_rect){popup.rect.x + 8.0, popup.rect.y + 38.0,
+        popup.rect.width - 16.0, 1.0}, &divider_style, false, (tbox_rect){0});
     for (size_t row = 0; row < popup.visible; row++) {
         size_t index = popup.first + row;
         const tbox_file_entry *entry = &ctx->file_entries[index];
         tbox_rect line = {popup.rect.x + 7.0, popup.rect.y + 40.0 + popup.row_height * row,
             popup.rect.width - 14.0, popup.row_height};
         bool highlighted = index == ctx->file_highlight;
-        if (highlighted)
-            tbox_context_push_fill(items, line, (tbox_css_rgba){65, 115, 195, 255}, false, (tbox_rect){0});
+        tbox_style row_style = tbox_context_control_style(ctx, ctx->open_file, "row",
+            highlighted ? (entry->directory ? "is-directory is-selected" : "is-selected") :
+            entry->directory ? "is-directory" : NULL);
+        tbox_context_paint_control_box(items, line, &row_style, false, (tbox_rect){0});
         tbox_rect label = {line.x + 7.0, line.y, line.width - 14.0, line.height};
-        tbox_context_file_push_text(items, face, label, tbox_string_view_from_cstr(entry->name),
-            highlighted ? (tbox_css_rgba){255, 255, 255, 255} :
-            entry->directory ? (tbox_css_rgba){45, 85, 155, 255} :
-            (tbox_css_rgba){25, 25, 25, 255}, label);
+        tbox_context_file_push_text(items, tbox_context_control_font(ctx, &row_style), label,
+            tbox_string_view_from_cstr(entry->name), row_style.color, label);
     }
     if (ctx->file_count == 0) {
+        tbox_style empty_style = tbox_context_control_style(ctx, ctx->open_file, "empty", NULL);
         tbox_rect empty = {popup.rect.x + 15.0, popup.rect.y + 47.0, popup.rect.width - 30.0, 24.0};
-        tbox_context_file_push_text(items, face, empty, tbox_string_view_make("Empty folder", 12),
-            (tbox_css_rgba){125, 125, 125, 255}, empty);
+        tbox_context_file_push_text(items, tbox_context_control_font(ctx, &empty_style), empty,
+            tbox_string_view_make("Empty folder", 12), empty_style.color, empty);
     }
-    tbox_rect footer = {popup.rect.x + 12.0, popup.rect.y + 238.0, popup.rect.width - 24.0, 18.0};
-    tbox_context_file_push_text(items, face, footer,
-        tbox_string_view_from_cstr("Enter: open or select  -  Esc: close"),
-        (tbox_css_rgba){100, 105, 115, 255}, footer);
+    tbox_style footer_style = tbox_context_control_style(ctx, ctx->open_file, "footer", NULL);
+    tbox_rect footer = {popup.rect.x + 12.0, popup.rect.y + popup.rect.height - 22.0,
+        popup.rect.width - 24.0, 18.0};
+    tbox_context_file_push_text(items, tbox_context_control_font(ctx, &footer_style), footer,
+        tbox_string_view_from_cstr("Enter: open or select  -  Esc: close"), footer_style.color, footer);
 }
 
 tbox_string_view tbox_context_file_path(tbox_context *ctx, const tbox_html_node *input) {

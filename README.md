@@ -271,6 +271,63 @@ The textarea reads its initial value from the text between its tags. Enter
 inserts a new line; Up/Down move between visual lines. Long text wraps and
 scrolls inside the control. `rows` and `cols` set its initial size, while
 explicit CSS width and height take precedence.
+
+### Styling picker popups
+
+The popups opened by `input` types `color`, `date`, `datetime-local`, `month`,
+`time`, `week`, and `file` have a separate stylesheet. Document CSS still
+styles the input itself. The picker stylesheet uses internal `tbox-popup`
+and `tbox-part` elements; these are selector targets, not DOM nodes returned
+by the HTML API. The popup has a `type` attribute and copies the input's
+`id` and classes, so one picker can be targeted with `tbox-popup#my-picker`.
+
+```c
+tbox_context_options options = tbox_context_options_default();
+const char *theme =
+    "tbox-popup[type=color] { width: 270px; background-color: #20242b; color: white; }"
+    "tbox-popup[type=color] .track { width: 210px; height: 16px; }"
+    "tbox-popup#my-picker .thumb { background-color: yellow; }";
+options.control_css = theme;
+options.control_css_length = strlen(theme);
+tbox_context *ctx = tbox_context_open_with_options(html, html_length,
+    document_css, document_css_length, fonts, images, options);
+```
+
+The application variants are `tbox_app_create_with_options`,
+`tbox_app_create_from_files_with_options`, and
+`tbox_app_screenshot_from_files_with_options`. A NULL `control_css` uses the
+built-in theme. A non-NULL string replaces it completely, including an empty
+string; missing rules then use structural sizes and CSS initial values.
+The context copies the parsed CSS. The app also retains a copy for later
+`tbox_app_load_from_files` calls.
+
+Available part classes are `.track`, `.channel-label`, `.thumb`, and
+`.preview` for color; `.heading`, `.nav`, `.weekday`, `.day`, `.month`,
+`.time-track`, `.time-fill`, `.time-label`, and `.confirm` for calendar and
+time; and `.back`, `.path`, `.divider`, `.row`, `.empty`, and `.footer` for
+files. Parts can also carry `.is-active`, `.is-selected`, `.is-disabled`,
+or `.is-directory`. The theme supports colors, backgrounds, font settings,
+borders, radii, and the documented part dimensions. Geometry uses positive
+`px` or `em` widths and heights; omitted or invalid sizes use structural
+fallbacks. Set dimensions on base part selectors; state classes change
+appearance without changing the interaction rectangles. Color samples and
+file names remain value-dependent.
+
+Geometry reads `width`/`height` on `tbox-popup`, `.track`, `.preview`,
+`.nav`, `.day`, `.month`, `.time-track`, `.confirm`, and `.back`; it reads
+`height` on `.row`, and `width`/`height` on `.thumb` for painting. The color
+popup also reads its top/left padding and `row-gap` for bar placement.
+Use the part and state classes for picker states and repeated items;
+pseudo-classes and sibling combinators are not part of this theme API.
+
+The runnable example [control_theme_demo.c](example/control_theme_demo.c)
+loads the page stylesheet and the picker theme from separate files. On
+Wayland, run `build/example/tbox_control_theme_demo` and click the inputs to
+see the themed popups. Run it with `--default` to compare the built-in theme,
+or pass a path to another picker CSS file. Its theme is in
+`example/control_theme_demo.controls.css`; the second color input shows an
+override selected by the input's id.
+
 A repeat rate of zero disables repetition; until the compositor sends its
 settings, repetition stays disabled.
 The example also compiles

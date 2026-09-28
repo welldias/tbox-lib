@@ -99,6 +99,23 @@ typedef struct tbox_ua_style_config {
  * Never fails, never allocates -- plain field assignment. */
 tbox_ua_style_config tbox_ua_style_config_default(void);
 
+/* CSS for the internal color, calendar and file pickers is independent of
+ * document CSS. NULL selects the built-in theme; a non-NULL empty string
+ * selects an empty theme with only structural geometry fallbacks. */
+typedef struct tbox_context_options {
+    tbox_ua_style_config ua_style;
+    const char *control_css;
+    size_t control_css_length;
+} tbox_context_options;
+
+tbox_context_options tbox_context_options_default(void);
+
+/* The context parses and owns a copy of control_css. The caller's buffer
+ * need only remain valid for this call. */
+tbox_context *tbox_context_open_with_options(const char *html, size_t html_length,
+    const char *css, size_t css_length, tbox_font_face_cache *fonts,
+    tbox_image_cache *images, tbox_context_options options);
+
 /* Parses `html`/`css` (tbox_html_parse/tbox_css_parse) and stores the
  * result. Both of those tolerate malformed markup/CSS themselves (see
  * their own docs) and only return NULL on allocation failure, which is

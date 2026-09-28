@@ -35,6 +35,9 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
  * generated user-agent stylesheet, not font discovery. Fails under the
  * exact same conditions as tbox_app_create. */
 tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config);
+/* Same creation path, with an optional separate picker stylesheet. The app
+ * copies control_css so a later tbox_app_load_from_files keeps the theme. */
+tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options);
 
 /* NOVO v3: same as tbox_app_create, but html_path/css_path are paths to
  * files read fully into memory (a local helper in tbox_app.c, same
@@ -60,6 +63,8 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
  * relationship tbox_app_create_with_config has to tbox_app_create. Fails
  * under the same conditions as tbox_app_create_from_files. */
 tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config);
+/* File-based counterpart of tbox_app_create_with_options. */
+tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options);
 
 /* Development/testing tool: renders html_path/css_path into an offscreen
  * width x height buffer and writes it to png_path -- WITHOUT ever opening a
@@ -79,6 +84,9 @@ tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const ch
  * success. Needs Fontconfig at build time, but no Wayland dependency. When
  * Fontconfig is unavailable the symbol remains linkable and returns false. */
 bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path);
+/* Offscreen counterpart accepting the separate picker theme. */
+bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path,
+    int32_t width, int32_t height, const char *png_path, tbox_context_options options);
 
 /* Access to the internal tbox_context -- for registering click handlers via
  * tbox_context_on_click, at any point before or after the first

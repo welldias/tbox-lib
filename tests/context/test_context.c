@@ -3548,6 +3548,190 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* The separate theme resolves selectors against picker parts, while
+     * the resulting geometry is shared by painting and pointer handling. */
+    {
+        const char *html = "<input id='picker' type='color' value='#000000'>";
+        const char *theme = "tbox-popup#picker { width:270px; height:170px; background-color:rgb(10,20,30); border-radius:8px }"
+            "tbox-popup#picker .track { width:210px; height:16px }";
+        tbox_context_options options = tbox_context_options_default();
+        options.control_css = theme;
+        options.control_css_length = strlen(theme);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            const tbox_html_node *input = tbox_context_focused_node(ctx);
+            const tbox_layout_box *box = find_context_box(ctx, input);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 5.0, box->border_box.y + 5.0));
+                tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+                tbox_rect popup = {0};
+                for (size_t i = 0; i < list.count; i++) {
+                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                        list.items[i].color.r == 10 && list.items[i].color.g == 20 &&
+                        list.items[i].color.b == 30) {
+                        popup = list.items[i].rect;
+                        TBOX_TEST_ASSERT(list.items[i].corner_radii[0] == 8.0);
+                    }
+                }
+                TBOX_TEST_ASSERT(popup.width == 270.0 && popup.height == 170.0);
+                if (popup.width > 0.0) {
+                    TBOX_TEST_ASSERT(tbox_context_color_drag(ctx, popup.x + 235.0, popup.y + 20.0));
+                    const tbox_html_attribute *value = tbox_html_node_get_attribute(input,
+                        tbox_string_view_make("value", 5));
+                    TBOX_TEST_ASSERT(value != NULL && !string_view_equal_cstr(value->value, "#000000"));
+                }
+            }
+            tbox_context_close(ctx);
+        }
+    }
+    {
+        const char *html = "<input class='custom' type='date' value='2024-03-02'>";
+        const char *theme = "tbox-popup.custom { background-color:rgb(11,22,33) }"
+            "tbox-popup[type=date] .day { width:40px; height:30px }";
+        tbox_context_options options = tbox_context_options_default();
+        options.control_css = theme;
+        options.control_css_length = strlen(theme);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 440.0, 360.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            const tbox_html_node *input = tbox_context_focused_node(ctx);
+            const tbox_layout_box *box = find_context_box(ctx, input);
+            if (box != NULL) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 5.0, box->border_box.y + 5.0));
+                tbox_context_run_frame(ctx, 440.0, 360.0, &list);
+                tbox_rect popup = {0};
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                        list.items[i].color.r == 11 && list.items[i].color.g == 22 &&
+                        list.items[i].color.b == 33) popup = list.items[i].rect;
+                TBOX_TEST_ASSERT(popup.width == 308.0 && popup.height == 248.0);
+                if (popup.width > 0.0) {
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx,
+                        popup.x + 14.0 + 5.0 * 40.0 + 10.0, popup.y + 58.0 + 10.0));
+                    const tbox_html_attribute *value = tbox_html_node_get_attribute(input,
+                        tbox_string_view_make("value", 5));
+                    TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2024-03-01"));
+                }
+            }
+            tbox_context_close(ctx);
+        }
+    }
+    {
+        const char *html = "<input class='files' type='file'>";
+        const char *theme = "tbox-popup.files { width:350px; background-color:rgb(12,23,34) }"
+            "tbox-popup.files .row { height:36px }";
+        tbox_context_options options = tbox_context_options_default();
+        options.control_css = theme;
+        options.control_css_length = strlen(theme);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 450.0, 400.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            tbox_context_run_frame(ctx, 450.0, 400.0, &list);
+            bool found_popup = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                    list.items[i].color.r == 12 && list.items[i].color.g == 23 &&
+                    list.items[i].color.b == 34 && list.items[i].rect.width == 350.0 &&
+                    list.items[i].rect.height == 316.0) found_popup = true;
+            TBOX_TEST_ASSERT(found_popup);
+            tbox_context_close(ctx);
+        }
+    }
+    {
+        const char *html = "<input type='color' value='#000000'>";
+        tbox_context_options options = tbox_context_options_default();
+        options.control_css = "";
+        options.control_css_length = 0;
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 220.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            tbox_context_run_frame(ctx, 320.0, 220.0, &list);
+            const tbox_layout_box *box = find_context_box(ctx, tbox_context_focused_node(ctx));
+            if (box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_color_drag(ctx, box->border_box.x + 160.0,
+                    box->border_box.y + box->border_box.height + 20.0));
+            tbox_context_close(ctx);
+        }
+    }
+    {
+        static const struct {
+            const char *type;
+            double height;
+        } pickers[] = {
+            {"date", 212.0}, {"datetime-local", 306.0}, {"month", 166.0},
+            {"time", 126.0}, {"week", 212.0},
+        };
+        for (size_t picker = 0; picker < sizeof(pickers) / sizeof(pickers[0]); picker++) {
+            char html[96];
+            char theme[160];
+            snprintf(html, sizeof(html), "<input type='%s'>", pickers[picker].type);
+            snprintf(theme, sizeof(theme),
+                "tbox-popup[type='%s'] { width:320px; background-color:rgb(13,24,35) }",
+                pickers[picker].type);
+            tbox_context_options options = tbox_context_options_default();
+            options.control_css = theme;
+            options.control_css_length = strlen(theme);
+            tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0,
+                fonts, NULL, options);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx == NULL) continue;
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 420.0, 420.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            tbox_context_run_frame(ctx, 420.0, 420.0, &list);
+            bool found = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                    list.items[i].color.r == 13 && list.items[i].color.g == 24 &&
+                    list.items[i].color.b == 35 && list.items[i].rect.width == 320.0 &&
+                    list.items[i].rect.height == pickers[picker].height) found = true;
+            TBOX_TEST_ASSERT(found);
+            tbox_context_close(ctx);
+        }
+    }
+    {
+        const char *html = "<input type='color'>";
+        const char *theme = "tbox-popup[type=color] { width:broken; background-color:rgb(14,25,36) }";
+        tbox_context_options options = tbox_context_options_default();
+        options.control_css = theme;
+        options.control_css_length = strlen(theme);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0,
+            fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 220.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_TAB, true, false, false}));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){TBOX_KEY_ENTER, true, false, false}));
+            tbox_context_run_frame(ctx, 320.0, 220.0, &list);
+            bool used_fallback = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT &&
+                    list.items[i].color.r == 14 && list.items[i].color.g == 25 &&
+                    list.items[i].color.b == 36 && list.items[i].rect.width == 224.0)
+                    used_fallback = true;
+            TBOX_TEST_ASSERT(used_fallback);
+            tbox_context_close(ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

@@ -15,6 +15,10 @@ tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t
     (void)html; (void)css; (void)width; (void)height; (void)config;
     return NULL;
 }
+tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options) {
+    (void)html; (void)css; (void)width; (void)height; (void)options;
+    return NULL;
+}
 
 tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height) {
     (void)html_path; (void)css_path; (void)width; (void)height;
@@ -23,6 +27,10 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
 
 tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
     (void)html_path; (void)css_path; (void)width; (void)height; (void)config;
+    return NULL;
+}
+tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
+    (void)html_path; (void)css_path; (void)width; (void)height; (void)options;
     return NULL;
 }
 
@@ -37,6 +45,10 @@ void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata
 
 bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path) {
     (void)html_path; (void)css_path; (void)width; (void)height; (void)png_path;
+    return false;
+}
+bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, tbox_context_options options) {
+    (void)html_path; (void)css_path; (void)width; (void)height; (void)png_path; (void)options;
     return false;
 }
 

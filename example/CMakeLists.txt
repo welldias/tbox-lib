@@ -141,6 +141,13 @@ target_compile_definitions(tbox_keyboard_demo PRIVATE
     TBOX_KEYBOARD_HTML_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/keyboard_demo.html\"
     TBOX_KEYBOARD_CSS_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/keyboard_demo.css\")
 
+add_executable(tbox_control_theme_demo control_theme_demo.c)
+target_link_libraries(tbox_control_theme_demo PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_compile_definitions(tbox_control_theme_demo PRIVATE
+    TBOX_CONTROL_THEME_HTML_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/control_theme_demo.html\"
+    TBOX_CONTROL_THEME_PAGE_CSS_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/control_theme_demo.page.css\"
+    TBOX_CONTROL_THEME_CSS_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/control_theme_demo.controls.css\")
+
 add_executable(tbox_assets_showrun assets_showrun.c)
 target_link_libraries(tbox_assets_showrun PRIVATE tbox tbox_warnings tbox_sanitizers)
 target_compile_definitions(tbox_assets_showrun PRIVATE

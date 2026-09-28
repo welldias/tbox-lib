@@ -3,6 +3,7 @@
 typedef struct tbox_date_popup_geometry {
     tbox_rect rect, previous, next;
     tbox_rect time_bars[2], confirm;
+    double day_width, day_height, month_width, month_height;
 } tbox_date_popup_geometry;
 
 static bool tbox_context_date_popup_geometry(tbox_context *ctx, tbox_date_popup_geometry *out);
@@ -318,10 +319,37 @@ static bool tbox_context_date_popup_geometry(tbox_context *ctx, tbox_date_popup_
     if (ctx->open_date == NULL) return false;
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_date);
     if (box == NULL) return false;
-    const double width = 238.0;
-    const double height = tbox_context_is_datetime_input(ctx->open_date) ? 306.0 :
+    tbox_style root_style = tbox_context_control_style(ctx, ctx->open_date, NULL, NULL);
+    tbox_style day_style = tbox_context_control_style(ctx, ctx->open_date, "day", NULL);
+    tbox_style month_style = tbox_context_control_style(ctx, ctx->open_date, "month", NULL);
+    tbox_style nav_style = tbox_context_control_style(ctx, ctx->open_date, "nav", NULL);
+    tbox_style time_style = tbox_context_control_style(ctx, ctx->open_date, "time-track", NULL);
+    tbox_style confirm_style = tbox_context_control_style(ctx, ctx->open_date, "confirm", NULL);
+    double day_width = tbox_context_control_size(day_style.width, 30.0);
+    double day_height = tbox_context_control_size(day_style.height, 24.0);
+    double month_width = tbox_context_control_size(month_style.width, 54.0);
+    double month_height = tbox_context_control_size(month_style.height, 38.0);
+    double nav_width = tbox_context_control_size(nav_style.width, 24.0);
+    double nav_height = tbox_context_control_size(nav_style.height, 24.0);
+    double time_width = tbox_context_control_size(time_style.width, 140.0);
+    double time_height = tbox_context_control_size(time_style.height, 12.0);
+    double confirm_width = tbox_context_control_size(confirm_style.width, 55.0);
+    double confirm_height = tbox_context_control_size(confirm_style.height, 25.0);
+    double width = tbox_context_control_size(root_style.width, 238.0);
+    double needed_width = 28.0 + 7.0 * day_width;
+    if (tbox_context_is_month_input(ctx->open_date)) needed_width = 22.0 + 4.0 * month_width;
+    if (tbox_context_is_time_input(ctx->open_date)) needed_width = 98.0 + time_width;
+    if (width < needed_width) width = needed_width;
+    double height = tbox_context_is_datetime_input(ctx->open_date) ? 306.0 :
         tbox_context_is_month_input(ctx->open_date) ? 166.0 :
         tbox_context_is_time_input(ctx->open_date) ? 126.0 : 212.0;
+    height = tbox_context_control_size(root_style.height, height);
+    double time_top = tbox_context_is_time_input(ctx->open_date) ? 40.0 : 58.0 + 6.0 * day_height + 20.0;
+    double needed_height = tbox_context_is_month_input(ctx->open_date) ? 52.0 + 3.0 * month_height :
+        tbox_context_is_time_input(ctx->open_date) || tbox_context_is_datetime_input(ctx->open_date) ?
+        time_top + 2.0 * time_height + 14.0 + 12.0 + confirm_height + 9.0 :
+        68.0 + 6.0 * day_height;
+    if (height < needed_height) height = needed_height;
     double x = box->border_box.x;
     if (x + width > ctx->viewport_width) x = ctx->viewport_width - width;
     if (x < 0.0) x = 0.0;
@@ -330,12 +358,14 @@ static bool tbox_context_date_popup_geometry(tbox_context *ctx, tbox_date_popup_
     double y = below < height && above > below ? box->border_box.y - height :
         box->border_box.y + box->border_box.height;
     out->rect = (tbox_rect){x, y, width, height};
-    out->previous = (tbox_rect){x + 8.0, y + 7.0, 24.0, 24.0};
-    out->next = (tbox_rect){x + width - 32.0, y + 7.0, 24.0, 24.0};
-    double time_top = tbox_context_is_time_input(ctx->open_date) ? 40.0 : 222.0;
-    out->time_bars[0] = (tbox_rect){x + 40.0, y + time_top, 140.0, 12.0};
-    out->time_bars[1] = (tbox_rect){x + 40.0, y + time_top + 26.0, 140.0, 12.0};
-    out->confirm = (tbox_rect){x + width - 65.0, y + time_top + 50.0, 55.0, 25.0};
+    out->previous = (tbox_rect){x + 8.0, y + 7.0, nav_width, nav_height};
+    out->next = (tbox_rect){x + width - nav_width - 8.0, y + 7.0, nav_width, nav_height};
+    out->time_bars[0] = (tbox_rect){x + 40.0, y + time_top, time_width, time_height};
+    out->time_bars[1] = (tbox_rect){x + 40.0, y + time_top + time_height + 14.0, time_width, time_height};
+    out->confirm = (tbox_rect){x + width - confirm_width - 10.0,
+        y + time_top + 2.0 * time_height + 26.0, confirm_width, confirm_height};
+    out->day_width = day_width; out->day_height = day_height;
+    out->month_width = month_width; out->month_height = month_height;
     return true;
 }
 
@@ -486,9 +516,10 @@ bool tbox_context_date_popup_click(tbox_context *ctx, double x, double y) {
     if (tbox_context_is_month_input(ctx->open_date)) {
         double relative_x = x - popup.rect.x - 12.0;
         double relative_y = y - popup.rect.y - 40.0;
-        if (relative_x >= 0.0 && relative_x < 216.0 && relative_y >= 0.0 && relative_y < 114.0) {
-            int column = (int)(relative_x / 54.0);
-            int row = (int)(relative_y / 38.0);
+        if (relative_x >= 0.0 && relative_x < 4.0 * popup.month_width &&
+            relative_y >= 0.0 && relative_y < 3.0 * popup.month_height) {
+            int column = (int)(relative_x / popup.month_width);
+            int row = (int)(relative_y / popup.month_height);
             tbox_date selected = {ctx->date_cursor.year, row * 4 + column + 1, 1};
             if (tbox_context_date_allowed(ctx->open_date, selected)) {
                 const tbox_html_node *node = ctx->open_date;
@@ -515,9 +546,10 @@ bool tbox_context_date_popup_click(tbox_context *ctx, double x, double y) {
     }
     double relative_x = x - popup.rect.x - 14.0;
     double relative_y = y - popup.rect.y - 58.0;
-    if (relative_x >= 0.0 && relative_x < 210.0 && relative_y >= 0.0 && relative_y < 144.0) {
-        int column = (int)(relative_x / 30.0);
-        int row = (int)(relative_y / 24.0);
+    if (relative_x >= 0.0 && relative_x < 7.0 * popup.day_width &&
+        relative_y >= 0.0 && relative_y < 6.0 * popup.day_height) {
+        int column = (int)(relative_x / popup.day_width);
+        int row = (int)(relative_y / popup.day_height);
         int first = tbox_context_date_weekday(ctx->date_cursor.year, ctx->date_cursor.month, 1);
         int day = row * 7 + column - first + 1;
         if (day >= 1 && day <= tbox_context_date_days(ctx->date_cursor.year, ctx->date_cursor.month)) {
@@ -551,14 +583,10 @@ void tbox_context_date_text(tbox_vector *items, const tbox_font_face *face,
 void tbox_context_paint_date_popup(tbox_context *ctx, tbox_vector *items) {
     tbox_date_popup_geometry popup;
     if (!tbox_context_date_popup_geometry(ctx, &popup)) return;
-    const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_date);
-    const tbox_font_face *face = box != NULL && box->style != NULL ?
-        tbox_font_face_cache_get(ctx->fonts, tbox_string_view_from_cstr(box->style->font_family),
-            false, false, 13.0) : NULL;
-    tbox_context_push_fill(items, popup.rect, (tbox_css_rgba){105, 112, 122, 255}, false, (tbox_rect){0});
-    tbox_context_push_fill(items, (tbox_rect){popup.rect.x + 1.0, popup.rect.y + 1.0,
-        popup.rect.width - 2.0, popup.rect.height - 2.0},
-        (tbox_css_rgba){255, 255, 255, 255}, false, (tbox_rect){0});
+    tbox_style root_style = tbox_context_control_style(ctx, ctx->open_date, NULL, NULL);
+    tbox_context_paint_control_box(items, popup.rect, &root_style, false, (tbox_rect){0});
+    tbox_style heading_style = tbox_context_control_style(ctx, ctx->open_date, "heading", NULL);
+    const tbox_font_face *face = tbox_context_control_font(ctx, &heading_style);
     char *heading = tbox_arena_alloc(&ctx->frame_arena, 16);
     if (heading != NULL) {
         int length = tbox_context_is_time_input(ctx->open_date) ?
@@ -568,94 +596,105 @@ void tbox_context_paint_date_popup(tbox_context *ctx, tbox_vector *items) {
             snprintf(heading, 16, "%04d-%02d", ctx->date_cursor.year, ctx->date_cursor.month);
         if (length > 0 && length < 16)
             tbox_context_date_text(items, face,
-                (tbox_rect){popup.rect.x + 34.0, popup.rect.y + 6.0, popup.rect.width - 68.0, 26.0},
-                tbox_string_view_make(heading, (size_t)length), (tbox_css_rgba){25, 25, 25, 255});
+                (tbox_rect){popup.previous.x + popup.previous.width + 2.0,
+                    popup.rect.y + 6.0,
+                    popup.next.x - popup.previous.x - popup.previous.width - 4.0,
+                    tbox_context_control_size(heading_style.height, 26.0)},
+                tbox_string_view_make(heading, (size_t)length), heading_style.color);
     }
     if (!tbox_context_is_time_input(ctx->open_date)) {
-        tbox_context_date_text(items, face, popup.previous, tbox_string_view_make("<", 1),
-            (tbox_css_rgba){25, 25, 25, 255});
-        tbox_context_date_text(items, face, popup.next, tbox_string_view_make(">", 1),
-            (tbox_css_rgba){25, 25, 25, 255});
+        tbox_style nav_style = tbox_context_control_style(ctx, ctx->open_date, "nav", NULL);
+        tbox_context_paint_control_box(items, popup.previous, &nav_style, false, (tbox_rect){0});
+        tbox_context_paint_control_box(items, popup.next, &nav_style, false, (tbox_rect){0});
+        const tbox_font_face *nav_face = tbox_context_control_font(ctx, &nav_style);
+        tbox_context_date_text(items, nav_face, popup.previous, tbox_string_view_make("<", 1), nav_style.color);
+        tbox_context_date_text(items, nav_face, popup.next, tbox_string_view_make(">", 1), nav_style.color);
     }
     if (tbox_context_is_month_input(ctx->open_date)) {
         static const char *names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
         for (int month = 1; month <= 12; month++) {
-            tbox_rect cell = {popup.rect.x + 12.0 + 54.0 * ((month - 1) % 4),
-                              popup.rect.y + 40.0 + 38.0 * ((month - 1) / 4), 54.0, 38.0};
+            tbox_rect cell = {popup.rect.x + 12.0 + popup.month_width * ((month - 1) % 4),
+                              popup.rect.y + 40.0 + popup.month_height * ((month - 1) / 4),
+                              popup.month_width, popup.month_height};
             tbox_date date = {ctx->date_cursor.year, month, 1};
             bool allowed = tbox_context_date_allowed(ctx->open_date, date);
             bool highlighted = month == ctx->date_cursor.month && allowed;
-            if (highlighted)
-                tbox_context_push_fill(items,
-                    (tbox_rect){cell.x + 2.0, cell.y + 2.0, cell.width - 4.0, cell.height - 4.0},
-                    (tbox_css_rgba){65, 115, 195, 255}, false, (tbox_rect){0});
-            tbox_context_date_text(items, face, cell, tbox_string_view_from_cstr(names[month - 1]),
-                !allowed ? (tbox_css_rgba){170, 170, 170, 255} :
-                highlighted ? (tbox_css_rgba){255, 255, 255, 255} :
-                (tbox_css_rgba){25, 25, 25, 255});
+            tbox_style cell_style = tbox_context_control_style(ctx, ctx->open_date, "month",
+                !allowed ? "is-disabled" : highlighted ? "is-selected" : NULL);
+            tbox_rect fill = highlighted ? (tbox_rect){cell.x + 2.0, cell.y + 2.0,
+                cell.width - 4.0, cell.height - 4.0} : cell;
+            tbox_context_paint_control_box(items, fill, &cell_style, false, (tbox_rect){0});
+            tbox_context_date_text(items, tbox_context_control_font(ctx, &cell_style), cell,
+                tbox_string_view_from_cstr(names[month - 1]), cell_style.color);
         }
         return;
     }
     if (!tbox_context_is_time_input(ctx->open_date)) {
     static const char *weekdays[] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
+    tbox_style weekday_style = tbox_context_control_style(ctx, ctx->open_date, "weekday", NULL);
     for (int column = 0; column < 7; column++)
-        tbox_context_date_text(items, face,
-            (tbox_rect){popup.rect.x + 14.0 + 30.0 * column, popup.rect.y + 34.0, 30.0, 22.0},
-            tbox_string_view_from_cstr(weekdays[column]), (tbox_css_rgba){90, 95, 105, 255});
+        tbox_context_date_text(items, tbox_context_control_font(ctx, &weekday_style),
+            (tbox_rect){popup.rect.x + 14.0 + popup.day_width * column,
+                popup.rect.y + 34.0, popup.day_width, 22.0},
+            tbox_string_view_from_cstr(weekdays[column]), weekday_style.color);
     int first = tbox_context_date_weekday(ctx->date_cursor.year, ctx->date_cursor.month, 1);
     int days = tbox_context_date_days(ctx->date_cursor.year, ctx->date_cursor.month);
     for (int day = 1; day <= days; day++) {
         int cell = first + day - 1;
-        tbox_rect rect = {popup.rect.x + 14.0 + 30.0 * (cell % 7),
-                          popup.rect.y + 58.0 + 24.0 * (cell / 7), 30.0, 24.0};
+        tbox_rect rect = {popup.rect.x + 14.0 + popup.day_width * (cell % 7),
+                          popup.rect.y + 58.0 + popup.day_height * (cell / 7),
+                          popup.day_width, popup.day_height};
         tbox_date date = {ctx->date_cursor.year, ctx->date_cursor.month, day};
         if (tbox_context_is_week_input(ctx->open_date)) tbox_context_week_monday(&date);
         bool highlighted = tbox_context_date_compare(date, ctx->date_cursor) == 0;
         bool allowed = tbox_context_date_allowed(ctx->open_date, date);
-        if (highlighted && allowed)
-            tbox_context_push_fill(items, (tbox_rect){rect.x + 2.0, rect.y + 1.0, 26.0, 22.0},
-                (tbox_css_rgba){65, 115, 195, 255}, false, (tbox_rect){0});
+        tbox_style day_style = tbox_context_control_style(ctx, ctx->open_date, "day",
+            !allowed ? "is-disabled" : highlighted ? "is-selected" : NULL);
+        tbox_rect fill = highlighted && allowed ? (tbox_rect){rect.x + 2.0, rect.y + 1.0,
+            rect.width - 4.0, rect.height - 2.0} : rect;
+        tbox_context_paint_control_box(items, fill, &day_style, false, (tbox_rect){0});
         char *label = tbox_arena_alloc(&ctx->frame_arena, 3);
         if (label != NULL) {
             int length = snprintf(label, 3, "%d", day);
             if (length > 0 && length < 3)
-                tbox_context_date_text(items, face, rect, tbox_string_view_make(label, (size_t)length),
-                    !allowed ? (tbox_css_rgba){170, 170, 170, 255} :
-                    highlighted ? (tbox_css_rgba){255, 255, 255, 255} :
-                    (tbox_css_rgba){25, 25, 25, 255});
+                tbox_context_date_text(items, tbox_context_control_font(ctx, &day_style),
+                    rect, tbox_string_view_make(label, (size_t)length), day_style.color);
         }
     }
     }
     if (tbox_context_is_datetime_input(ctx->open_date) || tbox_context_is_time_input(ctx->open_date)) {
         static const char *labels[] = {"H", "M"};
+        tbox_style time_style = tbox_context_control_style(ctx, ctx->open_date, "time-track", NULL);
+        tbox_style fill_style = tbox_context_control_style(ctx, ctx->open_date, "time-fill", NULL);
+        tbox_style time_label_style = tbox_context_control_style(ctx, ctx->open_date, "time-label", NULL);
         for (int part = 0; part < 2; part++) {
             tbox_rect bar = popup.time_bars[part];
             int value = part == 0 ? ctx->date_hour : ctx->date_minute;
             int maximum = part == 0 ? 23 : 59;
-            tbox_context_date_text(items, face,
+            tbox_context_date_text(items, tbox_context_control_font(ctx, &time_label_style),
                 (tbox_rect){bar.x - 29.0, bar.y - 5.0, 20.0, 22.0},
-                tbox_string_view_from_cstr(labels[part]), (tbox_css_rgba){25, 25, 25, 255});
-            tbox_context_push_fill(items, bar, (tbox_css_rgba){220, 225, 232, 255}, false, (tbox_rect){0});
+                tbox_string_view_from_cstr(labels[part]), time_label_style.color);
+            tbox_context_paint_control_box(items, bar, &time_style, false, (tbox_rect){0});
             double filled = bar.width * value / maximum;
             if (filled > 0.0)
-                tbox_context_push_fill(items, (tbox_rect){bar.x, bar.y, filled, bar.height},
-                    (tbox_css_rgba){65, 115, 195, 255}, false, (tbox_rect){0});
+                tbox_context_paint_control_box(items, (tbox_rect){bar.x, bar.y, filled, bar.height},
+                    &fill_style, false, (tbox_rect){0});
             char *digits = tbox_arena_alloc(&ctx->frame_arena, 3);
             if (digits != NULL) {
                 int length = snprintf(digits, 3, "%02d", value);
                 if (length == 2)
-                    tbox_context_date_text(items, face,
+                    tbox_context_date_text(items, tbox_context_control_font(ctx, &time_label_style),
                         (tbox_rect){bar.x + bar.width + 9.0, bar.y - 5.0, 30.0, 22.0},
-                        tbox_string_view_make(digits, 2), (tbox_css_rgba){25, 25, 25, 255});
+                        tbox_string_view_make(digits, 2), time_label_style.color);
             }
         }
         bool enabled = tbox_context_calendar_selection_allowed(ctx);
-        tbox_context_push_fill(items, popup.confirm,
-            enabled ? (tbox_css_rgba){65, 115, 195, 255} : (tbox_css_rgba){180, 185, 193, 255},
-            false, (tbox_rect){0});
-        tbox_context_date_text(items, face, popup.confirm, tbox_string_view_make("OK", 2),
-            (tbox_css_rgba){255, 255, 255, 255});
+        tbox_style confirm_style = tbox_context_control_style(ctx, ctx->open_date, "confirm",
+            enabled ? NULL : "is-disabled");
+        tbox_context_paint_control_box(items, popup.confirm, &confirm_style, false, (tbox_rect){0});
+        tbox_context_date_text(items, tbox_context_control_font(ctx, &confirm_style),
+            popup.confirm, tbox_string_view_make("OK", 2), confirm_style.color);
     }
 }
 

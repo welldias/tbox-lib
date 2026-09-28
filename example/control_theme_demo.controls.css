@@ -1,0 +1,59 @@
+/* This file replaces the entire built-in picker theme. These selectors
+ * target internal parts, not elements in control_theme_demo.html. */
+tbox-popup {
+    color: #edf6fa;
+    background-color: #182632;
+    border: 2px solid #60869b;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+tbox-popup[type="color"] {
+    width: 270px;
+    height: 152px;
+    padding: 20px 0px 0px 28px;
+    row-gap: 17px;
+}
+tbox-popup[type="color"] .track { width: 212px; height: 14px; }
+tbox-popup[type="color"] .track.is-active { border: 2px solid #35d6b0; }
+tbox-popup[type="color"] .channel-label { color: #d7e8ef; }
+tbox-popup[type="color"] .thumb {
+    width: 6px;
+    height: 20px;
+    background-color: #ffffff;
+    border: 1px solid #182632;
+    border-radius: 3px;
+}
+tbox-popup[type="color"] .preview {
+    height: 18px;
+    border: 1px solid #9ac4d5;
+    border-radius: 3px;
+}
+/* The popup copies the input's id, so one instance can use another palette. */
+tbox-popup#secondary-color { background-color: #32233b; border-color: #ae78bd; }
+tbox-popup#secondary-color .track.is-active { border-color: #d998e2; }
+
+tbox-popup[type="date"], tbox-popup[type="week"] { width: 280px; height: 240px; }
+tbox-popup[type="datetime-local"] { width: 280px; height: 340px; }
+tbox-popup[type="month"] { width: 280px; height: 190px; }
+tbox-popup[type="time"] { width: 280px; height: 145px; }
+tbox-popup .heading, tbox-popup .nav, tbox-popup .time-label { color: #edf6fa; }
+tbox-popup .nav { width: 28px; height: 27px; background-color: #294254; border-radius: 4px; }
+tbox-popup .weekday { color: #9cc0cf; }
+tbox-popup .day { width: 34px; height: 27px; }
+tbox-popup .month { width: 60px; height: 42px; }
+tbox-popup .is-selected { color: #102b34; background-color: #51ddba; }
+tbox-popup .is-disabled { color: #78909d; }
+tbox-popup .time-track { width: 160px; height: 14px; background-color: #355365; border-radius: 3px; }
+tbox-popup .time-fill { background-color: #51ddba; border-radius: 3px; }
+tbox-popup .confirm { width: 64px; height: 28px; color: #102b34; background-color: #51ddba; border-radius: 4px; }
+tbox-popup .confirm.is-disabled { color: #d4dfe4; background-color: #657b87; }
+
+tbox-popup[type="file"] { width: 360px; height: 300px; }
+tbox-popup[type="file"] .back { width: 30px; height: 28px; color: #edf6fa; background-color: #294254; border-radius: 4px; }
+tbox-popup[type="file"] .path { color: #d7e8ef; }
+tbox-popup[type="file"] .divider { background-color: #60869b; }
+tbox-popup[type="file"] .row { height: 32px; color: #edf6fa; }
+tbox-popup[type="file"] .row.is-directory { color: #87cbff; }
+tbox-popup[type="file"] .row.is-selected { color: #102b34; background-color: #51ddba; }
+tbox-popup[type="file"] .empty, tbox-popup[type="file"] .footer { color: #9cc0cf; }

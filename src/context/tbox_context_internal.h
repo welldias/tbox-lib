@@ -111,6 +111,7 @@ struct tbox_context {
     tbox_html_document *document;       /* owned: parsed in tbox_context_open, destroyed in tbox_context_close */
     tbox_css_stylesheet *stylesheet;    /* owned, same lifecycle; author-only (see tbox_context_run_frame) */
     tbox_css_stylesheet *ua_stylesheet; /* owned: built from typed UA rules and config, TBOX_CSS_ORIGIN_USER_AGENT in the cascade */
+    tbox_css_stylesheet *control_stylesheet; /* owned: internal picker theme, never cascaded into document nodes */
     tbox_css_stylesheet *internal_stylesheet; /* NOVO v9: owned, same lifecycle as `stylesheet` -- NULL se o documento não tem nenhum <style>; concatenação de todo <style> encontrado na árvore, mesma origem TBOX_CSS_ORIGIN_AUTHOR que `stylesheet` em tbox_context_run_frame */
     tbox_font_face_cache *fonts;        /* borrowed -- built/destroyed by the caller, never by tbox_context (NOVO v2: was a single tbox_font_face) */
     tbox_image_cache *images;           /* borrowed, same lifecycle stance as `fonts` above -- may be NULL ("no images", see <tbox/image.h>) */
@@ -273,5 +274,13 @@ bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node)
 bool tbox_context_set_focus(tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_move_focus(tbox_context *ctx, bool reverse);
 bool tbox_context_dispatch_select_key(tbox_context *ctx, tbox_key key);
+
+const char *tbox_context_default_control_css(void);
+tbox_style tbox_context_control_style(tbox_context *ctx, const tbox_html_node *owner,
+    const char *part, const char *state);
+double tbox_context_control_size(tbox_style_length length, double fallback);
+void tbox_context_paint_control_box(tbox_vector *items, tbox_rect rect,
+    const tbox_style *style, bool has_clip, tbox_rect clip);
+const tbox_font_face *tbox_context_control_font(tbox_context *ctx, const tbox_style *style);
 
 #endif /* TBOX_CONTEXT_INTERNAL_H */

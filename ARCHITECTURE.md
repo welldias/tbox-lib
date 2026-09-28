@@ -89,11 +89,18 @@ cada frame. O estado compartilhado e as declarações entre módulos ficam em
 | `tbox_context_input.c`, `tbox_context_range.c`, `tbox_context_text.c`, `tbox_context_textarea.c` | controles de entrada e edição de texto |
 | `tbox_context_select.c`, `tbox_context_color.c`, `tbox_context_calendar.c`, `tbox_context_file.c` | estado, interação e pintura dos controles com menus próprios |
 | `tbox_context_forms.c` | valores iniciais, envio e redefinição de formulários |
+| `tbox_context_control_theme.c` | CSS próprio das caixas de color, calendário e arquivo; resolve estilos de partes internas |
 
 As funções de geometria e pintura próprias de cada controle ficam no módulo
 correspondente. O contexto chama essas funções durante o frame e o despacho
 de eventos. Os arquivos C são incluídos no build pelo glob de
 `src/CMakeLists.txt`.
+
+O CSS das caixas internas usa uma folha separada da cascata do documento.
+Cada caixa e parte é apresentada ao seletor CSS como um nó interno
+`tbox-popup`/`tbox-part`, com tipo, id/classe do input e classes de estado.
+Geometria, pintura e hit-test compartilham as medidas resolvidas; a folha
+embutida é usada apenas quando a aplicação não informa um tema próprio.
 
 Ponto de atenção: `tbox_css_computed_style` hoje é **texto puro** (pares
 `property`/`value` como `tbox_string_view`, sem parsing de unidades, cores já
