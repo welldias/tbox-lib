@@ -11,4 +11,7 @@ struct tbox_css_stylesheet {
     size_t ruleset_count;
 };
 
+/* Internal constructor for stylesheets assembled without parsing CSS text. */
+tbox_css_stylesheet *tbox_css_stylesheet_create_empty(void);
+
 #endif /* TBOX_CSS_PARSER_STYLESHEET_H */

@@ -61,8 +61,8 @@ typedef struct tbox_context tbox_context;
 typedef struct tbox_ua_style_font_config {
     /* body's font-size -- every heading's em scale multiplies from here
      * (or from a nearer ancestor, if author CSS overrides font-size partway
-     * down -- same rule as any em in CSS). Emitted as an explicit
-     * `body { font-size: ... }` declaration in the generated UA stylesheet
+     * down -- same rule as any em in CSS). Included as an explicit
+     * `body { font-size: ... }` declaration in the UA stylesheet
      * (tbox_context_open_with_config), so a non-default value takes effect
      * even though it happens to match the Style layer's own hardcoded
      * "no parent" root default (16px) -- that fallback only matters for a
@@ -116,10 +116,9 @@ tbox_ua_style_config tbox_ua_style_config_default(void);
  * never needs to know tbox_ua_style_config exists. */
 tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images);
 
-/* NOVO v2: same as tbox_context_open, plus an explicit tbox_ua_style_config
- * this context's user-agent stylesheet is generated from (a template CSS
- * text filled in via snprintf, then parsed the same way author `css` is --
- * see ARCHITECTURE.md's "Configuração da UA stylesheet"). This is the REAL
+/* Same as tbox_context_open, plus an explicit tbox_ua_style_config.
+ * The user-agent stylesheet is built from typed rules and the supplied
+ * values; author CSS still goes through tbox_css_parse. This is the REAL
  * implementation; tbox_context_open is a thin wrapper around this one with
  * tbox_ua_style_config_default(). Fails under the exact same conditions as
  * tbox_context_open. */

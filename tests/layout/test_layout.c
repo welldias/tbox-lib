@@ -3294,7 +3294,7 @@ int tbox_test_layout_run(void) {
         /* This harness resolves style against ONLY the CSS given here, no
          * UA stylesheet layered in (unlike the real tbox_context_open
          * pipeline) -- th's bold/center default is normally a UA rule
-         * (tbox_ua_style_generate_css), so it must be restated here. */
+         * (tbox_ua_stylesheet_create), so it must be restated here. */
         tbox_css_stylesheet *sheet = parse_css_cstr("th { font-weight: bold; text-align: center; }");
 
         tbox_arena arena               = tbox_arena_create(0);

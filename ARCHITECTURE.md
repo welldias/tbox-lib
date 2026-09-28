@@ -1092,10 +1092,11 @@ das listadas acima (`ul`/`li`, `table`, etc.), folha de estilo `user`
 
 #### Configuração da UA stylesheet
 
-Todo número usado no CSS acima vem de um struct, não de literais
-embutidos direto no texto — assim um host que quiser outra escala de
-heading, outra margem, ou outro `font-size` base não precisa escrever ou
-parsear CSS nenhum, só copiar o default e trocar o campo que quiser.
+Os valores configuráveis da folha UA vêm de um struct. Um host que quiser
+outra escala de heading, outra margem ou outro `font-size` base copia o
+default e ajusta os campos desejados. As regras fixas são declarações
+tipadas internas, com propriedades e valores representados por enums e
+structs, em `src/context/tbox_ua_style.c`.
 Agrupado em sub-structs por assunto (fonte vs. margem), não um struct
 plano — mais fácil de ler no call site (`config.font.base_px` em vez de
 um `base_font_size_px` solto no meio de 9 outros campos) e cada
@@ -1117,11 +1118,15 @@ typedef struct tbox_ua_style_margin_config {
     double heading_px[6];
     double paragraph_px;
     double body_px;
+    double list_px;
+    double hr_px;
 } tbox_ua_style_margin_config;
 
 typedef struct tbox_ua_style_config {
     tbox_ua_style_font_config font;
     tbox_ua_style_margin_config margin;
+    double list_padding_left_px;
+    double hr_height_px;
 } tbox_ua_style_config;
 
 /* Os valores clássicos de browser já documentados acima (2em/1.5em/.../
@@ -1136,13 +1141,12 @@ tbox_ua_style_config tbox_ua_style_config_default(void);
 saber que o struct existe); ganha uma variante irmã pra quem quer
 configurar:
 ```c
-tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_ua_style_config config);
+tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config);
 ```
-que monta o texto da UA stylesheet a partir dos campos do `config` (um
-template CSS interno preenchido via `snprintf`, não um parser de volta —
-o struct é a fonte da verdade, o texto CSS é só a forma que
-`tbox_css_parse` precisa pra entrar no cascade normal) antes de parseá-lo,
-em vez do texto fixo. `tbox_app_create`/`tbox_app_create_with_config`
+que monta diretamente um `tbox_css_stylesheet` a partir das regras tipadas
+e dos campos de `config`. Um adaptador converte cada declaração para o
+formato textual que a cascata atual consome; não monta nem parseia um
+documento CSS da folha UA. `tbox_app_create`/`tbox_app_create_with_config`
 (Application) espelham o mesmo par, só repassando `config` adiante —
 ver seção "Application / Orchestration" abaixo.
 

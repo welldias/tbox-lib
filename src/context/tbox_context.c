@@ -21,6 +21,7 @@
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 #include "context/tbox_context_hit_test.h"
+#include "context/tbox_ua_style.h"
 
 /* One tbox_context_on_click registration: a compiled selector-group plus
  * the handler/userdata to fire when some ancestor of a clicked node
@@ -105,7 +106,7 @@ typedef struct tbox_form_default {
 struct tbox_context {
     tbox_html_document *document;       /* owned: parsed in tbox_context_open, destroyed in tbox_context_close */
     tbox_css_stylesheet *stylesheet;    /* owned, same lifecycle; author-only (see tbox_context_run_frame) */
-    tbox_css_stylesheet *ua_stylesheet; /* NOVO v2: owned, same lifecycle -- generated from a tbox_ua_style_config and parsed once in tbox_context_open_with_config, TBOX_CSS_ORIGIN_USER_AGENT in tbox_context_run_frame's cascade */
+    tbox_css_stylesheet *ua_stylesheet; /* owned: built from typed UA rules and config, TBOX_CSS_ORIGIN_USER_AGENT in the cascade */
     tbox_css_stylesheet *internal_stylesheet; /* NOVO v9: owned, same lifecycle as `stylesheet` -- NULL se o documento não tem nenhum <style>; concatenação de todo <style> encontrado na árvore, mesma origem TBOX_CSS_ORIGIN_AUTHOR que `stylesheet` em tbox_context_run_frame */
     tbox_font_face_cache *fonts;        /* borrowed -- built/destroyed by the caller, never by tbox_context (NOVO v2: was a single tbox_font_face) */
     tbox_image_cache *images;           /* borrowed, same lifecycle stance as `fonts` above -- may be NULL ("no images", see <tbox/image.h>) */
@@ -1940,164 +1941,6 @@ static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_li
     list->count = items.length;
 }
 
-tbox_ua_style_config tbox_ua_style_config_default(void) {
-    tbox_ua_style_config config;
-
-    config.font.base_px       = 16.0;
-    config.font.heading_em[0] = 2.0;    /* h1 */
-    config.font.heading_em[1] = 1.5;    /* h2 */
-    config.font.heading_em[2] = 1.17;   /* h3 */
-    config.font.heading_em[3] = 1.0;    /* h4 */
-    config.font.heading_em[4] = 0.83;   /* h5 */
-    config.font.heading_em[5] = 0.67;   /* h6 */
-
-    config.margin.heading_px[0] = 21.0; /* h1 */
-    config.margin.heading_px[1] = 19.0; /* h2 */
-    config.margin.heading_px[2] = 18.0; /* h3 */
-    config.margin.heading_px[3] = 21.0; /* h4 */
-    config.margin.heading_px[4] = 22.0; /* h5 */
-    config.margin.heading_px[5] = 25.0; /* h6 */
-    config.margin.paragraph_px  = 16.0;
-    config.margin.body_px       = 8.0;
-    config.margin.list_px       = 16.0; /* NOVO v8: same as paragraph_px -- 1em at the default 16px base_px */
-    config.margin.hr_px         = 8.0;  /* NOVO v11: ~0.5em at the default 16px base_px, approximating the `margin-block: 0.5em` real browsers use for <hr> */
-
-    config.list_padding_left_px = 40.0; /* NOVO v8: classic list indentation used by every real browser */
-    config.hr_height_px         = 2.0;  /* NOVO v11: <hr>'s explicit height */
-
-    return config;
-}
-
-/* Generous enough for the fixed template below with any finite double
- * formatted via "%g" (at most a couple dozen significant characters) in
- * every one of its 19 slots (NOVO v8: was 14/15 before the two ul/ol/li
- * lines below added 2 more %g slots -- bumped from 1024 to 2048 so the
- * worst case, ~24 chars/slot times 17 slots plus the fixed template text,
- * still has real headroom instead of landing right at the old buffer's
- * edge; NOVO v11: the hr line below added 2 more %g slots, 17 -> 19 --
- * worst case is now ~24 chars/slot * 19 slots + ~804 chars of fixed
- * template text = ~1260 chars, still well within 2048, so the buffer did
- * NOT need to grow again this time -- checked, not assumed; NOVO v12: the
- * pre line below adds ~51 chars of literal template text and zero new %g
- * slots (no numeric value in it), so the worst case barely moves --
- * ~1260 -> ~1311 chars, nowhere near 2048 -- checked, buffer size left
- * unchanged) -- sized with headroom rather than computed exactly. */
-#define TBOX_UA_STYLE_CSS_BUFFER_SIZE 8192
-
-/* NOVO v2: renders the UA stylesheet's CSS text from `config`. The
- * selectors and properties are FIXED, exactly as ARCHITECTURE.md's "CSS
- * Cascade / Orchestration -- folha de estilo user-agent" documents -- only
- * the em/px NUMBERS vary, via config's fields. This is a template filled in
- * with snprintf, not a serializer: `config` is the source of truth, this
- * text only exists because tbox_css_parse is how new declarations enter
- * the cascade. `config.font.base_px` is emitted as `body`'s own
- * `font-size` (see the template below) -- every heading's `em` scale
- * multiplies from whatever font-size the root element resolves to, so
- * this is the one declaration that makes a non-default `base_px` actually
- * take effect; without it the field would be silently inert (see
- * tbox_ua_style_font_config::base_px's doc comment in <tbox/context.h>).
- * Writes into `buffer` (`buffer_size` bytes) and returns true, or returns
- * false (without a well-defined `buffer` contents) if the rendered text
- * would not fit -- should never happen in practice since every field is a
- * bounded double and the template itself is small and fixed.
- *
- * DEVIATION from ARCHITECTURE.md's literal illustrative CSS text: the
- * two-value margin shorthand there is shown as e.g. "margin: 21px 0" (a
- * bare, unitless "0" for left/right) -- valid CSS2.1, but
- * src/style/tbox_style.c's tbox_style_parse_length (already-merged, out of
- * this task's scope) does not accept a unitless "0": it requires a "px"/
- * "%" suffix (or the literal keyword "auto") on every token, so a bare "0"
- * fails to parse, which fails the WHOLE shorthand, which silently falls
- * back to 0px on every side -- discovered empirically while testing this
- * task, not documented anywhere prior. This template emits "0px" instead,
- * which parses correctly under the existing Style layer and matches
- * ARCHITECTURE.md's intent (zero left/right margin) exactly -- only the
- * unit suffix differs from the doc's illustrative text. Flagged in this
- * task's final report as a documentation gap worth fixing (either teach
- * tbox_style_parse_length unitless zero, matching real CSS2.1, or amend
- * ARCHITECTURE.md's illustrative block to say "0px").
- *
- * NOVO v12 (Tarefa 3): deliberately NOT `static` (unlike every other
- * helper in this file) -- tests/context/test_context.c's `<pre>`
- * font-family test needs to resolve a node's REAL tbox_style against the
- * actual production UA CSS text this function emits, not a hand-copied
- * reimplementation of the template that could silently drift from it and
- * test nothing about tbox_context.c itself. Same "give an internal
- * function external linkage so a test can call it directly" precedent
- * tbox_context_hit_test_box already established (see
- * tbox_context_hit_test.h) -- declared with a plain forward declaration
- * directly in test_context.c instead of a shared header, since this
- * task's file scope is only tbox_context.c + test_context.c. No behavior
- * change: still a pure function of `config`/`buffer`/`buffer_size`. */
-bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_t buffer_size) {
-    int written = snprintf(buffer, buffer_size,
-        "body { display: block; margin: %gpx; font-size: %gpx; }\n"
-        "div { display: block; }\n"
-        "h1 { display: block; font-size: %gem; font-weight: bold; margin: %gpx 0px; }\n"
-        "h2 { display: block; font-size: %gem; font-weight: bold; margin: %gpx 0px; }\n"
-        "h3 { display: block; font-size: %gem; font-weight: bold; margin: %gpx 0px; }\n"
-        "h4 { display: block; font-size: %gem; font-weight: bold; margin: %gpx 0px; }\n"
-        "h5 { display: block; font-size: %gem; font-weight: bold; margin: %gpx 0px; }\n"
-        "h6 { display: block; font-size: %gem; font-weight: bold; margin: %gpx 0px; }\n"
-        "p { display: block; margin: %gpx 0px; }\n"
-        "ul, ol { display: block; margin: %gpx 0px; padding: 0px 0px 0px %gpx; }\n"
-        "ul { list-style-type: disc; }\n"
-        "ol { list-style-type: decimal; }\n"
-        "li { display: block; }\n"
-        "button { display: inline-block; border: 1px solid gray; padding: 4px; }\n"
-        "button:focus { border: 2px solid blue; }\n"
-        "input { display: inline-block; width: 240px; border: 1px solid gray; padding: 4px; }\n"
-        "input:focus { border: 2px solid blue; }\n"
-        "input[type=checkbox] { width: 12px; height: 12px; padding: 0px; background-color: white; }\n"
-        "input[type=color] { width: 48px; height: 24px; padding: 2px; background-color: white; }\n"
-        "input[type=date] { width: 120px; background-color: white; }\n"
-        "input[type=datetime-local] { width: 175px; background-color: white; }\n"
-        "input[type=time] { width: 92px; background-color: white; }\n"
-        "input[type=week] { width: 105px; background-color: white; }\n"
-        "input[type=file] { width: 240px; height: 24px; padding: 2px; background-color: white; }\n"
-        "input[type=hidden] { display: none; }\n"
-        "input[type=image] { width: auto; padding: 0px; border: 0px solid gray; }\n"
-        "input[type=month] { width: 100px; background-color: white; }\n"
-        "input[type=number] { width: 120px; background-color: white; }\n"
-        "input[type=radio] { width: 12px; height: 12px; padding: 0px; background-color: white; border-radius: 7px; }\n"
-        "input[type=range] { width: 160px; height: 20px; padding: 0px; border: 0px solid gray; }\n"
-        "input[type=reset] { background-color: white; }\n"
-        "input[type=search] { background-color: white; }\n"
-        "input[type=submit] { background-color: white; }\n"
-        "select { display: inline-block; width: 240px; border: 1px solid gray; padding: 4px; background-color: white; }\n"
-        "select:focus { border: 2px solid blue; }\n"
-        "textarea { display: inline-block; border: 1px solid gray; padding: 4px; background-color: white; }\n"
-        "textarea:focus { border: 2px solid blue; }\n"
-        "hr { display: block; height: %gpx; background-color: gray; margin: %gpx 0px; }\n"
-        "pre { display: block; font-family: monospace; white-space: pre; }\n"
-        "b, strong { display: inline; font-weight: bold; }\n"
-        "i, em { display: inline; font-style: italic; }\n"
-        "span { display: inline; }\n"
-        "a { display: inline; color: blue; text-decoration: underline; }\n"
-        "img { display: inline; }\n"
-        "small { display: inline; font-size: 80%%; }\n"
-        "mark { display: inline; background-color: yellow; }\n"
-        "del { display: inline; text-decoration: line-through; }\n"
-        "ins { display: inline; text-decoration: underline; }\n"
-        "sub { display: inline; font-size: 75%%; vertical-align: sub; }\n"
-        "sup { display: inline; font-size: 75%%; vertical-align: super; }\n"
-        "table, tr, thead, tbody, tfoot, caption { display: block; }\n"
-        "caption { text-align: center; }\n"
-        "th { font-weight: bold; text-align: center; }\n"
-        "td, th { padding: 4px; }\n",
-        config.margin.body_px, config.font.base_px,
-        config.font.heading_em[0], config.margin.heading_px[0],
-        config.font.heading_em[1], config.margin.heading_px[1],
-        config.font.heading_em[2], config.margin.heading_px[2],
-        config.font.heading_em[3], config.margin.heading_px[3],
-        config.font.heading_em[4], config.margin.heading_px[4],
-        config.font.heading_em[5], config.margin.heading_px[5],
-        config.margin.paragraph_px,
-        config.margin.list_px, config.list_padding_left_px,
-        config.hr_height_px, config.margin.hr_px);
-
-    return written >= 0 && (size_t)written < buffer_size;
-}
 
 /* NOVO v9: pre-order traversal of the WHOLE document tree (starting at
  * tbox_html_document_root -- the real root, which may have several
@@ -2159,15 +2002,7 @@ tbox_context *tbox_context_open_with_config(const char *html, size_t html_length
         return NULL;
     }
 
-    char ua_css_text[TBOX_UA_STYLE_CSS_BUFFER_SIZE];
-    if (!tbox_ua_style_generate_css(config, ua_css_text, sizeof(ua_css_text))) {
-        tbox_css_stylesheet_destroy(stylesheet);
-        tbox_css_stylesheet_destroy(internal_stylesheet);
-        tbox_html_document_destroy(document);
-        return NULL;
-    }
-
-    tbox_css_stylesheet *ua_stylesheet = tbox_css_parse(ua_css_text, strlen(ua_css_text));
+    tbox_css_stylesheet *ua_stylesheet = tbox_ua_stylesheet_create(config);
     if (ua_stylesheet == NULL) {
         tbox_css_stylesheet_destroy(stylesheet);
         tbox_css_stylesheet_destroy(internal_stylesheet);

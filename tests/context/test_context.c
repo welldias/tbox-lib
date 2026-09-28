@@ -1,4 +1,5 @@
 #include <tbox/context.h>
+#include <tbox/css_selector.h>
 #include <tbox/image.h>
 #include <tbox/output.h>
 
@@ -8,19 +9,10 @@
 #include <unistd.h>
 
 #include "context/tbox_context_hit_test.h"
+#include "context/tbox_ua_style.h"
 #include "output/tbox_key_repeat.h"
 #include "output/tbox_pointer_click.h"
 #include "test_support.h"
-
-/* NOVO v12 (Tarefa 3): forward declaration for tbox_ua_style_generate_css,
- * deliberately given external linkage in tbox_context.c (see that
- * function's doc comment) so this file can drive it directly with the
- * REAL production tbox_ua_style_config -- not declared in <tbox/context.h>
- * (it stays an implementation detail, same reasoning
- * tbox_context_hit_test.h documents for tbox_context_hit_test_box, just
- * without a shared header since this task's file scope is only
- * tbox_context.c + this file). */
-bool tbox_ua_style_generate_css(tbox_ua_style_config config, char *buffer, size_t buffer_size);
 
 /* This is the first true end-to-end integration test in the codebase: it
  * drives the whole compute pipeline (parse -> cascade+style -> layout ->
@@ -322,12 +314,8 @@ static bool toggle_class_handler(tbox_context *ctx, tbox_html_node *node, void *
     return true;
 }
 
-/* NOVO v13 (Tarefa 5): shared setup for the 8 new UA-stylesheet tests below
- * (<i>/<em>/<small>/<mark>/<del>/<ins>/<sub>/<sup>) -- same two-call resolve
- * pattern test 37 below already established for <pre>/font-family: generate
- * the REAL production UA CSS via tbox_ua_style_generate_css, parse it, and
- * cascade+resolve the single top-level element against it with no author
- * CSS and no parent style. Deliberately has NO TBOX_TEST_ASSERT/
+/* Shared setup for UA stylesheet tests: build the production typed UA sheet,
+ * then cascade and resolve the single top-level element. Has NO TBOX_TEST_ASSERT/
  * TBOX_TEST_ASSERT_MSG calls of its own -- those macros increment a local
  * variable literally named `failures` (see test_support.h), so they only
  * work inlined directly in tbox_test_context_run itself, not in a helper it
@@ -336,12 +324,8 @@ static bool toggle_class_handler(tbox_context *ctx, tbox_html_node *node, void *
  * top-level element, e.g. "<i>x</i>" -- the document root's first child,
  * same assumption test 37 makes explicit. Returns false (leaving
  * `*out_style` untouched) if any setup step fails. */
-static bool resolve_first_child_style(const char *html, tbox_style *out_style) {
-    char ua_css_text[4096];
-    if (!tbox_ua_style_generate_css(tbox_ua_style_config_default(), ua_css_text, sizeof(ua_css_text))) {
-        return false;
-    }
-
+static bool resolve_first_child_style_with_config(const char *html, tbox_ua_style_config config,
+                                                  tbox_style *out_style) {
     tbox_html_document *doc = tbox_html_parse(html, strlen(html));
     if (doc == NULL) {
         return false;
@@ -353,7 +337,7 @@ static bool resolve_first_child_style(const char *html, tbox_style *out_style) {
         return false;
     }
 
-    tbox_css_stylesheet *ua_sheet = tbox_css_parse(ua_css_text, strlen(ua_css_text));
+    tbox_css_stylesheet *ua_sheet = tbox_ua_stylesheet_create(config);
     if (ua_sheet == NULL) {
         tbox_html_document_destroy(doc);
         return false;
@@ -367,6 +351,10 @@ static bool resolve_first_child_style(const char *html, tbox_style *out_style) {
     tbox_html_document_destroy(doc);
 
     return true;
+}
+
+static bool resolve_first_child_style(const char *html, tbox_style *out_style) {
+    return resolve_first_child_style_with_config(html, tbox_ua_style_config_default(), out_style);
 }
 
 int tbox_test_context_run(void) {
@@ -822,7 +810,7 @@ int tbox_test_context_run(void) {
     /* 16: tbox_context_open_with_config with a custom
      * config.font.heading_em[0] resolves a measurably LARGER <h1> than the
      * default config -- proves the config struct's fields genuinely drive
-     * the generated UA stylesheet text, not just tbox_ua_style_config_default()'s
+     * the built UA stylesheet, not just tbox_ua_style_config_default()'s
      * own baked-in values. */
     {
         tbox_ua_style_config default_config = tbox_ua_style_config_default();
@@ -1249,13 +1237,8 @@ int tbox_test_context_run(void) {
         }
     }
 
-    /* 29: regression -- a <p>/<h1> in isolation (no <ul>/<ol> anywhere)
-     * still resolve to exactly the same UA margin as before the v8
-     * ul/ol/li template lines and TBOX_UA_STYLE_CSS_BUFFER_SIZE bump were
-     * added -- proves growing the template/buffer didn't perturb the
-     * elements that already existed. Same assertions test 17 above already
-     * makes for <p> alone; repeated here (plus <h1>) explicitly as a
-     * regression check tied to this task's template/buffer change. */
+    /* 29: regression -- adding list rules must not change the UA margins
+     * of isolated <p> and <h1> elements. */
     {
         tbox_ua_style_config default_config = tbox_ua_style_config_default();
 
@@ -1453,11 +1436,8 @@ int tbox_test_context_run(void) {
         }
     }
 
-    /* 36: regression -- a <p>/<h1> in isolation (no <hr> anywhere) still
-     * resolve to exactly the same UA margin as before the v11 hr template
-     * line and TBOX_UA_STYLE_CSS_BUFFER_SIZE recheck were added -- same
-     * shape of check as test 29's v8 regression, tied to this task's
-     * template change instead. */
+    /* 36: regression -- adding the <hr> rule must not change the UA
+     * margins of isolated <p> and <h1> elements. */
     {
         tbox_ua_style_config default_config = tbox_ua_style_config_default();
 
@@ -1482,47 +1462,79 @@ int tbox_test_context_run(void) {
         }
     }
 
-    /* 37: NOVO v12 (Tarefa 3) -- a <pre> with NO author CSS at all resolves
-     * font-family "monospace" purely from the UA stylesheet ("pre {
-     * display: block; font-family: monospace; }", added to
-     * tbox_ua_style_generate_css's template this task). Deliberately does
-     * NOT go through tbox_context_open/run_frame -- tbox_context is opaque
-     * (no public accessor for its internal tbox_style_table) and the
-     * font-family CHOSEN never affects layout geometry, so there is no
-     * black-box way to observe it through the display list/hit-test
-     * surface every other UA-stylesheet test above uses. Instead, this
-     * calls the REAL tbox_ua_style_generate_css directly (see the forward
-     * declaration above) to get the actual production UA CSS text, parses
-     * it, and resolves the <pre> node's tbox_style against it the same
-     * two-call way tests/style/test_style.c's resolve_node() does -- this
-     * is what actually proves the orchestration wiring (not a hand-copied
-     * "pre { font-family: monospace; }" string, which would test nothing
-     * about tbox_context.c). */
+    /* 37: <pre> gets monospace from the production UA stylesheet. */
     {
-        char ua_css_text[4096];
-        bool generated = tbox_ua_style_generate_css(tbox_ua_style_config_default(), ua_css_text, sizeof(ua_css_text));
-        TBOX_TEST_ASSERT_MSG(generated, "tbox_ua_style_generate_css must succeed with the default config");
-        if (generated) {
-            tbox_html_document *doc = tbox_html_parse("<pre>x</pre>", strlen("<pre>x</pre>"));
-            TBOX_TEST_ASSERT_MSG(doc != NULL, "tbox_html_parse must succeed for <pre>x</pre>");
-            if (doc != NULL) {
-                const tbox_html_node *pre = tbox_html_document_root(doc)->first_child;
-                TBOX_TEST_ASSERT_MSG(pre != NULL && string_view_equal_cstr(pre->element.tag_name, "pre"), "test setup assumption: the document root's first child is the <pre> element");
-                if (pre != NULL) {
-                    tbox_css_stylesheet *ua_sheet = tbox_css_parse(ua_css_text, strlen(ua_css_text));
-                    TBOX_TEST_ASSERT_MSG(ua_sheet != NULL, "tbox_css_parse must succeed for the generated UA CSS text");
-                    if (ua_sheet != NULL) {
-                        tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(ua_sheet, pre);
-                        tbox_style style                 = tbox_style_resolve(pre, NULL, &computed);
-                        TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "monospace") == 0, "a <pre> with no author CSS must resolve font-family \"monospace\" from the UA stylesheet alone");
+        tbox_style style;
+        bool resolved = resolve_first_child_style("<pre>x</pre>", &style);
+        TBOX_TEST_ASSERT_MSG(resolved, "resolve_first_child_style must succeed for <pre>");
+        if (resolved) TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "monospace") == 0,
+            "a <pre> with no author CSS must resolve monospace from the UA stylesheet");
+    }
 
-                        tbox_css_computed_style_destroy(&computed);
-                        tbox_css_stylesheet_destroy(ua_sheet);
-                    }
-                }
+    /* Attribute and focus selectors must still participate in the cascade. */
+    {
+        tbox_html_document *doc = tbox_html_parse("<input type=checkbox>", strlen("<input type=checkbox>"));
+        tbox_css_stylesheet *ua_sheet = tbox_ua_stylesheet_create(tbox_ua_style_config_default());
+        tbox_css_stylesheet *author_sheet = tbox_css_parse("input { width: 30px; }", strlen("input { width: 30px; }"));
+        TBOX_TEST_ASSERT_MSG(doc != NULL && ua_sheet != NULL && author_sheet != NULL,
+            "UA selector test setup must succeed");
+        if (doc != NULL && ua_sheet != NULL && author_sheet != NULL) {
+            const tbox_html_node *input = tbox_html_document_root(doc)->first_child;
+            tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(ua_sheet, input);
+            const tbox_css_resolved_declaration *width = tbox_css_computed_style_find(
+                &computed, tbox_string_view_make("width", 5));
+            TBOX_TEST_ASSERT_MSG(width != NULL && string_view_equal_cstr(width->value, "12px"),
+                "checkbox width must override the generic UA input width");
+            tbox_css_computed_style_destroy(&computed);
 
-                tbox_html_document_destroy(doc);
-            }
+            tbox_css_selector_set_focus_context(input);
+            computed = tbox_css_cascade_resolve_stylesheet(ua_sheet, input);
+            const tbox_css_resolved_declaration *border = tbox_css_computed_style_find(
+                &computed, tbox_string_view_make("border", 6));
+            TBOX_TEST_ASSERT_MSG(border != NULL && string_view_equal_cstr(border->value, "2px solid #0000ff"),
+                "focused input border must override the generic UA border");
+            tbox_css_computed_style_destroy(&computed);
+            tbox_css_selector_set_focus_context(NULL);
+
+            tbox_css_cascade_source sources[] = {
+                { ua_sheet, TBOX_CSS_ORIGIN_USER_AGENT },
+                { author_sheet, TBOX_CSS_ORIGIN_AUTHOR },
+            };
+            computed = tbox_css_cascade_resolve(sources, 2, input);
+            width = tbox_css_computed_style_find(&computed, tbox_string_view_make("width", 5));
+            TBOX_TEST_ASSERT_MSG(width != NULL && string_view_equal_cstr(width->value, "30px"),
+                "author width must override the UA attribute selector");
+            tbox_css_computed_style_destroy(&computed);
+        }
+        tbox_css_stylesheet_destroy(author_sheet);
+        tbox_css_stylesheet_destroy(ua_sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Custom values reach the rules for headings, lists and horizontal rules. */
+    {
+        tbox_ua_style_config custom = tbox_ua_style_config_default();
+        custom.font.heading_em[5] = 1.25;
+        custom.margin.heading_px[5] = 37.0;
+        custom.list_padding_left_px = 53.0;
+        custom.hr_height_px = 5.0;
+        custom.margin.hr_px = 11.0;
+        tbox_style h6_style, ul_style, hr_style;
+        bool h6_ok = resolve_first_child_style_with_config("<h6>x</h6>", custom, &h6_style);
+        bool ul_ok = resolve_first_child_style_with_config("<ul></ul>", custom, &ul_style);
+        bool hr_ok = resolve_first_child_style_with_config("<hr>", custom, &hr_style);
+        TBOX_TEST_ASSERT_MSG(h6_ok && ul_ok && hr_ok, "custom UA styles must resolve");
+        if (h6_ok) {
+            TBOX_TEST_ASSERT_MSG(h6_style.font_size == 20.0 && h6_style.margin[0].value == 37.0,
+                "h6 must use configured font scale and margin");
+        }
+        if (ul_ok) {
+            TBOX_TEST_ASSERT_MSG(ul_style.padding[3].value == 53.0,
+                "ul must use configured left padding");
+        }
+        if (hr_ok) {
+            TBOX_TEST_ASSERT_MSG(hr_style.height.value == 5.0 && hr_style.margin[0].value == 11.0,
+                "hr must use configured height and margin");
         }
     }
 
