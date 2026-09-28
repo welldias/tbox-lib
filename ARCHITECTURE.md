@@ -75,6 +75,26 @@ tomadas durante a implementação):
 | Orchestration | `context.h` | pipeline de cômputo ponta-a-ponta + hit-test | `tbox_context` |
 | Application | `app.h` | API pública: abrir uma janela a partir de HTML+CSS | `tbox_app_open` |
 
+### Organização do contexto
+
+`src/context/tbox_context.c` abre e fecha o contexto e coordena a execução de
+cada frame. O estado compartilhado e as declarações entre módulos ficam em
+`src/context/tbox_context_internal.h`; a API pública continua em
+`include/tbox/context.h`.
+
+| Arquivo em `src/context/` | Responsabilidade |
+|---|---|
+| `tbox_context_common.c`, `tbox_context_hit_test.c` | utilitários compartilhados e localização de elementos na árvore de layout |
+| `tbox_context_scroll.c`, `tbox_context_focus.c`, `tbox_context_events.c` | rolagem, foco e despacho de eventos |
+| `tbox_context_input.c`, `tbox_context_range.c`, `tbox_context_text.c`, `tbox_context_textarea.c` | controles de entrada e edição de texto |
+| `tbox_context_select.c`, `tbox_context_color.c`, `tbox_context_calendar.c`, `tbox_context_file.c` | estado, interação e pintura dos controles com menus próprios |
+| `tbox_context_forms.c` | valores iniciais, envio e redefinição de formulários |
+
+As funções de geometria e pintura próprias de cada controle ficam no módulo
+correspondente. O contexto chama essas funções durante o frame e o despacho
+de eventos. Os arquivos C são incluídos no build pelo glob de
+`src/CMakeLists.txt`.
+
 Ponto de atenção: `tbox_css_computed_style` hoje é **texto puro** (pares
 `property`/`value` como `tbox_string_view`, sem parsing de unidades, cores já
 resolvidas à parte só existem como utilitário em `css_cascade.h`). Layout não

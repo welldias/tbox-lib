@@ -13,7 +13,7 @@
  * src/css_parser/tbox_css_tokenizer.h, included directly by
  * tests/css_parser/test_tokenizer.c).
  *
- * See tbox_context.c's doc comment on the function itself (and
+ * See tbox_context_hit_test.c's doc comment on the function itself (and
  * ARCHITECTURE.md's "Orchestration -- correção de hit-test pra caixas fora
  * de fluxo") for what it actually does; this header only exists to give it
  * external linkage for that reason. Not declared in <tbox/context.h> --
