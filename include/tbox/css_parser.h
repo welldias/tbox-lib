@@ -19,7 +19,7 @@ typedef enum tbox_css_simple_selector_kind {
     TBOX_CSS_SIMPLE_SELECTOR_UNIVERSAL, /* '*'; name is empty */
     TBOX_CSS_SIMPLE_SELECTOR_ID,        /* '#' name; name preserved verbatim (case-sensitive) */
     TBOX_CSS_SIMPLE_SELECTOR_CLASS,     /* '.' name; name preserved verbatim (case-sensitive) */
-    TBOX_CSS_SIMPLE_SELECTOR_ATTRIBUTE, /* '[' name [ operator value ] ']' */
+    TBOX_CSS_SIMPLE_SELECTOR_ATTRIBUTE, /* '[' name [ operator value [i] ] ']' */
     TBOX_CSS_SIMPLE_SELECTOR_PSEUDO,    /* ':' name [ '(' argument ')' ]. CSS2.1 has no '::'
                                           * syntax, so pseudo-classes (:hover, :first-child) and
                                           * pseudo-elements (:before, :after) are lexically
@@ -30,7 +30,10 @@ typedef enum tbox_css_attribute_operator {
     TBOX_CSS_ATTR_EXISTS,    /* [attr] */
     TBOX_CSS_ATTR_EQUALS,    /* [attr=val] */
     TBOX_CSS_ATTR_INCLUDES,  /* [attr~=val]  (val is one of a space-separated list) */
-    TBOX_CSS_ATTR_DASHMATCH, /* [attr|=val]  (val, or val followed by '-', is a case-sensitive prefix) */
+    TBOX_CSS_ATTR_DASHMATCH, /* [attr|=val]  (val, or val followed by '-'; case-sensitive unless `i`) */
+    TBOX_CSS_ATTR_PREFIX,    /* [attr^=val] */
+    TBOX_CSS_ATTR_SUFFIX,    /* [attr$=val] */
+    TBOX_CSS_ATTR_SUBSTRING, /* [attr*=val] */
 } tbox_css_attribute_operator;
 
 /* How a simple selector attaches to the one immediately before it within the
@@ -71,7 +74,8 @@ typedef struct tbox_css_simple_selector {
     tbox_string_view name;
 
     tbox_css_attribute_operator attribute_operator; /* meaningful for ATTRIBUTE only */
-    tbox_string_view attribute_value;                /* ATTRIBUTE + EQUALS/INCLUDES/DASHMATCH only; empty for EXISTS */
+    tbox_string_view attribute_value;                /* ATTRIBUTE with value operator; empty for EXISTS */
+    bool attribute_case_insensitive;                  /* ATTRIBUTE value modifier `i` (ASCII only) */
     tbox_string_view pseudo_argument;                /* PSEUDO functional form only (":lang(en)" -> "en"); empty otherwise */
     struct tbox_css_simple_selector *negated_selector; /* :not() argument: one type, universal, ID, class, or attribute selector */
 } tbox_css_simple_selector;

@@ -126,6 +126,7 @@ typedef enum tbox_style_border_style {
     TBOX_STYLE_BORDER_STYLE_DASHED,
     TBOX_STYLE_BORDER_STYLE_DOTTED,
     TBOX_STYLE_BORDER_STYLE_DOUBLE,
+    TBOX_STYLE_BORDER_STYLE_WAVY, /* text-decoration only */
 } tbox_style_border_style;
 
 /* the visual-offset axis of `position: relative`.
@@ -192,6 +193,7 @@ typedef enum tbox_style_list_style_type {
     TBOX_STYLE_LIST_STYLE_CIRCLE,
     TBOX_STYLE_LIST_STYLE_SQUARE,
     TBOX_STYLE_LIST_STYLE_DECIMAL,
+    TBOX_STYLE_LIST_STYLE_DECIMAL_LEADING_ZERO,
     TBOX_STYLE_LIST_STYLE_LOWER_ALPHA,
     TBOX_STYLE_LIST_STYLE_UPPER_ALPHA,
     TBOX_STYLE_LIST_STYLE_LOWER_ROMAN,
@@ -238,13 +240,14 @@ typedef struct tbox_style {
     tbox_style_text_overflow text_overflow;       /* clip or ellipsis; not inheritable */
     tbox_style_white_space white_space;           /* inheritable; initial AUTO */
     bool overflow_wrap_break_word;                /* inheritable; normal by default */
+    bool overflow_wrap_anywhere;                  /* inheritable; emergency breaks count for min-content */
     bool word_break_all;                          /* inheritable; `word-break: break-all` */
     tbox_style_text_transform text_transform;     /* inheritable; initial NONE */
     tbox_style_list_style_type list_style_type;   /* inheritable */
     bool pointer_events_none;                     /* inheritable; auto by default */
-    tbox_style_length width, height;              /* initial: AUTO */
-    tbox_style_length min_width, max_width;       /* AUTO means no constraint; em resolves to px */
-    tbox_style_length min_height, max_height;     /* AUTO means no constraint; em resolves to px */
+    tbox_style_length width, height;              /* also inline-size/block-size in horizontal LTR; initial: AUTO */
+    tbox_style_length min_width, max_width;       /* also min/max-inline-size; AUTO means no constraint */
+    tbox_style_length min_height, max_height;     /* also min/max-block-size; AUTO means no constraint */
     tbox_style_length margin[4];                  /* top right bottom left; initial: 0px each */
     tbox_style_length padding[4];                 /* top right bottom left; initial: 0px each */
     tbox_style_length text_indent;                /* inheritable; first line, px or %; initial 0px */
@@ -316,6 +319,7 @@ typedef struct tbox_style {
     /* Inheritable. AUTO keeps the default underline position; PX is the
      * distance from the baseline to the underline's top edge. */
     tbox_style_length text_underline_offset;
+    bool text_underline_position_under; /* inherited; auto is false */
     /* `vertical-align`. NOT inheritable; initial value BASELINE. */
     tbox_style_vertical_align vertical_align;
     /* Only meaningful for VERTICAL_ALIGN_LENGTH: PX, or PERCENT of the
@@ -440,7 +444,7 @@ typedef struct tbox_style {
  * `pre-wrap`, `pre-line`; inheritable -- the text box's own value decides
  * whether its lines wrap, each text node's value how its spaces and
  * newlines are kept),
- * `overflow-wrap` (`normal`/`break-word`, inheritable), `pointer-events`
+ * `overflow-wrap` (`normal`/`break-word`/`anywhere`, inheritable), `pointer-events`
  * (`auto`/`none`, inheritable, applies to pointer hit testing),
  * `word-spacing` (normal or px/em, inheritable), `text-indent` (px/em/%,
  * inheritable), `outline` (uniform width/solid/color) and its width/style/
@@ -460,7 +464,8 @@ typedef struct tbox_style {
  * `hidden`) and `scroll` (as `auto`), `border-style: hidden` (as `none`),
  * the `text-decoration` shorthand with line/color/thickness plus the
  * `text-decoration-line` longhand, `text-underline-offset` (px/em/%,
- * inheritable), `vertical-align: text-top|text-bottom|<length>|<percent>`,
+ * inheritable), `text-underline-position: auto|under` (inheritable),
+ * `border-block`/`border-inline` axis shorthands, `vertical-align: text-top|text-bottom|<length>|<percent>`,
  * inheritable `accent-color`/`caret-color`, `list-style-type` and the
  * `list-style` shorthand's type keyword (`disc`, `circle`, `square`,
  * `decimal`, `lower-alpha`/`-latin`, `upper-alpha`/`-latin`, `lower-roman`,

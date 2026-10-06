@@ -96,7 +96,17 @@ static void print_simple_selector(const tbox_css_simple_selector *item) {
         case TBOX_CSS_ATTR_DASHMATCH:
             printf("|=%.*s", (int)item->attribute_value.size, item->attribute_value.data);
             break;
+        case TBOX_CSS_ATTR_PREFIX:
+            printf("^=%.*s", (int)item->attribute_value.size, item->attribute_value.data);
+            break;
+        case TBOX_CSS_ATTR_SUFFIX:
+            printf("$=%.*s", (int)item->attribute_value.size, item->attribute_value.data);
+            break;
+        case TBOX_CSS_ATTR_SUBSTRING:
+            printf("*=%.*s", (int)item->attribute_value.size, item->attribute_value.data);
+            break;
         }
+        if (item->attribute_case_insensitive) printf(" i");
         printf("]");
         break;
     case TBOX_CSS_SIMPLE_SELECTOR_PSEUDO:

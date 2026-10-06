@@ -207,6 +207,7 @@ static tbox_css_simple_selector *tbox_css_parser_push_simple_selector(tbox_vecto
     item->name                     = name;
     item->attribute_operator       = TBOX_CSS_ATTR_EXISTS;
     item->attribute_value          = tbox_string_view_make(NULL, 0);
+    item->attribute_case_insensitive = false;
     item->pseudo_argument          = tbox_string_view_make(NULL, 0);
     item->negated_selector         = NULL;
     return item;
@@ -243,9 +244,18 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
         }
         op = TBOX_CSS_ATTR_DASHMATCH;
         tbox_css_parser_advance(parser);
+    } else if (parser->current.type == TBOX_CSS_TOKEN_STAR ||
+               (parser->current.type == TBOX_CSS_TOKEN_DELIM && parser->current.text.size == 1 &&
+                (parser->current.text.data[0] == '^' || parser->current.text.data[0] == '$'))) {
+        char marker = parser->current.type == TBOX_CSS_TOKEN_STAR ? '*' : parser->current.text.data[0];
+        tbox_css_parser_advance(parser);
+        if (parser->current.type != TBOX_CSS_TOKEN_EQUALS) return false;
+        op = marker == '^' ? TBOX_CSS_ATTR_PREFIX : marker == '$' ? TBOX_CSS_ATTR_SUFFIX : TBOX_CSS_ATTR_SUBSTRING;
+        tbox_css_parser_advance(parser);
     }
 
     tbox_string_view value = tbox_string_view_make(NULL, 0);
+    bool case_insensitive = false;
     if (op != TBOX_CSS_ATTR_EXISTS) {
         tbox_css_parser_skip_s(parser);
         if (parser->current.type != TBOX_CSS_TOKEN_IDENT && parser->current.type != TBOX_CSS_TOKEN_STRING) {
@@ -254,6 +264,12 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
         value = tbox_css_parser_copy(parser, parser->current.text);
         tbox_css_parser_advance(parser);
         tbox_css_parser_skip_s(parser);
+        if (parser->current.type == TBOX_CSS_TOKEN_IDENT &&
+            tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("i"))) {
+            case_insensitive = true;
+            tbox_css_parser_advance(parser);
+            tbox_css_parser_skip_s(parser);
+        }
     }
 
     if (parser->current.type != TBOX_CSS_TOKEN_RBRACKET) {
@@ -264,6 +280,7 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
     tbox_css_simple_selector *item = tbox_css_parser_push_simple_selector(out, TBOX_CSS_SIMPLE_SELECTOR_ATTRIBUTE, combinator, name);
     item->attribute_operator       = op;
     item->attribute_value          = value;
+    item->attribute_case_insensitive = case_insensitive;
     return true;
 }
 

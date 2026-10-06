@@ -7,7 +7,8 @@
  * What a box needs horizontally when laid out without a width to fill:
  * `max` is its widest line when nothing wraps except at forced breaks,
  * `min` its widest unbreakable piece (a word, an image, a nested fixed or
- * min-content width). Used for inline-block shrink-to-fit and flex base
+ * min-content width). `overflow-wrap: anywhere` can reduce that piece to
+ * its widest codepoint. Used for inline-block shrink-to-fit and flex base
  * sizes. Approximations: percentages (widths, padding, margins, min/max)
  * count as 0, `word-break: break-all` still measures whole words, and a
  * table sums its widest row's cells. */
@@ -31,8 +32,22 @@ tbox_layout_intrinsic tbox_layout_measure_words(const tbox_layout_word *words, s
         }
         double space     = line_start ? 0.0 : word->space_width;
         double min_width = word->has_min_width ? word->min_width : word->width;
+        bool anywhere = !no_wrap && word->style != NULL && word->style->overflow_wrap_anywhere &&
+                        !word->hard_break && word->image == NULL && word->atomic == NULL &&
+                        word->face != NULL && word->text.size > 0;
+        if (anywhere) {
+            min_width = 0.0;
+            for (size_t start = 0; start < word->text.size;) {
+                size_t end = start + 1;
+                while (end < word->text.size && ((unsigned char)word->text.data[end] & 0xc0) == 0x80) end++;
+                double width = tbox_font_measure_text_spaced(word->face,
+                    tbox_string_view_make(word->text.data + start, end - start), word->style->letter_spacing);
+                if (width > min_width) min_width = width;
+                start = end;
+            }
+        }
         line += space + word->width;
-        if (no_wrap || (!line_start && word->no_space_before))
+        if (no_wrap || (!anywhere && !line_start && word->no_space_before))
             piece += space + min_width;
         else
             piece = min_width;

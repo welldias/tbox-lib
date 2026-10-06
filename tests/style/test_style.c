@@ -1758,6 +1758,11 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(style.object_fit == TBOX_STYLE_OBJECT_FIT_CONTAIN);
         tbox_css_stylesheet_destroy(sheet);
 
+        sheet = parse_css_cstr("div { text-decoration: underline wavy red 2px; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.text_decoration_lines == 1u && style.text_decoration_style == TBOX_STYLE_BORDER_STYLE_WAVY);
+        tbox_css_stylesheet_destroy(sheet);
+
         sheet = parse_css_cstr("div { object-fit: none; }");
         style = resolve_node(sheet, div, NULL);
         TBOX_TEST_ASSERT(style.object_fit == TBOX_STYLE_OBJECT_FIT_NONE);
@@ -1829,6 +1834,50 @@ int tbox_test_style_run(void) {
         sheet = parse_css_cstr("img { image-rendering: crisp-edges; }");
         child = resolve_node(sheet, img, &parent);
         TBOX_TEST_ASSERT(child.image_rendering_pixelated);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* anywhere inherits, enables emergency wrapping, and can be reset
+     * independently to break-word or normal. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { overflow-wrap: anywhere; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.overflow_wrap_break_word && parent.overflow_wrap_anywhere);
+        TBOX_TEST_ASSERT(child.overflow_wrap_break_word && child.overflow_wrap_anywhere);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { overflow-wrap: break-word; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.overflow_wrap_break_word && !child.overflow_wrap_anywhere);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Logical dimensions compete with physical names in normal cascade order. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { width: 40px; inline-size: 90px; height: 20px; block-size: 35px;"
+            " min-width: 10px; min-inline-size: 30px; max-width: 150px; max-inline-size: 110px;"
+            " min-height: 5px; min-block-size: 15px; max-height: 70px; max-block-size: 50px;"
+            " border-block: 2px solid red; border-inline: 3px dashed blue; border-top: 4px solid green;"
+            " text-underline-position: under; }"
+            "p { inline-size: 60px; width: 45px; border-left: 1px dotted red; text-underline-position: auto; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.width.value == 90.0 && parent.height.value == 35.0);
+        TBOX_TEST_ASSERT(parent.min_width.value == 30.0 && parent.max_width.value == 110.0);
+        TBOX_TEST_ASSERT(parent.min_height.value == 15.0 && parent.max_height.value == 50.0);
+        TBOX_TEST_ASSERT(parent.border_widths[0] == 4.0 && parent.border_widths[2] == 2.0);
+        TBOX_TEST_ASSERT(parent.border_widths[1] == 3.0 && parent.border_widths[3] == 3.0);
+        TBOX_TEST_ASSERT(parent.text_underline_position_under && !child.text_underline_position_under);
+        TBOX_TEST_ASSERT(child.width.value == 45.0 && child.border_widths[3] == 1.0);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }

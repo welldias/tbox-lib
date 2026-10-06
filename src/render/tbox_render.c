@@ -547,12 +547,19 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 decoration_lines = run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE ? 1u : run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH ? 2u : 4u;
             if (decoration_lines != 0) {
                 double baseline         = run->rect.y + tbox_font_face_ascent(run->font);
-                double underline_offset = run->style->text_underline_offset.kind == TBOX_STYLE_LENGTH_PX ? run->style->text_underline_offset.value : 2.0;
+                double underline_offset = run->style->text_underline_offset.kind == TBOX_STYLE_LENGTH_PX ? run->style->text_underline_offset.value :
+                    run->style->text_underline_position_under ? tbox_font_face_line_height(run->font) - tbox_font_face_ascent(run->font) + 1.0 : 2.0;
                 for (unsigned int bit = 1u; bit <= 4u; bit <<= 1u) {
                     if (!(decoration_lines & bit)) continue;
                     double line_y = bit == 1u ? baseline + underline_offset : bit == 4u ? baseline - tbox_font_face_ascent(run->font) : baseline - tbox_font_face_ascent(run->font) * 0.3;
                     double thickness = run->style->text_decoration_thickness;
-                    if (run->style->text_decoration_style == TBOX_STYLE_BORDER_STYLE_DOUBLE) {
+                    if (run->style->text_decoration_style == TBOX_STYLE_BORDER_STYLE_WAVY) {
+                        tbox_paint_op *wave = (tbox_paint_op *)tbox_vector_push(items);
+                        *wave = (tbox_paint_op){ 0 };
+                        wave->kind = TBOX_PAINT_WAVY_LINE;
+                        wave->rect = (tbox_rect){ run->rect.x, line_y, run->rect.width, thickness };
+                        wave->color = run->style->text_decoration_color;
+                    } else if (run->style->text_decoration_style == TBOX_STYLE_BORDER_STYLE_DOUBLE) {
                         tbox_render_push_fill_rect(items, (tbox_rect){ run->rect.x, line_y, run->rect.width, thickness }, run->style->text_decoration_color);
                         tbox_render_push_fill_rect(items, (tbox_rect){ run->rect.x, line_y + 2.0 * thickness, run->rect.width, thickness }, run->style->text_decoration_color);
                     } else {

@@ -189,6 +189,28 @@ controls by the presence of `required`. See `tests/assets/050.html`.
 regional subtags such as `pt-BR` for `:lang(pt)`. See `tests/assets/051.html`.
 `image-rendering: crisp-edges` uses the same nearest-neighbor enlargement as
 `pixelated`. See `tests/assets/052.html`.
+`:focus-within` matches a focused element and its ancestors, and `:link`/
+`:any-link` match links with `href` (all links are unvisited here). See
+`tests/assets/053.html` and `tests/assets/054.html`.
+`list-style-type: decimal-leading-zero` formats 1–9 as 01–09; see
+`tests/assets/055.html`. Attribute selectors accept `^=`, `$=`, and `*=`
+for prefix, suffix, and substring matching; see `tests/assets/056.html`.
+`text-decoration-style: wavy` paints a wave for decoration lines; see
+`tests/assets/057.html`. `overflow-wrap: anywhere` uses emergency breaks
+and lets those breaks reduce min-content width, unlike `break-word`; see
+`tests/assets/058.html`.
+`inline-size` and `block-size` map to width and height in the current
+horizontal left-to-right writing mode, including normal cascade priority;
+see `tests/assets/059.html`. The four logical min/max size properties map
+to their physical limits; see `tests/assets/060.html`.
+`border-block` applies to top and bottom, while `border-inline` applies to
+left and right; individual sides can override them. See `tests/assets/061.html`.
+`text-underline-position: under` places the underline below the font's
+descender unless `text-underline-offset` is explicit; see
+`tests/assets/062.html`. `:hover` also matches ancestors of the hovered
+element; see `tests/assets/063.html`. Attribute selectors accept the ASCII
+case-insensitive `i` modifier for value comparisons, such as
+`[data-label="ALPHA" i]`; see `tests/assets/064.html`.
 
 ## Build and checks
 

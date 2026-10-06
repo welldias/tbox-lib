@@ -436,6 +436,28 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
         case TBOX_PAINT_FILL_RING:
             tbox_raster_fill_ring_clipped(pixels, buffer_width, buffer_height, op);
             break;
+        case TBOX_PAINT_WAVY_LINE: {
+            double thickness = op->rect.height;
+            if (thickness <= 0.0 || op->rect.width <= 0.0) break;
+            double amplitude = thickness > 1.0 ? thickness : 1.0;
+            double period = 6.0 * amplitude;
+            int32_t x0 = (int32_t)floor(op->rect.x);
+            int32_t x1 = (int32_t)floor(op->rect.x + op->rect.width);
+            for (int32_t x = x0; x < x1; x++) {
+                double phase = ((double)x + 0.5 - op->rect.x) / period;
+                double wave_y = op->rect.y + amplitude * (1.0 - cos(6.283185307179586 * phase));
+                tbox_rect segment = { (double)x, wave_y, 1.0, thickness };
+                if (op->has_clip) {
+                    double top = segment.y > op->clip.y ? segment.y : op->clip.y;
+                    double bottom = segment.y + segment.height < op->clip.y + op->clip.height ? segment.y + segment.height : op->clip.y + op->clip.height;
+                    if (x < op->clip.x || x >= op->clip.x + op->clip.width || bottom <= top) continue;
+                    segment.y = top;
+                    segment.height = bottom - top;
+                }
+                tbox_raster_fill_rect(pixels, buffer_width, buffer_height, segment, op->color);
+            }
+            break;
+        }
         }
     }
 }

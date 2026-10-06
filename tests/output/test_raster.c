@@ -953,6 +953,22 @@ static void tbox_test_raster_individual_corners(int *failures_ptr) {
     *failures_ptr = failures;
 }
 
+static void tbox_test_raster_wavy_line(int *failures_ptr) {
+    int failures = *failures_ptr;
+    uint32_t pixels[8 * 8];
+    for (size_t i = 0; i < 8u * 8u; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_paint_op op = {0};
+    op.kind = TBOX_PAINT_WAVY_LINE;
+    op.rect = (tbox_rect){0, 1, 8, 1};
+    op.color = (tbox_css_rgba){255, 0, 0, 255};
+    tbox_display_list list = {&op, 1};
+    tbox_raster_display_list(pixels, 8, 8, &list);
+    TBOX_TEST_ASSERT(pixels[1 * 8 + 0] == 0xFFFF0000u);
+    TBOX_TEST_ASSERT(pixels[2 * 8 + 2] == 0xFFFF0000u);
+    TBOX_TEST_ASSERT(pixels[1 * 8 + 2] == 0xFFFFFFFFu);
+    *failures_ptr = failures;
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
@@ -973,6 +989,7 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_rounded_rect_out_of_bounds(&failures);
     tbox_test_raster_rounded_rect_invalid_args(&failures);
     tbox_test_raster_individual_corners(&failures);
+    tbox_test_raster_wavy_line(&failures);
     tbox_test_raster_write_png_round_trip(&failures);
     tbox_test_raster_write_png_invalid_args(&failures);
 

@@ -24,16 +24,19 @@ extern "C" {
  * "nth-of-type(an+b)", "nth-last-child(an+b)",
  * "nth-last-of-type(an+b)", "root", and "empty" are structural.
  * "disabled"/"enabled" and "required"/"optional" match eligible form
- * controls by their own attributes. "hover" and
- * "focus" match the nodes provided by the context. "checked" matches a
+ * controls by their own attributes. "hover" matches the context's hovered
+ * node and its ancestors; "focus" matches the focused node; "focus-within" also
+ * matches ancestors of the focused node. "link" and "any-link" match
+ * a/area/link elements with href (no visited history). "checked" matches a
  * checked input type=checkbox. "lang" uses the nearest ancestor's `lang`
  * attribute when the element has none. Other unsupported
  * pseudo-classes or pseudo-elements never match. ID and
  * CLASS simple selectors compare case-sensitively (per CSS2.1); TYPE, the
  * "id"/"class" attribute lookup itself, and ATTRIBUTE names compare
  * case-insensitively (tag/attribute names are already lowercased by
- * tbox_html_parse); ATTRIBUTE and ID values compare byte-exact, except an
- * input's `type` attribute, whose value compares ASCII case-insensitively. */
+ * tbox_html_parse); ATTRIBUTE and ID values compare byte-exact by default.
+ * ATTRIBUTE values with an `i` modifier, and an input's `type` attribute,
+ * compare ASCII case-insensitively. */
 
 /* Opaque: owns the arena backing the compiled selector-group's AST. */
 typedef struct tbox_css_selector_query tbox_css_selector_query;

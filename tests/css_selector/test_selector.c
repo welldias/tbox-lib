@@ -270,7 +270,7 @@ int tbox_test_css_selector_run(void) {
     }
 
     /* 14: after tbox_css_selector_set_hover_context(node_x), a bare :hover
-     * selector matches node_x and no other node. Resets the (global) hover
+     * selector matches node_x and its ancestors. Resets the (global) hover
      * context back to NULL at the end so it doesn't leak into later tests. */
     {
         tbox_html_document *doc    = parse_html_cstr("<div><p>a</p><span>b</span></div>");
@@ -281,8 +281,8 @@ int tbox_test_css_selector_run(void) {
         tbox_css_selector_set_hover_context(p);
 
         tbox_css_selector_node_set set = select_cstr(root, ":hover");
-        TBOX_TEST_ASSERT(set.count == 1); /* not div, not span -- only p */
-        TBOX_TEST_ASSERT(set.items[0] == p);
+        TBOX_TEST_ASSERT(set.count == 2); /* div and p, not span */
+        TBOX_TEST_ASSERT(set.items[0] == div && set.items[1] == p);
         tbox_css_selector_node_set_destroy(&set);
 
         tbox_css_selector_set_hover_context(NULL);
@@ -482,6 +482,93 @@ int tbox_test_css_selector_run(void) {
             tbox_css_selector_node_set set = select_cstr(root, selectors[i]);
             TBOX_TEST_ASSERT(set.count == expected[i]);
             if (set.count > 0) TBOX_TEST_ASSERT(text_eq(set.items[0]->first_child->text.text, first_text[i]));
+            tbox_css_selector_node_set_destroy(&set);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* :focus-within follows the current focus target up the ancestor chain. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div id='form'><fieldset><input></fieldset><p>other</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *form = root->first_child;
+        const tbox_html_node *fieldset = form->first_child;
+        const tbox_html_node *input = fieldset->first_child;
+        tbox_css_selector_set_focus_context(input);
+        tbox_css_selector_node_set set = select_cstr(root, ":focus-within");
+        TBOX_TEST_ASSERT(set.count == 3);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "p:focus-within");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_css_selector_set_focus_context(NULL);
+        set = select_cstr(root, ":focus-within");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* No visited-state store exists, so every eligible href matches both
+     * :link and :any-link. An anchor without href does not. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><a href='/one'>One</a><a>Two</a><area href='/map'><link href='/css'><span href='/no'>No</span></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_selector_node_set links = select_cstr(root, ":link");
+        tbox_css_selector_node_set any = select_cstr(root, ":any-link");
+        TBOX_TEST_ASSERT(links.count == 3 && any.count == 3);
+        tbox_css_selector_node_set_destroy(&links);
+        tbox_css_selector_node_set_destroy(&any);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Prefix, suffix and substring attribute operators match byte-exact
+     * values; an empty search string never matches. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><a data-path='docs/start.html'>A</a><a data-path='images/icon.png'>B</a>"
+            "<a data-path='docs/guide.png'>C</a><a data-path=''>D</a></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const char *selectors[] = { "[data-path^=docs]", "[data-path$='.png']", "[data-path*='guide']", "[data-path*='']" };
+        const size_t expected[] = { 2, 2, 1, 0 };
+        for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+            tbox_css_selector_node_set set = select_cstr(root, selectors[i]);
+            TBOX_TEST_ASSERT(set.count == expected[i]);
+            tbox_css_selector_node_set_destroy(&set);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Hover applies to the hit element and each element ancestor. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><section><span>x</span></section><p>y</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *div = root->first_child;
+        const tbox_html_node *section = div->first_child;
+        const tbox_html_node *span = section->first_child;
+        tbox_css_selector_set_hover_context(span);
+        tbox_css_selector_node_set set = select_cstr(root, ":hover");
+        TBOX_TEST_ASSERT(set.count == 3);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "p:hover");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_css_selector_set_hover_context(NULL);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* The `i` modifier folds ASCII for each value operator; unmodified
+     * selectors remain case-sensitive. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div data-name='Alpha-BETA' data-tags='FOO Bar'></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const char *selectors[] = {
+            "[data-name='alpha-beta' i]", "[data-tags~=foo i]", "[data-name|=alpha i]",
+            "[data-name^=alpha i]", "[data-name$=beta i]", "[data-name*=HA-be i]",
+            "[data-name='alpha-beta']", "[data-name^=alpha]", "[data-name='alpha-beta' s]"
+        };
+        const size_t expected[] = { 1, 1, 1, 1, 1, 1, 0, 0, 0 };
+        for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+            tbox_css_selector_node_set set = select_cstr(root, selectors[i]);
+            TBOX_TEST_ASSERT(set.count == expected[i]);
             tbox_css_selector_node_set_destroy(&set);
         }
         tbox_html_document_destroy(doc);

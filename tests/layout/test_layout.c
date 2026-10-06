@@ -1241,6 +1241,7 @@ int tbox_test_layout_run(void) {
             const char *expected[4];
         } cases[] = {
             { "ol { list-style-type: lower-alpha; }",                                         { "a. x", "b. x", "c. x", "d. x" }                                         },
+            { "ol { list-style-type: decimal-leading-zero; }",                                { "01. x", "02. x", "03. x", "04. x" }                                   },
             { "ol { list-style: upper-roman inside; }",                                       { "I. x", "II. x", "III. x", "IV. x" }                                     },
             { "ol { list-style-type: lower-roman; } li + li + li { list-style-type: none; }", { "i. x", "ii. x", "x", "x" }                                              },
             { "ol { list-style-type: disc; }",                                                { "\xE2\x80\xA2 x", "\xE2\x80\xA2 x", "\xE2\x80\xA2 x", "\xE2\x80\xA2 x" } },
@@ -3783,6 +3784,29 @@ int tbox_test_layout_run(void) {
                 }
             }
             TBOX_TEST_ASSERT(codepoints == 16);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* anywhere contributes codepoint breaks to a flex item's automatic
+     * minimum width; break-word keeps the whole word as its minimum. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<main><div class='row'><div id='break'>supercalifragilisticexpialidocious</div><div class='badge'>side</div></div>"
+            "<div class='row'><div id='any'>supercalifragilisticexpialidocious</div><div class='badge'>side</div></div></main>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(".row { display:flex; width:200px; } .badge { flex:0 0 40px; }"
+            "#break, #any { flex:1 1 auto; } #break { overflow-wrap:break-word; } #any { overflow-wrap:anywhere; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table resolved = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 300.0, 300.0);
+        const tbox_layout_box *break_box = find_box_for_node(layout, find_html_id(root, "break"));
+        const tbox_layout_box *any_box = find_box_for_node(layout, find_html_id(root, "any"));
+        TBOX_TEST_ASSERT(break_box != NULL && any_box != NULL);
+        if (break_box != NULL && any_box != NULL) {
+            TBOX_TEST_ASSERT(break_box->content_box.width > any_box->content_box.width);
         }
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);

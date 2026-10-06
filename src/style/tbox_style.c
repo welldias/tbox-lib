@@ -420,6 +420,7 @@ static bool tbox_style_parse_decoration_style(tbox_string_view value, tbox_style
     else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("dashed"))) *out = TBOX_STYLE_BORDER_STYLE_DASHED;
     else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("dotted"))) *out = TBOX_STYLE_BORDER_STYLE_DOTTED;
     else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("double"))) *out = TBOX_STYLE_BORDER_STYLE_DOUBLE;
+    else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("wavy"))) *out = TBOX_STYLE_BORDER_STYLE_WAVY;
     else return false;
     return true;
 }
@@ -973,6 +974,26 @@ static void tbox_style_resolve_border_sides(const tbox_css_computed_style *compu
         }
     }
 
+    /* Logical axis shorthands affect both sides of their axis. */
+    static const struct { const char *name; size_t first, second; } axes[] = {
+        { "border-block", 0, 2 }, { "border-inline", 1, 3 },
+    };
+    for (size_t axis = 0; axis < 2; axis++) {
+        const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(axes[axis].name));
+        if (decl == NULL) continue;
+        double width = 0.0;
+        tbox_style_border_style border_style = TBOX_STYLE_BORDER_STYLE_NONE;
+        tbox_css_rgba color = current_color;
+        tbox_style_resolve_border(computed, axes[axis].name, true, font_size, current_color, &width, &border_style, &color);
+        size_t targets[] = { axes[axis].first, axes[axis].second };
+        for (size_t t = 0; t < 2; t++) {
+            size_t i = targets[t];
+            if (tbox_style_claim(decl, &width_winner[i])) widths[i] = width;
+            if (tbox_style_claim(decl, &style_winner[i])) styles[i] = border_style;
+            if (tbox_style_claim(decl, &color_winner[i])) colors[i] = color;
+        }
+    }
+
     /* Logical sides map to physical sides in the engine's left-to-right
      * writing mode. Their shorthands reset omitted components, just like
      * border-top/right/bottom/left, and compete by normal cascade priority. */
@@ -1171,6 +1192,7 @@ static bool tbox_style_parse_list_style_type(tbox_string_view raw, tbox_style_li
         { "circle",      TBOX_STYLE_LIST_STYLE_CIRCLE      },
         { "square",      TBOX_STYLE_LIST_STYLE_SQUARE      },
         { "decimal",     TBOX_STYLE_LIST_STYLE_DECIMAL     },
+        { "decimal-leading-zero", TBOX_STYLE_LIST_STYLE_DECIMAL_LEADING_ZERO },
         { "lower-alpha", TBOX_STYLE_LIST_STYLE_LOWER_ALPHA },
         { "lower-latin", TBOX_STYLE_LIST_STYLE_LOWER_ALPHA },
         { "upper-alpha", TBOX_STYLE_LIST_STYLE_UPPER_ALPHA },
@@ -1483,14 +1505,17 @@ static tbox_style_position tbox_style_resolve_position(const tbox_css_computed_s
     return TBOX_STYLE_POSITION_STATIC;
 }
 
-static tbox_style_length tbox_style_resolve_length_property(const tbox_css_computed_style *computed, const char *property, double font_size) {
-    tbox_style_length result                  = { TBOX_STYLE_LENGTH_AUTO, 0.0 };
-    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(property));
-    if (decl != NULL) {
+/* In horizontal LTR mode, logical sizes share the physical dimension's
+ * cascade. Parse only the winning declaration. */
+static tbox_style_length tbox_style_resolve_logical_size(const tbox_css_computed_style *computed, const char *physical, const char *logical, double font_size, bool limit) {
+    tbox_style_length result = { TBOX_STYLE_LENGTH_AUTO, 0.0 };
+    const tbox_css_resolved_declaration *winner = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(physical));
+    const tbox_css_resolved_declaration *alias = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(logical));
+    if (alias != NULL && (winner == NULL || tbox_css_cascade_priority_compare(alias, winner) > 0)) winner = alias;
+    if (winner != NULL) {
         tbox_style_length parsed;
-        if (tbox_style_parse_length(decl->value, font_size, &parsed)) {
-            result = parsed;
-        }
+        if (tbox_style_parse_spacing_length(winner->value, font_size, &parsed) &&
+            (!limit || (parsed.kind != TBOX_STYLE_LENGTH_AUTO && parsed.value >= 0.0))) result = parsed;
     }
     return result;
 }
@@ -1499,7 +1524,7 @@ static tbox_style_length tbox_style_resolve_length_property(const tbox_css_compu
  * attributes (no unit, unlike CSS) set the SAME properties as `width`/
  * `height` in CSS, but as a low-priority "presentational hint" -- any CSS
  * declaration (author OR the UA stylesheet) still wins outright, which is
- * exactly what calling this ONLY when `tbox_style_resolve_length_property`
+ * exactly what calling this ONLY when the CSS dimension resolver
  * already came back AUTO (no cascade declaration won) already guarantees,
  * with zero cascade/specificity machinery of its own. Applies to `<img>` and
  * `<input type="image">`, and is
@@ -1625,13 +1650,20 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
                 style.white_space = modes[i].value;
     }
     style.overflow_wrap_break_word                     = parent_style != NULL && parent_style->overflow_wrap_break_word;
+    style.overflow_wrap_anywhere                       = parent_style != NULL && parent_style->overflow_wrap_anywhere;
     const tbox_css_resolved_declaration *overflow_wrap = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("overflow-wrap"));
     if (overflow_wrap != NULL) {
         tbox_string_view value = tbox_style_trim(overflow_wrap->value);
-        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("break-word")))
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("anywhere"))) {
             style.overflow_wrap_break_word = true;
-        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal")))
+            style.overflow_wrap_anywhere = true;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("break-word"))) {
+            style.overflow_wrap_break_word = true;
+            style.overflow_wrap_anywhere = false;
+        } else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("normal"))) {
             style.overflow_wrap_break_word = false;
+            style.overflow_wrap_anywhere = false;
+        }
     }
     style.word_break_all                            = parent_style != NULL && parent_style->word_break_all;
     const tbox_css_resolved_declaration *word_break = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("word-break"));
@@ -1725,26 +1757,12 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
             style.letter_spacing = length.value;
     }
 
-    style.width                                         = tbox_style_resolve_length_property(computed, "width", style.font_size);
-    style.height                                        = tbox_style_resolve_length_property(computed, "height", style.font_size);
-    style.min_width                                     = (tbox_style_length){ TBOX_STYLE_LENGTH_AUTO, 0.0 };
-    style.max_width                                     = (tbox_style_length){ TBOX_STYLE_LENGTH_AUTO, 0.0 };
-    style.min_height                                    = (tbox_style_length){ TBOX_STYLE_LENGTH_AUTO, 0.0 };
-    style.max_height                                    = (tbox_style_length){ TBOX_STYLE_LENGTH_AUTO, 0.0 };
-    const tbox_css_resolved_declaration *min_width_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("min-width"));
-    const tbox_css_resolved_declaration *max_width_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("max-width"));
-    tbox_style_length width_limit;
-    if (min_width_decl != NULL && tbox_style_parse_spacing_length(min_width_decl->value, style.font_size, &width_limit) && width_limit.kind != TBOX_STYLE_LENGTH_AUTO && width_limit.value >= 0.0)
-        style.min_width = width_limit;
-    if (max_width_decl != NULL && tbox_style_parse_spacing_length(max_width_decl->value, style.font_size, &width_limit) && width_limit.kind != TBOX_STYLE_LENGTH_AUTO && width_limit.value >= 0.0)
-        style.max_width = width_limit;
-    const tbox_css_resolved_declaration *min_height_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("min-height"));
-    const tbox_css_resolved_declaration *max_height_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("max-height"));
-    tbox_style_length height_limit;
-    if (min_height_decl != NULL && tbox_style_parse_spacing_length(min_height_decl->value, style.font_size, &height_limit) && height_limit.kind != TBOX_STYLE_LENGTH_AUTO && height_limit.value >= 0.0)
-        style.min_height = height_limit;
-    if (max_height_decl != NULL && tbox_style_parse_spacing_length(max_height_decl->value, style.font_size, &height_limit) && height_limit.kind != TBOX_STYLE_LENGTH_AUTO && height_limit.value >= 0.0)
-        style.max_height = height_limit;
+    style.width      = tbox_style_resolve_logical_size(computed, "width", "inline-size", style.font_size, false);
+    style.height     = tbox_style_resolve_logical_size(computed, "height", "block-size", style.font_size, false);
+    style.min_width  = tbox_style_resolve_logical_size(computed, "min-width", "min-inline-size", style.font_size, true);
+    style.max_width  = tbox_style_resolve_logical_size(computed, "max-width", "max-inline-size", style.font_size, true);
+    style.min_height = tbox_style_resolve_logical_size(computed, "min-height", "min-block-size", style.font_size, true);
+    style.max_height = tbox_style_resolve_logical_size(computed, "max-height", "max-block-size", style.font_size, true);
     if (style.width.kind == TBOX_STYLE_LENGTH_AUTO) {
         style.width = tbox_style_resolve_img_dimension_attribute(node, "width");
     }
@@ -1969,6 +1987,13 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
                 parsed = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, style.font_size * parsed.value / 100.0 };
             style.text_underline_offset = parsed;
         }
+    }
+    style.text_underline_position_under = parent_style != NULL && parent_style->text_underline_position_under;
+    const tbox_css_resolved_declaration *underline_position = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-underline-position"));
+    if (underline_position != NULL) {
+        tbox_string_view value = tbox_style_trim(underline_position->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("under"))) style.text_underline_position_under = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("auto"))) style.text_underline_position_under = false;
     }
     style.vertical_align                              = tbox_style_resolve_vertical_align(computed, style.font_size, &style.vertical_align_length);
     const tbox_css_resolved_declaration *caption_side = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("caption-side"));

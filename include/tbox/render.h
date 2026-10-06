@@ -26,6 +26,7 @@ typedef enum tbox_paint_op_kind {
     TBOX_PAINT_TEXT_RUN,
     TBOX_PAINT_IMAGE, /* NOVO (image support): one per tbox_layout_text_run whose `image` is non-NULL -- see tbox_render_build_display_list */
     TBOX_PAINT_FILL_RING, /* outer rounded rect minus inner rounded rect */
+    TBOX_PAINT_WAVY_LINE, /* text-decoration-style: wavy */
 } tbox_paint_op_kind;
 
 typedef struct tbox_paint_op {

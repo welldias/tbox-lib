@@ -244,6 +244,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.font_size                = container_style->font_size;
     anon.text_align               = container_style->text_align;
     anon.overflow_wrap_break_word = container_style->overflow_wrap_break_word;
+    anon.overflow_wrap_anywhere   = container_style->overflow_wrap_anywhere;
     anon.pointer_events_none      = container_style->pointer_events_none;
     anon.visibility_hidden        = container_style->visibility_hidden;
     anon.white_space              = container_style->white_space;

@@ -145,7 +145,15 @@ static bool tbox_css_selector_is_space(char byte) {
 /* True if `token` appears as one whole whitespace-separated item of `list`
  * (used for CLASS and the '~=' attribute operator). Comparison is byte-exact
  * (case-sensitive), per CSS2.1. */
-static bool tbox_css_selector_token_list_contains(tbox_string_view list, tbox_string_view token) {
+static bool tbox_css_selector_value_equal(tbox_string_view a, tbox_string_view b, bool insensitive) {
+    return insensitive ? tbox_string_view_equal_ascii_ci(a, b) : tbox_string_view_equal(a, b);
+}
+
+static bool tbox_css_selector_prefix_equal(tbox_string_view value, tbox_string_view prefix, bool insensitive) {
+    return value.size >= prefix.size && tbox_css_selector_value_equal(tbox_string_view_make(value.data, prefix.size), prefix, insensitive);
+}
+
+static bool tbox_css_selector_token_list_contains_case(tbox_string_view list, tbox_string_view token, bool insensitive) {
     size_t i = 0;
     while (i < list.size) {
         while (i < list.size && tbox_css_selector_is_space(list.data[i])) {
@@ -157,7 +165,7 @@ static bool tbox_css_selector_token_list_contains(tbox_string_view list, tbox_st
         }
         if (i > start) {
             tbox_string_view item = tbox_string_view_make(list.data + start, i - start);
-            if (tbox_string_view_equal(item, token)) {
+            if (tbox_css_selector_value_equal(item, token, insensitive)) {
                 return true;
             }
         }
@@ -165,12 +173,16 @@ static bool tbox_css_selector_token_list_contains(tbox_string_view list, tbox_st
     return false;
 }
 
+static bool tbox_css_selector_token_list_contains(tbox_string_view list, tbox_string_view token) {
+    return tbox_css_selector_token_list_contains_case(list, token, false);
+}
+
 /* '|=' : value equals `prefix`, or value equals prefix followed by '-'. */
-static bool tbox_css_selector_dash_match(tbox_string_view value, tbox_string_view prefix) {
-    if (tbox_string_view_equal(value, prefix)) {
+static bool tbox_css_selector_dash_match(tbox_string_view value, tbox_string_view prefix, bool insensitive) {
+    if (tbox_css_selector_value_equal(value, prefix, insensitive)) {
         return true;
     }
-    return value.size > prefix.size && memcmp(value.data, prefix.data, prefix.size) == 0 && value.data[prefix.size] == '-';
+    return value.size > prefix.size && tbox_css_selector_prefix_equal(value, prefix, insensitive) && value.data[prefix.size] == '-';
 }
 
 static bool tbox_css_selector_accepts_required(const tbox_html_node *node) {
@@ -230,11 +242,21 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
             if (tbox_string_view_equal_cstr(node->element.tag_name, "input") &&
                 tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("type", 4)))
                 return tbox_string_view_equal_ascii_ci(attribute->value, item->attribute_value);
-            return tbox_string_view_equal(attribute->value, item->attribute_value);
+            return tbox_css_selector_value_equal(attribute->value, item->attribute_value, item->attribute_case_insensitive);
         case TBOX_CSS_ATTR_INCLUDES:
-            return tbox_css_selector_token_list_contains(attribute->value, item->attribute_value);
+            return tbox_css_selector_token_list_contains_case(attribute->value, item->attribute_value, item->attribute_case_insensitive);
         case TBOX_CSS_ATTR_DASHMATCH:
-            return tbox_css_selector_dash_match(attribute->value, item->attribute_value);
+            return tbox_css_selector_dash_match(attribute->value, item->attribute_value, item->attribute_case_insensitive);
+        case TBOX_CSS_ATTR_PREFIX:
+            return item->attribute_value.size > 0 && tbox_css_selector_prefix_equal(attribute->value, item->attribute_value, item->attribute_case_insensitive);
+        case TBOX_CSS_ATTR_SUFFIX:
+            return item->attribute_value.size > 0 && attribute->value.size >= item->attribute_value.size &&
+                   tbox_css_selector_value_equal(tbox_string_view_make(attribute->value.data + attribute->value.size - item->attribute_value.size, item->attribute_value.size), item->attribute_value, item->attribute_case_insensitive);
+        case TBOX_CSS_ATTR_SUBSTRING:
+            if (item->attribute_value.size == 0 || item->attribute_value.size > attribute->value.size) return false;
+            for (size_t i = 0; i <= attribute->value.size - item->attribute_value.size; i++)
+                if (tbox_css_selector_value_equal(tbox_string_view_make(attribute->value.data + i, item->attribute_value.size), item->attribute_value, item->attribute_case_insensitive)) return true;
+            return false;
         }
         return false;
     }
@@ -303,10 +325,26 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
             return tbox_string_view_equal_cstr(item->name, "required") ? required : !required;
         }
         if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("hover", 5))) {
-            return node == tbox_css_selector_hovered_node;
+            if (node->type != TBOX_HTML_NODE_ELEMENT) return false;
+            for (const tbox_html_node *ancestor = tbox_css_selector_hovered_node; ancestor != NULL; ancestor = ancestor->parent)
+                if (ancestor == node) return true;
+            return false;
         }
         if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("focus", 5))) {
             return node == tbox_css_selector_focused_node;
+        }
+        if (tbox_string_view_equal_cstr(item->name, "focus-within")) {
+            if (node->type != TBOX_HTML_NODE_ELEMENT) return false;
+            for (const tbox_html_node *ancestor = tbox_css_selector_focused_node; ancestor != NULL; ancestor = ancestor->parent)
+                if (ancestor == node) return true;
+            return false;
+        }
+        if (tbox_string_view_equal_cstr(item->name, "link") || tbox_string_view_equal_cstr(item->name, "any-link")) {
+            if (node->type != TBOX_HTML_NODE_ELEMENT) return false;
+            tbox_string_view tag = node->element.tag_name;
+            return (tbox_string_view_equal_cstr(tag, "a") || tbox_string_view_equal_cstr(tag, "area") ||
+                    tbox_string_view_equal_cstr(tag, "link")) &&
+                   tbox_css_selector_find_attribute(node, tbox_string_view_make("href", 4)) != NULL;
         }
         if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("checked", 7))) {
             if (node->type != TBOX_HTML_NODE_ELEMENT ||

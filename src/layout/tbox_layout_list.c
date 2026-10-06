@@ -59,6 +59,11 @@ static size_t tbox_layout_format_list_counter(tbox_style_list_style_type type, s
         if (written <= 0)
             return 0;
         count = (size_t)written < sizeof(digits) ? (size_t)written : sizeof(digits) - 1;
+        if (type == TBOX_STYLE_LIST_STYLE_DECIMAL_LEADING_ZERO && index < 10 && count + 1 < sizeof(digits)) {
+            memmove(digits + 1, digits, count);
+            digits[0] = '0';
+            count++;
+        }
     }
     if (count + 1 > size)
         return 0;

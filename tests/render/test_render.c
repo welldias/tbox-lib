@@ -998,6 +998,30 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* Under places the line below the font's descender; an explicit offset
+     * still wins over the automatic placement. */
+    {
+        tbox_style box_style = tbox_test_render_default_style();
+        tbox_layout_box box = tbox_test_render_default_box(&box_style);
+        tbox_style run_style = tbox_test_render_default_style();
+        run_style.text_decoration = TBOX_STYLE_TEXT_DECORATION_UNDERLINE;
+        run_style.text_decoration_thickness = 1.0;
+        run_style.text_underline_position_under = true;
+        tbox_layout_text_run run = { 0 };
+        run.rect = (tbox_rect){ 5.0, 10.0, 25.0, 16.0 };
+        run.text = tbox_test_render_view_from_cstr("under");
+        run.font = font;
+        run.style = &run_style;
+        box.text_runs = &run;
+        box.text_run_count = 1;
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 2);
+        if (list.count == 2)
+            TBOX_TEST_ASSERT(list.items[1].rect.y == run.rect.y + tbox_font_face_line_height(font) + 1.0);
+        tbox_arena_destroy(&arena);
+    }
+
     /* accent-color paints a checked radio's dot; auto falls back to color. */
     {
         const char *html            = "<input type=radio checked>";
@@ -1271,6 +1295,11 @@ int tbox_test_render_run(void) {
         tbox_arena arena = tbox_arena_create(0);
         tbox_display_list list = tbox_render_build_display_list(&arena, &box);
         TBOX_TEST_ASSERT(list.count == 5 && list.items[0].kind == TBOX_PAINT_TEXT_RUN);
+        tbox_arena_destroy(&arena);
+        style.text_decoration_style = TBOX_STYLE_BORDER_STYLE_WAVY;
+        arena = tbox_arena_create(0);
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 3 && list.items[1].kind == TBOX_PAINT_WAVY_LINE && list.items[2].kind == TBOX_PAINT_WAVY_LINE);
         tbox_arena_destroy(&arena);
     }
 
