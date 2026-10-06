@@ -67,8 +67,7 @@ static bool tbox_render_color_input(const tbox_html_node *node, tbox_css_rgba *o
  * at radius 0.0 via tbox_render_push_fill_rect). `radius` is clamped here
  * to at most half of `min(rect.width, rect.height)`, standard CSS
  * border-radius behavior -- callers never need to clamp it themselves. */
-static void tbox_render_push_fill_rect_corners(tbox_vector *items, tbox_rect rect, const double corners[4], tbox_css_rgba color) {
-    double radii[4];
+static void tbox_render_normalize_corners(tbox_rect rect, const double corners[4], double radii[4]) {
     for (size_t i = 0; i < 4; i++)
         radii[i] = corners[i] > 0.0 ? corners[i] : 0.0;
     double scale           = 1.0;
@@ -81,6 +80,11 @@ static void tbox_render_push_fill_rect_corners(tbox_vector *items, tbox_rect rec
         scale = 0.0;
     for (size_t i = 0; i < 4; i++)
         radii[i] *= scale;
+}
+
+static void tbox_render_push_fill_rect_corners(tbox_vector *items, tbox_rect rect, const double corners[4], tbox_css_rgba color) {
+    double radii[4];
+    tbox_render_normalize_corners(rect, corners, radii);
 
     tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
     op->kind          = TBOX_PAINT_FILL_RECT;
@@ -98,6 +102,28 @@ static void tbox_render_push_fill_rect_corners(tbox_vector *items, tbox_rect rec
 static void tbox_render_push_fill_rect_rounded(tbox_vector *items, tbox_rect rect, double radius, tbox_css_rgba color) {
     const double corners[4] = { radius, radius, radius, radius };
     tbox_render_push_fill_rect_corners(items, rect, corners, color);
+}
+
+static void tbox_render_inset_corners(const double outer[4], tbox_rect outer_rect, tbox_rect inner_rect, double inner[4]) {
+    double top = inner_rect.y - outer_rect.y, left = inner_rect.x - outer_rect.x;
+    double right = outer_rect.x + outer_rect.width - inner_rect.x - inner_rect.width;
+    double bottom = outer_rect.y + outer_rect.height - inner_rect.y - inner_rect.height;
+    const double insets[4] = {
+        top > left ? top : left, top > right ? top : right,
+        bottom > right ? bottom : right, bottom > left ? bottom : left,
+    };
+    for (size_t i = 0; i < 4; i++) inner[i] = outer[i] > insets[i] ? outer[i] - insets[i] : 0.0;
+}
+
+static void tbox_render_push_fill_ring(tbox_vector *items, tbox_rect outer, const double outer_corners[4], tbox_rect inner, const double inner_corners[4], tbox_css_rgba color) {
+    tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
+    *op = (tbox_paint_op){ 0 };
+    op->kind = TBOX_PAINT_FILL_RING;
+    op->rect = outer;
+    op->inner_rect = inner;
+    op->color = color;
+    tbox_render_normalize_corners(outer, outer_corners, op->corner_radii);
+    tbox_render_normalize_corners(inner, inner_corners, op->inner_corner_radii);
 }
 
 /* Paints one border or outline side: `strip` is the whole band between the
@@ -266,55 +292,29 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 has_border = true;
         }
         bool rounded = corners[0] > 0.0 || corners[1] > 0.0 || corners[2] > 0.0 || corners[3] > 0.0;
+        tbox_style_background_clip background_clip = box->style != NULL ? box->style->background_clip : TBOX_STYLE_BACKGROUND_CLIP_BORDER_BOX;
+        tbox_rect background_box = background_clip == TBOX_STYLE_BACKGROUND_CLIP_CONTENT_BOX ? box->content_box :
+                                   background_clip == TBOX_STYLE_BACKGROUND_CLIP_PADDING_BOX ? box->padding_box : box->border_box;
 
         if (visible && rounded) {
-            /* NOVO (visual fidelity): border-radius. The 4-strip technique
-             * below is geometrically incompatible with curved corners (its
-             * strips meet at sharp 90-degree joins), so a box with a radius
-             * uses a DIFFERENT technique instead -- one or two nested
-             * rounded-rect fills:
-             * - no border: one rounded rect at border_box, in
-             *   background_color (nothing to paint if that's transparent).
-             * - with border: one rounded rect at border_box in
-             *   border_color (the outer edge), THEN one rounded rect at
-             *   padding_box in background_color (the inner edge, radius
-             *   shrunk by the border's own width, standard CSS inner-radius
-             *   formula) painted on top, producing the visible "ring".
-             *   KNOWN LIMITATION: with a fully transparent background_color,
-             *   the inner rounded-rect paint is a no-op (this rasterizer
-             *   has no real alpha-hole/clip-path capability -- same
-             *   limitation every other simplification here already lives
-             *   with), so the shape reads as a solid border-colored disc
-             *   rather than a true see-through ring; a realistic bordered
-             *   box (card/button) almost always has an actual background
-             *   too, where this renders correctly. */
+            /* A rounded background and a real border ring paint separately.
+             * This keeps transparent padding and alpha borders correct. */
+            if (box->style->background_color.a != 0) {
+                double background_corners[4];
+                tbox_render_inset_corners(corners, box->border_box, background_box, background_corners);
+                tbox_render_push_fill_rect_corners(items, background_box, background_corners, box->style->background_color);
+            }
             if (has_border) {
-                /* One ring color: the first painted side's, clockwise from
-                 * the top -- per-side colors are not split on a rounded box. */
+                /* Rounded borders use one color: the first painted side. */
                 size_t color_side = 0;
-                while (color_side < 3 && border[color_side] <= 0.0)
-                    color_side++;
-                tbox_render_push_fill_rect_corners(items, box->border_box, corners, tbox_style_border_side_color(box->style, color_side));
-
-                /* Each corner shrinks by the wider of its two sides. */
-                static const size_t adjacent[4][2] = {
-                    { 0, 3 },
-                    { 0, 1 },
-                    { 2, 1 },
-                    { 2, 3 }
-                };
+                while (color_side < 3 && border[color_side] <= 0.0) color_side++;
                 double inner[4];
-                for (size_t i = 0; i < 4; i++) {
-                    double side = border[adjacent[i][0]] > border[adjacent[i][1]] ? border[adjacent[i][0]] : border[adjacent[i][1]];
-                    inner[i]    = corners[i] > side ? corners[i] - side : 0.0;
-                }
-                tbox_render_push_fill_rect_corners(items, box->padding_box, inner, box->style->background_color);
-            } else if (box->style->background_color.a != 0) {
-                tbox_render_push_fill_rect_corners(items, box->border_box, corners, box->style->background_color);
+                tbox_render_inset_corners(corners, box->border_box, box->padding_box, inner);
+                tbox_render_push_fill_ring(items, box->border_box, corners, box->padding_box, inner, tbox_style_border_side_color(box->style, color_side));
             }
         } else if (visible) {
             if (box->style != NULL && box->style->background_color.a != 0) {
-                tbox_render_push_fill_rect(items, box->border_box, box->style->background_color);
+                tbox_render_push_fill_rect(items, background_box, box->style->background_color);
             }
 
             if (has_border) {
@@ -426,10 +426,36 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
                 op->text          = tbox_string_view_make(NULL, 0);
                 op->face          = NULL;
                 op->image         = run->image;
+                op->image_pixelated = run->style != NULL && run->style->image_rendering_pixelated;
                 op->radius        = 0.0;
                 for (size_t j = 0; j < 4; j++)
                     op->corner_radii[j] = 0.0;
                 op->has_clip = false;
+                if (run->style != NULL && run->image->width > 0 && run->image->height > 0 &&
+                    run->rect.width > 0.0 && run->rect.height > 0.0) {
+                    if (run->style->object_fit != TBOX_STYLE_OBJECT_FIT_FILL) {
+                        double sx = run->rect.width / (double)run->image->width;
+                        double sy = run->rect.height / (double)run->image->height;
+                        double scale = run->style->object_fit == TBOX_STYLE_OBJECT_FIT_COVER ? (sx > sy ? sx : sy) : (sx < sy ? sx : sy);
+                        if (run->style->object_fit == TBOX_STYLE_OBJECT_FIT_NONE ||
+                            (run->style->object_fit == TBOX_STYLE_OBJECT_FIT_SCALE_DOWN && scale > 1.0))
+                            scale = 1.0;
+                        op->rect.width = (double)run->image->width * scale;
+                        op->rect.height = (double)run->image->height * scale;
+                    }
+                    double free_x = run->rect.width - op->rect.width;
+                    double free_y = run->rect.height - op->rect.height;
+                    tbox_style_length pos_x = run->style->object_position[0];
+                    tbox_style_length pos_y = run->style->object_position[1];
+                    op->rect.x += pos_x.kind == TBOX_STYLE_LENGTH_PX ? pos_x.value : free_x * (pos_x.kind == TBOX_STYLE_LENGTH_PERCENT ? pos_x.value : 50.0) / 100.0;
+                    op->rect.y += pos_y.kind == TBOX_STYLE_LENGTH_PX ? pos_y.value : free_y * (pos_y.kind == TBOX_STYLE_LENGTH_PERCENT ? pos_y.value : 50.0) / 100.0;
+                    if (op->rect.x < run->rect.x || op->rect.y < run->rect.y ||
+                        op->rect.x + op->rect.width > run->rect.x + run->rect.width ||
+                        op->rect.y + op->rect.height > run->rect.y + run->rect.height) {
+                        op->has_clip = true;
+                        op->clip = run->rect;
+                    }
+                }
                 continue;
             }
 
@@ -516,11 +542,24 @@ static void tbox_render_walk(const tbox_layout_box *box, tbox_vector *items, boo
              * (approximating x-height by a fraction of ascent -- see
              * ARCHITECTURE.md's "Fora de escopo"). Painted after the
              * TEXT_RUN, same color as the text. */
-            if (run->style->text_decoration != TBOX_STYLE_TEXT_DECORATION_NONE) {
+            unsigned int decoration_lines = run->style->text_decoration_lines;
+            if (decoration_lines == 0 && run->style->text_decoration != TBOX_STYLE_TEXT_DECORATION_NONE)
+                decoration_lines = run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE ? 1u : run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH ? 2u : 4u;
+            if (decoration_lines != 0) {
                 double baseline         = run->rect.y + tbox_font_face_ascent(run->font);
                 double underline_offset = run->style->text_underline_offset.kind == TBOX_STYLE_LENGTH_PX ? run->style->text_underline_offset.value : 2.0;
-                double line_y           = run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_UNDERLINE ? baseline + underline_offset : run->style->text_decoration == TBOX_STYLE_TEXT_DECORATION_OVERLINE ? baseline - tbox_font_face_ascent(run->font) : baseline - tbox_font_face_ascent(run->font) * 0.3;
-                tbox_render_push_fill_rect(items, (tbox_rect){ run->rect.x, line_y, run->rect.width, run->style->text_decoration_thickness }, run->style->text_decoration_color);
+                for (unsigned int bit = 1u; bit <= 4u; bit <<= 1u) {
+                    if (!(decoration_lines & bit)) continue;
+                    double line_y = bit == 1u ? baseline + underline_offset : bit == 4u ? baseline - tbox_font_face_ascent(run->font) : baseline - tbox_font_face_ascent(run->font) * 0.3;
+                    double thickness = run->style->text_decoration_thickness;
+                    if (run->style->text_decoration_style == TBOX_STYLE_BORDER_STYLE_DOUBLE) {
+                        tbox_render_push_fill_rect(items, (tbox_rect){ run->rect.x, line_y, run->rect.width, thickness }, run->style->text_decoration_color);
+                        tbox_render_push_fill_rect(items, (tbox_rect){ run->rect.x, line_y + 2.0 * thickness, run->rect.width, thickness }, run->style->text_decoration_color);
+                    } else {
+                        tbox_style_border_style decor_style = run->style->text_decoration_style == TBOX_STYLE_BORDER_STYLE_NONE ? TBOX_STYLE_BORDER_STYLE_SOLID : run->style->text_decoration_style;
+                        tbox_render_push_border_side(items, (tbox_rect){ run->rect.x, line_y, run->rect.width, thickness }, true, decor_style, run->style->text_decoration_color);
+                    }
+                }
             }
         }
 

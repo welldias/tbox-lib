@@ -16,13 +16,18 @@ extern "C" {
  * queried must not be shared across threads without external
  * synchronization. */
 
-/* Matches CSS2.1 selectors (tbox_css_selector, as produced by tbox_css_parse
+/* Matches CSS selectors (tbox_css_selector, as produced by tbox_css_parse
  * or tbox_css_selector_compile below) against a tbox_html_node tree. Every
  * tbox_css_simple_selector_kind is supported except a reduced subset of
- * PSEUDO: "first-child" and "last-child" are evaluated (both purely
- * structural, computed from prev_sibling/next_sibling). "hover" and
+ * PSEUDO: "first-child", "last-child", "only-child", "first-of-type",
+ * "last-of-type", "only-of-type", "nth-child(an+b)",
+ * "nth-of-type(an+b)", "nth-last-child(an+b)",
+ * "nth-last-of-type(an+b)", "root", and "empty" are structural.
+ * "disabled"/"enabled" and "required"/"optional" match eligible form
+ * controls by their own attributes. "hover" and
  * "focus" match the nodes provided by the context. "checked" matches a
- * checked input type=checkbox. Other unsupported
+ * checked input type=checkbox. "lang" uses the nearest ancestor's `lang`
+ * attribute when the element has none. Other unsupported
  * pseudo-classes or pseudo-elements never match. ID and
  * CLASS simple selectors compare case-sensitively (per CSS2.1); TYPE, the
  * "id"/"class" attribute lookup itself, and ATTRIBUTE names compare
@@ -46,7 +51,7 @@ typedef struct tbox_css_selector_node_set {
  * Grammar: a standalone selector-group -- one or more comma-separated
  * selectors, each a left-to-right chain of type/universal/id/class/
  * attribute/pseudo simple selectors joined by descendant (' '), child
- * ('>') or adjacent-sibling ('+') combinators (the same grammar
+ * ('>'), adjacent-sibling ('+'), or general-sibling ('~') combinators (the same grammar
  * tbox_css_parse uses for a ruleset's selector, documented in
  * <tbox/css_parser.h>). Unlike tbox_css_parse (which tolerates malformed
  * CSS), this hard-fails on a syntax error or trailing garbage -- a selector
@@ -121,8 +126,7 @@ bool tbox_css_selector_matches(const tbox_css_selector *selector, const tbox_htm
  * :focus matches the focused node set by the context; :checked reads a
  * checkbox's checked attribute. Other unsupported
  * pseudo-classes/pseudo-elements remain "never matches", as
- * documented above (only first-child/last-child are structural and already
- * worked). Backed by a single file-static global (this library is already
+ * documented above. Backed by a single file-static global (this library is already
  * documented as not thread-safe, no internal locking -- see the top of this
  * file); the caller (tbox_context_run_frame, via tbox_context_update_hover)
  * is expected to call this immediately before each tbox_style_resolve_tree,

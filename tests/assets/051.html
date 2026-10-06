@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #eef2f7; color: #1e293b; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        .card { width: 420px; padding: 14px; background: white; border: 1px solid #cbd5e1; }
+        .item { padding: 8px; margin: 0 0 5px; background: #e2e8f0; }
+        p:lang(pt) { background: #bbf7d0; }
+        p:lang(en) { background: #bfdbfe; }
+    </style>
+</head>
+<body>
+    <h1>Seletor :lang()</h1>
+    <div class="card" lang="pt-BR">
+        <p class="item">Herdado de pt-BR: verde</p>
+        <div><p class="item">Herdado por dois niveis: verde</p></div>
+        <section lang="en-US"><p class="item">Idioma en-US: azul</p></section>
+        <p class="item" lang="">Idioma vazio: cinza</p>
+    </div>
+</body>
+</html>

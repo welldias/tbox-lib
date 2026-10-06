@@ -25,6 +25,7 @@ typedef enum tbox_paint_op_kind {
     TBOX_PAINT_FILL_RECT,
     TBOX_PAINT_TEXT_RUN,
     TBOX_PAINT_IMAGE, /* NOVO (image support): one per tbox_layout_text_run whose `image` is non-NULL -- see tbox_render_build_display_list */
+    TBOX_PAINT_FILL_RING, /* outer rounded rect minus inner rounded rect */
 } tbox_paint_op_kind;
 
 typedef struct tbox_paint_op {
@@ -33,9 +34,9 @@ typedef struct tbox_paint_op {
     /* FILL_RECT: the rectangle to fill. TEXT_RUN: only rect.x/rect.y are
      * meaningful (the content box's origin) -- rect.width/rect.height are
      * unused. IMAGE: the destination rectangle `image` is painted into
-     * (already the resolved CSS content box size, which Output Display
-     * scales `image`'s own intrinsic pixel dimensions to fit -- see
-     * tbox_raster_image). */
+     * (the fitted image rectangle after object-fit/object-position; the
+     * original CSS image box is retained as a clip when content overflows).
+     * Output Display scales `image` to that rectangle. */
     tbox_rect rect;
 
     /* FILL_RECT: the background color. TEXT_RUN: the text color. IMAGE: only
@@ -54,12 +55,17 @@ typedef struct tbox_paint_op {
     /* IMAGE only (NULL for FILL_RECT/TEXT_RUN): the decoded image to
      * composite into `rect` -- see tbox_raster_image. */
     const tbox_image *image;
+    bool image_pixelated; /* IMAGE only: nearest-neighbor enlargement */
 
     /* FILL_RECT only: radius keeps the original uniform value; corner_radii
      * carries individual clockwise radii. Both are zero for plain fills.
      * Rounded fills use circular corners, normalized to fit the rectangle. */
     double radius;
     double corner_radii[4]; /* top-left, top-right, bottom-right, bottom-left */
+
+    /* FILL_RING only: pixels inside inner_rect/corners stay untouched. */
+    tbox_rect inner_rect;
+    double inner_corner_radii[4];
 
     /* Optional paint clip, applied to every op kind. Input text and the
      * descendants of overflow-y:auto blocks use it. */
@@ -76,18 +82,9 @@ typedef struct tbox_display_list {
  * empty list), pre-order: for each box, first (NOVO, visual fidelity) if
  * its style's box_shadow_color is non-transparent, one or more FILL_RECTs
  * approximating a soft shadow behind border_box (see
- * tbox_render_push_box_shadow); then, when every corner radius is 0.0
- * (the common case, unchanged since v4): if background_color is
- * non-transparent, a FILL_RECT over its border_box, then up to 4 more
- * FILL_RECTs, one per side whose tbox_style_border_side_width is positive
- * (only `solid` ever paints, same value the Layout Tree reserved), in that
- * side's tbox_style_border_side_color, each covering the strip between
- * `border_box` and `padding_box`
- * (top/bottom span the full border_box width including corners; left/right
- * span only the padding_box height); when any corner radius is positive, one
- * or two ROUNDED FILL_RECTs replace that whole background+border step (see
- * tbox_render_walk in src/render/tbox_render.c for the exact two-nested-
- * rounded-rects technique) -- then  one TEXT_RUN -- or (NOVO,
+ * tbox_render_push_box_shadow). A solid background fills the box selected by
+ * background-clip; square borders use side fills, and rounded borders use a
+ * ring fill over the background. Then one TEXT_RUN -- or (NOVO,
  * image support) one IMAGE, for a run whose `image` is non-NULL, i.e. built
  * from an `<img>` word -- per entry of box->text_runs, in the order Layout
  * Tree built them (already line-order, left-to-right/top-to-bottom) -- in

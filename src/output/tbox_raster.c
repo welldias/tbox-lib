@@ -174,6 +174,49 @@ static void tbox_raster_fill_rounded_rect_clipped(uint32_t *pixels, int32_t buff
     }
 }
 
+static bool tbox_raster_point_in_rounded_rect(double x, double y, tbox_rect rect, const double radius[4]) {
+    double rx = x - rect.x, ry = y - rect.y;
+    if (rx < 0.0 || ry < 0.0 || rx >= rect.width || ry >= rect.height) return false;
+    int corner = -1;
+    if (rx < radius[0] && ry < radius[0]) corner = 0;
+    else if (rx > rect.width - radius[1] && ry < radius[1]) corner = 1;
+    else if (rx > rect.width - radius[2] && ry > rect.height - radius[2]) corner = 2;
+    else if (rx < radius[3] && ry > rect.height - radius[3]) corner = 3;
+    if (corner < 0) return true;
+    double center_x = corner == 0 || corner == 3 ? radius[corner] : rect.width - radius[corner];
+    double center_y = corner == 0 || corner == 1 ? radius[corner] : rect.height - radius[corner];
+    double dx = rx - center_x, dy = ry - center_y;
+    return dx * dx + dy * dy <= radius[corner] * radius[corner];
+}
+
+static void tbox_raster_fill_ring_clipped(uint32_t *pixels, int32_t width, int32_t height, const tbox_paint_op *op) {
+    if (pixels == NULL || width <= 0 || height <= 0 || op->color.a == 0 || op->rect.width <= 0.0 || op->rect.height <= 0.0) return;
+    int32_t x0 = (int32_t)floor(op->rect.x), y0 = (int32_t)floor(op->rect.y);
+    int32_t x1 = (int32_t)floor(op->rect.x + op->rect.width), y1 = (int32_t)floor(op->rect.y + op->rect.height);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > width) x1 = width;
+    if (y1 > height) y1 = height;
+    if (op->has_clip) {
+        int32_t cx0 = (int32_t)floor(op->clip.x), cy0 = (int32_t)floor(op->clip.y);
+        int32_t cx1 = (int32_t)floor(op->clip.x + op->clip.width), cy1 = (int32_t)floor(op->clip.y + op->clip.height);
+        if (x0 < cx0) x0 = cx0;
+        if (y0 < cy0) y0 = cy0;
+        if (x1 > cx1) x1 = cx1;
+        if (y1 > cy1) y1 = cy1;
+    }
+    double alpha = op->color.a / 255.0;
+    for (int32_t y = y0; y < y1; y++) {
+        uint32_t *row = pixels + (size_t)y * (size_t)width;
+        for (int32_t x = x0; x < x1; x++) {
+            double px = (double)x + 0.5, py = (double)y + 0.5;
+            if (tbox_raster_point_in_rounded_rect(px, py, op->rect, op->corner_radii) &&
+                !tbox_raster_point_in_rounded_rect(px, py, op->inner_rect, op->inner_corner_radii))
+                row[x] = tbox_raster_blend_pixel(row[x], op->color, alpha);
+        }
+    }
+}
+
 void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, double radius, tbox_css_rgba color) {
     const double corners[4] = {radius, radius, radius, radius};
     tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, rect, corners, color, false, (tbox_rect){0});
@@ -261,14 +304,16 @@ void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer
  * source is straight (non-premultiplied) alpha, exactly what stb_image
  * decoded it as (tbox_image_cache_get always requests 4 channels), so
  * alpha-weighted resampling avoids partially-transparent edge pixels
- * bleeding color from fully-transparent neighbors. Every visible
+ * bleeding color from fully-transparent neighbors. `pixelated` skips this
+ * resize buffer when enlarging and samples the closest source pixel.
+ * Every visible
  * destination pixel is then composited via tbox_raster_blend_pixel with
  * `alpha = (source_pixel.a / 255.0)`, same "over" formula as
  * tbox_raster_fill_rect/tbox_raster_text_run. NULL `pixels`/`image`, a
  * non-positive buffer_width/buffer_height, a non-positive
  * dest_rect.width/height, or a resize failure (allocation failure, treated
  * as a no-op rather than a crash), skips painting entirely. */
-static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image, double opacity, bool has_clip, tbox_rect clip) {
+static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image, double opacity, bool has_clip, tbox_rect clip, bool pixelated) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || image == NULL || image->pixels == NULL || dest_rect.width <= 0.0 || dest_rect.height <= 0.0) {
         return;
     }
@@ -282,8 +327,9 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
     const unsigned char *sample_pixels = image->pixels;
     int32_t sample_width               = image->width;
     unsigned char *resized             = NULL;
+    bool nearest = pixelated && (dest_width > image->width || dest_height > image->height);
 
-    if (dest_width != image->width || dest_height != image->height) {
+    if (!nearest && (dest_width != image->width || dest_height != image->height)) {
         resized = (unsigned char *)malloc((size_t)dest_width * (size_t)dest_height * 4);
         if (resized == NULL) {
             return;
@@ -328,11 +374,13 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
     }
 
     for (int32_t y = y0; y < y1; y++) {
-        const unsigned char *source_row = sample_pixels + (size_t)(y - origin_y) * (size_t)sample_width * 4;
+        int32_t source_y = nearest ? (int32_t)((int64_t)(y - origin_y) * image->height / dest_height) : y - origin_y;
+        const unsigned char *source_row = sample_pixels + (size_t)source_y * (size_t)sample_width * 4;
         uint32_t *dest_row              = pixels + (size_t)y * (size_t)buffer_width;
 
         for (int32_t x = x0; x < x1; x++) {
-            const unsigned char *source_pixel = source_row + (size_t)(x - origin_x) * 4;
+            int32_t source_x = nearest ? (int32_t)((int64_t)(x - origin_x) * image->width / dest_width) : x - origin_x;
+            const unsigned char *source_pixel = source_row + (size_t)source_x * 4;
             unsigned char source_alpha        = source_pixel[3];
             if (source_alpha == 0) {
                 continue;
@@ -347,7 +395,7 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
 }
 
 void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image) {
-    tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, 1.0, false, (tbox_rect){0});
+    tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, 1.0, false, (tbox_rect){0}, false);
 }
 
 void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list) {
@@ -383,7 +431,10 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
             tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0});
             break;
         case TBOX_PAINT_IMAGE:
-            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip);
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated);
+            break;
+        case TBOX_PAINT_FILL_RING:
+            tbox_raster_fill_ring_clipped(pixels, buffer_width, buffer_height, op);
             break;
         }
     }

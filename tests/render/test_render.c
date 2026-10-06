@@ -1,4 +1,5 @@
 #include <tbox/render.h>
+#include <tbox/output.h>
 
 #include <tbox/image.h>
 
@@ -672,6 +673,7 @@ int tbox_test_render_run(void) {
         tbox_style run_style       = tbox_test_render_default_style();
         run_style.background_color = (tbox_css_rgba){ 1, 2, 3, 255 };      /* must be IGNORED for an image run */
         run_style.text_decoration  = TBOX_STYLE_TEXT_DECORATION_UNDERLINE; /* must also be IGNORED */
+        run_style.image_rendering_pixelated = true;
 
         tbox_layout_text_run run = { 0 };
         run.rect                 = (tbox_rect){ 5.0, 6.0, 42.0, 24.0 };
@@ -687,6 +689,7 @@ int tbox_test_render_run(void) {
         if (list.count == 1) {
             TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_IMAGE);
             TBOX_TEST_ASSERT(list.items[0].image == &fake_image);
+            TBOX_TEST_ASSERT(list.items[0].image_pixelated);
             TBOX_TEST_ASSERT_MSG(list.items[0].rect.x == 5.0 && list.items[0].rect.y == 6.0 && list.items[0].rect.width == 42.0 && list.items[0].rect.height == 24.0, "IMAGE op's rect must be the run's own rect");
         }
         tbox_arena_destroy(&arena);
@@ -715,10 +718,7 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
-    /* 20: NOVO (visual fidelity) -- border_radius > 0.0 WITH a border
-     * switches to 2 rounded FILL_RECTs (outer border_box in border_color,
-     * inner padding_box in background_color, inner radius shrunk by the
-     * border's own width) instead of the 4-strip path. */
+    /* Rounded borders paint as a ring over the rounded background. */
     {
         tbox_style style       = tbox_test_render_default_style();
         style.background_color = (tbox_css_rgba){ 10, 20, 30, 255 };
@@ -732,15 +732,15 @@ int tbox_test_render_run(void) {
 
         tbox_arena arena       = tbox_arena_create(0);
         tbox_display_list list = tbox_render_build_display_list(&arena, &box);
-        TBOX_TEST_ASSERT_MSG(list.count == 2, "radius>0 with a border must produce exactly 2 rounded FILL_RECTs, not the 4-strip path");
+        TBOX_TEST_ASSERT_MSG(list.count == 2, "radius>0 with a border must produce a rounded background and border ring");
         if (list.count == 2) {
             TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_FILL_RECT && list.items[0].radius == 8.0);
-            TBOX_TEST_ASSERT_MSG(rect_equal(list.items[0].rect, box.border_box), "outer rounded rect must cover border_box");
-            TBOX_TEST_ASSERT(list.items[0].color.r == 40 && list.items[0].color.g == 50 && list.items[0].color.b == 60);
+            TBOX_TEST_ASSERT_MSG(rect_equal(list.items[0].rect, box.border_box), "rounded background must cover border_box");
+            TBOX_TEST_ASSERT(list.items[0].color.r == 10 && list.items[0].color.g == 20 && list.items[0].color.b == 30);
 
-            TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_FILL_RECT && list.items[1].radius == 6.0, "inner radius must be outer radius minus border_width (8 - 2 = 6)");
-            TBOX_TEST_ASSERT_MSG(rect_equal(list.items[1].rect, box.padding_box), "inner rounded rect must cover padding_box");
-            TBOX_TEST_ASSERT(list.items[1].color.r == 10 && list.items[1].color.g == 20 && list.items[1].color.b == 30);
+            TBOX_TEST_ASSERT_MSG(list.items[1].kind == TBOX_PAINT_FILL_RING && list.items[1].inner_corner_radii[0] == 6.0, "inner radius must be outer radius minus border_width (8 - 2 = 6)");
+            TBOX_TEST_ASSERT_MSG(rect_equal(list.items[1].inner_rect, box.padding_box), "border ring must exclude padding_box");
+            TBOX_TEST_ASSERT(list.items[1].color.r == 40 && list.items[1].color.g == 50 && list.items[1].color.b == 60);
         }
         tbox_arena_destroy(&arena);
     }
@@ -969,7 +969,7 @@ int tbox_test_render_run(void) {
             const double outer[4] = { 8, 4, 0, 12 }, inner[4] = { 6, 2, 0, 10 };
             for (size_t i = 0; i < 4; i++) {
                 TBOX_TEST_ASSERT(list.items[0].corner_radii[i] == outer[i]);
-                TBOX_TEST_ASSERT(list.items[1].corner_radii[i] == inner[i]);
+                TBOX_TEST_ASSERT(list.items[1].inner_corner_radii[i] == inner[i]);
             }
         }
         tbox_arena_destroy(&arena);
@@ -1188,6 +1188,152 @@ int tbox_test_render_run(void) {
         if (list.count == 1) {
             TBOX_TEST_ASSERT(list.items[0].corner_radii[0] == 10.0);
             TBOX_TEST_ASSERT(list.items[0].corner_radii[1] == 12.0);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
+    /* object-fit changes the image destination without changing its CSS
+     * box; cover clips the larger destination to that original box. */
+    {
+        tbox_image image = { 0 };
+        image.width = 200;
+        image.height = 100;
+        tbox_style style = tbox_test_render_default_style();
+        tbox_layout_text_run run = { 0 };
+        run.rect = (tbox_rect){ 10.0, 20.0, 100.0, 100.0 };
+        run.image = &image;
+        run.style = &style;
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.text_runs = &run;
+        box.text_run_count = 1;
+        tbox_arena arena = tbox_arena_create(0);
+        style.object_fit = TBOX_STYLE_OBJECT_FIT_CONTAIN;
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1 && rect_equal(list.items[0].rect, (tbox_rect){ 10.0, 45.0, 100.0, 50.0 }) && !list.items[0].has_clip);
+        tbox_arena_destroy(&arena);
+        arena = tbox_arena_create(0);
+        style.object_fit = TBOX_STYLE_OBJECT_FIT_COVER;
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1 && rect_equal(list.items[0].rect, (tbox_rect){ -40.0, 20.0, 200.0, 100.0 }) && list.items[0].has_clip && rect_equal(list.items[0].clip, run.rect));
+        tbox_arena_destroy(&arena);
+        arena = tbox_arena_create(0);
+        style.object_fit = TBOX_STYLE_OBJECT_FIT_CONTAIN;
+        style.object_position[0] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 0.0 };
+        style.object_position[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 100.0 };
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1 && rect_equal(list.items[0].rect, (tbox_rect){ 10.0, 70.0, 100.0, 50.0 }));
+        tbox_arena_destroy(&arena);
+        arena = tbox_arena_create(0);
+        style.object_fit = TBOX_STYLE_OBJECT_FIT_COVER;
+        style.object_position[0] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 100.0 };
+        style.object_position[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 0.0 };
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1 && rect_equal(list.items[0].rect, (tbox_rect){ -90.0, 20.0, 200.0, 100.0 }) && list.items[0].has_clip && rect_equal(list.items[0].clip, run.rect));
+        tbox_arena_destroy(&arena);
+
+        /* none keeps intrinsic pixels and crops; scale-down chooses the
+         * smaller of intrinsic size and contain's fitted size. */
+        style.object_position[0] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0 };
+        style.object_position[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0 };
+        style.object_fit = TBOX_STYLE_OBJECT_FIT_NONE;
+        arena = tbox_arena_create(0);
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1 && rect_equal(list.items[0].rect, (tbox_rect){ -40.0, 20.0, 200.0, 100.0 }) && list.items[0].has_clip && rect_equal(list.items[0].clip, run.rect));
+        tbox_arena_destroy(&arena);
+        style.object_fit = TBOX_STYLE_OBJECT_FIT_SCALE_DOWN;
+        arena = tbox_arena_create(0);
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1 && rect_equal(list.items[0].rect, (tbox_rect){ 10.0, 45.0, 100.0, 50.0 }) && !list.items[0].has_clip);
+        tbox_arena_destroy(&arena);
+
+        run.rect = (tbox_rect){ 10.0, 20.0, 300.0, 200.0 };
+        arena = tbox_arena_create(0);
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1 && rect_equal(list.items[0].rect, (tbox_rect){ 60.0, 70.0, 200.0, 100.0 }) && !list.items[0].has_clip);
+        tbox_arena_destroy(&arena);
+    }
+
+    /* A combined decoration emits a stroke for each selected line. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.text_decoration_lines = 5u;
+        style.text_decoration_style = TBOX_STYLE_BORDER_STYLE_DOUBLE;
+        style.text_decoration_thickness = 1.0;
+        style.text_decoration_color = (tbox_css_rgba){ 255, 0, 0, 255 };
+        tbox_layout_text_run run = { 0 };
+        run.rect = (tbox_rect){ 0.0, 0.0, 40.0, 20.0 };
+        run.text = tbox_test_render_view_from_cstr("Hi");
+        run.font = font;
+        run.style = &style;
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.text_runs = &run;
+        box.text_run_count = 1;
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 5 && list.items[0].kind == TBOX_PAINT_TEXT_RUN);
+        tbox_arena_destroy(&arena);
+    }
+
+    /* background-clip uses the selected box. Rounded content-box keeps
+     * padding transparent while retaining a curved border ring. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.background_color = (tbox_css_rgba){ 0, 0, 255, 255 };
+        style.border_width = 2.0;
+        style.border_style = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.border_color = (tbox_css_rgba){ 255, 0, 0, 255 };
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = (tbox_rect){ 0, 0, 40, 30 };
+        box.padding_box = (tbox_rect){ 2, 2, 36, 26 };
+        box.content_box = (tbox_rect){ 6, 6, 28, 18 };
+        const tbox_rect expected[3] = { box.border_box, box.padding_box, box.content_box };
+        for (int mode = 0; mode < 3; mode++) {
+            style.background_clip = (tbox_style_background_clip)mode;
+            tbox_arena arena = tbox_arena_create(0);
+            tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+            TBOX_TEST_ASSERT(list.count == 5 && list.items[0].kind == TBOX_PAINT_FILL_RECT && rect_equal(list.items[0].rect, expected[mode]));
+            tbox_arena_destroy(&arena);
+        }
+        style.background_clip = TBOX_STYLE_BACKGROUND_CLIP_CONTENT_BOX;
+        style.border_radius = 8.0;
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 2 && list.items[0].kind == TBOX_PAINT_FILL_RECT && list.items[1].kind == TBOX_PAINT_FILL_RING);
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT(rect_equal(list.items[0].rect, box.content_box));
+            TBOX_TEST_ASSERT(rect_equal(list.items[1].inner_rect, box.padding_box));
+            uint32_t pixels[40 * 30];
+            for (size_t i = 0; i < 40u * 30u; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_raster_display_list(pixels, 40, 30, &list);
+            TBOX_TEST_ASSERT(pixels[1 * 40 + 20] == 0xFFFF0000u);
+            TBOX_TEST_ASSERT(pixels[4 * 40 + 20] == 0xFFFFFFFFu);
+            TBOX_TEST_ASSERT(pixels[10 * 40 + 20] == 0xFF0000FFu);
+            TBOX_TEST_ASSERT(pixels[0] == 0xFFFFFFFFu);
+        }
+        tbox_arena_destroy(&arena);
+
+        /* A translucent curved border blends with the background only
+         * when the background extends through the border box. */
+        style.border_color.a = 128;
+        uint32_t border_pixels[2];
+        for (int mode = 0; mode < 2; mode++) {
+            style.background_clip = (tbox_style_background_clip)mode;
+            arena = tbox_arena_create(0);
+            list = tbox_render_build_display_list(&arena, &box);
+            uint32_t pixels[40 * 30];
+            for (size_t i = 0; i < 40u * 30u; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_raster_display_list(pixels, 40, 30, &list);
+            border_pixels[mode] = pixels[1 * 40 + 20];
+            tbox_arena_destroy(&arena);
+        }
+        TBOX_TEST_ASSERT(border_pixels[0] != border_pixels[1]);
+        style.border_radius = 100.0;
+        arena = tbox_arena_create(0);
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 2 && list.items[1].kind == TBOX_PAINT_FILL_RING);
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT(list.items[1].corner_radii[0] == 15.0);
+            TBOX_TEST_ASSERT(list.items[1].inner_corner_radii[0] == 13.0);
         }
         tbox_arena_destroy(&arena);
     }

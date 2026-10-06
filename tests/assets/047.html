@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #eef2f7; color: #1e293b; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        p { margin: 0 0 16px; }
+        .row { display: flex; gap: 14px; }
+        .card { width: 160px; padding: 12px; background: white; border: 1px solid #cbd5e1; }
+        h2 { margin: 0 0 8px; font-size: 17px; }
+        .item { display: block; padding: 8px; margin: 0 0 4px; background: #e2e8f0; }
+        .last-three .items > .item:nth-last-child(-n+3) { background: #fecaca; }
+        .alternate .items > .item:nth-last-child(odd) { background: #bfdbfe; }
+        .by-type .items > p:nth-last-of-type(2n) { background: #bbf7d0; }
+    </style>
+</head>
+<body>
+    <h1>Contagem de tras para frente</h1>
+    <p>Os seletores nth-last contam a partir do ultimo elemento.</p>
+    <div class="row">
+        <div class="card last-three">
+            <h2>Ultimos tres</h2>
+            <div class="items">
+                <div class="item">Item 1</div>
+                <div class="item">Item 2</div>
+                <div class="item">Item 3: vermelho</div>
+                <div class="item">Item 4: vermelho</div>
+                <div class="item">Item 5: vermelho</div>
+            </div>
+        </div>
+        <div class="card alternate">
+            <h2>Impares do fim</h2>
+            <div class="items">
+                <div class="item">Item 1: azul</div>
+                <div class="item">Item 2</div>
+                <div class="item">Item 3: azul</div>
+                <div class="item">Item 4</div>
+                <div class="item">Item 5: azul</div>
+            </div>
+        </div>
+        <div class="card by-type">
+            <h2>Tipo p, pares do fim</h2>
+            <div class="items">
+                <p class="item">Paragrafo 1: verde</p>
+                <span class="item">Span entre paragrafos</span>
+                <p class="item">Paragrafo 2</p>
+                <p class="item">Paragrafo 3: verde</p>
+                <p class="item">Paragrafo 4</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -630,6 +630,39 @@ static void tbox_test_raster_image_scaling(int *failures_ptr) {
     *failures_ptr = failures;
 }
 
+/* Pixelated enlargement maps each destination block to exactly one source
+ * pixel, while preserving image op clipping and opacity. */
+static void tbox_test_raster_image_pixelated(int *failures_ptr) {
+    int failures = *failures_ptr;
+    unsigned char source_pixels[2 * 2 * 4] = {
+        255, 0, 0, 255,   0, 255, 0, 255,
+        0, 0, 255, 255,   255, 255, 0, 255,
+    };
+    tbox_image source = { 2, 2, source_pixels };
+    tbox_paint_op op = { 0 };
+    op.kind = TBOX_PAINT_IMAGE;
+    op.rect = (tbox_rect){ 0, 0, 4, 4 };
+    op.image = &source;
+    op.image_pixelated = true;
+    op.color.a = 255;
+    tbox_display_list list = { &op, 1 };
+    uint32_t pixels[4 * 4] = { 0 };
+    tbox_raster_display_list(pixels, 4, 4, &list);
+    for (int y = 0; y < 4; y++) {
+        for (int x = 0; x < 4; x++) {
+            uint32_t expected = y < 2 ? (x < 2 ? tbox_test_raster_xrgb(255, 0, 0) : tbox_test_raster_xrgb(0, 255, 0)) :
+                                        (x < 2 ? tbox_test_raster_xrgb(0, 0, 255) : tbox_test_raster_xrgb(255, 255, 0));
+            TBOX_TEST_ASSERT(pixels[y * 4 + x] == expected);
+        }
+    }
+    op.has_clip = true;
+    op.clip = (tbox_rect){ 2, 0, 2, 4 };
+    memset(pixels, 0, sizeof(pixels));
+    tbox_raster_display_list(pixels, 4, 4, &list);
+    TBOX_TEST_ASSERT(pixels[0] == 0 && pixels[2] == tbox_test_raster_xrgb(0, 255, 0));
+    *failures_ptr = failures;
+}
+
 /* Alpha compositing: a fully-transparent source pixel must leave the
  * destination untouched (same "alpha == 0 is a no-op" contract
  * tbox_raster_fill_rect already has), and a half-transparent one must blend
@@ -930,6 +963,7 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_fill_rect_fully_transparent_noop(&failures);
     tbox_test_raster_image_basic(&failures);
     tbox_test_raster_image_scaling(&failures);
+    tbox_test_raster_image_pixelated(&failures);
     tbox_test_raster_image_alpha_blend(&failures);
     tbox_test_raster_image_out_of_bounds(&failures);
     tbox_test_raster_image_invalid_args(&failures);

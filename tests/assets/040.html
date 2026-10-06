@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #f3f5f9; color: #233047; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 26px; }
+        h2 { margin: 22px 0 8px; font-size: 19px; }
+        p { margin: 0 0 10px; }
+        .row { display: flex; gap: 16px; }
+        .card { background: white; padding: 12px; margin-bottom: 8px; }
+
+        /* Logical borders use the existing left-to-right writing mode. */
+        .logical {
+            width: 210px;
+            border: 1px solid #cbd5e1;
+            border-inline-start: 6px solid #2563eb;
+            border-inline-end: 3px dashed #f59e0b;
+            border-block-start: 3px dotted #16a34a;
+            border-block-end: 4px double #dc2626;
+        }
+        .logical-alt { border-inline-start-width: 10px; border-block-end-color: #9333ea; }
+
+        /* Each pseudo-class changes a visible part of the example. */
+        .solo > span:only-child { color: #2563eb; text-decoration: underline; }
+        .empty-box { width: 200px; height: 28px; background: #fef3c7; }
+        .empty-box:empty { background: #bbf7d0; border: 2px solid #16a34a; }
+        input { padding: 5px; margin-right: 10px; }
+        input:enabled { border: 2px solid #2563eb; background: #eff6ff; }
+        input:disabled { border: 2px solid #94a3b8; background: #e2e8f0; color: #64748b; }
+
+        .decorations p { margin-bottom: 12px; font-size: 18px; }
+        .dotted { text-decoration: underline overline #2563eb 2px; text-decoration-style: dotted; }
+        .dashed { text-decoration-line: underline line-through; text-decoration-color: #dc2626; text-decoration-style: dashed; }
+        .double { text-decoration-line: underline overline; text-decoration-color: #9333ea; text-decoration-style: double; }
+
+        .photo { width: 200px; height: 120px; border: 2px solid #334155; background: #e2e8f0; }
+        .contain { object-fit: contain; }
+        .cover { object-fit: cover; }
+        .label { margin: 0 0 4px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Novos estilos CSS</h1>
+    <p>Bordas logicas, pseudoclasses, decoracao de texto e ajuste de imagens.</p>
+
+    <h2>Bordas logicas</h2>
+    <div class="row">
+        <div class="card logical">Inicio, fim, topo e base</div>
+        <div class="card logical logical-alt">Longhands logicos</div>
+    </div>
+
+    <h2>Pseudoclasses</h2>
+    <div class="card solo"><span>Filho unico em azul</span></div>
+    <div class="empty-box"></div>
+    <div class="card"><input value="Habilitado"><input value="Desabilitado" disabled></div>
+
+    <h2>Decoracao de texto</h2>
+    <div class="card decorations">
+        <p class="dotted">Sublinhado e sobrelinha pontilhados</p>
+        <p class="dashed">Sublinhado e tachado tracejados</p>
+        <p class="double">Sublinhado e sobrelinha duplos</p>
+    </div>
+
+    <h2>Object-fit</h2>
+    <div class="row">
+        <div><p class="label">contain</p><img class="photo contain" src="bird.png" alt="Passaro"></div>
+        <div><p class="label">cover</p><img class="photo cover" src="bird.png" alt="Passaro"></div>
+    </div>
+</body>
+</html>

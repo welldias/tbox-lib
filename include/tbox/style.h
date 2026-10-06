@@ -100,6 +100,12 @@ typedef enum tbox_style_box_sizing {
     TBOX_STYLE_BOX_SIZING_BORDER_BOX,
 } tbox_style_box_sizing;
 
+typedef enum tbox_style_background_clip {
+    TBOX_STYLE_BACKGROUND_CLIP_BORDER_BOX,
+    TBOX_STYLE_BACKGROUND_CLIP_PADDING_BOX,
+    TBOX_STYLE_BACKGROUND_CLIP_CONTENT_BOX,
+} tbox_style_background_clip;
+
 typedef enum tbox_style_line_height_kind {
     TBOX_STYLE_LINE_HEIGHT_NORMAL,
     TBOX_STYLE_LINE_HEIGHT_NUMBER,
@@ -146,15 +152,22 @@ typedef enum tbox_style_text_align {
     TBOX_STYLE_TEXT_ALIGN_JUSTIFY,
 } tbox_style_text_align;
 
-/* `text-decoration` supports one line at a time; no multi-value
- * declarations or `blink` (see ARCHITECTURE.md's v13 "Fora de
- * escopo"). `NONE` is the initial value and the enum's first/zero member. */
+/* The enum keeps the first decoration line for existing callers. CSS can
+ * also combine lines via text_decoration_lines. `blink` is unsupported. */
 typedef enum tbox_style_text_decoration {
     TBOX_STYLE_TEXT_DECORATION_NONE, /* initial */
     TBOX_STYLE_TEXT_DECORATION_UNDERLINE,
     TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH,
     TBOX_STYLE_TEXT_DECORATION_OVERLINE,
 } tbox_style_text_decoration;
+
+typedef enum tbox_style_object_fit {
+    TBOX_STYLE_OBJECT_FIT_FILL,
+    TBOX_STYLE_OBJECT_FIT_CONTAIN,
+    TBOX_STYLE_OBJECT_FIT_COVER,
+    TBOX_STYLE_OBJECT_FIT_NONE,
+    TBOX_STYLE_OBJECT_FIT_SCALE_DOWN,
+} tbox_style_object_fit;
 
 /* Baseline/sub/super/text-top/text-bottom/<length> apply to inline text;
  * top/middle/bottom position content in table cells. */
@@ -241,6 +254,7 @@ typedef struct tbox_style {
     double line_height_value;                     /* multiplier or absolute px */
     tbox_css_rgba color;                          /* inheritable; initial (no parent): opaque black */
     tbox_css_rgba background_color;               /* not inheritable; initial: transparent, i.e. {0, 0, 0, 0} */
+    tbox_style_background_clip background_clip;    /* initial: border-box */
     /* always absolute px, never a tbox_style_length -- unlike
      * width/height (PERCENT deferred to the Layout Tree, whose containing
      * block doesn't exist yet at Style-resolve time), font-size in em/%
@@ -295,6 +309,8 @@ typedef struct tbox_style {
     /* `text-decoration`. NOT inheritable (same posture as
      * `background_color`); initial value NONE. */
     tbox_style_text_decoration text_decoration;
+    unsigned int text_decoration_lines; /* bit 0 underline, bit 1 line-through, bit 2 overline */
+    tbox_style_border_style text_decoration_style; /* solid, dashed, dotted or double */
     tbox_css_rgba text_decoration_color; /* initial: current text color */
     double text_decoration_thickness;    /* px; initial: 1 */
     /* Inheritable. AUTO keeps the default underline position; PX is the
@@ -338,6 +354,12 @@ typedef struct tbox_style {
      * 1.0 -- a hand-built, zero-initialized tbox_style must set it, or the
      * element paints nothing. */
     double opacity;
+    /* Replaced images: fit and position pixels inside their CSS content box.
+     * Positions are percentages of the free space, or px offsets from the
+     * left/top edge. Initial position is 50% 50%. */
+    tbox_style_object_fit object_fit;
+    tbox_style_length object_position[2]; /* horizontal, vertical */
+    bool image_rendering_pixelated; /* inheritable; pixelated/crisp-edges use nearest-neighbor enlargement */
     /* Form control colors, both inheritable. Alpha 0 means `auto` (the
      * initial value), which paints with the element's own `color` --
      * same "alpha 0 means absent" convention as box_shadow_color. */

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #eef2f7; color: #1e293b; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        p { margin: 0 0 16px; }
+        .row { display: flex; gap: 16px; }
+        .card { padding: 12px; background: white; border: 1px solid #cbd5e1; }
+        .label { margin: 0 0 8px; font-weight: bold; }
+        img { display: block; width: 144px; height: 144px; border: 2px solid #334155; }
+        .crisp { image-rendering: crisp-edges; }
+        .pixelated { image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+    <h1>image-rendering: crisp-edges</h1>
+    <p>Imagem de 8 por 8 pixels ampliada: crisp-edges e pixelated preservam blocos definidos.</p>
+    <div class="row">
+        <div class="card"><p class="label">auto: suave</p><img src="pixel-heart.png" alt="Coracao suave"></div>
+        <div class="card"><p class="label">crisp-edges: nitido</p><img class="crisp" src="pixel-heart.png" alt="Coracao nitido"></div>
+        <div class="card"><p class="label">pixelated: nitido</p><img class="pixelated" src="pixel-heart.png" alt="Coracao pixelado"></div>
+    </div>
+</body>
+</html>

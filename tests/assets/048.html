@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #eef2f7; color: #1e293b; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        p { margin: 0 0 14px; }
+        .row { display: flex; gap: 16px; }
+        .card { width: 250px; padding: 12px; background: white; border: 1px solid #cbd5e1; }
+        h2 { margin: 0 0 8px; font-size: 18px; }
+        .item { display: block; padding: 8px; margin: 0 0 4px; background: #e2e8f0; }
+        .heading ~ p { background: #bfdbfe; }
+        .marker ~ .item { background: #bbf7d0; }
+        .marker { background: #fde68a; }
+    </style>
+</head>
+<body>
+    <h1>Combinador de irmaos gerais: ~</h1>
+    <p>O seletor encontra todos os irmaos posteriores, mesmo com outros elementos no meio.</p>
+    <div class="row">
+        <div class="card">
+            <p class="item">Paragrafo antes: cinza</p>
+            <h2 class="heading">Titulo</h2>
+            <span class="item">Span entre os paragrafos</span>
+            <p class="item">Primeiro paragrafo: azul</p>
+            <p class="item">Segundo paragrafo: azul</p>
+        </div>
+        <div class="card">
+            <h2>Irmaos apos o marcador</h2>
+            <div class="item">Item anterior: cinza</div>
+            <div class="item marker">Marcador: amarelo</div>
+            <span class="item">Outro tipo: verde</span>
+            <div class="item">Item posterior: verde</div>
+        </div>
+    </div>
+</body>
+</html>

@@ -528,5 +528,20 @@ int tbox_test_css_cascade_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* :not() contributes the specificity of its argument, not an extra
+     * pseudo-class point. */
+    {
+        tbox_css_stylesheet *sheet = parse_css_cstr(".item:not(#special) { color: red; } p:not(span) { color: blue; }");
+        const tbox_css_ruleset *rules = tbox_css_stylesheet_rulesets(sheet);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(sheet) == 2);
+        if (tbox_css_stylesheet_ruleset_count(sheet) == 2) {
+            tbox_css_specificity a = tbox_css_cascade_specificity(&rules[0].selectors[0]);
+            tbox_css_specificity b = tbox_css_cascade_specificity(&rules[1].selectors[0]);
+            TBOX_TEST_ASSERT(a.a == 1 && a.b == 1 && a.c == 0);
+            TBOX_TEST_ASSERT(b.a == 0 && b.b == 0 && b.c == 2);
+        }
+        tbox_css_stylesheet_destroy(sheet);
+    }
+
     return failures;
 }

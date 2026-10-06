@@ -44,6 +44,7 @@ typedef enum tbox_css_attribute_operator {
  *   DESCENDANT:        ' '  (whitespace, no explicit combinator symbol)
  *   CHILD:             '>'
  *   ADJACENT_SIBLING:  '+'
+ *   GENERAL_SIBLING:   '~'
  * A future selector-matching engine walks simple_selectors left to right,
  * starting a new compound (AND-group) every time combinator_before != NONE,
  * treating a compound with no TYPE/UNIVERSAL item as an implicit universal,
@@ -53,6 +54,7 @@ typedef enum tbox_css_combinator {
     TBOX_CSS_COMBINATOR_DESCENDANT,
     TBOX_CSS_COMBINATOR_CHILD,
     TBOX_CSS_COMBINATOR_ADJACENT_SIBLING,
+    TBOX_CSS_COMBINATOR_GENERAL_SIBLING,
 } tbox_css_combinator;
 
 /* Every tbox_string_view below is copied into the owning tbox_css_stylesheet's
@@ -71,6 +73,7 @@ typedef struct tbox_css_simple_selector {
     tbox_css_attribute_operator attribute_operator; /* meaningful for ATTRIBUTE only */
     tbox_string_view attribute_value;                /* ATTRIBUTE + EQUALS/INCLUDES/DASHMATCH only; empty for EXISTS */
     tbox_string_view pseudo_argument;                /* PSEUDO functional form only (":lang(en)" -> "en"); empty otherwise */
+    struct tbox_css_simple_selector *negated_selector; /* :not() argument: one type, universal, ID, class, or attribute selector */
 } tbox_css_simple_selector;
 
 /* One selector: a left-to-right chain of simple selectors. Corresponds to one

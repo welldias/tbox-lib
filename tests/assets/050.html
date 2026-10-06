@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #eef2f7; color: #1e293b; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        .card { width: 390px; padding: 14px; background: white; border: 1px solid #cbd5e1; }
+        .field { margin: 0 0 14px; }
+        label { display: block; margin: 0 0 5px; }
+        input, textarea { display: block; width: 270px; padding: 7px; border: 2px solid #94a3b8; }
+        input:required, textarea:required { border-color: #dc2626; background: #fee2e2; }
+        input:optional, textarea:optional { border-color: #16a34a; background: #dcfce7; }
+    </style>
+</head>
+<body>
+    <h1>Estados :required e :optional</h1>
+    <div class="card">
+        <div class="field"><label>Nome obrigatorio: vermelho</label><input required value="Ada"></div>
+        <div class="field"><label>Apelido opcional: verde</label><input value="A"></div>
+        <div class="field"><label>Comentario obrigatorio: vermelho</label><textarea required>Escreva aqui</textarea></div>
+        <div class="field"><label>Observacao opcional: verde</label><textarea>Sem obrigacao</textarea></div>
+    </div>
+</body>
+</html>

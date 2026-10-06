@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #eef2f7; color: #1e293b; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        .card { width: 420px; padding: 14px; background: white; border: 1px solid #cbd5e1; }
+        .item { padding: 8px; margin: 0 0 5px; background: #e2e8f0; }
+        .item:not(.muted) { background: #bfdbfe; }
+        .item:not([data-skip]) { border-left: 5px solid #2563eb; }
+    </style>
+</head>
+<body>
+    <h1>Seletor :not()</h1>
+    <div class="card">
+        <p class="item">Sem exclusao: azul e borda</p>
+        <p class="item muted">Classe muted: fundo cinza e borda</p>
+        <p class="item" data-skip>Com data-skip: azul, sem borda</p>
+        <p class="item muted" data-skip>Ambas as exclusoes: cinza, sem borda</p>
+    </div>
+</body>
+</html>

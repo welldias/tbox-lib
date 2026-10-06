@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #dbeafe; color: #1e293b; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        p { margin: 0 0 16px; }
+        .row { display: flex; gap: 16px; margin-bottom: 20px; }
+        .column { width: 175px; }
+        .label { margin-bottom: 6px; font-weight: bold; }
+        .box {
+            width: 120px;
+            height: 90px;
+            padding: 18px;
+            border: 6px solid rgba(220,38,38,0.65);
+            background-color: #16a34a;
+            color: white;
+        }
+        .rounded { border-radius: 24px; }
+        .border { background-clip: border-box; }
+        .padding { background-clip: padding-box; }
+        .content { background-clip: content-box; }
+    </style>
+</head>
+<body>
+    <h1>background-clip</h1>
+    <p>O fundo verde ocupa a caixa selecionada. A area azul mostra o padding transparente.</p>
+    <div class="row">
+        <div class="column"><p class="label">border-box</p><div class="box border">Conteudo</div></div>
+        <div class="column"><p class="label">padding-box</p><div class="box padding">Conteudo</div></div>
+        <div class="column"><p class="label">content-box</p><div class="box content">Conteudo</div></div>
+    </div>
+    <div class="row">
+        <div class="column"><p class="label">borda curva</p><div class="box rounded border">Conteudo</div></div>
+        <div class="column"><p class="label">padding curvo</p><div class="box rounded padding">Conteudo</div></div>
+        <div class="column"><p class="label">conteudo curvo</p><div class="box rounded content">Conteudo</div></div>
+    </div>
+</body>
+</html>

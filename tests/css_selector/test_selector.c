@@ -115,6 +115,40 @@ int tbox_test_css_selector_run(void) {
 
     /* 7: comma-separated group is OR across selectors, still in document order. */
     {
+        tbox_html_document *doc = parse_html_cstr("<div><p>before</p><h2>heading</h2><em>gap</em><p>after 1</p><!-- c --><p>after 2</p></div><p>outside</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_selector_node_set set = select_cstr(root, "div > h2 ~ p");
+        TBOX_TEST_ASSERT(set.count == 2);
+        if (set.count == 2) {
+            TBOX_TEST_ASSERT(text_eq(set.items[0]->first_child->text.text, "after 1"));
+            TBOX_TEST_ASSERT(text_eq(set.items[1]->first_child->text.text, "after 2"));
+        }
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "h2+p");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 8: comma-separated group is OR across selectors, still in document order. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p class='skip'>A</p><p id='chosen'>B</p><span>C</span><p data-skip>D</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const char *selectors[] = { "p:not(.skip)", "p:not(#chosen)", "p:not([data-skip])", "div > :not(p)", "p:not(*)" };
+        const size_t expected[] = { 2, 2, 2, 1, 0 };
+        for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+            tbox_css_selector_node_set set = select_cstr(root, selectors[i]);
+            TBOX_TEST_ASSERT(set.count == expected[i]);
+            tbox_css_selector_node_set_destroy(&set);
+        }
+        tbox_css_selector_query *invalid = tbox_css_selector_compile("p:not(.skip.more)", strlen("p:not(.skip.more)"), NULL);
+        TBOX_TEST_ASSERT(invalid == NULL);
+        tbox_css_selector_query_destroy(invalid);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* 9: comma-separated group is OR across selectors, still in document order. */
+    {
         tbox_html_document *doc        = parse_html_cstr("<div><p>p</p><span>s</span><em>e</em></div>");
         tbox_css_selector_node_set set = select_cstr(tbox_html_document_root(doc), "span, p");
 
@@ -144,10 +178,29 @@ int tbox_test_css_selector_run(void) {
         tbox_html_document_destroy(doc);
     }
 
-    /* 9: :hover never matches while no hover context has been set (default
-     * NULL) -- same behavior as before tbox_css_selector_set_hover_context
-     * existed. An unsupported pseudo-class/pseudo-element (e.g. :lang())
-     * still never matches at all, hover context or not. */
+    /* Language comes from the closest lang attribute. A more specific
+     * subtag matches its base language, case-insensitively. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div lang='pt-BR'><p>A</p><section lang='en-US'><p>B</p></section>"
+            "<p lang=''>C</p><p lang='english'>D</p></div><p>E</p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_selector_node_set set = select_cstr(root, "p:lang(pt)");
+        TBOX_TEST_ASSERT(set.count == 1 && text_eq(set.items[0]->first_child->text.text, "A"));
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "p:lang(EN)");
+        TBOX_TEST_ASSERT(set.count == 1 && text_eq(set.items[0]->first_child->text.text, "B"));
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "p:lang(english)");
+        TBOX_TEST_ASSERT(set.count == 1 && text_eq(set.items[0]->first_child->text.text, "D"));
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "p:lang(eng)");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* :hover never matches while no hover context has been set (default
+     * NULL). Unsupported pseudo-elements still never match. */
     {
         tbox_html_document *doc        = parse_html_cstr("<a>x</a>");
         tbox_css_selector_node_set set = select_cstr(tbox_html_document_root(doc), "a:hover");
@@ -308,6 +361,129 @@ int tbox_test_css_selector_run(void) {
         checked = select_cstr(root, "input:checked");
         TBOX_TEST_ASSERT(checked.count == 1 && checked.items[0] == checkbox);
         tbox_css_selector_node_set_destroy(&checked);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Structural and form-state pseudo-classes used by CSS stylesheets. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p id='only'></p><!-- comment --></div>"
+                                                 "<div><p></p><p></p></div>"
+                                                 "<div id='empty'><!-- comment --></div>"
+                                                 "<div id='space'> </div>"
+                                                 "<input disabled><input><button disabled>x</button><span disabled>x</span>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_selector_node_set set = select_cstr(root, "p:only-child");
+        TBOX_TEST_ASSERT(set.count == 1);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "div:empty");
+        TBOX_TEST_ASSERT(set.count == 1);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "input:disabled, button:disabled");
+        TBOX_TEST_ASSERT(set.count == 2);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "input:enabled");
+        TBOX_TEST_ASSERT(set.count == 1);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "span:disabled, span:enabled");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Required and optional apply only to supported input, select, and
+     * textarea controls. The input type comparison is ASCII insensitive. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><input required><input><input type='HIDDEN' required>"
+            "<input type='range'><select required></select><select></select><textarea required></textarea>"
+            "<textarea></textarea><button required>x</button><span required>x</span></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_selector_node_set set = select_cstr(root, ":required");
+        TBOX_TEST_ASSERT(set.count == 3);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, ":optional");
+        TBOX_TEST_ASSERT(set.count == 3);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "input[type=hidden]:required, input[type=range]:optional, button:required, span:required");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Root and type-relative selectors ignore other element types and
+     * non-element siblings while counting siblings. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<!DOCTYPE html><html><body>"
+            "<section><p id='a'>A</p><!-- x --><span>S</span><p id='b'>B</p><em>E</em><p id='c'>C</p></section>"
+            "<section><h2>H</h2><p id='d'>D</p></section>"
+            "</body></html>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_selector_node_set set = select_cstr(root, ":root");
+        TBOX_TEST_ASSERT(set.count == 1 && text_eq(set.items[0]->element.tag_name, "html"));
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "section:first-of-type");
+        TBOX_TEST_ASSERT(set.count == 1);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "section:last-of-type");
+        TBOX_TEST_ASSERT(set.count == 1);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "section:only-of-type");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "section p:first-of-type");
+        TBOX_TEST_ASSERT(set.count == 2);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "section p:last-of-type");
+        TBOX_TEST_ASSERT(set.count == 2);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "section p:only-of-type");
+        TBOX_TEST_ASSERT(set.count == 1 && text_eq(set.items[0]->first_child->text.text, "D"));
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "section span:only-of-type");
+        TBOX_TEST_ASSERT(set.count == 1 && text_eq(set.items[0]->first_child->text.text, "S"));
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* nth selectors count element siblings, or only siblings of the same
+     * type. Their an+b formulas also accept whitespace and negative a. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>A</p><!-- x --><span>S</span><p>B</p><p>C</p><em>E</em><p>D</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const char *selectors[] = {
+            "div > :nth-child(odd)", "div > :nth-child(even)",
+            "div > :nth-child(3)", "div > :nth-child(2n + 1)",
+            "div > p:nth-of-type(2)", "div > p:nth-of-type(-n+2)",
+            "div > p:nth-of-type(n+3)", "div > p:nth-of-type(2n)",
+            "div > :nth-child(0)", "div > :nth-child(2n+)",
+        };
+        const size_t expected[] = { 3, 3, 1, 3, 1, 2, 2, 2, 0, 0 };
+        for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+            tbox_css_selector_node_set set = select_cstr(root, selectors[i]);
+            TBOX_TEST_ASSERT(set.count == expected[i]);
+            tbox_css_selector_node_set_destroy(&set);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Last variants count from the end, ignoring comments and counting
+     * only the same tag when requested. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>A</p><span>S</span><p>B</p><!-- x --><p>C</p><em>E</em><p>D</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const char *selectors[] = {
+            "div > :nth-last-child(1)", "div > :nth-last-child(2)",
+            "div > :nth-last-child(odd)", "div > :nth-last-child(2n + 1)",
+            "div > p:nth-last-of-type(2)", "div > p:nth-last-of-type(-n+2)",
+            "div > p:nth-last-of-type(2n)", "div > :nth-last-child(0)",
+        };
+        const size_t expected[] = { 1, 1, 3, 3, 1, 2, 2, 0 };
+        const char *first_text[] = { "D", "E", "S", "S", "C", "C", "A", NULL };
+        for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+            tbox_css_selector_node_set set = select_cstr(root, selectors[i]);
+            TBOX_TEST_ASSERT(set.count == expected[i]);
+            if (set.count > 0) TBOX_TEST_ASSERT(text_eq(set.items[0]->first_child->text.text, first_text[i]));
+            tbox_css_selector_node_set_destroy(&set);
+        }
         tbox_html_document_destroy(doc);
     }
 

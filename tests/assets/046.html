@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #eef2f7; color: #1e293b; font: 16px sans-serif; padding: 24px; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        p { margin: 0 0 16px; }
+        .row { display: flex; gap: 16px; }
+        .card { width: 230px; padding: 12px; background: white; border: 1px solid #cbd5e1; }
+        h2 { margin: 0 0 8px; font-size: 18px; }
+        .item { padding: 8px; margin: 0 0 4px; background: #e2e8f0; }
+        .striped .items > .item:nth-child(odd) { background: #bfdbfe; }
+        .typed p:nth-of-type(2n) { background: #bbf7d0; }
+        .typed span { display: block; }
+        .first-three .items > .item:nth-child(-n+3) { background: #fecaca; }
+    </style>
+</head>
+<body>
+    <h1>Seletores :nth-child() e :nth-of-type()</h1>
+    <p>Posicoes alternadas, tipos alternados e os tres primeiros elementos.</p>
+    <div class="row">
+        <div class="card striped">
+            <h2>:nth-child(odd)</h2>
+            <div class="items">
+                <div class="item">Item 1: azul</div>
+                <div class="item">Item 2</div>
+                <div class="item">Item 3: azul</div>
+                <div class="item">Item 4</div>
+                <div class="item">Item 5: azul</div>
+            </div>
+        </div>
+        <div class="card typed">
+            <h2>p:nth-of-type(2n)</h2>
+            <p class="item">Paragrafo 1</p>
+            <span class="item">Span entre paragrafos</span>
+            <p class="item">Paragrafo 2: verde</p>
+            <p class="item">Paragrafo 3</p>
+            <p class="item">Paragrafo 4: verde</p>
+        </div>
+        <div class="card first-three">
+            <h2>:nth-child(-n+3)</h2>
+            <div class="items">
+                <div class="item">Item 1: vermelho</div>
+                <div class="item">Item 2: vermelho</div>
+                <div class="item">Item 3: vermelho</div>
+                <div class="item">Item 4</div>
+                <div class="item">Item 5</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

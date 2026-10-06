@@ -62,7 +62,12 @@ tbox_css_specificity tbox_css_cascade_specificity(const tbox_css_selector *selec
             spec.b++;
             break;
         case TBOX_CSS_SIMPLE_SELECTOR_PSEUDO:
-            if (tbox_css_cascade_is_known_pseudo_element(item->name)) {
+            if (tbox_string_view_equal_cstr(item->name, "not") && item->negated_selector != NULL) {
+                const tbox_css_simple_selector *nested = item->negated_selector;
+                if (nested->kind == TBOX_CSS_SIMPLE_SELECTOR_ID) spec.a++;
+                else if (nested->kind == TBOX_CSS_SIMPLE_SELECTOR_CLASS || nested->kind == TBOX_CSS_SIMPLE_SELECTOR_ATTRIBUTE) spec.b++;
+                else if (nested->kind == TBOX_CSS_SIMPLE_SELECTOR_TYPE) spec.c++;
+            } else if (tbox_css_cascade_is_known_pseudo_element(item->name)) {
                 spec.c++;
             } else {
                 spec.b++;

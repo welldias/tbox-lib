@@ -11,12 +11,14 @@
  *   ruleset         : selector_group '{' declaration_list '}'
  *   selector_group  : selector [ ',' S* selector ]*
  *   selector        : compound [ combinator compound ]*
- *   combinator      : S* '>' S* | S* '+' S* | S+               (S+ alone = descendant)
+ *   combinator      : S* '>' S* | S* '+' S* | S* '~' S* | S+    (S+ alone = descendant)
  *   compound        : [ element_name | '*' ]? qualifier*
  *                   | qualifier+
  *   qualifier       : HASH | '.' IDENT | attrib | pseudo
  *   attrib          : '[' S* IDENT S* [ [ '=' | '~=' | '|=' ] S* [ IDENT | STRING ] S* ]? ']'
  *   pseudo          : ':' IDENT | ':' FUNCTION S* IDENT? S* ')'
+ *                   | ':nth-child(' <an+b> ')' | ':nth-of-type(' <an+b> ')'
+ *                   | ':nth-last-child(' <an+b> ')' | ':nth-last-of-type(' <an+b> ')'
  *   declaration_list: S* [ declaration? [ ';' S* declaration? ]* ]
  *   declaration     : IDENT S* ':' S* <raw tokens up to top-level ';' or '}'>
  *
@@ -206,6 +208,7 @@ static tbox_css_simple_selector *tbox_css_parser_push_simple_selector(tbox_vecto
     item->attribute_operator       = TBOX_CSS_ATTR_EXISTS;
     item->attribute_value          = tbox_string_view_make(NULL, 0);
     item->pseudo_argument          = tbox_string_view_make(NULL, 0);
+    item->negated_selector         = NULL;
     return item;
 }
 
@@ -264,7 +267,8 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
     return true;
 }
 
-/* pseudo: ':' IDENT | ':' FUNCTION S* IDENT? S* ')' */
+/* pseudo: ':' IDENT | ':' FUNCTION S* IDENT? S* ')', plus an+b arguments
+ * for the four nth-* structural selectors. */
 static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox_vector *out, tbox_css_combinator combinator) {
     tbox_css_parser_advance(parser); /* ':' */
 
@@ -277,11 +281,63 @@ static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox
 
     if (parser->current.type == TBOX_CSS_TOKEN_FUNCTION) {
         tbox_string_view name = tbox_css_parser_copy_lower(parser, parser->current.text);
+        size_t argument_start = parser->current.offset + parser->current.text.size + 1;
         tbox_css_parser_advance(parser);
+        if (tbox_string_view_equal_cstr(name, "not")) {
+            tbox_vector nested;
+            tbox_vector_init(&nested, parser->arena, sizeof(tbox_css_simple_selector), 1);
+            tbox_css_parser_skip_s(parser);
+            if (parser->current.type == TBOX_CSS_TOKEN_IDENT) {
+                tbox_string_view type = tbox_css_parser_copy_lower(parser, parser->current.text);
+                tbox_css_parser_advance(parser);
+                tbox_css_parser_push_simple_selector(&nested, TBOX_CSS_SIMPLE_SELECTOR_TYPE, TBOX_CSS_COMBINATOR_NONE, type);
+            } else if (parser->current.type == TBOX_CSS_TOKEN_STAR) {
+                tbox_css_parser_advance(parser);
+                tbox_css_parser_push_simple_selector(&nested, TBOX_CSS_SIMPLE_SELECTOR_UNIVERSAL, TBOX_CSS_COMBINATOR_NONE, tbox_string_view_make(NULL, 0));
+            } else if (parser->current.type == TBOX_CSS_TOKEN_HASH) {
+                tbox_string_view id = tbox_css_parser_copy(parser, parser->current.text);
+                tbox_css_parser_advance(parser);
+                tbox_css_parser_push_simple_selector(&nested, TBOX_CSS_SIMPLE_SELECTOR_ID, TBOX_CSS_COMBINATOR_NONE, id);
+            } else if (parser->current.type == TBOX_CSS_TOKEN_DOT) {
+                tbox_css_parser_advance(parser);
+                if (parser->current.type != TBOX_CSS_TOKEN_IDENT) return false;
+                tbox_string_view class_name = tbox_css_parser_copy(parser, parser->current.text);
+                tbox_css_parser_advance(parser);
+                tbox_css_parser_push_simple_selector(&nested, TBOX_CSS_SIMPLE_SELECTOR_CLASS, TBOX_CSS_COMBINATOR_NONE, class_name);
+            } else if (parser->current.type == TBOX_CSS_TOKEN_LBRACKET) {
+                if (!tbox_css_parser_parse_attribute_qualifier(parser, &nested, TBOX_CSS_COMBINATOR_NONE)) return false;
+            } else {
+                return false;
+            }
+            tbox_css_parser_skip_s(parser);
+            if (parser->current.type != TBOX_CSS_TOKEN_RPAREN) return false;
+            tbox_css_parser_advance(parser);
+            tbox_css_simple_selector *item = tbox_css_parser_push_simple_selector(out, TBOX_CSS_SIMPLE_SELECTOR_PSEUDO, combinator, name);
+            item->negated_selector = nested.data;
+            return true;
+        }
+        if (tbox_string_view_equal_cstr(name, "nth-child") || tbox_string_view_equal_cstr(name, "nth-of-type") ||
+            tbox_string_view_equal_cstr(name, "nth-last-child") || tbox_string_view_equal_cstr(name, "nth-last-of-type")) {
+            while (parser->current.type != TBOX_CSS_TOKEN_RPAREN && parser->current.type != TBOX_CSS_TOKEN_EOF) {
+                tbox_css_token_type type = parser->current.type;
+                if (type != TBOX_CSS_TOKEN_S && type != TBOX_CSS_TOKEN_IDENT && type != TBOX_CSS_TOKEN_NUMBER &&
+                    type != TBOX_CSS_TOKEN_PLUS && !(type == TBOX_CSS_TOKEN_DELIM && parser->current.text.size == 1 && parser->current.text.data[0] == '-'))
+                    return false;
+                tbox_css_parser_advance(parser);
+            }
+            if (parser->current.type != TBOX_CSS_TOKEN_RPAREN || parser->current.offset == argument_start)
+                return false;
+            tbox_string_view argument = tbox_css_parser_copy(parser, tbox_string_view_make(parser->tokenizer.input + argument_start, parser->current.offset - argument_start));
+            tbox_css_parser_advance(parser);
+            tbox_css_simple_selector *item = tbox_css_parser_push_simple_selector(out, TBOX_CSS_SIMPLE_SELECTOR_PSEUDO, combinator, name);
+            item->pseudo_argument = argument;
+            return true;
+        }
         tbox_css_parser_skip_s(parser);
 
         tbox_string_view argument = tbox_string_view_make(NULL, 0);
-        if (parser->current.type == TBOX_CSS_TOKEN_IDENT) {
+        if (parser->current.type == TBOX_CSS_TOKEN_IDENT ||
+            (tbox_string_view_equal_cstr(name, "lang") && parser->current.type == TBOX_CSS_TOKEN_STRING)) {
             argument = tbox_css_parser_copy(parser, parser->current.text);
             tbox_css_parser_advance(parser);
             tbox_css_parser_skip_s(parser);
@@ -355,7 +411,7 @@ static bool tbox_css_parser_parse_compound(tbox_css_parser *parser, tbox_vector 
 
 /* selector: compound [ combinator compound ]*
  * S is the one place this has to consult the raw token type instead of
- * blindly skipping it, since S alone (with no '>'/'+' following) is itself
+ * blindly skipping it, since S alone (with no '>'/'+'/'~' following) is itself
  * the descendant-combinator signal. */
 static bool tbox_css_parser_parse_selector(tbox_css_parser *parser, tbox_css_selector *out_selector) {
     tbox_vector simple_selectors;
@@ -382,6 +438,12 @@ static bool tbox_css_parser_parse_selector(tbox_css_parser *parser, tbox_css_sel
                 tbox_css_parser_skip_s(parser);
                 continue;
             }
+            if (parser->current.type == TBOX_CSS_TOKEN_TILDE) {
+                combinator = TBOX_CSS_COMBINATOR_GENERAL_SIBLING;
+                tbox_css_parser_advance(parser);
+                tbox_css_parser_skip_s(parser);
+                continue;
+            }
             if (tbox_css_token_can_start_simple_selector(parser->current.type)) {
                 combinator = TBOX_CSS_COMBINATOR_DESCENDANT;
                 continue;
@@ -396,6 +458,12 @@ static bool tbox_css_parser_parse_selector(tbox_css_parser *parser, tbox_css_sel
         }
         if (parser->current.type == TBOX_CSS_TOKEN_PLUS) {
             combinator = TBOX_CSS_COMBINATOR_ADJACENT_SIBLING;
+            tbox_css_parser_advance(parser);
+            tbox_css_parser_skip_s(parser);
+            continue;
+        }
+        if (parser->current.type == TBOX_CSS_TOKEN_TILDE) {
+            combinator = TBOX_CSS_COMBINATOR_GENERAL_SIBLING;
             tbox_css_parser_advance(parser);
             tbox_css_parser_skip_s(parser);
             continue;

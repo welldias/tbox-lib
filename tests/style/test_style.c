@@ -1732,5 +1732,106 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Logical borders compete with physical sides; text decoration can
+     * combine lines and use an independently cascaded stroke style. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { border: 1px solid red; border-left: 2px solid blue;"
+            " border-inline-start: 4px dashed green; border-block-end-width: 5px;"
+            " text-decoration: underline overline red 2px; text-decoration-style: dotted;"
+            " object-fit: cover; }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.border_widths[3] == 4.0 && style.border_styles[3] == TBOX_STYLE_BORDER_STYLE_DASHED);
+        TBOX_TEST_ASSERT(style.border_widths[2] == 5.0 && style.border_styles[2] == TBOX_STYLE_BORDER_STYLE_SOLID);
+        TBOX_TEST_ASSERT(style.text_decoration_lines == 5u && style.text_decoration_style == TBOX_STYLE_BORDER_STYLE_DOTTED);
+        TBOX_TEST_ASSERT(style.object_fit == TBOX_STYLE_OBJECT_FIT_COVER);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("div { border-inline-end: 3px double blue; border-right: 2px solid red !important;"
+            " border-block-start: 2px dotted green; text-decoration: underline dashed;"
+            " text-decoration-line: underline line-through overline; text-decoration-style: double; object-fit: contain; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.border_widths[1] == 2.0 && style.border_styles[1] == TBOX_STYLE_BORDER_STYLE_SOLID);
+        TBOX_TEST_ASSERT(style.border_widths[0] == 2.0 && style.border_styles[0] == TBOX_STYLE_BORDER_STYLE_DOTTED);
+        TBOX_TEST_ASSERT(style.text_decoration_lines == 7u && style.text_decoration_style == TBOX_STYLE_BORDER_STYLE_DOUBLE);
+        TBOX_TEST_ASSERT(style.object_fit == TBOX_STYLE_OBJECT_FIT_CONTAIN);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("div { object-fit: none; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.object_fit == TBOX_STYLE_OBJECT_FIT_NONE);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { object-fit: scale-down; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.object_fit == TBOX_STYLE_OBJECT_FIT_SCALE_DOWN);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* object-position accepts one/two values and resolves em after font-size. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<img>");
+        const tbox_html_node *img = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("img { object-position: bottom left; font-size: 20px; }");
+        tbox_style style = resolve_node(sheet, img, NULL);
+        TBOX_TEST_ASSERT(style.object_position[0].kind == TBOX_STYLE_LENGTH_PERCENT && style.object_position[0].value == 0.0);
+        TBOX_TEST_ASSERT(style.object_position[1].kind == TBOX_STYLE_LENGTH_PERCENT && style.object_position[1].value == 100.0);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("img { object-position: 25% 2em; font-size: 20px; }");
+        style = resolve_node(sheet, img, NULL);
+        TBOX_TEST_ASSERT(style.object_position[0].kind == TBOX_STYLE_LENGTH_PERCENT && style.object_position[0].value == 25.0);
+        TBOX_TEST_ASSERT(style.object_position[1].kind == TBOX_STYLE_LENGTH_PX && style.object_position[1].value == 40.0);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("img { object-position: top; }");
+        style = resolve_node(sheet, img, NULL);
+        TBOX_TEST_ASSERT(style.object_position[0].value == 50.0 && style.object_position[1].value == 0.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* background-clip selects a box without inheriting from the parent. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { background-clip: content-box; } p { background-clip: padding-box; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.background_clip == TBOX_STYLE_BACKGROUND_CLIP_CONTENT_BOX);
+        TBOX_TEST_ASSERT(child.background_clip == TBOX_STYLE_BACKGROUND_CLIP_PADDING_BOX);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { background-clip: unknown; }");
+        parent = resolve_node(sheet, div, NULL);
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.background_clip == TBOX_STYLE_BACKGROUND_CLIP_BORDER_BOX);
+        TBOX_TEST_ASSERT(child.background_clip == TBOX_STYLE_BACKGROUND_CLIP_BORDER_BOX);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* image-rendering inherits; auto resets an inherited pixelated value. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><img></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *img = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { image-rendering: pixelated; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, img, &parent);
+        TBOX_TEST_ASSERT(parent.image_rendering_pixelated && child.image_rendering_pixelated);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("img { image-rendering: auto; }");
+        child = resolve_node(sheet, img, &parent);
+        TBOX_TEST_ASSERT(!child.image_rendering_pixelated);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("img { image-rendering: crisp-edges; }");
+        child = resolve_node(sheet, img, &parent);
+        TBOX_TEST_ASSERT(child.image_rendering_pixelated);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

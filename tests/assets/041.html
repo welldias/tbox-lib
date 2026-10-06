@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { padding: 24px; background: #f3f5f9; color: #1e293b; font: 16px sans-serif; }
+        h1 { margin: 0 0 8px; font-size: 25px; }
+        h2 { margin: 20px 0 8px; font-size: 19px; }
+        p { margin: 0 0 12px; }
+        .row { display: flex; gap: 12px; }
+        .card { background: white; padding: 10px; border: 1px solid #cbd5e1; }
+        .label { margin: 0 0 6px; font-weight: bold; }
+        .photo { display: block; width: 130px; height: 170px; border: 2px solid #334155; background: #dbeafe; }
+        .cover { object-fit: cover; }
+        .contain { object-fit: contain; }
+        .left { object-position: left center; }
+        .middle { object-position: center; }
+        .right { object-position: right center; }
+        .top { object-position: top; }
+        .bottom { object-position: bottom; }
+        .offset { object-position: 25% 20px; }
+    </style>
+</head>
+<body>
+    <h1>object-position</h1>
+    <p>A mesma imagem alinhada em pontos diferentes da sua caixa.</p>
+
+    <h2>Imagem recortada: object-fit cover</h2>
+    <div class="row">
+        <div class="card"><p class="label">left center</p><img class="photo cover left" src="bird.png" alt="Passaro"></div>
+        <div class="card"><p class="label">center</p><img class="photo cover middle" src="bird.png" alt="Passaro"></div>
+        <div class="card"><p class="label">right center</p><img class="photo cover right" src="bird.png" alt="Passaro"></div>
+    </div>
+
+    <h2>Imagem inteira: object-fit contain</h2>
+    <div class="row">
+        <div class="card"><p class="label">top</p><img class="photo contain top" src="bird.png" alt="Passaro"></div>
+        <div class="card"><p class="label">bottom</p><img class="photo contain bottom" src="bird.png" alt="Passaro"></div>
+        <div class="card"><p class="label">25% 20px</p><img class="photo contain offset" src="bird.png" alt="Passaro"></div>
+    </div>
+</body>
+</html>

@@ -57,6 +57,9 @@ static void print_combinator(tbox_css_combinator combinator) {
     case TBOX_CSS_COMBINATOR_ADJACENT_SIBLING:
         printf(" + ");
         break;
+    case TBOX_CSS_COMBINATOR_GENERAL_SIBLING:
+        printf(" ~ ");
+        break;
     }
 }
 

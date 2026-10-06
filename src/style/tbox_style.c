@@ -372,7 +372,7 @@ static bool tbox_style_parse_text_align(tbox_string_view raw, tbox_style_text_al
     return false;
 }
 
-/* Text decoration is not inherited. Recognize one line at a time. */
+/* Text decoration is not inherited. */
 static bool tbox_style_parse_decoration_line(tbox_string_view raw, tbox_style_text_decoration *out) {
     tbox_string_view value = tbox_style_trim(raw);
     if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("none"))) {
@@ -386,6 +386,41 @@ static bool tbox_style_parse_decoration_line(tbox_string_view raw, tbox_style_te
     } else {
         return false;
     }
+    return true;
+}
+
+static unsigned int tbox_style_decoration_bit(tbox_style_text_decoration line) {
+    return line == TBOX_STYLE_TEXT_DECORATION_UNDERLINE ? 1u :
+           line == TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH ? 2u :
+           line == TBOX_STYLE_TEXT_DECORATION_OVERLINE ? 4u : 0u;
+}
+
+static bool tbox_style_parse_decoration_lines(tbox_string_view text, unsigned int *out) {
+    unsigned int lines = 0;
+    bool found = false;
+    size_t i = 0;
+    while (i < text.size) {
+        while (i < text.size && tbox_style_is_space(text.data[i])) i++;
+        if (i == text.size) break;
+        size_t start = i;
+        while (i < text.size && !tbox_style_is_space(text.data[i])) i++;
+        tbox_style_text_decoration line;
+        if (!tbox_style_parse_decoration_line(tbox_string_view_make(text.data + start, i - start), &line)) return false;
+        if ((line == TBOX_STYLE_TEXT_DECORATION_NONE && found) || (found && lines == 0u)) return false;
+        lines |= tbox_style_decoration_bit(line);
+        found = true;
+    }
+    if (!found) return false;
+    *out = lines;
+    return true;
+}
+
+static bool tbox_style_parse_decoration_style(tbox_string_view value, tbox_style_border_style *out) {
+    if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("solid"))) *out = TBOX_STYLE_BORDER_STYLE_SOLID;
+    else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("dashed"))) *out = TBOX_STYLE_BORDER_STYLE_DASHED;
+    else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("dotted"))) *out = TBOX_STYLE_BORDER_STYLE_DOTTED;
+    else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("double"))) *out = TBOX_STYLE_BORDER_STYLE_DOUBLE;
+    else return false;
     return true;
 }
 
@@ -403,13 +438,12 @@ static bool tbox_style_parse_decoration_thickness(tbox_string_view raw, double f
     return true;
 }
 
-/* The `text-decoration` shorthand: a line keyword, a thickness, a color and
- * the `solid` style, in any order, each optional. Parts left out reset to
- * their initial values, as with any shorthand. Only the first line keyword
- * counts (a single line at a time), other styles such as `wavy` paint solid,
- * and unrecognized tokens are ignored -- same posture as
+/* The `text-decoration` shorthand: line keywords, a thickness, a color and
+ * a stroke style, in any order, each optional. Parts left out reset to
+ * their initial values, as with any shorthand. Unsupported styles such as
+ * `wavy` paint solid, and unrecognized tokens are ignored -- same posture as
  * tbox_style_resolve_border. */
-static void tbox_style_resolve_text_decoration(const tbox_css_computed_style *computed, double font_size, tbox_css_rgba current_color, tbox_style_text_decoration *out_line, tbox_css_rgba *out_color, double *out_thickness) {
+static void tbox_style_resolve_text_decoration(const tbox_css_computed_style *computed, double font_size, tbox_css_rgba current_color, tbox_style_text_decoration *out_line, unsigned int *out_lines, tbox_style_border_style *out_style, tbox_css_rgba *out_color, double *out_thickness) {
     const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-decoration"));
     if (decl == NULL)
         return;
@@ -433,7 +467,10 @@ static void tbox_style_resolve_text_decoration(const tbox_css_computed_style *co
         if (tbox_style_parse_decoration_line(token, &line)) {
             if (!have_line)
                 *out_line = line;
+            *out_lines |= tbox_style_decoration_bit(line);
             have_line = true;
+        } else if (tbox_style_parse_decoration_style(token, out_style)) {
+            /* style kept */
         } else if (tbox_style_parse_decoration_thickness(token, font_size, &thickness)) {
             *out_thickness = thickness;
         } else if (tbox_style_parse_edge_color(token, current_color, &color)) {
@@ -568,6 +605,53 @@ static bool tbox_style_split_box_shorthand(tbox_string_view text, tbox_string_vi
         return false;
     }
     *out_count = count;
+    return true;
+}
+
+/* The one/two-value subset of object-position. A percentage aligns the same
+ * point of the image and its box; a length offsets from the left/top edge.
+ * Keywords may appear in horizontal/vertical or vertical/horizontal order. */
+static bool tbox_style_parse_object_position_component(tbox_string_view token, double font_size, bool horizontal, tbox_style_length *out) {
+    if (tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("center"))) {
+        *out = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0 };
+        return true;
+    }
+    if (horizontal && tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("left"))) {
+        *out = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 0.0 };
+        return true;
+    }
+    if (horizontal && tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("right"))) {
+        *out = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 100.0 };
+        return true;
+    }
+    if (!horizontal && tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("top"))) {
+        *out = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 0.0 };
+        return true;
+    }
+    if (!horizontal && tbox_string_view_equal_ascii_ci(token, tbox_string_view_from_cstr("bottom"))) {
+        *out = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 100.0 };
+        return true;
+    }
+    return tbox_style_parse_spacing_length(token, font_size, out) && out->kind != TBOX_STYLE_LENGTH_AUTO;
+}
+
+static bool tbox_style_parse_object_position(tbox_string_view raw, double font_size, tbox_style_length out[2]) {
+    tbox_string_view tokens[4];
+    size_t count;
+    if (!tbox_style_split_box_shorthand(raw, tokens, &count) || count > 2) return false;
+    tbox_style_length x = { TBOX_STYLE_LENGTH_PERCENT, 50.0 };
+    tbox_style_length y = x;
+    if (count == 1) {
+        if (!tbox_style_parse_object_position_component(tokens[0], font_size, true, &x) &&
+            !tbox_style_parse_object_position_component(tokens[0], font_size, false, &y)) return false;
+    } else {
+        if (!(tbox_style_parse_object_position_component(tokens[0], font_size, true, &x) &&
+              tbox_style_parse_object_position_component(tokens[1], font_size, false, &y)) &&
+            !(tbox_style_parse_object_position_component(tokens[0], font_size, false, &y) &&
+              tbox_style_parse_object_position_component(tokens[1], font_size, true, &x))) return false;
+    }
+    out[0] = x;
+    out[1] = y;
     return true;
 }
 
@@ -886,6 +970,40 @@ static void tbox_style_resolve_border_sides(const tbox_css_computed_style *compu
                 styles[i] = border_style;
             if (part == 2 && tbox_style_parse_edge_color(decl->value, current_color, &color) && tbox_style_claim(decl, &color_winner[i]))
                 colors[i] = color;
+        }
+    }
+
+    /* Logical sides map to physical sides in the engine's left-to-right
+     * writing mode. Their shorthands reset omitted components, just like
+     * border-top/right/bottom/left, and compete by normal cascade priority. */
+    static const struct { const char *name; size_t side; } logical[] = {
+        { "block-start", 0 }, { "inline-end", 1 },
+        { "block-end", 2 }, { "inline-start", 3 },
+    };
+    for (size_t l = 0; l < 4; l++) {
+        size_t i = logical[l].side;
+        char name[48];
+        snprintf(name, sizeof(name), "border-%s", logical[l].name);
+        const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+        if (decl != NULL) {
+            double width = 0.0;
+            tbox_style_border_style border_style = TBOX_STYLE_BORDER_STYLE_NONE;
+            tbox_css_rgba color = current_color;
+            tbox_style_resolve_border(computed, name, true, font_size, current_color, &width, &border_style, &color);
+            if (tbox_style_claim(decl, &width_winner[i])) widths[i] = width;
+            if (tbox_style_claim(decl, &style_winner[i])) styles[i] = border_style;
+            if (tbox_style_claim(decl, &color_winner[i])) colors[i] = color;
+        }
+        for (size_t part = 0; part < 3; part++) {
+            snprintf(name, sizeof(name), "border-%s-%s", logical[l].name, parts[part]);
+            decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+            if (decl == NULL) continue;
+            double width;
+            tbox_style_border_style border_style;
+            tbox_css_rgba color;
+            if (part == 0 && tbox_style_parse_border_width(decl->value, font_size, &width) && tbox_style_claim(decl, &width_winner[i])) widths[i] = width;
+            if (part == 1 && tbox_style_parse_border_style(decl->value, true, &border_style) && tbox_style_claim(decl, &style_winner[i])) styles[i] = border_style;
+            if (part == 2 && tbox_style_parse_edge_color(decl->value, current_color, &color) && tbox_style_claim(decl, &color_winner[i])) colors[i] = color;
         }
     }
 }
@@ -1432,10 +1550,36 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     style.box_sizing        = TBOX_STYLE_BOX_SIZING_CONTENT_BOX;
     style.visibility_hidden = parent_style != NULL && parent_style->visibility_hidden;
     style.text_overflow     = TBOX_STYLE_TEXT_OVERFLOW_CLIP;
+    style.background_clip   = TBOX_STYLE_BACKGROUND_CLIP_BORDER_BOX;
+    style.object_fit        = TBOX_STYLE_OBJECT_FIT_FILL;
+    style.image_rendering_pixelated = parent_style != NULL && parent_style->image_rendering_pixelated;
+
+    const tbox_css_resolved_declaration *image_rendering = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("image-rendering"));
+    if (image_rendering != NULL) {
+        tbox_string_view value = tbox_style_trim(image_rendering->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("pixelated")) ||
+            tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("crisp-edges"))) style.image_rendering_pixelated = true;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("auto"))) style.image_rendering_pixelated = false;
+    }
+
+    const tbox_css_resolved_declaration *object_fit = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("object-fit"));
+    if (object_fit != NULL) {
+        tbox_string_view value = tbox_style_trim(object_fit->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("contain"))) style.object_fit = TBOX_STYLE_OBJECT_FIT_CONTAIN;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("cover"))) style.object_fit = TBOX_STYLE_OBJECT_FIT_COVER;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("none"))) style.object_fit = TBOX_STYLE_OBJECT_FIT_NONE;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("scale-down"))) style.object_fit = TBOX_STYLE_OBJECT_FIT_SCALE_DOWN;
+    }
 
     const tbox_css_resolved_declaration *sizing_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("box-sizing"));
     if (sizing_decl != NULL && tbox_string_view_equal_ascii_ci(tbox_style_trim(sizing_decl->value), tbox_string_view_from_cstr("border-box")))
         style.box_sizing = TBOX_STYLE_BOX_SIZING_BORDER_BOX;
+    const tbox_css_resolved_declaration *background_clip = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("background-clip"));
+    if (background_clip != NULL) {
+        tbox_string_view value = tbox_style_trim(background_clip->value);
+        if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("padding-box"))) style.background_clip = TBOX_STYLE_BACKGROUND_CLIP_PADDING_BOX;
+        else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("content-box"))) style.background_clip = TBOX_STYLE_BACKGROUND_CLIP_CONTENT_BOX;
+    }
     const tbox_css_resolved_declaration *visibility_decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("visibility"));
     if (visibility_decl != NULL) {
         tbox_string_view value = tbox_style_trim(visibility_decl->value);
@@ -1543,6 +1687,11 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     tbox_style_font_shorthand font = tbox_style_parse_font_shorthand(computed);
     tbox_string_view font_storage;
     style.font_size                           = tbox_style_resolve_font_size(tbox_style_font_value(computed, &font, "font-size", &font_storage), parent_font_size);
+    style.object_position[0] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0 };
+    style.object_position[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0 };
+    const tbox_css_resolved_declaration *object_position = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("object-position"));
+    if (object_position != NULL)
+        tbox_style_parse_object_position(object_position->value, style.font_size, style.object_position);
     style.line_height_kind                    = parent_style != NULL ? parent_style->line_height_kind : TBOX_STYLE_LINE_HEIGHT_NORMAL;
     style.line_height_value                   = parent_style != NULL ? parent_style->line_height_value : 0.0;
     const tbox_string_view *line_height_value = tbox_style_font_value(computed, &font, "line-height", &font_storage);
@@ -1777,15 +1926,25 @@ tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *pare
     /* text-decoration / vertical-align: . Neither inherits --
      * always cascade-or-initial, same posture as background-color/border. */
     style.text_decoration           = TBOX_STYLE_TEXT_DECORATION_NONE;
+    style.text_decoration_lines     = 0;
+    style.text_decoration_style     = TBOX_STYLE_BORDER_STYLE_SOLID;
     style.text_decoration_color     = style.color;
     style.text_decoration_thickness = 1.0;
-    tbox_style_resolve_text_decoration(computed, style.font_size, style.color, &style.text_decoration, &style.text_decoration_color, &style.text_decoration_thickness);
+    tbox_style_resolve_text_decoration(computed, style.font_size, style.color, &style.text_decoration, &style.text_decoration_lines, &style.text_decoration_style, &style.text_decoration_color, &style.text_decoration_thickness);
     const tbox_css_resolved_declaration *decoration      = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-decoration"));
     const tbox_css_resolved_declaration *decoration_line = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-decoration-line"));
     if (tbox_style_border_longhand_wins(decoration_line, decoration)) {
-        tbox_style_text_decoration parsed;
-        if (tbox_style_parse_decoration_line(decoration_line->value, &parsed))
-            style.text_decoration = parsed;
+        unsigned int parsed;
+        if (tbox_style_parse_decoration_lines(decoration_line->value, &parsed)) {
+            style.text_decoration_lines = parsed;
+            style.text_decoration = (parsed & 1u) ? TBOX_STYLE_TEXT_DECORATION_UNDERLINE : (parsed & 2u) ? TBOX_STYLE_TEXT_DECORATION_LINE_THROUGH : (parsed & 4u) ? TBOX_STYLE_TEXT_DECORATION_OVERLINE : TBOX_STYLE_TEXT_DECORATION_NONE;
+        }
+    }
+    const tbox_css_resolved_declaration *decoration_style = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-decoration-style"));
+    if (tbox_style_border_longhand_wins(decoration_style, decoration)) {
+        tbox_style_border_style parsed;
+        if (tbox_style_parse_decoration_style(tbox_style_trim(decoration_style->value), &parsed))
+            style.text_decoration_style = parsed;
     }
     const tbox_css_resolved_declaration *decoration_color = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-decoration-color"));
     if (tbox_style_border_longhand_wins(decoration_color, decoration)) {

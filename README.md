@@ -151,6 +151,45 @@ An absolutely positioned box with auto width or height stretches between
 `left`/`right` or `top`/`bottom`. Outlines accept the same dashed, dotted,
 and double styles as borders.
 
+Logical `border-block-start/end` and `border-inline-start/end` shorthands,
+plus their `-width`, `-style`, and `-color` longhands, map to physical sides
+in left-to-right writing mode. Selectors support `:only-child`, `:empty`,
+`:disabled`, and `:enabled`; form-state matching uses the element's own
+`disabled` attribute. `text-decoration-line` and `text-decoration` can
+combine underline, overline, and line-through; `text-decoration-style`
+supports solid, dashed, dotted, and double strokes. Images support
+`object-fit: fill|contain|cover|none|scale-down`, centered in the CSS image box. See
+`tests/assets/040.html` for examples.
+`object-position` aligns the fitted image with `left`, `center`, `right`,
+`top`, `bottom`, percentages, or pixel/`em` offsets (one or two values;
+three/four-value edge-offset syntax is not supported).
+See `tests/assets/041.html` for positioning examples.
+`none` keeps intrinsic image pixels and clips overflow; `scale-down` picks
+the smaller result of `none` and `contain`. See `tests/assets/043.html`.
+`background-clip: border-box|padding-box|content-box` limits a solid
+background color to the selected box, including rounded corners. See
+`tests/assets/042.html` for a side-by-side example.
+Structural selectors also include `:root`, `:first-of-type`,
+`:last-of-type`, and `:only-of-type`. See `tests/assets/044.html`.
+`image-rendering: pixelated` uses nearest-neighbor sampling when enlarging
+images; `auto` keeps smooth scaling. The property is inherited. See
+`tests/assets/045.html` for a comparison.
+Structural selectors also accept `:nth-child(an+b)` and
+`:nth-of-type(an+b)`, including `odd`, `even`, and fixed indices. See
+`tests/assets/046.html`.
+`:nth-last-child(an+b)` and `:nth-last-of-type(an+b)` use the same formulas
+while counting from the last sibling. See `tests/assets/047.html`.
+The general sibling combinator `~` matches later siblings even when other
+elements appear between them. See `tests/assets/048.html`.
+`:not()` excludes one simple type, universal, ID, class, or attribute
+selector. See `tests/assets/049.html`.
+`:required` and `:optional` match eligible `input`, `select`, and `textarea`
+controls by the presence of `required`. See `tests/assets/050.html`.
+`:lang()` matches an element's nearest inherited `lang` attribute, including
+regional subtags such as `pt-BR` for `:lang(pt)`. See `tests/assets/051.html`.
+`image-rendering: crisp-edges` uses the same nearest-neighbor enlargement as
+`pixelated`. See `tests/assets/052.html`.
+
 ## Build and checks
 
 ```sh

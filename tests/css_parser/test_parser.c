@@ -108,6 +108,18 @@ int tbox_test_css_parser_parser_run(void) {
 
     /* 8: a fused compound has NONE combinators after the first item. */
     {
+        tbox_css_stylesheet *ss = parse_cstr("h2~p, h3 ~ p { color: blue; }");
+        const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 1 && r[0].selector_count == 2);
+        for (size_t i = 0; i < r[0].selector_count; i++) {
+            TBOX_TEST_ASSERT(r[0].selectors[i].simple_selector_count == 2);
+            TBOX_TEST_ASSERT(r[0].selectors[i].simple_selectors[1].combinator_before == TBOX_CSS_COMBINATOR_GENERAL_SIBLING);
+        }
+        tbox_css_stylesheet_destroy(ss);
+    }
+
+    /* 9: a fused compound has NONE combinators after the first item. */
+    {
         tbox_css_stylesheet *ss    = parse_cstr("div#main.hero:hover { }");
         const tbox_css_ruleset *r  = tbox_css_stylesheet_rulesets(ss);
         const tbox_css_selector *s = &r[0].selectors[0];
@@ -272,10 +284,10 @@ int tbox_test_css_parser_parser_run(void) {
         tbox_css_stylesheet_destroy(ss);
     }
 
-    /* 21: a CSS3-only pseudo-class (out of the CSS2.1 grammar) drops only
-     * that ruleset. */
+    /* 21: :not() with a compound argument is outside this parser's
+     * one-simple-selector subset; the following ruleset still parses. */
     {
-        tbox_css_stylesheet *ss   = parse_cstr(":not(.foo) { color: red; } p { color: blue; }");
+        tbox_css_stylesheet *ss   = parse_cstr(":not(.foo.bar) { color: red; } p { color: blue; }");
         const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
         TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 1);
         TBOX_TEST_ASSERT(text_eq(r[0].selectors[0].simple_selectors[0].name, "p"));
