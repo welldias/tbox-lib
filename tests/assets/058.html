@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #eef2f7;
+            color: #1e293b;
+            font: 16px sans-serif;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 25px;
+        }
+
+        h2 {
+            margin: 18px 0 6px;
+            font-size: 18px;
+        }
+
+        .row {
+            display: flex;
+            width: 310px;
+            border: 1px solid #94a3b8;
+            background: white;
+        }
+
+        .word {
+            flex: 1 1 auto;
+            padding: 8px;
+            background: #dbeafe;
+        }
+
+        .badge {
+            flex: 0 0 70px;
+            padding: 8px;
+            background: #bbf7d0;
+        }
+
+        .break-word {
+            overflow-wrap: break-word;
+        }
+
+        .anywhere {
+            overflow-wrap: anywhere;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>overflow-wrap: anywhere</h1>
+    <p>Anywhere permite que a palavra longa reduza a largura minima do item flex.</p>
+    <h2>break-word</h2>
+    <div class="row">
+        <div class="word break-word">supercalifragilisticexpialidocious</div>
+        <div class="badge">Lado</div>
+    </div>
+    <h2>anywhere</h2>
+    <div class="row">
+        <div class="word anywhere">supercalifragilisticexpialidocious</div>
+        <div class="badge">Lado</div>
+    </div>
+</body>
+
+</html>

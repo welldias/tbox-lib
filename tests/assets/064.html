@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 16px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+.item { width: 330px; padding: 12px; margin: 10px 0; background: white; border: 2px solid #94a3b8; }
+[data-label="ALPHA" i] { background: #bbf7d0; border-color: #16a34a; }
+[data-label="ALPHA"] { color: #dc2626; }
+[data-label^="be" i] { background: #bfdbfe; border-color: #2563eb; }
+</style></head><body>
+<h1>Seletor de atributo com modificador i</h1>
+<div class="item" data-label="Alpha">Alpha corresponde sem distinguir maiusculas</div>
+<div class="item" data-label="Beta">Beta corresponde ao prefixo be</div>
+<div class="item" data-label="gamma">gamma permanece sem destaque</div>
+</body></html>

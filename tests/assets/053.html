@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #eef2f7;
+            color: #1e293b;
+            font: 16px sans-serif;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 25px;
+        }
+
+        .row {
+            display: flex;
+            gap: 14px;
+        }
+
+        .card {
+            padding: 14px;
+            background: white;
+            border: 2px solid #cbd5e1;
+        }
+
+        .card:focus-within {
+            border-color: #2563eb;
+            background: #dbeafe;
+        }
+
+        label {
+            display: block;
+            margin: 0 0 8px;
+        }
+
+        input {
+            display: block;
+            padding: 7px;
+            background: white;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>:focus-within</h1>
+    <p>Clique em um campo: a caixa que o contem ganha borda e fundo azuis.</p>
+    <div class="row">
+        <div class="card"><label>Nome</label><input value="Ada"></div>
+        <div class="card"><label>Cidade</label><input value="Fortaleza"></div>
+    </div>
+</body>
+
+</html>

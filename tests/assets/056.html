@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background: #eef2f7;
+            color: #1e293b;
+            font: 16px sans-serif;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 25px;
+        }
+
+        .card {
+            width: 390px;
+            padding: 14px;
+            background: white;
+            border: 1px solid #cbd5e1;
+        }
+
+        .item {
+            padding: 8px;
+            margin: 0 0 5px;
+            background: #e2e8f0;
+        }
+
+        [data-path^="docs/"] {
+            border-left: 5px solid #2563eb;
+        }
+
+        [data-path$=".png"] {
+            background: #bbf7d0;
+        }
+
+        [data-path*="guide"] {
+            color: #b91c1c;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Seletores de atributos por trecho</h1>
+    <div class="card">
+        <p class="item" data-path="docs/start.html">Comeca com docs/: borda azul</p>
+        <p class="item" data-path="images/icon.png">Termina com .png: fundo verde</p>
+        <p class="item" data-path="docs/guide.png">Os tres criterios: borda, fundo e texto vermelho</p>
+        <p class="item" data-path="other.txt">Nenhum criterio: cinza</p>
+    </div>
+</body>
+
+</html>
