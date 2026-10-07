@@ -647,6 +647,8 @@ void tbox_app_step(tbox_app *app) {
     if (tbox_context_update_hover(app->ctx, has_pointer_position, pointer_x, pointer_y)) {
         dirty = true;
     }
+    if (has_pointer_position)
+        tbox_window_backend_set_cursor(app->backend, tbox_context_cursor_at(app->ctx, pointer_x, pointer_y));
 
     int32_t current_width  = 0;
     int32_t current_height = 0;

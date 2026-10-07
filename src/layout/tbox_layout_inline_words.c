@@ -162,6 +162,137 @@ static void tbox_layout_push_pre_wrap_segment(tbox_vector *words, tbox_string_vi
     }
 }
 
+/* One newline-free segment under `break-spaces`: preserved spaces take
+ * room like any character and a line may break after any of them, so each
+ * word carries the spaces that follow it, glued to its neighbors. */
+static void tbox_layout_push_break_spaces_segment(tbox_vector *words, tbox_string_view segment, const tbox_font_face *face, const tbox_style *style) {
+    size_t start = 0;
+    while (start < segment.size) {
+        size_t end = start;
+        while (end < segment.size && segment.data[end] == ' ')
+            end++; /* leading spaces (first word only) */
+        while (end < segment.size && segment.data[end] != ' ')
+            end++;
+        while (end < segment.size && segment.data[end] == ' ')
+            end++;
+        tbox_layout_push_preserved_word(words, tbox_string_view_make(segment.data + start, end - start), false, face, style);
+        start = end;
+    }
+}
+
+/* Replaces each tab with spaces up to the next tab stop, every `tab-size`
+ * columns (codepoints since the last newline); a length tab-size becomes
+ * the nearest whole number of the face's spaces. */
+tbox_string_view tbox_layout_expand_tabs(tbox_arena *arena, tbox_string_view text, const tbox_style *style, const tbox_font_face *face) {
+    if (memchr(text.data, '\t', text.size) == NULL)
+        return text;
+    double tab = style->tab_size > 0.0 ? style->tab_size : 8.0;
+    if (style->tab_size_length && face != NULL) {
+        static const tbox_string_view space = { " ", 1 };
+        double space_width                  = tbox_font_measure_text_spaced(face, space, style->letter_spacing) + style->word_spacing;
+        tab                                 = space_width > 0.0 ? style->tab_size / space_width : 8.0;
+    }
+    size_t columns = (size_t)(tab + 0.5);
+    size_t tabs    = 0;
+    for (size_t i = 0; i < text.size; i++)
+        if (text.data[i] == '\t')
+            tabs++;
+    if (columns > 64)
+        columns = 64;
+    char *out = (char *)tbox_arena_alloc(arena, text.size + tabs * (columns > 0 ? columns : 1));
+    if (out == NULL)
+        return text;
+    size_t length = 0, column = 0;
+    for (size_t i = 0; i < text.size; i++) {
+        char c = text.data[i];
+        if (c == '\t') {
+            size_t pad = columns == 0 ? 0 : columns - column % columns;
+            memset(out + length, ' ', pad);
+            length += pad;
+            column += pad;
+            continue;
+        }
+        out[length++] = c;
+        if (c == '\n')
+            column = 0;
+        else if (((unsigned char)c & 0xC0u) != 0x80u)
+            column++; /* count codepoints, not continuation bytes */
+    }
+    return tbox_string_view_make(out, length);
+}
+
+/* Soft hyphens (U+00AD) in the words pushed since `first`: invisible, and
+ * with `hyphens: manual`/`auto` each one splits its word into glued pieces
+ * (break opportunities that show a hyphen when taken); with `none` they
+ * are only removed. */
+static void tbox_layout_apply_soft_hyphens(tbox_arena *arena, tbox_vector *words, size_t first, const tbox_style *style) {
+    static const char shy[2] = { (char)0xC2, (char)0xAD };
+    bool any = false;
+    for (size_t w = first; w < words->length && !any; w++) {
+        const tbox_layout_word *word = (const tbox_layout_word *)tbox_vector_at(words, w);
+        for (size_t i = 0; i + 1 < word->text.size; i++)
+            if (word->text.data[i] == shy[0] && word->text.data[i + 1] == shy[1])
+                any = true;
+    }
+    if (!any)
+        return;
+    size_t count               = words->length - first;
+    tbox_layout_word *original = (tbox_layout_word *)tbox_arena_alloc(arena, count * sizeof(tbox_layout_word));
+    if (original == NULL)
+        return;
+    memcpy(original, (tbox_layout_word *)words->data + first, count * sizeof(tbox_layout_word));
+    words->length = first;
+    for (size_t w = 0; w < count; w++) {
+        const tbox_layout_word *word = &original[w];
+        if (word->hard_break || word->image != NULL || word->atomic != NULL || word->text.size < 2) {
+            *tbox_layout_new_word(words) = *word;
+            continue;
+        }
+        if (style->hyphens_none) {
+            /* Drop the soft hyphens: a copy without them. */
+            char *copy    = (char *)tbox_arena_alloc(arena, word->text.size);
+            size_t length = 0;
+            for (size_t i = 0; i < word->text.size; i++) {
+                if (i + 1 < word->text.size && word->text.data[i] == shy[0] && word->text.data[i + 1] == shy[1]) {
+                    i++;
+                    continue;
+                }
+                if (copy != NULL)
+                    copy[length++] = word->text.data[i];
+            }
+            tbox_layout_word *entry = tbox_layout_new_word(words);
+            *entry                  = *word;
+            if (copy != NULL) {
+                entry->text  = tbox_string_view_make(copy, length);
+                entry->width = tbox_font_measure_text_spaced(word->face, entry->text, style->letter_spacing);
+            }
+            continue;
+        }
+        size_t start = 0;
+        bool first_piece = true;
+        for (size_t i = 0; i <= word->text.size; i++) {
+            bool at_shy = i + 1 < word->text.size && word->text.data[i] == shy[0] && word->text.data[i + 1] == shy[1];
+            if (!at_shy && i < word->text.size)
+                continue;
+            if (i > start || !first_piece) {
+                tbox_layout_word *entry  = tbox_layout_new_word(words);
+                *entry                   = *word;
+                entry->text              = tbox_string_view_make(word->text.data + start, i - start);
+                entry->width             = tbox_font_measure_text_spaced(word->face, entry->text, style->letter_spacing);
+                entry->soft_hyphen_after = at_shy;
+                if (!first_piece) {
+                    entry->space_width     = 0.0;
+                    entry->no_space_before = true;
+                }
+                first_piece = false;
+            }
+            if (at_shy)
+                i++;
+            start = i + 1;
+        }
+    }
+}
+
 /* Turns a text node's raw text into words per the style's `white-space`:
  * `normal`/`nowrap` collapse every whitespace run, `pre-line` collapses
  * spaces but breaks at each newline, and `pre`/`pre-wrap` keep every space
@@ -173,10 +304,12 @@ void tbox_layout_push_text_words(tbox_arena *arena, tbox_vector *words, tbox_str
         return;
     tbox_string_view text       = tbox_layout_transform_text(arena, raw, style->text_transform);
     tbox_style_white_space mode = style->white_space;
-    if (mode != TBOX_STYLE_WHITE_SPACE_PRE && mode != TBOX_STYLE_WHITE_SPACE_PRE_WRAP && mode != TBOX_STYLE_WHITE_SPACE_PRE_LINE) {
+    if (mode != TBOX_STYLE_WHITE_SPACE_PRE && mode != TBOX_STYLE_WHITE_SPACE_PRE_WRAP && mode != TBOX_STYLE_WHITE_SPACE_PRE_LINE && mode != TBOX_STYLE_WHITE_SPACE_BREAK_SPACES) {
         tbox_layout_push_words(words, tbox_string_collapse_whitespace(arena, text), face, style);
         return;
     }
+    if (mode != TBOX_STYLE_WHITE_SPACE_PRE_LINE)
+        text = tbox_layout_expand_tabs(arena, text, style, face);
     size_t line_start = 0;
     for (size_t i = 0; i <= text.size; i++) {
         if (i < text.size && text.data[i] != '\n')
@@ -187,11 +320,79 @@ void tbox_layout_push_text_words(tbox_arena *arena, tbox_vector *words, tbox_str
             tbox_layout_push_words(words, tbox_string_collapse_whitespace(arena, segment), face, style);
         else if (mode == TBOX_STYLE_WHITE_SPACE_PRE_WRAP)
             tbox_layout_push_pre_wrap_segment(words, segment, face, style);
+        else if (mode == TBOX_STYLE_WHITE_SPACE_BREAK_SPACES)
+            tbox_layout_push_break_spaces_segment(words, segment, face, style);
         else
             tbox_layout_push_preserved_word(words, segment, false, face, style);
         if (i < text.size)
             tbox_layout_push_hard_break(words, face, style);
         line_start = i + 1;
+    }
+}
+
+/* `font-variant: small-caps` over the words pushed since `first`: each
+ * run of lowercase letters becomes uppercase in a face 70% of the size
+ * (the usual synthesized small capitals), glued to its neighbors inside
+ * the same word. */
+static void tbox_layout_apply_small_caps(tbox_arena *arena, tbox_vector *words, size_t first, const tbox_style *style, tbox_font_face_cache *fonts) {
+    if (words->length <= first)
+        return;
+    tbox_style small_style        = *style;
+    small_style.font_size         = style->font_size * 0.7;
+    const tbox_font_face *small   = tbox_layout_style_face(fonts, &small_style);
+    if (small == NULL)
+        return;
+    size_t count                  = words->length - first;
+    tbox_layout_word *original    = (tbox_layout_word *)tbox_arena_alloc(arena, count * sizeof(tbox_layout_word));
+    if (original == NULL)
+        return;
+    memcpy(original, (tbox_layout_word *)words->data + first, count * sizeof(tbox_layout_word));
+    words->length = first;
+    for (size_t w = 0; w < count; w++) {
+        const tbox_layout_word *word = &original[w];
+        if (word->hard_break || word->image != NULL || word->atomic != NULL || word->text.size == 0) {
+            *tbox_layout_new_word(words) = *word;
+            continue;
+        }
+        const char *read = word->text.data, *end = word->text.data + word->text.size;
+        bool first_piece = true;
+        while (read < end) {
+            /* One run of same-case codepoints. */
+            const char *start = read;
+            bool lower        = false;
+            bool started      = false;
+            while (read < end) {
+                if ((size_t)(end - read) < utf8codepointcalcsize((const utf8_int8_t *)read)) {
+                    read = end;
+                    break;
+                }
+                utf8_int32_t codepoint;
+                const char *next = (const char *)utf8codepoint((const utf8_int8_t *)read, &codepoint);
+                bool is_lower    = utf8uprcodepoint(codepoint) != codepoint;
+                if (started && is_lower != lower)
+                    break;
+                lower   = is_lower;
+                started = true;
+                read    = next;
+            }
+            tbox_string_view piece = tbox_string_view_make(start, (size_t)(read - start));
+            if (lower)
+                piece = tbox_layout_transform_text(arena, piece, TBOX_STYLE_TEXT_TRANSFORM_UPPERCASE);
+            tbox_layout_word *entry = tbox_layout_new_word(words);
+            *entry                  = *word;
+            entry->text             = piece;
+            entry->face             = lower ? small : word->face;
+            entry->width            = tbox_font_measure_text_spaced(entry->face, piece, style->letter_spacing);
+            if (!first_piece) {
+                entry->space_width     = 0.0;
+                entry->no_space_before = true;
+            } else if (lower && word->space_width > 0.0) {
+                /* The space before it is drawn in the run's (small) face. */
+                static const tbox_string_view space = { " ", 1 };
+                entry->space_width                  = tbox_font_measure_text_spaced(small, space, style->letter_spacing) + style->word_spacing;
+            }
+            first_piece = false;
+        }
     }
 }
 
@@ -252,19 +453,22 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
          * does not need `display: inline` for this to work. Uses the
          * enclosing element's face (`style`), same as the TEXT branch. */
         if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "br")) {
-            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+            const tbox_font_face *face = tbox_layout_style_face(fonts, style);
             tbox_layout_push_hard_break(words, face, style);
             state->has_content = state->trailing_space = false;
             continue;
         }
 
         if (child->type == TBOX_HTML_NODE_TEXT) {
-            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+            const tbox_font_face *face = tbox_layout_style_face(fonts, style);
             tbox_string_view text      = child->text.text;
             tbox_layout_push_text_words(arena, words, text, face, style);
+            tbox_layout_apply_soft_hyphens(arena, words, first, style);
+            if (style->font_small_caps)
+                tbox_layout_apply_small_caps(arena, words, first, style, fonts);
             if (text.size == 0)
                 continue;
-            bool preserved = style->white_space == TBOX_STYLE_WHITE_SPACE_PRE || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE_WRAP;
+            bool preserved = style->white_space == TBOX_STYLE_WHITE_SPACE_PRE || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE_WRAP || style->white_space == TBOX_STYLE_WHITE_SPACE_BREAK_SPACES;
             bool trailing  = !preserved && tbox_layout_is_ascii_space(text.data[text.size - 1]);
             if (words->length > first) {
                 tbox_layout_join_words(words, first, !preserved && tbox_layout_is_ascii_space(text.data[0]), state);
@@ -277,11 +481,11 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
             if (tbox_string_view_equal_cstr(child->element.tag_name, "img")) {
-                const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+                const tbox_font_face *face = tbox_layout_style_face(fonts, style);
                 tbox_layout_push_image_word(arena, child, child_style, face, images, containing_width, words);
                 tbox_layout_join_words(words, first, false, state);
             } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) {
-                const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+                const tbox_font_face *face = tbox_layout_style_face(fonts, style);
                 tbox_layout_push_atomic_word(arena, child, child_style, face, styles, fonts, images, containing_width, measure_only, words);
                 tbox_layout_join_words(words, first, false, state);
             } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE || (inside_inline && child_style->display != TBOX_STYLE_DISPLAY_NONE)) {

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font: 16px sans-serif;
+            background: #eef2f7;
+            color: #1e293b;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 24px;
+        }
+
+        .wrap {
+            width: 600px;
+            background: #cbd5e1;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .a {
+            width: calc(100% - 40px);
+            background: #3b82f6;
+            color: white;
+            padding: 6px;
+            box-sizing: border-box;
+        }
+
+        .b {
+            width: calc(50% + 2em);
+            background: #10b981;
+            color: white;
+            padding: 6px;
+            box-sizing: border-box;
+        }
+
+        .c {
+            width: calc((100% - 30px) / 3);
+            height: 60px;
+            display: inline-block;
+            background: #f59e0b;
+            margin-right: 10px;
+        }
+
+        .c:last-child {
+            margin-right: 0;
+        }
+
+        .d {
+            margin-left: calc(25% - 10px);
+            width: calc(2 * 120px);
+            background: #ef4444;
+            color: white;
+            padding: 6px;
+        }
+
+        .e {
+            font-size: calc(12px + 0.5rem);
+            padding: calc(4px * 2) calc(1em - 4px);
+            background: #8b5cf6;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>calc() com unidades mistas</h1>
+    <div class="wrap">
+        <div class="a">calc(100% - 40px)</div>
+    </div>
+    <div class="wrap">
+        <div class="b">calc(50% + 2em)</div>
+    </div>
+    <div class="wrap">
+        <div class="c"></div>
+        <div class="c"></div>
+        <div class="c"></div>
+    </div>
+    <div class="wrap">
+        <div class="d">margin-left: calc(25% - 10px)</div>
+    </div>
+    <div class="wrap">
+        <div class="e">font-size: calc(12px + 0.5rem)</div>
+    </div>
+</body>
+
+</html>

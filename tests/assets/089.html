@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.row { display: flex; gap: 16px; }
+.scroll { width: 220px; height: 150px; overflow-y: auto; background: white; border: 2px solid #94a3b8; padding: 6px; }
+.colors { scrollbar-color: #db2777 #fce7f3; }
+.thin { scrollbar-width: thin; scrollbar-color: #2563eb #dbeafe; }
+.none { scrollbar-width: none; }
+</style></head><body>
+<h1>scrollbar-color e scrollbar-width</h1>
+<div class="row">
+  <div class="scroll">padrao<p>Linha 1</p><p>Linha 2</p><p>Linha 3</p><p>Linha 4</p><p>Linha 5</p><p>Linha 6</p></div>
+  <div class="scroll colors">scrollbar-color rosa<p>Linha 1</p><p>Linha 2</p><p>Linha 3</p><p>Linha 4</p><p>Linha 5</p><p>Linha 6</p></div>
+  <div class="scroll thin">thin + azul<p>Linha 1</p><p>Linha 2</p><p>Linha 3</p><p>Linha 4</p><p>Linha 5</p><p>Linha 6</p></div>
+</div>
+<div class="row" style="margin-top: 16px"><div class="scroll none">scrollbar-width: none (ainda rola)<p>Linha 1</p><p>Linha 2</p><p>Linha 3</p><p>Linha 4</p><p>Linha 5</p></div></div>
+</body></html>

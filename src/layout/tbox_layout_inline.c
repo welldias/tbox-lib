@@ -114,7 +114,7 @@ static void tbox_layout_line_metrics(const tbox_layout_word *words, size_t start
  * guard means a final line is only pushed when real content actually
  * follows the last break. */
 
-void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, double first_line_indent, bool no_wrap, const tbox_font_face *block_face, tbox_vector *lines) {
+void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, double first_line_indent, bool no_wrap, bool indent_each_line, const tbox_font_face *block_face, tbox_vector *lines) {
     if (word_count == 0) {
         return;
     }
@@ -138,7 +138,7 @@ void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, d
             line->ascent           = ascent;
 
             line_start = i + 1;
-            line_width = 0.0;
+            line_width = indent_each_line ? first_line_indent : 0.0; /* text-indent: each-line */
             continue;
         }
 
@@ -202,7 +202,7 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
         return block_face != NULL ? run_ascent - run_height + tbox_font_face_line_height(block_face) - tbox_font_face_ascent(block_face) : 0.0;
     case TBOX_STYLE_VERTICAL_ALIGN_LENGTH:
         if (style->vertical_align_length.kind == TBOX_STYLE_LENGTH_PERCENT)
-            return run_face != NULL ? -tbox_layout_style_line_height(style, run_face) * style->vertical_align_length.value / 100.0 : 0.0;
+            return run_face != NULL ? -tbox_style_length_resolve(style->vertical_align_length, tbox_layout_style_line_height(style, run_face)) : 0.0;
         return -style->vertical_align_length.value;
     case TBOX_STYLE_VERTICAL_ALIGN_BASELINE:
     default:
@@ -347,6 +347,11 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
 
         tbox_string_builder_append_view(&run_builder, word->text);
         cursor_x += word->width;
+        /* A line broken at a soft hyphen shows the hyphen. */
+        if (word->soft_hyphen_after && i + 1 == line->end && word->face != NULL) {
+            tbox_string_builder_append_byte(&run_builder, '-');
+            cursor_x += tbox_font_measure_text_spaced(word->face, tbox_string_view_make("-", 1), word->style->letter_spacing);
+        }
         run_end_x = cursor_x;
     }
 
@@ -442,18 +447,32 @@ void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, dou
     *words = expanded;
 }
 
-void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_x, double available_width, const tbox_style *style, const tbox_font_face *face, const tbox_layout_line *line, double line_y) {
+void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_x, double available_width, const tbox_style *style, const tbox_font_face *face, const tbox_layout_line *line, double line_y, bool force) {
     if (runs->length == first || face == NULL)
         return;
     tbox_layout_text_run *items = (tbox_layout_text_run *)runs->data;
     tbox_layout_text_run *last  = &items[runs->length - 1];
     double right                = content_x + available_width;
-    if (last->rect.x + last->rect.width <= right)
+    if (!force && last->rect.x + last->rect.width <= right)
         return;
 
     tbox_string_view ellipsis = tbox_font_face_has_glyph(face, 0x2026) ? tbox_string_view_make("\xe2\x80\xa6", 3) : tbox_string_view_make("...", 3);
+    if (!force && style->text_overflow_string[0] != '\0') /* text-overflow: "<string>" */
+        ellipsis = tbox_string_view_from_cstr(style->text_overflow_string);
     double glyph_width        = tbox_font_measure_text_spaced(face, ellipsis, style->letter_spacing);
     double limit              = right - glyph_width;
+    /* line-clamp (`force`): the mark follows the line's text, truncating it
+     * only when there is no room left for the mark. */
+    if (force && last->rect.x + last->rect.width <= limit) {
+        double end                 = last->rect.x + last->rect.width;
+        tbox_layout_text_run *mark = (tbox_layout_text_run *)tbox_vector_push(runs);
+        mark->rect                 = (tbox_rect){ end, line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height };
+        mark->text                 = ellipsis;
+        mark->font                 = face;
+        mark->style                = style;
+        mark->image                = NULL;
+        return;
+    }
     while (runs->length > first) {
         items = (tbox_layout_text_run *)runs->data;
         last  = &items[runs->length - 1];
@@ -471,8 +490,14 @@ void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_
         last->rect.width = tbox_font_measure_text_spaced(last->font, last->text, last->style->letter_spacing);
         break;
     }
+    double mark_x = right - glyph_width > content_x ? right - glyph_width : content_x;
+    if (force && runs->length > first) {
+        items = (tbox_layout_text_run *)runs->data;
+        last  = &items[runs->length - 1];
+        mark_x = last->rect.x + last->rect.width;
+    }
     tbox_layout_text_run *mark = (tbox_layout_text_run *)tbox_vector_push(runs);
-    mark->rect                 = (tbox_rect){ right - glyph_width > content_x ? right - glyph_width : content_x, line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height };
+    mark->rect                 = (tbox_rect){ mark_x, line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height };
     mark->text                 = ellipsis;
     mark->font                 = face;
     mark->style                = style;

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+p { width: 380px; background: white; border-left: 4px solid #3b82f6; padding: 6px; margin: 0 0 10px; }
+.normal { text-indent: 40px; }
+.hanging { text-indent: 40px hanging; }
+.each { text-indent: 30px each-line; }
+.both { text-indent: 2em hanging each-line; }
+</style></head><body>
+<h1>text-indent: hanging e each-line</h1>
+<p class="normal">40px: so a primeira linha recua, como antes, e as demais linhas comecam na margem esquerda.</p>
+<p class="hanging">40px hanging: a primeira linha fica na margem e todas as linhas seguintes recuam quarenta pixels.</p>
+<p class="each">30px each-line: a primeira linha recua<br>e a linha depois de uma quebra forcada tambem<br>recua de novo.</p>
+<p class="both">2em hanging each-line: combina os dois<br>comportamentos neste paragrafo com texto bastante longo para quebrar.</p>
+</body></html>

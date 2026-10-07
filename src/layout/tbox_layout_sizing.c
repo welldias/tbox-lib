@@ -70,7 +70,7 @@ static double tbox_layout_px_or_zero(tbox_style_length length) {
 tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images) {
     tbox_layout_intrinsic result = { 0.0, 0.0 };
     const tbox_style *style      = tbox_layout_style_or_default(styles, node);
-    const tbox_font_face *face   = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+    const tbox_font_face *face   = tbox_layout_style_face(fonts, style);
 
     if (tbox_layout_is_replaced_image(node)) {
         const tbox_html_attribute *src = tbox_html_node_get_attribute(node, tbox_string_view_make("src", 3));
@@ -155,14 +155,14 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
         return result;
     }
 
-    if (tbox_layout_is_text_tag(node)) {
+    if (tbox_layout_is_text_box(node, style)) {
         tbox_vector words;
         tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
         bool is_pre = tbox_layout_tag(node, "pre") && (style->white_space == TBOX_STYLE_WHITE_SPACE_AUTO || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE);
         if (is_pre) {
             tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
         } else {
-            tbox_layout_push_list_marker(arena, node, style, fonts, &words);
+            tbox_layout_push_list_marker(arena, node, style, fonts, images, &words);
             tbox_layout_inline_state state = { false, false };
             tbox_layout_collect_words_in(arena, node->first_child, NULL, style, styles, fonts, images, 0.0, false, true, &state, &words);
         }
@@ -284,9 +284,9 @@ void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node,
         double margins   = tbox_layout_resolve_edge(node_style->margin[1], containing_width) + tbox_layout_resolve_edge(node_style->margin[3], containing_width);
         double available = containing_width - margins;
         double width     = outer.max - margins;
-        if (width > available)
+        if (width > available && node_style->width_keyword != TBOX_STYLE_SIZE_KEYWORD_MAX_CONTENT)
             width = available;
-        if (width < outer.min - margins)
+        if (width < outer.min - margins || node_style->width_keyword == TBOX_STYLE_SIZE_KEYWORD_MIN_CONTENT)
             width = outer.min - margins;
         forced.has_width = true;
         forced.width     = width > 0.0 ? width : 0.0;

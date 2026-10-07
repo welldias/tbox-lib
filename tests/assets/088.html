@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font: 15px sans-serif;
+            background: #eef2f7;
+            color: #1e293b;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 24px;
+        }
+
+        .row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .b {
+            width: 150px;
+            height: 70px;
+            background: #e2e8f0;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 8px #64748b;
+        }
+
+        .groove {
+            border-style: groove;
+        }
+
+        .ridge {
+            border-style: ridge;
+        }
+
+        .inset {
+            border-style: inset;
+        }
+
+        .outset {
+            border-style: outset;
+        }
+
+        .color {
+            border-color: #2563eb;
+        }
+
+        .button {
+            border: 3px outset #cbd5e1;
+            background: #cbd5e1;
+            padding: 6px 14px;
+            display: inline-block;
+        }
+
+        .button.down {
+            border-style: inset;
+        }
+
+        .outline {
+            outline: 6px ridge #f59e0b;
+            margin: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Bordas 3D: groove, ridge, inset e outset</h1>
+    <div class="row">
+        <div class="b groove">groove</div>
+        <div class="b ridge">ridge</div>
+        <div class="b inset">inset</div>
+        <div class="b outset">outset</div>
+    </div>
+    <div class="row">
+        <div class="b groove color">groove azul</div>
+        <div class="b ridge color">ridge azul</div>
+        <div class="b inset color">inset azul</div>
+        <div class="b outset color">outset azul</div>
+    </div>
+    <div class="row"><span class="button">botao classico</span><span class="button down">pressionado</span>
+        <div class="b outline">outline ridge</div>
+    </div>
+</body>
+
+</html>

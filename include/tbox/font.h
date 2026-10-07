@@ -31,6 +31,8 @@ typedef struct tbox_font_query {
     tbox_string_view family;
     bool bold;
     bool italic;
+    int weight;     /* 1..1000 (CSS/OpenType scale); 0 means 700 when `bold`, else 400 */
+    double stretch; /* width as a percentage, 100 normal, 75 condensed...; 0 means 100 */
 } tbox_font_query;
 
 /* Opaque: font discovery. Where the bytes of a usable font file come from,
@@ -102,6 +104,15 @@ typedef struct tbox_font_face tbox_font_face;
  * Returns NULL if FreeType fails to initialize its library, parse
  * `font_data` as a font, or set the requested pixel size. */
 tbox_font_face *tbox_font_face_load(const void *font_data, size_t size, double size_px);
+
+/* Turns kerning on or off for `face` (off after tbox_font_face_load; a
+ * font without kerning pairs stays off). Measuring and rasterizing both
+ * honor it, through tbox_font_face_kerning. */
+void tbox_font_face_set_kerning(tbox_font_face *face, bool kerning);
+
+/* The kerning adjustment in px between `previous` and `codepoint`, 0 when
+ * kerning is off, `previous` is 0 (start of a run) or the pair has none. */
+double tbox_font_face_kerning(const tbox_font_face *face, uint32_t previous, uint32_t codepoint);
 
 /* Frees `face` and its underlying FT_Face. A no-op if face == NULL. */
 void tbox_font_face_destroy(tbox_font_face *face);
@@ -258,6 +269,20 @@ void tbox_font_face_cache_destroy(tbox_font_face_cache *cache);
  * this function, unlike the aliasing warning on tbox_font_rasterize_glyph's
  * return value). */
 const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox_string_view family, bool bold, bool italic, double size_px);
+
+/* tbox_font_face_cache_get with a numeric weight (1..1000) and a stretch
+ * percentage instead of the bold flag. The default family's preloaded
+ * regular/bold bytes serve weights 400/700 at normal stretch; any other
+ * combination goes through the resolver, falling back to the closest
+ * preloaded face (bold from 600 up) when there is none or it fails.
+ * tbox_font_face_cache_get(..., bold, ...) is this with weight 700/400 and
+ * stretch 100. */
+const tbox_font_face *tbox_font_face_cache_get_styled(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px);
+
+/* tbox_font_face_cache_get_styled with kerning on or off (a separate face
+ * per setting); get_styled and get are this with kerning on, CSS's
+ * default (`font-kerning: auto`). */
+const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px, bool kerning);
 
 #ifdef __cplusplus
 }

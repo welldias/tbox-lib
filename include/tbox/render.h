@@ -27,6 +27,7 @@ typedef enum tbox_paint_op_kind {
     TBOX_PAINT_IMAGE, /* NOVO (image support): one per tbox_layout_text_run whose `image` is non-NULL -- see tbox_render_build_display_list */
     TBOX_PAINT_FILL_RING, /* outer rounded rect minus inner rounded rect */
     TBOX_PAINT_WAVY_LINE, /* text-decoration-style: wavy */
+    TBOX_PAINT_GRADIENT,  /* background gradient: one tile, see `gradient` */
 } tbox_paint_op_kind;
 
 typedef struct tbox_paint_op {
@@ -68,10 +69,33 @@ typedef struct tbox_paint_op {
     tbox_rect inner_rect;
     double inner_corner_radii[4];
 
+    /* FILL_RECT/FILL_RING: when `elliptical`, corner_radii (and
+     * inner_corner_radii) are the horizontal radii and these the vertical
+     * ones; otherwise every corner is circular. Already normalized. */
+    bool elliptical;
+    double corner_radii_y[4];
+    double inner_corner_radii_y[4];
+
+    /* GRADIENT only: painted across `rect` (one background tile), the
+     * style that owns it outliving the display list (same arena). */
+    const tbox_style_gradient *gradient;
+
+    /* IMAGE/GRADIENT: a `filter` color matrix (see tbox_style.filter_matrix)
+     * applied to each pixel; NULL for none. Solid-color ops have their
+     * color transformed by Render instead. */
+    const double *color_filter;
+
     /* Optional paint clip, applied to every op kind. Input text and the
      * descendants of overflow-y:auto blocks use it. */
     bool has_clip;
     tbox_rect clip;
+
+    /* Optional rounded clip on top of `clip` (every op kind): background
+     * images and inset shadows of a box with border-radius, and clip-path.
+     * Horizontal/vertical radii per corner, already normalized. */
+    bool has_rounded_clip;
+    tbox_rect rounded_clip;
+    double rounded_clip_radii[4], rounded_clip_radii_y[4];
 } tbox_paint_op;
 
 typedef struct tbox_display_list {
@@ -91,9 +115,14 @@ typedef struct tbox_display_list {
  * Tree built them (already line-order, left-to-right/top-to-bottom) -- in
  * that order relative to the FILL_RECTs, since backgrounds and borders sit
  * under text/images -- and only then its first_child and the rest of the
- * next_sibling chain, recursively, in the same order. See
- * ARCHITECTURE.md's "Render Pipeline" section (no stacking contexts,
- * clipping of scroll containers and input text via `clip` below).
+ * next_sibling chain, recursively, in the same order. Background images
+ * (IMAGE/GRADIENT tiles) and inset shadows sit between the background color
+ * and the border. Positioned boxes with an explicit z-index leave tree
+ * order: each stacking context (the root, a z-index box, or one with
+ * opacity below 1) paints its negative z-index layers right after its own
+ * border and the rest after its children, in increasing z-index. See
+ * ARCHITECTURE.md's "Render Pipeline" and v18 sections (clipping of scroll
+ * containers and input text via `clip` below).
  *
  * This never calls into <tbox/font.h>: a run's `font` pointer is only
  * copied into the resulting paint op's `face`, never dereferenced -- Output

@@ -3658,6 +3658,58 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* Hit testing follows z-index paint order; cursor_at reports the CSS
+     * cursor, or text/pointer/default for `auto`. */
+    {
+        const char *html  = "<div id=\"stage\"><div id=\"top\">a</div><div id=\"under\">b</div><p id=\"para\">ver <a href=\"#\">link</a></p><div id=\"busy\">x</div></div>";
+        const char *css   = "#stage { position: relative; height: 200px; }"
+                            "#top, #under { position: absolute; left: 0; top: 0; width: 100px; height: 50px; }"
+                            "#top { z-index: 2; cursor: move; } #under { z-index: 1; }"
+                            "#para { position: absolute; left: 0; top: 100px; margin: 0; width: 300px; font-size: 16px; } #busy { position: absolute; left: 200px; top: 0; width: 50px; height: 50px; cursor: wait; }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            const tbox_layout_box *hit = tbox_context_hit_test(ctx, 50.0, 25.0);
+            const tbox_html_attribute *id = hit != NULL && hit->node != NULL ? tbox_html_node_get_attribute(hit->node, tbox_string_view_make("id", 2)) : NULL;
+            TBOX_TEST_ASSERT(id != NULL && string_view_equal_cstr(id->value, "top")); /* z-index 2 wins although first in the DOM */
+            TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 50.0, 25.0) == TBOX_STYLE_CURSOR_MOVE);
+            TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 220.0, 20.0) == TBOX_STYLE_CURSOR_WAIT);
+            TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 5.0, 108.0) == TBOX_STYLE_CURSOR_TEXT);     /* "ver" */
+            TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 45.0, 108.0) == TBOX_STYLE_CURSOR_POINTER); /* the link */
+            TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 390.0, 290.0) == TBOX_STYLE_CURSOR_DEFAULT);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* position: sticky holds a header at the scrollport top after
+     * scrolling, within its section. */
+    {
+        const char *html  = "<div id=\"s\"><div class=\"sec\"><h2 id=\"h\">A</h2><p>1</p><p>2</p><p>3</p><p>4</p></div><div class=\"sec\"><h2>B</h2><p>5</p><p>6</p><p>7</p><p>8</p></div></div>";
+        const char *css   = "#s { height: 100px; overflow-y: auto; } h2 { position: sticky; top: 0; height: 20px; margin: 0; } p { height: 30px; margin: 0; }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 300.0, &list);
+            const tbox_layout_box *scroller = tbox_context_hit_test(ctx, 20.0, 60.0);
+            while (scroller != NULL && (scroller->style == NULL || scroller->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_AUTO))
+                scroller = scroller->parent;
+            TBOX_TEST_ASSERT(scroller != NULL);
+            if (scroller != NULL) {
+                double x = scroller->padding_box.x + 5.0, top = scroller->padding_box.y;
+                TBOX_TEST_ASSERT(tbox_context_scroll(ctx, x, top + 50.0, 40.0));
+                tbox_context_run_frame(ctx, 300.0, 300.0, &list);
+                const tbox_layout_box *at_top = tbox_context_hit_test(ctx, x, top + 5.0);
+                TBOX_TEST_ASSERT(at_top != NULL && at_top->node != NULL && string_view_equal_cstr(at_top->node->element.tag_name, "h2"));
+                if (at_top != NULL)
+                    TBOX_TEST_ASSERT(at_top->border_box.y == top); /* held at the scrollport top */
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

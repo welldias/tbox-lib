@@ -204,6 +204,12 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
  * TBOX_CSS_ORIGIN_AUTHOR -- equivalent to tbox_css_cascade_resolve with a
  * one-element sources array. stylesheet == NULL or node == NULL yields an
  * empty computed_style. */
+/* tbox_css_cascade_resolve for the pseudo-element `pseudo` ("marker") of
+ * `node`: the rules whose selector ends in "::<pseudo>" and whose rest
+ * matches `node`. No inline style. Release with
+ * tbox_css_computed_style_destroy. */
+tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo);
+
 tbox_css_computed_style tbox_css_cascade_resolve_stylesheet(const tbox_css_stylesheet *stylesheet, const tbox_html_node *node);
 
 void tbox_css_computed_style_destroy(tbox_css_computed_style *style);

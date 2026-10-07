@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font: 16px sans-serif;
+            background: #eef2f7;
+            color: #1e293b;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 24px;
+        }
+
+        h2 {
+            font-size: 16px;
+            margin: 14px 0 6px;
+        }
+
+        table {
+            border-spacing: 4px;
+            background: #cbd5e1;
+        }
+
+        td {
+            border: 2px solid #2563eb;
+            background: white;
+            padding: 6px;
+        }
+
+        .hide {
+            empty-cells: hide;
+        }
+
+        .fixed {
+            table-layout: fixed;
+            width: 500px;
+        }
+
+        .fixed td {
+            overflow: hidden;
+        }
+
+        .auto {
+            width: 500px;
+        }
+
+        .collapse {
+            visibility: collapse;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>empty-cells, table-layout e visibility: collapse</h1>
+    <h2>empty-cells: show (padrao) e hide</h2>
+    <table>
+        <tr>
+            <td>a</td>
+            <td></td>
+            <td>c</td>
+        </tr>
+    </table>
+    <table class="hide">
+        <tr>
+            <td>a</td>
+            <td></td>
+            <td>c</td>
+        </tr>
+    </table>
+    <h2>table-layout: auto e fixed (500px)</h2>
+    <table class="auto">
+        <tr>
+            <td>curto</td>
+            <td>um texto bem mais comprido que os outros</td>
+            <td>x</td>
+        </tr>
+    </table>
+    <table class="fixed">
+        <tr>
+            <td style="width: 80px">80px</td>
+            <td>um texto bem mais comprido que os outros</td>
+            <td>x</td>
+        </tr>
+    </table>
+    <h2>linha com visibility: collapse</h2>
+    <table>
+        <tr>
+            <td>linha 1</td>
+        </tr>
+        <tr class="collapse">
+            <td>linha 2 (oculta)</td>
+        </tr>
+        <tr>
+            <td>linha 3</td>
+        </tr>
+    </table>
+</body>
+
+</html>

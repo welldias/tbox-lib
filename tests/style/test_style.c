@@ -982,15 +982,16 @@ int tbox_test_style_run(void) {
     }
 
     {
-        /* A comma (multiple shadows, out of scope) makes the whole
-         * declaration ignored, falling back to "no shadow" -- not a crash,
-         * not a half-parsed result. */
+        /* Comma-separated shadows are all kept, in order; the single
+         * box_shadow_* fields mirror the first (topmost) one. */
         tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
         const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
         tbox_css_stylesheet *sheet = parse_css_cstr("div { box-shadow: 1px 1px red, 2px 2px blue; }");
 
         tbox_style style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT_MSG(style.box_shadow_color.a == 0, "a comma-separated (multiple shadow) value must be rejected entirely, out of scope");
+        TBOX_TEST_ASSERT(style.box_shadow_count == 2);
+        TBOX_TEST_ASSERT(rgba_eq(style.box_shadow_color, (tbox_css_rgba){ 255, 0, 0, 255 }));
+        TBOX_TEST_ASSERT(rgba_eq(style.box_shadows[1].color, (tbox_css_rgba){ 0, 0, 255, 255 }) && style.box_shadows[1].offset_x == 2.0);
 
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
@@ -1106,7 +1107,7 @@ int tbox_test_style_run(void) {
             { 0,   0, 255, 255 },
             { 255, 0, 0,   255 },
             { 0,   0, 255, 255 },
-            { 0,   0, 255, 255 }
+            { 0,   0, 0,   0   } /* a later image-only shorthand resets the color */
         };
         for (size_t i = 0; i < 4; i++) {
             tbox_css_stylesheet *sheet = parse_css_cstr(css[i]);
@@ -1234,7 +1235,7 @@ int tbox_test_style_run(void) {
         parent = resolve_node(sheet, div, NULL);
         TBOX_TEST_ASSERT(parent.min_height.kind == TBOX_STYLE_LENGTH_AUTO);
         TBOX_TEST_ASSERT(parent.max_height.kind == TBOX_STYLE_LENGTH_AUTO);
-        TBOX_TEST_ASSERT(!parent.font_weight_bold);
+        TBOX_TEST_ASSERT(parent.font_weight == 650 && parent.font_weight_bold);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -1541,7 +1542,7 @@ int tbox_test_style_run(void) {
             { "div { white-space: pre; }",          TBOX_STYLE_WHITE_SPACE_PRE      },
             { "div { white-space: Pre-Wrap; }",     TBOX_STYLE_WHITE_SPACE_PRE_WRAP },
             { "div { white-space: pre-line; }",     TBOX_STYLE_WHITE_SPACE_PRE_LINE },
-            { "div { white-space: break-spaces; }", TBOX_STYLE_WHITE_SPACE_AUTO     },
+            { "div { white-space: break-spaces; }", TBOX_STYLE_WHITE_SPACE_BREAK_SPACES },
         };
         for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
             tbox_css_stylesheet *sheet = parse_css_cstr(cases[i].css);
@@ -1621,13 +1622,14 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
-    /* dashed/dotted/double borders and outlines; 3D styles paint solid. */
+    /* dashed/dotted/double borders and outlines; 3D styles keep their own
+     * values (shaded by Render). */
     {
         tbox_html_document *doc                   = parse_html_cstr("<div>x</div>");
         const tbox_html_node *div                 = tbox_html_document_root(doc)->first_child;
         tbox_css_stylesheet *sheet                = parse_css_cstr("div { border: 2px dashed; border-style: dashed dotted double groove; outline: 1px dotted; }");
         tbox_style style                          = resolve_node(sheet, div, NULL);
-        const tbox_style_border_style expected[4] = { TBOX_STYLE_BORDER_STYLE_DASHED, TBOX_STYLE_BORDER_STYLE_DOTTED, TBOX_STYLE_BORDER_STYLE_DOUBLE, TBOX_STYLE_BORDER_STYLE_SOLID };
+        const tbox_style_border_style expected[4] = { TBOX_STYLE_BORDER_STYLE_DASHED, TBOX_STYLE_BORDER_STYLE_DOTTED, TBOX_STYLE_BORDER_STYLE_DOUBLE, TBOX_STYLE_BORDER_STYLE_GROOVE };
         for (size_t i = 0; i < 4; i++) {
             TBOX_TEST_ASSERT(tbox_style_border_side_style(&style, i) == expected[i]);
             TBOX_TEST_ASSERT(tbox_style_border_side_width(&style, i) == 2.0);
@@ -1878,6 +1880,353 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(parent.border_widths[1] == 3.0 && parent.border_widths[3] == 3.0);
         TBOX_TEST_ASSERT(parent.text_underline_position_under && !child.text_underline_position_under);
         TBOX_TEST_ASSERT(child.width.value == 45.0 && child.border_widths[3] == 1.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Length units: rem against the root's font size, absolute units at
+     * 96px per inch, ex/ch as half an em, viewport units only with a
+     * viewport. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { font-size: 20px; }"
+            "p { font-size: 10px; width: 2rem; height: 1in; margin: 12pt 1pc 2.54cm 10mm; padding-left: 2ch; padding-top: 4ex; min-width: 50vw; max-height: 10vh; }");
+        tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(sheet, div);
+        tbox_style parent                = tbox_style_resolve_in_viewport(div, NULL, &computed, 800.0, 600.0);
+        tbox_css_computed_style_destroy(&computed);
+        computed         = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        tbox_style child = tbox_style_resolve_in_viewport(p, &parent, &computed, 800.0, 600.0);
+        TBOX_TEST_ASSERT(parent.root_font_size == 20.0 && child.root_font_size == 20.0);
+        TBOX_TEST_ASSERT(child.width.kind == TBOX_STYLE_LENGTH_PX && child.width.value == 40.0);
+        TBOX_TEST_ASSERT(child.height.value == 96.0);
+        TBOX_TEST_ASSERT(child.margin[0].value == 16.0 && child.margin[1].value == 16.0);
+        TBOX_TEST_ASSERT(child.margin[2].value > 95.99 && child.margin[2].value < 96.01);
+        TBOX_TEST_ASSERT(child.margin[3].value > 37.79 && child.margin[3].value < 37.8);
+        TBOX_TEST_ASSERT(child.padding[3].value == 10.0 && child.padding[0].value == 20.0);
+        TBOX_TEST_ASSERT(child.min_width.value == 400.0 && child.max_height.value == 60.0);
+        /* Without a viewport, vw is invalid and falls back. */
+        tbox_style no_viewport = tbox_style_resolve(p, &parent, &computed);
+        TBOX_TEST_ASSERT(no_viewport.min_width.kind == TBOX_STYLE_LENGTH_AUTO);
+        tbox_css_computed_style_destroy(&computed);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet  = parse_css_cstr("div { font-size: 1.5rem; }");
+        parent = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent.font_size == 24.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* calc(): px parts fold, percentages stay for the Layout Tree with the
+     * px part in px_offset; invalid expressions fall back. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { font-size: 10px; width: calc(100% - 20px); height: calc(2 * (1em + 5px)); margin-left: calc(10px*3);"
+            " padding-top: calc(50% / 2 + 1rem); min-width: calc(10px + 5); max-width: calc(10px -5px); }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.width.kind == TBOX_STYLE_LENGTH_PERCENT && style.width.value == 100.0 && style.width.px_offset == -20.0);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.width, 300.0) == 280.0);
+        TBOX_TEST_ASSERT(style.height.kind == TBOX_STYLE_LENGTH_PX && style.height.value == 30.0);
+        TBOX_TEST_ASSERT(style.margin[3].value == 30.0);
+        TBOX_TEST_ASSERT(style.padding[0].kind == TBOX_STYLE_LENGTH_PERCENT && style.padding[0].value == 25.0 && style.padding[0].px_offset == 16.0);
+        TBOX_TEST_ASSERT(style.min_width.kind == TBOX_STYLE_LENGTH_AUTO); /* length + number */
+        TBOX_TEST_ASSERT(style.max_width.kind == TBOX_STYLE_LENGTH_AUTO); /* `-` needs spaces */
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { font-size: calc(10px + 50%); }");
+        tbox_style parent = { 0 };
+        parent.font_size  = 20.0;
+        parent.root_font_size = 16.0;
+        style = resolve_node(sheet, div, &parent);
+        TBOX_TEST_ASSERT(style.font_size == 20.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* CSS-wide keywords: inherit copies the parent's value even for
+     * non-inherited properties, initial resets inherited ones, unset picks
+     * by property, and a more specific ordinary longhand still wins. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p class=\"c\">x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { color: red; margin: 7px; border: 3px solid blue; background-color: lime; font-size: 30px; text-align: center; }"
+            "p { margin: inherit; border: inherit; background-color: INHERIT; color: initial; text-align: unset; padding: unset; font-size: initial; width: 2em; }"
+            "p.c { margin-top: 1px; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.margin[0].value == 1.0 && child.margin[1].value == 7.0 && child.margin[3].value == 7.0);
+        TBOX_TEST_ASSERT(child.border_widths[2] == 3.0 && child.border_styles[0] == TBOX_STYLE_BORDER_STYLE_SOLID && !child.border_per_side && child.border_width == 3.0);
+        TBOX_TEST_ASSERT(rgba_eq(child.background_color, (tbox_css_rgba){ 0, 255, 0, 255 }));
+        TBOX_TEST_ASSERT(rgba_eq(child.color, (tbox_css_rgba){ 0, 0, 0, 255 }));
+        TBOX_TEST_ASSERT(child.text_align == TBOX_STYLE_TEXT_ALIGN_CENTER);
+        TBOX_TEST_ASSERT(child.padding[0].value == 0.0);
+        TBOX_TEST_ASSERT(child.font_size == 16.0 && child.width.value == 32.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* overflow two-value syntax and longhands; visibility: collapse;
+     * keep-all; break-spaces; tab-size; list-style-position. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { overflow: hidden scroll; visibility: collapse; word-break: keep-all; tab-size: 4; list-style: square inside; }"
+            "p { overflow: auto; overflow-x: clip; tab-size: 20px; list-style-position: outside; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.overflow_x == TBOX_STYLE_OVERFLOW_Y_HIDDEN && parent.overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO);
+        TBOX_TEST_ASSERT(child.overflow_x == TBOX_STYLE_OVERFLOW_Y_HIDDEN && child.overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO);
+        TBOX_TEST_ASSERT(parent.visibility_hidden && parent.visibility_collapse);
+        TBOX_TEST_ASSERT(child.word_break_keep_all && !child.word_break_all);
+        TBOX_TEST_ASSERT(parent.tab_size == 4.0 && !parent.tab_size_length);
+        TBOX_TEST_ASSERT(child.tab_size == 20.0 && child.tab_size_length);
+        TBOX_TEST_ASSERT(parent.list_style_inside && parent.list_style_type == TBOX_STYLE_LIST_STYLE_SQUARE && !child.list_style_inside);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* text-align-last, empty-cells, table-layout, user-select, cursor,
+     * aspect-ratio, line-clamp, z-index. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { text-align-last: center; empty-cells: hide; table-layout: fixed; user-select: none; cursor: url(a.cur) 2 2, pointer;"
+            " aspect-ratio: 16 / 9; -webkit-line-clamp: 3; display: -webkit-box; z-index: -2; position: relative; }"
+            "p { aspect-ratio: 2; z-index: auto; line-clamp: none; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.text_align_last == TBOX_STYLE_TEXT_ALIGN_LAST_CENTER && child.text_align_last == TBOX_STYLE_TEXT_ALIGN_LAST_CENTER);
+        TBOX_TEST_ASSERT(parent.empty_cells_hide && child.empty_cells_hide);
+        TBOX_TEST_ASSERT(parent.table_layout_fixed && !child.table_layout_fixed);
+        TBOX_TEST_ASSERT(parent.user_select == TBOX_STYLE_USER_SELECT_NONE && child.user_select == TBOX_STYLE_USER_SELECT_NONE);
+        TBOX_TEST_ASSERT(parent.cursor == TBOX_STYLE_CURSOR_POINTER && child.cursor == TBOX_STYLE_CURSOR_POINTER);
+        TBOX_TEST_ASSERT(parent.aspect_ratio > 1.777 && parent.aspect_ratio < 1.778 && child.aspect_ratio == 2.0);
+        TBOX_TEST_ASSERT(parent.line_clamp == 3 && parent.display == TBOX_STYLE_DISPLAY_BLOCK && child.line_clamp == 0);
+        TBOX_TEST_ASSERT(!parent.z_index_auto && parent.z_index == -2 && child.z_index_auto);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Numeric font weights with the relative bolder/lighter table,
+     * font-stretch, small-caps, also through the font shorthand. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-weight: 300; font-stretch: condensed; font-variant: small-caps; } p { font-weight: bolder; font-stretch: 150%; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.font_weight == 300 && !parent.font_weight_bold && parent.font_stretch == 75.0 && parent.font_small_caps);
+        TBOX_TEST_ASSERT(child.font_weight == 400 && child.font_stretch == 150.0 && child.font_small_caps);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet  = parse_css_cstr("div { font: small-caps 800 expanded 12px serif; } p { font-weight: lighter; }");
+        parent = resolve_node(sheet, div, NULL);
+        child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.font_weight == 800 && parent.font_weight_bold && parent.font_stretch == 125.0 && parent.font_small_caps);
+        TBOX_TEST_ASSERT(child.font_weight == 700);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* background shorthand with image, position, size and repeat; the
+     * longhands; gradients. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { background: #fff url(\"img/a.png\") right 10px bottom 20% / 50% auto no-repeat padding-box; }");
+        tbox_style style           = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(strcmp(style.background_image, "img/a.png") == 0);
+        TBOX_TEST_ASSERT(rgba_eq(style.background_color, (tbox_css_rgba){ 255, 255, 255, 255 }));
+        TBOX_TEST_ASSERT(style.background_position[0].kind == TBOX_STYLE_LENGTH_PERCENT && style.background_position[0].value == 100.0 && style.background_position[0].px_offset == -10.0);
+        TBOX_TEST_ASSERT(style.background_position[1].value == 80.0);
+        TBOX_TEST_ASSERT(style.background_size[0].value == 50.0 && style.background_size[1].kind == TBOX_STYLE_LENGTH_AUTO);
+        TBOX_TEST_ASSERT(!style.background_repeat_x && !style.background_repeat_y);
+        TBOX_TEST_ASSERT(style.background_clip == TBOX_STYLE_BACKGROUND_CLIP_PADDING_BOX);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("div { background-image: linear-gradient(to right, red, rgba(0, 0, 255, 0.5) 40%, lime); background-size: cover; background-repeat: repeat-x; background-position: center; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.background_gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && style.background_gradient.angle == 90.0);
+        TBOX_TEST_ASSERT(style.background_gradient.stop_count == 3 && style.background_gradient.stops[1].position.value == 40.0);
+        TBOX_TEST_ASSERT(style.background_gradient.stops[0].position.kind == TBOX_STYLE_LENGTH_AUTO && style.background_gradient.stops[1].color.a == 128);
+        TBOX_TEST_ASSERT(style.background_size_kind == TBOX_STYLE_BACKGROUND_SIZE_COVER);
+        TBOX_TEST_ASSERT(style.background_repeat_x && !style.background_repeat_y);
+        TBOX_TEST_ASSERT(style.background_position[0].value == 50.0 && style.background_position[1].value == 50.0);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("div { background: repeating-radial-gradient(circle closest-side at 25% 75%, red 0 10px, blue 20px) }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.background_gradient.kind == TBOX_STYLE_GRADIENT_RADIAL && style.background_gradient.repeating && style.background_gradient.circle);
+        TBOX_TEST_ASSERT(style.background_gradient.extent == TBOX_STYLE_GRADIENT_CLOSEST_SIDE);
+        TBOX_TEST_ASSERT(style.background_gradient.center[0].value == 25.0 && style.background_gradient.center[1].value == 75.0);
+        TBOX_TEST_ASSERT(style.background_gradient.stop_count == 3 && style.background_gradient.stops[1].position.value == 10.0);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("div { background-image: linear-gradient(45deg, red); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.background_gradient.kind == TBOX_STYLE_GRADIENT_NONE); /* one stop is invalid */
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { background-image: linear-gradient(to top left, red, blue); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.background_gradient.corner[0] == -1 && style.background_gradient.corner[1] == -1);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* inset shadows, multiple text shadows, elliptical radii, translate. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { box-shadow: inset 0 0 4px red, 2px 2px blue; text-shadow: 1px 1px red, -1px -1px 2px blue; border-radius: 10px 20px / 5px;"
+            " transform: translate(10px, 50%) translateX(5px); }"
+            "p { border-top-left-radius: 8px 4px; translate: 3px; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.box_shadow_count == 2 && parent.box_shadows[0].inset && parent.box_shadow_inset && !parent.box_shadows[1].inset);
+        TBOX_TEST_ASSERT(parent.text_shadow_count == 2 && child.text_shadow_count == 2 && child.text_shadows[1].blur == 2.0);
+        TBOX_TEST_ASSERT(parent.border_radius_corners[0] == 10.0 && parent.border_radius_corners[1] == 20.0 && parent.border_radius_vertical[1] == 5.0);
+        TBOX_TEST_ASSERT(child.border_radius_corners[0] == 8.0 && child.border_radius_vertical[0] == 4.0);
+        TBOX_TEST_ASSERT(parent.translate_x.kind == TBOX_STYLE_LENGTH_PX && parent.translate_x.value == 15.0);
+        TBOX_TEST_ASSERT(parent.translate_y.kind == TBOX_STYLE_LENGTH_PERCENT && parent.translate_y.value == 50.0);
+        TBOX_TEST_ASSERT(child.translate_x.value == 3.0 && child.translate_y.value == 0.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet  = parse_css_cstr("div { transform: rotate(10deg); }");
+        parent = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent.translate_x.value == 0.0 && parent.translate_y.value == 0.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Modern color syntax through the style layer. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { color: rgb(10 20 30 / 50%); background: hwb(0 0% 0%); border: 1px solid oklch(0.628 0.258 29.23); outline: 1px solid color-mix(in srgb, red, blue); }");
+        tbox_style style           = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(rgba_eq(style.color, (tbox_css_rgba){ 10, 20, 30, 128 }));
+        TBOX_TEST_ASSERT(rgba_eq(style.background_color, (tbox_css_rgba){ 255, 0, 0, 255 }));
+        TBOX_TEST_ASSERT(style.border_color.r > 240 && style.border_color.g < 20 && style.border_color.b < 20);
+        TBOX_TEST_ASSERT(rgba_eq(style.outline_color, (tbox_css_rgba){ 128, 0, 128, 255 }));
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* min()/max()/clamp(): pure px folds; a percentage among px keeps px
+     * bounds; intrinsic size keywords stay AUTO with a keyword. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { margin-left: min(10px, 2em, 30px); margin-right: max(1em, 4px); width: clamp(200px, 40%, 600px); min-width: min(100%, 300px); height: max-content; padding-top: clamp(1px, 50px, 10px); }");
+        tbox_style style           = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.margin[3].value == 10.0 && style.margin[1].value == 16.0);
+        TBOX_TEST_ASSERT(style.width.kind == TBOX_STYLE_LENGTH_PERCENT && style.width.bounds == 3);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.width, 100.0) == 200.0 && tbox_style_length_resolve(style.width, 1000.0) == 400.0 && tbox_style_length_resolve(style.width, 2000.0) == 600.0);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.min_width, 1000.0) == 300.0 && tbox_style_length_resolve(style.min_width, 200.0) == 200.0);
+        TBOX_TEST_ASSERT(style.height.kind == TBOX_STYLE_LENGTH_AUTO && style.height_keyword == TBOX_STYLE_SIZE_KEYWORD_MAX_CONTENT);
+        TBOX_TEST_ASSERT(style.padding[0].value == 10.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { width: fit-content; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.width_keyword == TBOX_STYLE_SIZE_KEYWORD_FIT_CONTENT && style.width.kind == TBOX_STYLE_LENGTH_AUTO);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* place-*, text-wrap family, text-overflow strings, display keywords,
+     * text-indent keywords, background-origin, scrollbars, 3D borders,
+     * kerning and hyphens. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { place-content: center space-between; place-items: end; text-wrap: balance; white-space-collapse: preserve; text-overflow: \"[+]\";"
+            " display: list-item; text-indent: 2em hanging each-line; background: url(a.png) content-box; scrollbar-color: red blue; scrollbar-width: thin;"
+            " border: 4px ridge; font-kerning: none; hyphens: none; }"
+            "p { text-wrap-mode: nowrap; display: flow-root; place-self: center; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.align_content == TBOX_STYLE_FLEX_JUSTIFY_CENTER && parent.justify_content == TBOX_STYLE_FLEX_JUSTIFY_SPACE_BETWEEN);
+        TBOX_TEST_ASSERT(parent.align_items == TBOX_STYLE_FLEX_ALIGN_END && child.align_self == TBOX_STYLE_FLEX_ALIGN_CENTER);
+        TBOX_TEST_ASSERT(parent.text_wrap_balance && parent.white_space == TBOX_STYLE_WHITE_SPACE_PRE_WRAP);
+        TBOX_TEST_ASSERT(child.white_space == TBOX_STYLE_WHITE_SPACE_PRE && child.text_wrap_balance);
+        TBOX_TEST_ASSERT(parent.text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS && strcmp(parent.text_overflow_string, "[+]") == 0);
+        TBOX_TEST_ASSERT(parent.display == TBOX_STYLE_DISPLAY_BLOCK && parent.display_list_item && child.display == TBOX_STYLE_DISPLAY_BLOCK && !child.display_list_item);
+        TBOX_TEST_ASSERT(parent.text_indent.value == 32.0 && parent.text_indent_hanging && parent.text_indent_each_line && child.text_indent_hanging);
+        TBOX_TEST_ASSERT(parent.background_origin == TBOX_STYLE_BACKGROUND_ORIGIN_CONTENT_BOX && parent.background_clip == TBOX_STYLE_BACKGROUND_CLIP_CONTENT_BOX);
+        TBOX_TEST_ASSERT(rgba_eq(child.scrollbar_thumb_color, (tbox_css_rgba){ 255, 0, 0, 255 }) && child.scrollbar_track_color.b == 255);
+        TBOX_TEST_ASSERT(parent.scrollbar_width == TBOX_STYLE_SCROLLBAR_WIDTH_THIN && child.scrollbar_width == TBOX_STYLE_SCROLLBAR_WIDTH_AUTO);
+        TBOX_TEST_ASSERT(parent.border_style == TBOX_STYLE_BORDER_STYLE_RIDGE);
+        TBOX_TEST_ASSERT(child.font_kerning_none && child.hyphens_none);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* filter matrices, clip-path shapes, several background layers. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { filter: invert(1) blur(2px); clip-path: circle(30px at left 10px top 20px);"
+                                                    " background: url(a.png) 0 0 / 10px no-repeat, linear-gradient(red, blue), #fff; background-repeat: repeat-x; }");
+        tbox_style style           = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.has_filter && style.filter_matrix[0] == -1.0 && style.filter_matrix[4] == 1.0 && style.filter_matrix[18] == 1.0);
+        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_CIRCLE && style.clip_path.radius[0].value == 30.0);
+        TBOX_TEST_ASSERT(style.clip_path.center[0].px_offset == 10.0 && style.clip_path.center[1].px_offset == 20.0);
+        TBOX_TEST_ASSERT(style.background_layer_count == 3 && strcmp(style.background_image, "a.png") == 0 && style.background_size[0].value == 10.0);
+        TBOX_TEST_ASSERT(style.background_layers[1].image[0] == '\0' && style.background_layers[1].gradient.kind == TBOX_STYLE_GRADIENT_NONE); /* color-only last layer */
+        TBOX_TEST_ASSERT(style.background_layers[0].gradient.kind == TBOX_STYLE_GRADIENT_LINEAR);
+        TBOX_TEST_ASSERT(style.background_repeat_x && !style.background_repeat_y && style.background_layers[0].repeat_x && !style.background_layers[0].repeat_y); /* the list repeats */
+        TBOX_TEST_ASSERT(rgba_eq(style.background_color, (tbox_css_rgba){ 255, 255, 255, 255 }));
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { clip-path: inset(5px 10% round 4px / 8px); filter: none; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET && style.clip_path.inset[0].value == 5.0 && style.clip_path.inset[1].value == 10.0);
+        TBOX_TEST_ASSERT(style.clip_path.round_h[2] == 4.0 && style.clip_path.round_v[2] == 8.0 && !style.has_filter);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Custom properties: inherited through the tree, a fallback, an
+     * undefined reference making the declaration unset, a cycle; ::marker
+     * and list-style-image. */
+    {
+        tbox_html_document *doc        = parse_html_cstr("<ul><li id=\"a\"><span>x</span></li></ul>");
+        const tbox_html_node *root     = tbox_html_document_root(doc);
+        const tbox_html_node *ul       = root->first_child;
+        const tbox_html_node *li       = ul->first_child;
+        const tbox_html_node *span     = li->first_child;
+        tbox_css_stylesheet *sheet     = parse_css_cstr(
+            "ul { --gap: 7px; --main: rgb(1 2 3); list-style: url(dot.png) inside; }"
+            "li { margin-left: var(--gap); color: var(--main); border-top: 2px solid var(--missing); --loop: var(--loop); padding-top: var(--loop, 3px); }"
+            "span { margin-top: calc(var(--gap) * 2); background-color: var(--nope, lime); }"
+            "li::marker { color: red; font-size: 30px; content: \"> \"; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_style *li_style     = tbox_style_table_find(&table, li);
+        const tbox_style *span_style   = tbox_style_table_find(&table, span);
+        TBOX_TEST_ASSERT(li_style != NULL && span_style != NULL && tbox_style_table_find(&table, ul) != NULL);
+        if (li_style != NULL && span_style != NULL) {
+            TBOX_TEST_ASSERT(li_style->margin[3].value == 7.0 && rgba_eq(li_style->color, (tbox_css_rgba){ 1, 2, 3, 255 }));
+            TBOX_TEST_ASSERT(rgba_eq(li_style->border_colors[0], li_style->color)); /* var(--missing): unset, currentColor */
+            TBOX_TEST_ASSERT(li_style->padding[0].value == 3.0);                   /* a cyclic variable is invalid, so the fallback applies */
+            TBOX_TEST_ASSERT(span_style->margin[0].value == 14.0 && rgba_eq(span_style->background_color, (tbox_css_rgba){ 0, 255, 0, 255 }));
+            TBOX_TEST_ASSERT(li_style->marker_styled && rgba_eq(li_style->marker_color, (tbox_css_rgba){ 255, 0, 0, 255 }) && li_style->marker_font_size == 30.0);
+            TBOX_TEST_ASSERT(li_style->marker_has_content && strcmp(li_style->marker_content, "> ") == 0);
+            TBOX_TEST_ASSERT(strcmp(li_style->list_style_image, "dot.png") == 0 && li_style->list_style_inside);
+        }
+        tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }

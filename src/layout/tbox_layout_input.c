@@ -87,7 +87,7 @@ void tbox_layout_input_push_value_word(tbox_arena *arena, const tbox_html_node *
             tbox_string_view_make("Reset", 5) :
         type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("submit", 6)) ?
             tbox_string_view_make("Submit", 6) : tbox_string_view_make(NULL, 0);
-    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+    const tbox_font_face *face = tbox_layout_style_face(fonts, style);
     if (label.size > 0 && face != NULL) {
         tbox_string_view display = label;
         if (tbox_layout_is_password_input(node)) {

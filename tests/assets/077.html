@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      width: 760px;
+    }
+
+    .g {
+      width: 170px;
+      height: 110px;
+      color: white;
+      font-size: 13px;
+      padding: 6px;
+      box-sizing: border-box;
+    }
+
+    .l1 {
+      background: linear-gradient(#2563eb, #9333ea);
+    }
+
+    .l2 {
+      background: linear-gradient(to right, red, orange, yellow, green, blue);
+    }
+
+    .l3 {
+      background: linear-gradient(45deg, #f43f5e 0%, #f43f5e 30%, #0ea5e9 70%);
+    }
+
+    .l4 {
+      background: linear-gradient(to bottom right, #111827, #6b7280);
+    }
+
+    .r1 {
+      background: radial-gradient(#fde047, #ea580c);
+    }
+
+    .r2 {
+      background: radial-gradient(circle at 30% 30%, white, #0284c7 60%, #0c4a6e);
+    }
+
+    .r3 {
+      background: radial-gradient(closest-side, #22c55e, transparent);
+      background-color: #14532d;
+    }
+
+    .rep1 {
+      background: repeating-linear-gradient(45deg, #fbbf24 0 10px, #1f2937 10px 20px);
+    }
+
+    .rep2 {
+      background: repeating-radial-gradient(circle, #e11d48 0 8px, #fff1f2 8px 16px);
+      color: #881337;
+    }
+
+    .rounded {
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.9), rgba(59, 130, 246, 0.3));
+    }
+
+    .tiles {
+      background: linear-gradient(90deg, #1d4ed8 50%, #93c5fd 50%) 0 0 / 40px 40px;
+    }
+
+    .alpha {
+      background: #fff linear-gradient(to right, rgba(220, 38, 38, 1), rgba(220, 38, 38, 0));
+      color: #111;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Gradientes lineares e radiais</h1>
+  <div class="grid">
+    <div class="g l1">linear padrao</div>
+    <div class="g l2">to right, 5 cores</div>
+    <div class="g l3">45deg com posicoes</div>
+    <div class="g l4">to bottom right</div>
+    <div class="g r1">radial padrao</div>
+    <div class="g r2">circle at 30% 30%</div>
+    <div class="g r3">closest-side</div>
+    <div class="g rep1">repeating-linear</div>
+    <div class="g rep2">repeating-radial</div>
+    <div class="g rounded">arredondado</div>
+    <div class="g tiles">background-size 40px</div>
+    <div class="g alpha">transparencia</div>
+  </div>
+</body>
+
+</html>

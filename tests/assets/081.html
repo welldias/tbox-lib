@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font: 20px sans-serif;
+            background: #eef2f7;
+            color: #1e293b;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 24px;
+        }
+
+        p {
+            margin: 6px 0;
+            background: white;
+            padding: 6px;
+            width: 560px;
+        }
+
+        .sc {
+            font-variant: small-caps;
+        }
+
+        .caps {
+            font-variant-caps: small-caps;
+            font-weight: bold;
+            color: #1d4ed8;
+        }
+
+        .short {
+            font: small-caps 24px serif;
+        }
+
+        .mix {
+            font-variant: small-caps;
+            letter-spacing: 1px;
+        }
+
+        .mix span {
+            font-variant: normal;
+            color: #dc2626;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>font-variant: small-caps</h1>
+    <p>Texto normal para comparar</p>
+    <p class="sc">Versaletes Sintetizados Em Tamanho Menor</p>
+    <p class="caps">font-variant-caps em Negrito</p>
+    <p class="short">Shorthand font com Small-Caps</p>
+    <p class="mix">Herdado pelos filhos, <span>exceto este normal</span> e volta</p>
+</body>
+
+</html>

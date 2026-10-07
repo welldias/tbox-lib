@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.grid { display: flex; flex-wrap: wrap; gap: 10px; width: 760px; }
+.c { width: 175px; height: 60px; padding: 6px; box-sizing: border-box; color: white; font-size: 12px; }
+</style></head><body>
+<h1>Sintaxe moderna de cores (CSS Color 4/5)</h1>
+<div class="grid">
+  <div class="c" style="background: rgb(37 99 235)">rgb(37 99 235)</div>
+  <div class="c" style="background: rgb(37 99 235 / 50%)">rgb(37 99 235 / 50%)</div>
+  <div class="c" style="background: hsl(150deg 70% 35%)">hsl(150deg 70% 35%)</div>
+  <div class="c" style="background: hsl(0.9turn 80 50 / .8)">hsl(0.9turn 80 50 / .8)</div>
+  <div class="c" style="background: hwb(30 10% 20%)">hwb(30 10% 20%)</div>
+  <div class="c" style="background: lab(45 60 -60)">lab(45 60 -60)</div>
+  <div class="c" style="background: lch(55 70 40)">lch(55 70 40)</div>
+  <div class="c" style="background: oklab(0.6 0.15 0.05)">oklab(0.6 0.15 0.05)</div>
+  <div class="c" style="background: oklch(0.65 0.2 145)">oklch(0.65 0.2 145)</div>
+  <div class="c" style="background: color-mix(in srgb, #2563eb, #dc2626)">color-mix srgb 50/50</div>
+  <div class="c" style="background: color-mix(in oklch, #2563eb, #dc2626)">color-mix oklch</div>
+  <div class="c" style="background: color-mix(in oklab, #16a34a 30%, white)">color-mix 30% branco</div>
+</div>
+<p style="color: oklch(0.45 0.18 260); border-bottom: 3px solid rgb(220 38 38 / 60%)">Texto em oklch com borda rgb(... / 60%)</p>
+</body></html>

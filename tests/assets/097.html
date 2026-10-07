@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html><head><style>
+:root { --brand: #2563eb; --accent: oklch(0.65 0.2 30); --gap: 12px; --radius: 10px; --pad: calc(var(--gap) / 2); }
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; color: var(--brand); }
+.row { display: flex; gap: var(--gap); margin-bottom: var(--gap); }
+.card { --bg: white; background: var(--bg); border: 2px solid var(--brand); border-radius: var(--radius); padding: var(--pad) calc(var(--pad) * 2); width: 200px; }
+.card.warm { --brand: var(--accent); --bg: #fff7ed; }
+.card.missing { color: var(--nao-existe, #16a34a); border-color: var(--tambem-nao); }
+.nested { --size: 18px; font-size: var(--size); }
+.nested span { --bigger: calc(var(--size) + 6px); font-size: var(--bigger); }
+</style></head><body>
+<h1>Variaveis CSS (--x e var())</h1>
+<div class="row">
+  <div class="card">usa --brand azul</div>
+  <div class="card warm">redefine --brand no proprio elemento</div>
+  <div class="card missing">fallback verde; borda sem valor vira unset</div>
+</div>
+<div class="nested">tamanho 18px <span>e 24px no filho</span></div>
+</body></html>

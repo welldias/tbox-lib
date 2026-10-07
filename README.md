@@ -211,6 +211,75 @@ descender unless `text-underline-offset` is explicit; see
 element; see `tests/assets/063.html`. Attribute selectors accept the ASCII
 case-insensitive `i` modifier for value comparisons, such as
 `[data-label="ALPHA" i]`; see `tests/assets/064.html`.
+Lengths accept `rem`, `ex`, `ch`, `pt`, `pc`, `in`, `cm`, `mm`, `Q` and,
+with a viewport, `vw`/`vh`/`vmin`/`vmax`; see `tests/assets/065.html`.
+`calc()` mixes units with `+ - * /` and parentheses, its percentage part
+resolved by layout; see `tests/assets/066.html`. Every property accepts the
+CSS-wide keywords `inherit`, `initial` and `unset` (`revert` acts as
+`unset`); see `tests/assets/067.html`. `overflow-x` and the two-value
+`overflow` clip horizontally (`visible` paired with another value computes
+to `auto`); see `tests/assets/068.html`. `text-align-last` aligns a
+paragraph's last line; see `tests/assets/069.html`.
+`white-space: break-spaces` keeps spaces that take room and may wrap, and
+`tab-size` (number or length) sets tab stops; see `tests/assets/070.html`.
+List markers hang outside the content box by default, and
+`list-style-position: inside` makes them the first word; see
+`tests/assets/071.html`. Tables support `empty-cells: hide`,
+`table-layout: fixed` and rows with `visibility: collapse`; see
+`tests/assets/072.html`. `aspect-ratio` sizes an auto dimension from the
+other one; see `tests/assets/073.html`. `cursor` (keywords, `url()`
+entries skipped) sets the window's pointer through `wayland-cursor` when
+available, and `tbox_context_cursor_at` reports it; `user-select` is parsed
+and inherited by `none`/`all`. See `tests/assets/074.html`.
+`border-radius` takes elliptical `horizontal / vertical` radii; see
+`tests/assets/075.html`. `background-image: url()` with
+`background-size`, `background-position` (including edge offsets such as
+`right 10px bottom 20%`) and `background-repeat`, also through the
+`background` shorthand; see `tests/assets/076.html`.
+`linear-gradient()`, `radial-gradient()` and their `repeating-` forms paint
+as background images; see `tests/assets/077.html`. `box-shadow` and
+`text-shadow` accept comma-separated lists, and `box-shadow` takes `inset`;
+see `tests/assets/078.html`. `z-index` orders positioned boxes within
+stacking contexts (also created by `opacity` below 1), and hit testing
+follows the same order; see `tests/assets/079.html`. `font-weight` keeps the
+numeric weight (relative `bolder`/`lighter` included) and `font-stretch`
+selects condensed/expanded faces through fontconfig; see
+`tests/assets/080.html`. `font-variant: small-caps` synthesizes small
+capitals; see `tests/assets/081.html`. `line-clamp`/`-webkit-line-clamp`
+limit a block's lines and end the last one with an ellipsis; see
+`tests/assets/082.html`. `transform: translate()`/`translateX()`/
+`translateY()` and the `translate` property shift a box visually; see
+`tests/assets/083.html`. The `transparent` color keyword is accepted
+everywhere a color is.
+Colors accept the CSS Color 4/5 syntax: space-separated `rgb()`/`hsl()`
+with `/ alpha`, hue units, `none`, `hwb()`, `lab()`, `lch()`, `oklab()`,
+`oklch()` and `color-mix()`; see `tests/assets/084.html`. `min()`, `max()`
+and `clamp()` work alone or inside `calc()`, a percentage mixed with px
+keeping the px values as bounds; see `tests/assets/085.html`. `width:
+min-content | max-content | fit-content` size a box from its content; see
+`tests/assets/086.html`. `place-content`, `place-items` and `place-self`
+set the flex alignments; see `tests/assets/087.html`. `groove`, `ridge`,
+`inset` and `outset` borders and outlines are shaded; see
+`tests/assets/088.html`. `scrollbar-color` and `scrollbar-width`
+(`thin`, `none`) style the scroll bars; see `tests/assets/089.html`.
+`background-origin` and several comma-separated background layers; see
+`tests/assets/090.html`. `text-wrap` (`nowrap`, `balance`),
+`text-wrap-mode` and `white-space-collapse`; see `tests/assets/091.html`.
+`text-overflow: "<string>"`; see `tests/assets/092.html`. `display:
+flow-root` and `display: list-item` (with a marker when the content is
+inline); see `tests/assets/093.html`. `text-indent` takes `hanging` and
+`each-line`; see `tests/assets/094.html`. `clip-path: inset()`,
+`circle()` and `ellipse()`; see `tests/assets/095.html`. `filter` color
+functions (grayscale, sepia, saturate, hue-rotate, invert, opacity,
+brightness, contrast; blur and drop-shadow are ignored); see
+`tests/assets/096.html`. Custom properties (`--name`) and `var()` with
+fallbacks; see `tests/assets/097.html`. `list-style-image` and `::marker`
+(color, font and `content`); see `tests/assets/098.html`. Dashed and
+dotted borders on rounded boxes; see `tests/assets/099.html`. `position:
+sticky` holds boxes against their scrollport; see `tests/assets/100.html`.
+`font-kerning` (on by default); see `tests/assets/101.html`. Soft hyphens
+(`&shy;`) break with a visible hyphen unless `hyphens: none`; see
+`tests/assets/102.html`.
 
 ## Build and checks
 

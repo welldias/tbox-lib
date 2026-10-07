@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 14px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+h2 { font-size: 15px; margin: 12px 0 6px; }
+.row { display: flex; gap: 16px; }
+.o { width: 170px; height: 100px; padding: 16px; border: 10px dashed rgba(71, 85, 105, 0.6); background: #fff url(pixel-heart.png) no-repeat 0 0 / 24px; image-rendering: pixelated; }
+.ob { background-origin: border-box; } .oc { background-origin: content-box; }
+.layers { width: 360px; height: 140px; border: 2px solid #475569;
+  background: url(pixel-heart.png) right 10px top 10px / 32px no-repeat,
+              radial-gradient(circle at 20% 70%, rgba(255, 255, 255, 0.8), transparent 40%),
+              linear-gradient(135deg, #1d4ed8, #9333ea); image-rendering: pixelated; color: white; padding: 8px; }
+.longhands { width: 360px; height: 100px; border: 2px solid #475569; margin-top: 12px;
+  background-image: url(pixel-heart.png), url(pixel-heart.png), linear-gradient(#fef3c7, #fde68a);
+  background-size: 24px, 40px, auto; background-position: 10px 10px, right 10px bottom 10px, 0 0;
+  background-repeat: repeat-x, no-repeat; image-rendering: pixelated; }
+</style></head><body>
+<h1>background-origin e varias camadas</h1>
+<h2>origin: padding-box (padrao), border-box, content-box</h2>
+<div class="row"><div class="o">padding-box</div><div class="o ob">border-box</div><div class="o oc">content-box</div></div>
+<h2>tres camadas no shorthand</h2>
+<div class="layers">imagem + radial + linear</div>
+<div class="longhands"></div>
+</body></html>

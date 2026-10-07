@@ -176,9 +176,7 @@ bool tbox_context_drag_select(tbox_context *ctx, double x) {
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->focused_node);
     if (field == NULL || box == NULL || box->style == NULL) return false;
     const tbox_style *style = box->style;
-    const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
-        tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-        style->font_italic, style->font_size);
+    const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
     if (face == NULL) return false;
     size_t cursor = tbox_context_cursor_at_x(field, box, face, x);
     if (cursor == field->cursor) return false;
@@ -194,9 +192,7 @@ bool tbox_context_drag_select_at(tbox_context *ctx, double x, double y) {
     tbox_text_field *field = tbox_context_text_field(ctx, ctx->focused_node);
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->focused_node);
     if (field == NULL || box == NULL || box->style == NULL) return false;
-    const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
-        tbox_string_view_from_cstr(box->style->font_family), box->style->font_weight_bold,
-        box->style->font_italic, box->style->font_size);
+    const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, box->style);
     if (face == NULL) return false;
     size_t cursor = tbox_context_cursor_at_point(field, box, face, x, y);
     if (cursor == field->cursor) return false;
@@ -290,9 +286,7 @@ void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *o
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     input_clip = tbox_context_rect_intersection(input_clip, ancestor->padding_box);
-            const tbox_font_face *face = tbox_font_face_cache_get(
-                ctx->fonts, tbox_string_view_from_cstr(style->font_family),
-                style->font_weight_bold, style->font_italic, style->font_size);
+            const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
             if (face != NULL) {
                 double cursor_x = tbox_context_input_advance(box->node, face,
                     tbox_string_view_make(field->value, field->cursor), style->letter_spacing);

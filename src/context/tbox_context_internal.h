@@ -215,6 +215,7 @@ bool tbox_context_select_popup_scroll(tbox_context *ctx, double x, double y, dou
 void tbox_context_popup_reveal_highlight(tbox_context *ctx);
 void tbox_context_apply_scroll(tbox_context *ctx, tbox_layout_box *box);
 void tbox_context_reveal_focused(tbox_context *ctx);
+void tbox_context_apply_sticky(tbox_context *ctx, double viewport_width, double viewport_height);
 tbox_rect tbox_context_rect_intersection(tbox_rect a, tbox_rect b);
 void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list);
 void tbox_context_push_fill(tbox_vector *items, tbox_rect rect, tbox_css_rgba color, bool has_clip, tbox_rect clip);

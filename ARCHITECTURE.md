@@ -4831,6 +4831,232 @@ container em coluna sem altura nem min/max-height não cresce/encolhe itens
   procuravam controles numa coluna fixa passaram a varrer o viewport
   (`hit_point_for`).
 
+## v18 — Novos atributos de estilo
+
+Uma rodada de propriedades escolhidas por custo baixo/médio sobre o que já
+existia. Exemplos visuais em `tests/assets/065.html` a `083.html` (sem PNG
+de referência ainda, como 053–064).
+
+### Style — unidades, `calc()` e palavras-chave globais
+
+- **Unidades**: `tbox_style_parse_length` passa por
+  `tbox_style_parse_dimension`, que conhece `px`, `em`, `rem`, `ex`/`ch`
+  (0.5em — esta camada não tem métricas de fonte), `pt`, `pc`, `in`, `cm`,
+  `mm`, `Q` e `vw`/`vh`/`vmin`/`vmax`. Os helpers recebem um
+  `tbox_style_units` (font-size do nó, da raiz e viewport) em vez de só o
+  font-size. `rem` usa o novo campo herdado `tbox_style.root_font_size`.
+  Viewport entra por `tbox_style_resolve_in_viewport`/
+  `tbox_style_resolve_tree_in_viewport` (o Context usa estas); as funções
+  antigas passam 0x0 e unidades de viewport viram inválidas.
+- **`calc()`**: avaliador recursivo (`+ - * /`, parênteses, `calc()`
+  aninhado, `+`/`-` exigem espaços). O resultado é px + percentual; o
+  percentual vira `TBOX_STYLE_LENGTH_PERCENT` carregando a parte em px no
+  novo `tbox_style_length.px_offset`. Todo consumidor de percentual no
+  layout/render resolve por `tbox_style_length_resolve` (inline em
+  `style.h`). Em `font-size`, percentuais são do pai e dobram direto em px.
+- **`inherit`/`initial`/`unset`** (`revert` = `unset`):
+  `src/style/tbox_style_keywords.c`. As declarações com palavra-chave saem
+  do resultado da cascata (`tbox_style_keywords_strip`), o resto resolve
+  normalmente e depois cada palavra-chave copia os campos da sua
+  propriedade (tabela propriedade → offsets de `tbox_style`) do pai ou de
+  um estilo inicial. Um campo não é copiado quando uma declaração comum de
+  prioridade maior também o define. `font-size: initial` vira `medium` antes
+  da passada principal, porque os `em` dependem dele. Larguras de borda
+  iniciais são `medium` e cores iniciais são `currentColor`.
+
+### Style — demais propriedades
+
+`overflow-x` (+ `overflow` com dois valores, `visible` vira `auto` quando o
+outro eixo não é visible), `visibility: collapse`, `word-break: keep-all`
+(sem efeito em texto latino), `white-space: break-spaces`, `tab-size`,
+`list-style-position` (também no shorthand), `user-select`, `cursor`,
+`aspect-ratio`, `line-clamp`/`-webkit-line-clamp` (+ `display:
+-webkit-box` como block), `z-index`, `text-align-last`, `empty-cells`,
+`table-layout`, `transform: translate*()`/`translate`, `font-weight`
+numérico com a tabela relativa de `bolder`/`lighter`, `font-stretch`,
+`font-variant(-caps): small-caps` (também pelo shorthand `font`),
+`border-radius` elíptico (`h / v`, longhands com dois valores), listas de
+`box-shadow` (com `inset`) e `text-shadow` (`box_shadows[]`/
+`text_shadows[]`; os campos únicos antigos espelham o primeiro item) e o
+shorthand `background` completo: cor, `url()`, gradientes, posição (com a
+sintaxe de 4 valores `right 10px bottom 20%` via `px_offset`), `/ size`,
+repeat, attachment (ignorado) e caixa (vira `background-clip`). O parser de
+cores aceita `transparent`. `tbox_style_resolve` agora zera o estilo antes
+de preencher.
+
+### Layout Tree
+
+- `text-align-last` decide o alinhamento da última linha (e das linhas
+  terminadas em quebra forçada) em `tbox_layout_build_text_runs`.
+- `line-clamp` corta as linhas e chama `tbox_layout_ellipsize_line` em modo
+  `force` (reticência logo após o texto).
+- `break-spaces`: cada palavra leva os espaços seguintes, colados e
+  quebráveis. `tab-size`: `tbox_layout_expand_tabs` troca tabs por espaços
+  até a próxima parada (por colunas de codepoint).
+- Marcador de lista: `outside` (inicial) vira um run próprio pendurado à
+  esquerda da caixa de conteúdo (`tbox_layout_append_outside_marker`), sem
+  tirar largura do texto; `inside` mantém o comportamento antigo (primeira
+  palavra). Os testes antigos de marcador declaram `inside`.
+- Tabelas com `table-layout: fixed`, `empty-cells: hide` ou linhas
+  `collapse` usam o caminho estendido: largura das colunas só pelas `<col>`
+  e primeira linha; célula vazia marca `tbox_layout_box.empty_cell_hidden`
+  (o render não pinta fundo/borda); linha `collapse` sai da grade.
+- `aspect-ratio` deriva a dimensão `auto` da outra (na caixa do
+  `box-sizing`), crescendo pelo conteúdo quando `overflow` é visible; no
+  flex, transfere um tamanho cruzado definido para a base do item.
+- `small-caps`: depois de coletar as palavras de um texto, cada trecho de
+  minúsculas vira maiúsculas numa face a 70% do tamanho, colado à palavra.
+- Pós-passo `tbox_layout_finish`: decodifica `background-image` no cache de
+  imagens (`tbox_layout_box.background_image`) e aplica `translate`
+  (percentuais da própria border box) com `tbox_layout_translate`.
+- Peso/largura de fonte: `tbox_layout_style_face` (público em `layout.h`)
+  pede `tbox_font_face_cache_get_styled(família, peso, stretch, itálico,
+  tamanho)`. As faces pré-carregadas servem 400/700 normais; o resto passa
+  pelo resolver (`FC_WEIGHT` via `FcWeightFromOpenType`, `FC_WIDTH` em
+  percentual), caindo para a face pré-carregada mais próxima sem resolver.
+
+### Render Pipeline / Output Display
+
+- Ops novos: `TBOX_PAINT_GRADIENT` (um tile de gradiente, geometria do CSS
+  Images 3, interpolação em sRGB pré-multiplicado, `repeating-`), cantos
+  elípticos (`elliptical` + `corner_radii_y`) e um clip arredondado
+  (`has_rounded_clip`) para imagens/gradientes de fundo e sombras inset. O
+  teste de canto no raster agora verifica todas as regiões de canto
+  (raios grandes se sobrepõem, como em `100% 0 / 100% 0`).
+- Fundo: cor → camada de imagem (tiles conforme size/position/repeat,
+  área de posicionamento = padding box, clip = background-clip) → sombras
+  inset (anéis recortados pela padding box) → borda.
+- `z-index`: contextos de empilhamento são a raiz, caixas posicionadas com
+  z-index e caixas com opacity < 1 (para a opacidade cobrir os
+  descendentes). Cada contexto coleta as caixas z-index até o próximo
+  contexto, pinta as negativas logo após o próprio fundo/borda e as demais
+  depois dos filhos, em ordem crescente (ordem da árvore entre iguais).
+  Caixas posicionadas sem z-index continuam em ordem da árvore.
+- `tbox_render_paint_order` (`src/render/tbox_render_internal.h`) expõe
+  essa mesma ordem; `tbox_context_hit_test_box` percorre a lista de trás
+  para frente.
+
+### Orchestration / Application
+
+- `tbox_context_cursor_at(ctx, x, y)`: o `cursor` do elemento sob o
+  ponteiro (o run inline sob o ponteiro leva ao nó pela tabela de estilos);
+  para `auto`, texto sobre campos editáveis e texto, mão sobre `<a href>`,
+  seta no resto. O loop do `tbox_app` repassa para
+  `tbox_window_backend_set_cursor`; o backend Wayland usa `wayland-cursor`
+  (dependência opcional detectada no CMake, `TBOX_HAS_WAYLAND_CURSOR`),
+  tentando o nome CSS e depois o nome X11 do tema.
+- `user-select` é resolvido mas não tem efeito: o tbox não tem seleção de
+  texto no documento (só nos campos, onde o CSS não o aplica).
+
+### Fora de escopo
+
+`float`, grid, transforms além de translação, `background-attachment:
+fixed`, várias camadas de `background` (só a primeira imagem pinta),
+tamanhos px em `tab-size` com fontes proporcionais (vira número de espaços),
+efeito de `keep-all` em CJK, sombras com blur real (continuam em degraus),
+`visibility: collapse` em colunas.
+
+## v19 — Mais atributos de estilo
+
+Segunda rodada de propriedades de esforço baixo/médio. Exemplos visuais
+em `tests/assets/084.html` a `102.html` (sem PNG de referência).
+
+### CSS Parser / Cascade
+
+- O tokenizer aceita identificadores iniciados por `--` (nomes de custom
+  properties, CSS Syntax 3).
+- Pseudo-elementos (`li::marker`) passam a ser lidos como um item PSEUDO
+  com nome `::marker`; o matcher nunca os casa com elementos, e
+  `tbox_css_cascade_resolve_pseudo_element(sources, n, node, "marker")`
+  resolve as regras cujo seletor, sem o pseudo-elemento, casa com `node`.
+- Cores: separação por espaços com `/ alpha`, unidades de matiz, `none`,
+  `hwb()`, `lab()`/`lch()` (D50 com adaptação Bradford), `oklab()`/
+  `oklch()` e `color-mix()` (srgb, srgb-linear, oklab; oklch/lch/hsl
+  interpolados em oklch pelo arco menor), com alfa pré-multiplicado e corte
+  simples no gamut sRGB.
+
+### Style
+
+- **`var()`** (`src/style/tbox_style_vars.c`): antes das palavras-chave
+  globais, as declarações com `var()` são substituídas pelos `--x` do
+  próprio elemento e depois pelos herdados. O conjunto de custom
+  properties de cada elemento (`tbox_style.custom_properties`, opaco) vive
+  no arena de `tbox_style_resolve_tree`; `tbox_style_resolve` sozinho usa um
+  arena temporário e só repassa o conjunto do pai. Referência sem valor nem
+  fallback, ou ciclo, deixa a declaração `unset`; uma variável em ciclo é
+  inválida e cai no fallback de quem a usa.
+- **`min()`/`max()`/`clamp()`** no avaliador do `calc()`. Só px compara na
+  hora; uma porcentagem entre valores px vira um comprimento PERCENT com
+  limites (`tbox_style_length.bounds`/`clamp_min`/`clamp_max`), aplicados
+  por `tbox_style_length_resolve`.
+- **`min-content`/`max-content`/`fit-content`**: `width_keyword`/
+  `height_keyword`, com o comprimento continuando AUTO (todo código que não
+  os conhece trata como auto).
+- Demais: `place-*`, `white-space-collapse`/`text-wrap-mode`/`text-wrap`
+  (compostos no enum `white_space`; `balance` em `text_wrap_balance`),
+  `text-overflow: "<string>"` (dois valores: vale o do fim), `display:
+  flow-root | list-item` (block + `display_list_item`), `text-indent ...
+  hanging each-line`, `background-origin`, várias camadas de `background`
+  (`background_layers[]`; a primeira continua nos campos antigos),
+  `scrollbar-color`/`-width`, `groove`/`ridge`/`inset`/`outset` como estilos
+  próprios, `filter` (matriz de cor 4x5 composta), `clip-path` (inset com
+  `round`, circle, ellipse), `list-style-image`, `font-kerning`, `hyphens`.
+  `::marker` (cor, fonte, `content`) é resolvido na varredura da árvore
+  para `<li>` e `display: list-item` e copiado em `marker_*`.
+
+### Layout Tree
+
+- Palavras-chave intrínsecas: largura pelas medidas de
+  `tbox_layout_intrinsic_outer` (bloco, inline-block e base flex).
+- `text-indent: hanging` estreita a área de texto e recua só a primeira
+  linha para fora; `each-line` reaplica o recuo depois de quebras forçadas
+  (`tbox_layout_break_lines` ganhou `indent_each_line`).
+- `text-wrap: balance`: busca binária da menor largura que mantém o número
+  de linhas (até 10), alinhando na largura cheia.
+- `text-overflow` com string usa o texto no lugar da reticência.
+- Soft hyphen (U+00AD): divide a palavra em pedaços colados
+  (`tbox_layout_word.soft_hyphen_after`); se a linha quebra ali, o run
+  ganha "-". Com `hyphens: none` os U+00AD só são removidos.
+- `display: list-item` em elementos com conteúdo só inline vira caixa de
+  texto (`tbox_layout_is_text_box`) e ganha marcador; o marcador usa o
+  estilo do `::marker`, o `content` dele, ou `list-style-image` (imagem no
+  tamanho natural, na baseline da primeira linha).
+- Fontes: o cache distingue kerning (`tbox_font_face_cache_get_kerned`);
+  `get`/`get_styled` devolvem a face com kerning, padrão do CSS;
+  `tbox_font_face_kerning` é usado igualmente na medição e no raster.
+
+### Render / Output
+
+- Bordas 3D: duas tonalidades (escurece/clareia em 1/3), por lado; groove e
+  ridge em duas metades. Também no outline.
+- `dashed`/`dotted` arredondados: carimbos redondos ao longo da linha
+  central (lados + arcos elípticos), espaçados para fechar o contorno.
+- `background-origin` define a área de posicionamento; camadas pintam da
+  última para a primeira.
+- `filter`: cores sólidas transformadas no render; IMAGE/GRADIENT levam
+  `color_filter` (matriz composta com a de ancestrais) para o raster.
+- `clip-path`: o formato vira `rounded_clip` em todos os ops da subárvore
+  (op que já tem clip arredondado só é limitado ao retângulo do formato).
+  O raster passou a respeitar `rounded_clip` em texto também.
+- Ordem de pintura: caixas posicionadas com `z-index: auto` agora pintam
+  com as camadas do contexto de empilhamento (depois do conteúdo em fluxo,
+  na ordem da árvore, junto com z-index 0), como no CSS. O hit-test segue.
+
+### Orchestration
+
+- `position: sticky` deixou de ser sinônimo de `relative`: o layout não
+  aplica os offsets, e `tbox_context_apply_sticky` (depois da rolagem)
+  segura a caixa na borda superior/inferior do scrollport mais o offset,
+  sem sair da caixa de conteúdo do pai. Só o eixo vertical.
+- `scrollbar-width: none` mantém a rolagem e não pinta nem testa a barra.
+
+### Fora de escopo
+
+`::before`/`::after`, `blur()`/`drop-shadow()` em `filter`,
+`clip-path: polygon()`/`path()`, sticky horizontal, `fit-content(<length>)`,
+`list-item` em elementos com filhos de bloco, gamut mapping além do corte
+por canal, `min()`/`max()` com várias porcentagens.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi

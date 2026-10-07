@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    ul,
+    ol {
+      width: 320px;
+      background: white;
+      border: 1px solid #94a3b8;
+      margin: 0 0 12px;
+    }
+
+    li {
+      background: #e0f2fe;
+      margin: 2px 0;
+    }
+
+    .in {
+      list-style-position: inside;
+    }
+
+    .short {
+      list-style: square inside;
+    }
+
+    .roman {
+      list-style: upper-roman outside;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>list-style-position</h1>
+  <ul>
+    <li>outside (padrao): o marcador fica fora da caixa do item e as linhas seguintes alinham com o texto</li>
+    <li>segundo item</li>
+  </ul>
+  <ul class="in">
+    <li>inside: o marcador entra na primeira linha e o texto quebra por baixo dele</li>
+    <li>segundo item</li>
+  </ul>
+  <ul class="short">
+    <li>shorthand: square inside</li>
+  </ul>
+  <ol class="roman">
+    <li>upper-roman outside</li>
+    <li>segundo</li>
+    <li>terceiro</li>
+  </ol>
+</body>
+
+</html>

@@ -10,6 +10,7 @@
 
 struct tbox_font_face {
     FT_Face ft_face;
+    bool kerning; /* apply the font's kerning pairs (font-kerning) */
     void *font_data_copy; /* FT_New_Memory_Face never copies its input -- it keeps
                             * the pointer and reads from it lazily (e.g. cmap
                             * parsing on first use), well past this call
@@ -71,7 +72,23 @@ tbox_font_face *tbox_font_face_load(const void *font_data, size_t size, double s
 
     face->ft_face        = ft_face;
     face->font_data_copy = font_data_copy;
+    face->kerning        = false;
     return face;
+}
+
+void tbox_font_face_set_kerning(tbox_font_face *face, bool kerning) {
+    if (face != NULL)
+        face->kerning = kerning && FT_HAS_KERNING(face->ft_face);
+}
+
+double tbox_font_face_kerning(const tbox_font_face *face, uint32_t previous, uint32_t codepoint) {
+    if (face == NULL || !face->kerning || previous == 0)
+        return 0.0;
+    FT_UInt left = FT_Get_Char_Index(face->ft_face, previous), right = FT_Get_Char_Index(face->ft_face, codepoint);
+    FT_Vector delta;
+    if (left == 0 || right == 0 || FT_Get_Kerning(face->ft_face, left, right, FT_KERNING_DEFAULT, &delta) != 0)
+        return 0.0;
+    return delta.x / 64.0;
 }
 
 void tbox_font_face_destroy(tbox_font_face *face) {
@@ -122,9 +139,12 @@ double tbox_font_measure_text_spaced(const tbox_font_face *face, tbox_string_vie
     const char *cursor = text.data;
     const char *end    = text.data + text.size;
 
+    uint32_t previous = 0;
     while (cursor < end) {
         utf8_int32_t codepoint;
         cursor = utf8codepoint(cursor, &codepoint);
+        total += tbox_font_face_kerning(face, previous, (uint32_t)codepoint);
+        previous = (uint32_t)codepoint;
 
         if (FT_Load_Char(face->ft_face, (FT_ULong)codepoint, FT_LOAD_DEFAULT) != 0) {
             total += letter_spacing;

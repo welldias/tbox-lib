@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font: 15px sans-serif;
+            background: #eef2f7;
+            color: #1e293b;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 24px;
+        }
+
+        ul,
+        ol {
+            width: 360px;
+            background: white;
+            border: 1px solid #94a3b8;
+            margin: 0 0 12px;
+            padding: 8px 8px 8px 40px;
+        }
+
+        .img {
+            list-style-image: url(pixel-heart.png);
+        }
+
+        .img.inside {
+            list-style: url(pixel-heart.png) inside;
+        }
+
+        .m li::marker {
+            color: #db2777;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        ol.m li::marker {
+            color: #2563eb;
+            font-family: serif;
+            font-style: italic;
+        }
+
+        .arrow li::marker {
+            content: "→ ";
+            color: #16a34a;
+        }
+
+        .check li::marker {
+            content: "✔ ";
+            color: #0ea5e9;
+        }
+
+        .check li.no::marker {
+            content: "✘ ";
+            color: #dc2626;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>list-style-image e ::marker</h1>
+    <ul class="img">
+        <li>marcador com imagem</li>
+        <li>outro item</li>
+    </ul>
+    <ul class="img inside">
+        <li>imagem inside</li>
+    </ul>
+    <ul class="m">
+        <li>::marker rosa, negrito e maior</li>
+        <li>o texto continua normal</li>
+    </ul>
+    <ol class="m">
+        <li>numero serifado em italico azul</li>
+        <li>segundo</li>
+    </ol>
+    <ul class="arrow">
+        <li>content: "→ "</li>
+        <li>marcador personalizado</li>
+    </ul>
+    <ul class="check">
+        <li>feito</li>
+        <li class="no">nao feito</li>
+    </ul>
+</body>
+
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    .parent {
+      color: #b91c1c;
+      border: 3px dashed #2563eb;
+      padding: 10px;
+      margin-bottom: 14px;
+      background: #dbeafe;
+      font-size: 20px;
+    }
+
+    .inherit {
+      border: inherit;
+      padding: inherit;
+      background-color: inherit;
+      margin-top: 6px;
+    }
+
+    .initial {
+      color: initial;
+      font-size: initial;
+      background: white;
+    }
+
+    .unset1 {
+      color: unset;
+      border: 2px solid #94a3b8;
+      border-width: unset;
+    }
+
+    .unset2 {
+      background: #fde68a;
+      background-color: unset;
+    }
+
+    .revert {
+      text-align: center;
+    }
+
+    .revert span {
+      display: block;
+      text-align: revert;
+      background: #e2e8f0;
+    }
+
+    .more {
+      margin: inherit;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>inherit, initial e unset</h1>
+  <div class="parent">Pai vermelho, borda tracejada azul
+    <div class="inherit">inherit: borda, padding e fundo herdados</div>
+  </div>
+  <div class="parent">
+    <div class="initial">initial: preto, 16px</div>
+  </div>
+  <div class="parent">
+    <div class="unset1">unset em color (herda vermelho) e border-width (inicial)</div>
+    <div class="unset2">unset em background-color: transparente</div>
+  </div>
+  <div class="parent revert">alinhado ao centro<span>revert: sem regra do UA, herda o centro</span></div>
+</body>
+
+</html>

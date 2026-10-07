@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<style>
+		body {
+			font: 16px sans-serif;
+			background: #eef2f7;
+			color: #1e293b;
+			padding: 24px;
+		}
+
+		h1 {
+			margin: 0 0 12px;
+			font-size: 24px;
+		}
+
+		.box {
+			width: 260px;
+			background: white;
+			border: 2px solid #64748b;
+			padding: 6px;
+			margin-bottom: 12px;
+			font-family: monospace;
+		}
+
+		.pw {
+			white-space: pre-wrap;
+		}
+
+		.bs {
+			white-space: break-spaces;
+		}
+
+		.tab {
+			white-space: pre;
+			background: #fefce8;
+		}
+
+		.t2 {
+			tab-size: 2;
+		}
+
+		.t8 {
+			tab-size: 8;
+		}
+
+		.tpx {
+			tab-size: 48px;
+		}
+
+		.ka {
+			word-break: keep-all;
+			font-family: sans-serif;
+		}
+	</style>
+</head>
+
+<body>
+	<h1>break-spaces e tab-size</h1>
+	<div class="box pw">pre-wrap: os espacos no fim da linha ficam pendurados fora da caixa</div>
+	<div class="box bs">break-spaces: os espacos no fim da linha ocupam lugar e quebram</div>
+	<div class="box tab t2">tab-size: 2
+		um
+		dois</div>
+	<div class="box tab t8">tab-size: 8
+		um
+		dois</div>
+	<div class="box tab tpx">tab-size: 48px
+		um
+		dois</div>
+	<div class="box ka">word-break: keep-all mantem palavras latinas inteiras</div>
+</body>
+
+</html>

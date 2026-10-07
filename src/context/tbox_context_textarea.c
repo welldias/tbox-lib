@@ -10,9 +10,7 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
         if (tbox_context_is_textarea(box->node) && box->style != NULL) {
             tbox_text_field *field = tbox_context_text_field(ctx, box->node);
             const tbox_style *style = box->style;
-            const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
-                tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-                style->font_italic, style->font_size);
+            const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
             if (field != NULL && face != NULL && field->length < SIZE_MAX / sizeof(tbox_text_line) - 1) {
                 size_t maximum = field->length + 1;
                 tbox_text_line *lines = tbox_arena_alloc(&ctx->frame_arena, maximum * sizeof(*lines));
@@ -85,9 +83,7 @@ void tbox_context_paint_textarea_caret(tbox_context *ctx, tbox_display_list *out
         tbox_text_field *field = box != NULL ? tbox_context_text_field(ctx, box->node) : NULL;
         if (field != NULL && field->line_count > 0 && box->style != NULL && !box->style->visibility_hidden) {
             const tbox_style *style = box->style;
-            const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
-                tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-                style->font_italic, style->font_size);
+            const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
             if (face != NULL) {
                 double line_height = tbox_context_style_line_height(style, face);
                 tbox_rect clip = box->content_box;

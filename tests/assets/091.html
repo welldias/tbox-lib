@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 16px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.box { width: 340px; background: white; border: 1px solid #94a3b8; padding: 8px; margin-bottom: 10px; }
+.nowrap { text-wrap: nowrap; overflow: hidden; }
+.mode { text-wrap-mode: nowrap; overflow: hidden; }
+.pre { white-space-collapse: preserve; }
+.breaks { white-space-collapse: preserve-breaks; }
+h2.bal { text-wrap: balance; /* mesmo texto, linhas parecidas */ font-size: 22px; width: 340px; background: #dbeafe; margin: 0 0 10px; }
+h2.nobal { font-size: 22px; width: 340px; background: #fee2e2; margin: 0 0 10px; }
+</style></head><body>
+<h1>text-wrap e white-space-collapse</h1>
+<div class="box nowrap">text-wrap: nowrap mantem tudo em uma unica linha e corta</div>
+<div class="box mode">text-wrap-mode: nowrap tem o mesmo efeito no texto longo</div>
+<div class="box pre">preserve:   espacos    mantidos
+e quebras tambem</div>
+<div class="box breaks">preserve-breaks:   espacos colapsam
+mas quebras ficam</div>
+<h2 class="nobal">Um titulo bem comprido que mostra o efeito do balanceamento</h2>
+<h2 class="bal">Um titulo bem comprido que mostra o efeito do balanceamento</h2>
+</body></html>

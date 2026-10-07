@@ -1,3 +1,4 @@
+#include <string.h>
 #include "tbox_css_parser.h"
 
 #include "base/tbox_string.h"
@@ -288,6 +289,24 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
  * for the four nth-* structural selectors. */
 static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox_vector *out, tbox_css_combinator combinator) {
     tbox_css_parser_advance(parser); /* ':' */
+
+    /* A pseudo-element ("::marker"): kept as a PSEUDO item named with its
+     * "::" prefix. Selector matching never matches one; the cascade
+     * resolves them separately (tbox_css_cascade_resolve_pseudo_element). */
+    if (parser->current.type == TBOX_CSS_TOKEN_COLON) {
+        tbox_css_parser_advance(parser);
+        if (parser->current.type != TBOX_CSS_TOKEN_IDENT)
+            return false;
+        tbox_string_view lower = tbox_css_parser_copy_lower(parser, parser->current.text);
+        char *buffer           = (char *)tbox_arena_alloc(parser->arena, lower.size + 2);
+        if (buffer == NULL)
+            return false;
+        buffer[0] = buffer[1] = ':';
+        memcpy(buffer + 2, lower.data, lower.size);
+        tbox_css_parser_advance(parser);
+        tbox_css_parser_push_simple_selector(out, TBOX_CSS_SIMPLE_SELECTOR_PSEUDO, combinator, tbox_string_view_make(buffer, lower.size + 2));
+        return true;
+    }
 
     if (parser->current.type == TBOX_CSS_TOKEN_IDENT) {
         tbox_string_view name = tbox_css_parser_copy_lower(parser, parser->current.text);

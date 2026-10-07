@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; margin: 0; }
+h1 { margin: 0 0 12px; font-size: clamp(18px, 3vw, 30px); }
+.wrap { width: 700px; background: #cbd5e1; padding: 8px; margin-bottom: 8px; }
+.bar { background: #3b82f6; color: white; padding: 6px; box-sizing: border-box; }
+.a { width: min(100%, 300px); }
+.b { width: max(50%, 200px); background: #10b981; }
+.c { width: clamp(200px, 40%, 600px); background: #f59e0b; }
+.d { width: clamp(100px, 90%, 400px); background: #ef4444; }
+.e { width: min(150px, 30px * 4); background: #8b5cf6; }
+.f { padding-left: max(1em, 40px); background: #0ea5e9; }
+</style></head><body>
+<h1>min(), max() e clamp()</h1>
+<div class="wrap"><div class="bar a">min(100%, 300px) = 300px</div></div>
+<div class="wrap"><div class="bar b">max(50%, 200px) = 350px</div></div>
+<div class="wrap"><div class="bar c">clamp(200px, 40%, 600px) = 280px</div></div>
+<div class="wrap"><div class="bar d">clamp(100px, 90%, 400px) = 400px</div></div>
+<div class="wrap"><div class="bar e">min(150px, 120px)</div></div>
+<div class="wrap"><div class="bar f">padding-left: max(1em, 40px)</div></div>
+</body></html>

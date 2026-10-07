@@ -2,7 +2,7 @@
 
 tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, const tbox_style *style, const double *row_column_widths, size_t row_column_count) {
     tbox_layout_classification kind = { 0 };
-    kind.text                       = tbox_layout_is_text_tag(node);
+    kind.text                       = tbox_layout_is_text_box(node, style);
     if (tbox_layout_table_cell_node(node)) {
         for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
             if (child->type != TBOX_HTML_NODE_ELEMENT)
@@ -18,6 +18,28 @@ tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, cons
     kind.table_row = row_column_widths != NULL && row_column_count > 0 && tbox_layout_tag(node, "tr");
     kind.flex      = (style->display == TBOX_STYLE_DISPLAY_FLEX || style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) && !kind.image && !kind.table && !kind.table_row && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node);
     return kind;
+}
+
+/* After the whole tree is laid out: decode background images, and apply
+ * `transform: translate()`/`translate` -- a purely visual shift of the
+ * box and everything in it, like position: relative's, with percentages
+ * of the box's own border box. */
+static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images) {
+    for (; box != NULL; box = box->next_sibling) {
+        const tbox_style *style = box->style;
+        if (style != NULL) {
+            if (style->background_image[0] != '\0' && images != NULL)
+                box->background_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->background_image));
+            for (size_t l = 1; l < style->background_layer_count && l < 4 && images != NULL; l++)
+                if (style->background_layers[l - 1].image[0] != '\0')
+                    box->background_layer_images[l - 1] = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->background_layers[l - 1].image));
+            double dx = tbox_style_length_resolve(style->translate_x, box->border_box.width);
+            double dy = tbox_style_length_resolve(style->translate_y, box->border_box.height);
+            if (dx != 0.0 || dy != 0.0)
+                tbox_layout_translate(box, dx, dy);
+        }
+        tbox_layout_finish(box->first_child, images);
+    }
 }
 
 tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double viewport_width, double viewport_height) {
@@ -69,5 +91,7 @@ tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root
         .nearest_ancestor = viewport_rect,
         .viewport         = viewport_rect,
     };
-    return tbox_layout_build_element(arena, element, styles, fonts, images, viewport, 0.0, root_positioned_context, NULL, 0);
+    tbox_layout_box *box = tbox_layout_build_element(arena, element, styles, fonts, images, viewport, 0.0, root_positioned_context, NULL, 0);
+    tbox_layout_finish(box, images);
+    return box;
 }

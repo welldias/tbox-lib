@@ -969,6 +969,88 @@ static void tbox_test_raster_wavy_line(int *failures_ptr) {
     *failures_ptr = failures;
 }
 
+/* Linear and radial gradients: stop colors at the ends, interpolation in
+ * between, repeating stops, and an elliptical rounded clip. */
+static void tbox_test_raster_gradient(int *failures_ptr) {
+    int failures = *failures_ptr;
+    uint32_t pixels[20 * 10];
+    for (size_t i = 0; i < 20u * 10u; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_style_gradient gradient = { 0 };
+    gradient.kind                = TBOX_STYLE_GRADIENT_LINEAR;
+    gradient.angle               = 90.0; /* to right */
+    gradient.stop_count          = 2;
+    gradient.stops[0]            = (tbox_style_gradient_stop){ { 255, 0, 0, 255 }, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+    gradient.stops[1]            = (tbox_style_gradient_stop){ { 0, 0, 255, 255 }, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+    tbox_paint_op op             = { 0 };
+    op.kind                      = TBOX_PAINT_GRADIENT;
+    op.rect                      = (tbox_rect){ 0, 0, 20, 10 };
+    op.color                     = (tbox_css_rgba){ 0, 0, 0, 255 };
+    op.gradient                  = &gradient;
+    tbox_display_list list       = { &op, 1 };
+    tbox_raster_display_list(pixels, 20, 10, &list);
+    uint32_t left = pixels[5 * 20 + 0], right = pixels[5 * 20 + 19], middle = pixels[5 * 20 + 10];
+    TBOX_TEST_ASSERT(((left >> 16) & 0xFFu) > 230 && (left & 0xFFu) < 25);
+    TBOX_TEST_ASSERT((right & 0xFFu) > 230 && ((right >> 16) & 0xFFu) < 25);
+    TBOX_TEST_ASSERT(((middle >> 16) & 0xFFu) > 100 && ((middle >> 16) & 0xFFu) < 155 && (middle & 0xFFu) > 100 && (middle & 0xFFu) < 155);
+
+    /* Repeating: 0-5px red, 5-10px blue, every 10px. */
+    gradient.repeating = true;
+    gradient.stop_count = 4;
+    gradient.stops[0]   = (tbox_style_gradient_stop){ { 255, 0, 0, 255 }, { TBOX_STYLE_LENGTH_PX, 0.0, 0.0, 0, 0.0, 0.0 } };
+    gradient.stops[1]   = (tbox_style_gradient_stop){ { 255, 0, 0, 255 }, { TBOX_STYLE_LENGTH_PX, 5.0, 0.0, 0, 0.0, 0.0 } };
+    gradient.stops[2]   = (tbox_style_gradient_stop){ { 0, 0, 255, 255 }, { TBOX_STYLE_LENGTH_PX, 5.0, 0.0, 0, 0.0, 0.0 } };
+    gradient.stops[3]   = (tbox_style_gradient_stop){ { 0, 0, 255, 255 }, { TBOX_STYLE_LENGTH_PX, 10.0, 0.0, 0, 0.0, 0.0 } };
+    tbox_raster_display_list(pixels, 20, 10, &list);
+    TBOX_TEST_ASSERT(pixels[2 * 20 + 2] == 0xFFFF0000u && pixels[2 * 20 + 12] == 0xFFFF0000u);
+    TBOX_TEST_ASSERT(pixels[2 * 20 + 7] == 0xFF0000FFu && pixels[2 * 20 + 17] == 0xFF0000FFu);
+
+    /* Radial: center color in the middle, last stop at the corners. */
+    for (size_t i = 0; i < 20u * 10u; i++) pixels[i] = 0xFFFFFFFFu;
+    gradient            = (tbox_style_gradient){ 0 };
+    gradient.kind       = TBOX_STYLE_GRADIENT_RADIAL;
+    gradient.center[0]  = gradient.center[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0, 0.0, 0, 0.0, 0.0 };
+    gradient.stop_count = 2;
+    gradient.stops[0]   = (tbox_style_gradient_stop){ { 0, 255, 0, 255 }, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+    gradient.stops[1]   = (tbox_style_gradient_stop){ { 0, 0, 0, 255 }, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+    tbox_raster_display_list(pixels, 20, 10, &list);
+    TBOX_TEST_ASSERT(((pixels[5 * 20 + 10] >> 8) & 0xFFu) > 230);
+    TBOX_TEST_ASSERT(((pixels[0] >> 8) & 0xFFu) < 40);
+
+    /* A rounded clip leaves the corner untouched. */
+    for (size_t i = 0; i < 20u * 10u; i++) pixels[i] = 0xFFFFFFFFu;
+    op.has_rounded_clip = true;
+    op.rounded_clip     = op.rect;
+    for (size_t i = 0; i < 4; i++) {
+        op.rounded_clip_radii[i]   = 8.0;
+        op.rounded_clip_radii_y[i] = 4.0;
+    }
+    tbox_raster_display_list(pixels, 20, 10, &list);
+    TBOX_TEST_ASSERT(pixels[0] == 0xFFFFFFFFu && pixels[5 * 20 + 10] != 0xFFFFFFFFu);
+    *failures_ptr = failures;
+}
+
+/* Elliptical corners: a pixel inside the horizontal radius but outside the
+ * ellipse stays clear; large radii regions may overlap (leaf shape). */
+static void tbox_test_raster_elliptical_corners(int *failures_ptr) {
+    int failures = *failures_ptr;
+    uint32_t pixels[40 * 20];
+    for (size_t i = 0; i < 40u * 20u; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_paint_op op = { 0 };
+    op.kind          = TBOX_PAINT_FILL_RECT;
+    op.rect          = (tbox_rect){ 0, 0, 40, 20 };
+    op.color         = (tbox_css_rgba){ 255, 0, 0, 255 };
+    op.elliptical    = true;
+    op.corner_radii[0] = op.corner_radii[2] = 40.0;
+    op.corner_radii_y[0] = op.corner_radii_y[2] = 20.0;
+    tbox_display_list list = { &op, 1 };
+    tbox_raster_display_list(pixels, 40, 20, &list);
+    TBOX_TEST_ASSERT(pixels[0] == 0xFFFFFFFFu);              /* top-left corner cut */
+    TBOX_TEST_ASSERT(pixels[19 * 40 + 39] == 0xFFFFFFFFu);   /* bottom-right cut too */
+    TBOX_TEST_ASSERT(pixels[10 * 40 + 20] == 0xFFFF0000u);   /* the middle is filled */
+    TBOX_TEST_ASSERT(pixels[0 * 40 + 39] == 0xFFFF0000u);    /* square top-right corner */
+    *failures_ptr = failures;
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
@@ -990,6 +1072,8 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_rounded_rect_invalid_args(&failures);
     tbox_test_raster_individual_corners(&failures);
     tbox_test_raster_wavy_line(&failures);
+    tbox_test_raster_gradient(&failures);
+    tbox_test_raster_elliptical_corners(&failures);
     tbox_test_raster_write_png_round_trip(&failures);
     tbox_test_raster_write_png_invalid_args(&failures);
 

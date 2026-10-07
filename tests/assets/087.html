@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.flex { display: flex; flex-wrap: wrap; width: 340px; height: 160px; background: white; border: 2px solid #94a3b8; margin: 0 16px 16px 0; float: left; }
+.flex div { width: 70px; height: 40px; background: #3b82f6; color: white; margin: 4px; font-size: 12px; }
+.a { place-content: center; }
+.b { place-content: end space-between; }
+.c { place-items: center; align-content: center; }
+.d { place-content: start; }
+.d .self { place-self: end; background: #ef4444; }
+.wrap { display: flex; flex-wrap: wrap; }
+</style></head><body>
+<h1>place-content, place-items e place-self</h1>
+<div class="wrap">
+  <div class="flex a"><div>1</div><div>2</div><div>3</div></div>
+  <div class="flex b"><div>1</div><div>2</div><div>3</div></div>
+  <div class="flex c"><div>1</div><div style="height:60px">2</div><div>3</div></div>
+  <div class="flex d"><div>1</div><div class="self">self end</div><div>3</div></div>
+</div>
+</body></html>

@@ -181,6 +181,12 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
  * frame has run yet (nothing computed) or nothing is under the point. */
 const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, double y);
 
+/* The pointer cursor for (x, y): the CSS `cursor` of the box there, or for
+ * `auto` the text cursor over editable fields and text, the pointing hand
+ * over links (`<a href>`) and the arrow elsewhere. TBOX_STYLE_CURSOR_DEFAULT
+ * when nothing is there. Applications pass it to their window backend. */
+tbox_style_cursor tbox_context_cursor_at(const tbox_context *ctx, double x, double y);
+
 /* Scrolls the innermost overflow-y:auto block under (x,y). Returns true
  * when its offset changed; caller should then request a new frame. */
 bool tbox_context_scroll(tbox_context *ctx, double x, double y, double delta_y);

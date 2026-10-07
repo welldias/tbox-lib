@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+
+    p.note {
+      margin: 0 0 12px;
+      color: #475569;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      width: 620px;
+    }
+
+    .c {
+      width: 140px;
+      height: 50px;
+      background: white;
+      border: 2px solid #94a3b8;
+      font-size: 13px;
+      padding: 4px;
+      box-sizing: border-box;
+    }
+
+    .pointer {
+      cursor: pointer;
+    }
+
+    .text {
+      cursor: text;
+    }
+
+    .move {
+      cursor: move;
+    }
+
+    .wait {
+      cursor: wait;
+    }
+
+    .help {
+      cursor: help;
+    }
+
+    .cross {
+      cursor: crosshair;
+    }
+
+    .na {
+      cursor: not-allowed;
+      background: #fee2e2;
+    }
+
+    .grab {
+      cursor: grab;
+    }
+
+    .ew {
+      cursor: ew-resize;
+    }
+
+    .ns {
+      cursor: ns-resize;
+    }
+
+    .none {
+      cursor: none;
+    }
+
+    .fallback {
+      cursor: url(cursor.cur) 4 4, progress;
+    }
+
+    .nosel {
+      user-select: none;
+      background: #f1f5f9;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>cursor e user-select</h1>
+  <p class="note">Passe o mouse em cada caixa na janela do tbox_app_demo.</p>
+  <div class="grid">
+    <div class="c pointer">pointer</div>
+    <div class="c text">text</div>
+    <div class="c move">move</div>
+    <div class="c wait">wait</div>
+    <div class="c help">help</div>
+    <div class="c cross">crosshair</div>
+    <div class="c na">not-allowed</div>
+    <div class="c grab">grab</div>
+    <div class="c ew">ew-resize</div>
+    <div class="c ns">ns-resize</div>
+    <div class="c none">none</div>
+    <div class="c fallback">url(), progress</div>
+    <div class="c nosel">user-select: none</div>
+    <div class="c"><a href="#">link: pointer</a></div>
+  </div>
+</body>
+
+</html>

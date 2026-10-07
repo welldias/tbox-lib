@@ -53,7 +53,7 @@ static double tbox_layout_table_css_width(const tbox_style *style, double base) 
     double width = 0.0;
     if (style->width.kind == TBOX_STYLE_LENGTH_PX) width = style->width.value;
     if (style->width.kind == TBOX_STYLE_LENGTH_PERCENT) {
-        width = base * style->width.value / 100.0;
+        width = tbox_style_length_resolve(style->width, base);
     }
     width = tbox_layout_constrain_width(style, width, base, 0.0);
     return width > 0.0 ? width : 0.0;
@@ -81,18 +81,21 @@ void tbox_layout_table_shift_y(tbox_layout_box *box, double amount) {
 
 bool tbox_layout_table_extended(const tbox_html_node *table, const tbox_style_table *styles) {
     const tbox_style *style = tbox_layout_style_or_default(styles, table);
-    if (style->border_collapse || style->border_spacing_x > 0.0 || style->border_spacing_y > 0.0) return true;
+    if (style->border_collapse || style->border_spacing_x > 0.0 || style->border_spacing_y > 0.0 ||
+        style->table_layout_fixed || style->empty_cells_hide) return true;
     for (const tbox_html_node *child = table->first_child; child != NULL; child = child->next_sibling) {
         if (tbox_layout_table_section(child) || tbox_layout_tag(child, "caption") ||
             tbox_layout_tag(child, "col") || tbox_layout_tag(child, "colgroup")) return true;
         if (!tbox_layout_tag(child, "tr")) continue;
-        if (tbox_layout_style_or_default(styles, child)->display == TBOX_STYLE_DISPLAY_NONE) return true;
+        if (tbox_layout_style_or_default(styles, child)->display == TBOX_STYLE_DISPLAY_NONE ||
+            tbox_layout_style_or_default(styles, child)->visibility_collapse) return true;
         for (const tbox_html_node *cell = child->first_child; cell != NULL; cell = cell->next_sibling)
             if (tbox_layout_table_cell_node(cell) &&
+                (tbox_layout_style_or_default(styles, cell)->empty_cells_hide ||
                 (tbox_html_node_get_attribute(cell, tbox_string_view_make("colspan", 7)) != NULL ||
                  tbox_html_node_get_attribute(cell, tbox_string_view_make("rowspan", 7)) != NULL ||
                  tbox_layout_style_or_default(styles, cell)->display == TBOX_STYLE_DISPLAY_NONE ||
-                 tbox_layout_style_or_default(styles, cell)->width.kind != TBOX_STYLE_LENGTH_AUTO)) return true;
+                 tbox_layout_style_or_default(styles, cell)->width.kind != TBOX_STYLE_LENGTH_AUTO))) return true;
     }
     return false;
 }
@@ -164,13 +167,17 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
                     columns[declared++] = (tbox_table_column){.group = child};
             }
         } else if (tbox_layout_tag(child, "tr")) {
-            *(tbox_table_row *)tbox_vector_push(&rows) =
-                (tbox_table_row){.node = child, .group_id = group_id};
+            /* visibility: collapse removes the row from the grid (CSS still
+             * lets it size columns; here it simply takes no part). */
+            if (!tbox_layout_style_or_default(styles, child)->visibility_collapse)
+                *(tbox_table_row *)tbox_vector_push(&rows) =
+                    (tbox_table_row){.node = child, .group_id = group_id};
         } else if (tbox_layout_table_section(child)) {
             group_id++;
             for (const tbox_html_node *row = child->first_child; row != NULL; row = row->next_sibling) {
                 if (tbox_layout_tag(row, "tr") &&
-                    tbox_layout_style_or_default(styles, row)->display != TBOX_STYLE_DISPLAY_NONE)
+                    tbox_layout_style_or_default(styles, row)->display != TBOX_STYLE_DISPLAY_NONE &&
+                    !tbox_layout_style_or_default(styles, row)->visibility_collapse)
                     *(tbox_table_row *)tbox_vector_push(&rows) =
                         (tbox_table_row){.node = row, .group = child, .group_id = group_id};
             }
@@ -222,18 +229,21 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
             if (width > 0.0) col->min_width = width;
         }
     }
+    /* table-layout: fixed sizes columns from the <col>s and the first row's
+     * declared widths alone, never from content; the rest of the width is
+     * shared by the columns left without one. */
+    bool fixed = table_style->table_layout_fixed && table_style->width.kind != TBOX_STYLE_LENGTH_AUTO;
     for (size_t i = 0; i < cells.length; i++) {
         tbox_table_cell *cell = tbox_vector_at(&cells, i);
         const tbox_style *style = tbox_layout_style_or_default(styles, cell->node);
+        if (fixed && (cell->row != 0 || style->width.kind == TBOX_STYLE_LENGTH_AUTO)) continue;
         double css_width = tbox_layout_table_css_width(style, *table_width);
         double edges = tbox_layout_resolve_edge(style->padding[1], *table_width) +
             tbox_layout_resolve_edge(style->padding[3], *table_width) +
             tbox_style_border_side_width(style, 1) + tbox_style_border_side_width(style, 3);
         double minimum = 0.0;
-        const tbox_font_face *face = tbox_font_face_cache_get(fonts,
-            tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-            style->font_italic, style->font_size);
-        if (face != NULL) {
+        const tbox_font_face *face = tbox_layout_style_face(fonts, style);
+        if (face != NULL && !fixed) {
             double natural = tbox_layout_table_longest_word(face,
                 tbox_html_node_text_content(arena, cell->node), style->letter_spacing);
             minimum = natural;
@@ -253,8 +263,14 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
     for (size_t c = 0; c < column_count; c++) minimum_total += columns[c].min_width;
     if (minimum_total > *table_width) *table_width = minimum_total;
     double extra = *table_width - minimum_total;
+    size_t auto_columns = 0;
+    for (size_t c = 0; c < column_count; c++)
+        if (columns[c].min_width <= 0.0) auto_columns++;
     for (size_t c = 0; c < column_count; c++) {
-        columns[c].width = columns[c].min_width + (column_count > 0 ? extra / column_count : 0.0);
+        if (fixed && auto_columns > 0)
+            columns[c].width = columns[c].min_width + (columns[c].min_width <= 0.0 ? extra / auto_columns : 0.0);
+        else
+            columns[c].width = columns[c].min_width + (column_count > 0 ? extra / column_count : 0.0);
         columns[c].x = x + sx;
         if (c > 0) columns[c].x = columns[c - 1].x + columns[c - 1].width + sx;
     }
@@ -283,6 +299,20 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
             if (cell->box->margin_box.height > row->height) row->height = cell->box->margin_box.height;
         }
         if (collapse) cell->box->table_suppress_border = true;
+        /* empty-cells: hide (separated borders only): a cell with no
+         * content paints neither background nor border. */
+        if (!collapse && cell->box->style->empty_cells_hide) {
+            bool empty = true;
+            for (const tbox_html_node *child = cell->node->first_child; child != NULL && empty; child = child->next_sibling) {
+                if (child->type == TBOX_HTML_NODE_ELEMENT) empty = false;
+                else if (child->type == TBOX_HTML_NODE_TEXT)
+                    for (size_t k = 0; k < child->text.text.size && empty; k++) {
+                        char ch = child->text.text.data[k];
+                        if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r' && ch != '\f') empty = false;
+                    }
+            }
+            cell->box->empty_cell_hidden = empty;
+        }
     }
     for (size_t i = 0; i < cells.length; i++) {
         tbox_table_cell *cell = tbox_vector_at(&cells, i);

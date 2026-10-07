@@ -20,6 +20,23 @@ bool tbox_layout_is_text_tag(const tbox_html_node *node) {
     return false;
 }
 
+/* A box laid out as one inline formatting context: a text tag, or an
+ * element with `display: list-item` whose children are all inline (its
+ * marker then joins the text like an <li>'s). */
+bool tbox_layout_is_text_box(const tbox_html_node *node, const tbox_style *style) {
+    if (tbox_layout_is_text_tag(node))
+        return true;
+    if (style == NULL || !style->display_list_item || node->type != TBOX_HTML_NODE_ELEMENT)
+        return false;
+    static const char *const blocks[] = { "div", "p", "ul", "ol", "li", "table", "section", "article", "header", "footer", "nav", "aside", "main", "form", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "hr", "dl", "fieldset", "figure" };
+    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling)
+        if (child->type == TBOX_HTML_NODE_ELEMENT)
+            for (size_t i = 0; i < sizeof(blocks) / sizeof(blocks[0]); i++)
+                if (tbox_string_view_equal_cstr(child->element.tag_name, blocks[i]))
+                    return false;
+    return true;
+}
+
 /* `<pre>`'s own word-collection function, called by
  * tbox_layout_build_text_runs INSTEAD of tbox_layout_collect_words (never
  * both -- <pre> has no list marker and no normal word-splitting; see
@@ -42,7 +59,7 @@ bool tbox_layout_is_text_tag(const tbox_html_node *node) {
  * tbox_font_measure_text(NULL, ...). */
 
 void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words) {
-    const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+    const tbox_font_face *face = tbox_layout_style_face(fonts, style);
     if (face == NULL) {
         return;
     }
@@ -50,7 +67,7 @@ void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_n
     static const tbox_string_view space = { " ", 1 };
     double space_width                  = tbox_font_measure_text_spaced(face, space, style->letter_spacing) + style->word_spacing;
 
-    tbox_string_view text = tbox_layout_transform_text(arena, tbox_html_node_text_content(arena, node), style->text_transform);
+    tbox_string_view text = tbox_layout_expand_tabs(arena, tbox_layout_transform_text(arena, tbox_html_node_text_content(arena, node), style->text_transform), style, face);
 
     size_t line_start = 0;
     for (size_t i = 0; i <= text.size; i++) {
@@ -139,30 +156,60 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
     } else {
         if (node != NULL) {
-            tbox_layout_push_list_marker(arena, node, style, fonts, &words);
+            tbox_layout_push_list_marker(arena, node, style, fonts, images, &words);
         }
         tbox_layout_collect_words(arena, first_sibling, end_exclusive, style, styles, fonts, images, available_width, &words);
     }
 
     size_t word_count = tbox_vector_length(&words);
     if (word_count == 0) {
-        box->text_runs      = NULL;
-        box->text_run_count = 0;
+        tbox_vector marker_runs;
+        tbox_vector_init(&marker_runs, arena, sizeof(tbox_layout_text_run), 0);
+        if (!is_preformatted && !is_input && !is_select)
+            tbox_layout_append_outside_marker(arena, node, style, fonts, images, content_x, content_y, NULL, &marker_runs);
+        box->text_runs      = marker_runs.length > 0 ? (tbox_layout_text_run *)marker_runs.data : NULL;
+        box->text_run_count = marker_runs.length;
 
-        const tbox_font_face *own_face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+        const tbox_font_face *own_face = tbox_layout_style_face(fonts, style);
         return own_face != NULL ? tbox_layout_style_line_height(style, own_face) : 0.0;
     }
 
     tbox_vector lines;
     tbox_vector_init(&lines, arena, sizeof(tbox_layout_line), 0);
-    double indent = style->text_indent.kind == TBOX_STYLE_LENGTH_PX ? style->text_indent.value : style->text_indent.kind == TBOX_STYLE_LENGTH_PERCENT ? available_width * style->text_indent.value / 100.0 : 0.0;
+    double indent = style->text_indent.kind == TBOX_STYLE_LENGTH_PX ? style->text_indent.value : style->text_indent.kind == TBOX_STYLE_LENGTH_PERCENT ? tbox_style_length_resolve(style->text_indent, available_width) : 0.0;
+    /* text-indent: hanging inverts it (every line but the first moves in,
+     * so the text area narrows and the first line reaches back out);
+     * each-line also indents lines that follow a forced break. */
+    double hang       = style->text_indent_hanging ? indent : 0.0;
+    double text_x     = content_x + hang;
+    double text_width = available_width - hang;
+    if (style->text_indent_hanging)
+        indent = -indent;
     bool no_wrap  = is_preformatted || is_input || tbox_layout_white_space_nowrap(style);
     if (!no_wrap)
-        tbox_layout_split_overlong_words(arena, &words, available_width, indent);
+        tbox_layout_split_overlong_words(arena, &words, text_width, indent);
     const tbox_layout_word *word_items = (const tbox_layout_word *)words.data;
     word_count                         = tbox_vector_length(&words);
-    const tbox_font_face *block_face   = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
-    tbox_layout_break_lines(word_items, word_count, available_width, indent, no_wrap, block_face, &lines);
+    const tbox_font_face *block_face   = tbox_layout_style_face(fonts, style);
+    tbox_layout_break_lines(word_items, word_count, text_width, indent, no_wrap, style->text_indent_each_line, block_face, &lines);
+    /* text-wrap: balance -- the narrowest width that keeps the same line
+     * count, so lines come out about equally long (alignment still uses
+     * the full width). */
+    if (style->text_wrap_balance && !no_wrap && lines.length > 1 && lines.length <= 10) {
+        size_t target = lines.length;
+        double low = text_width * 0.25, high = text_width;
+        for (int step = 0; step < 14; step++) {
+            double middle = (low + high) / 2.0;
+            lines.length  = 0;
+            tbox_layout_break_lines(word_items, word_count, middle, indent, no_wrap, style->text_indent_each_line, block_face, &lines);
+            if (lines.length <= target)
+                high = middle;
+            else
+                low = middle;
+        }
+        lines.length = 0;
+        tbox_layout_break_lines(word_items, word_count, high, indent, no_wrap, style->text_indent_each_line, block_face, &lines);
+    }
 
     tbox_vector runs;
     tbox_vector_init(&runs, arena, sizeof(tbox_layout_text_run), 0);
@@ -172,13 +219,39 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
 
     double cumulative_y = content_y;
     double total_height = 0.0;
+    /* line-clamp: only the first lines are laid out, the last of them
+     * ending in an ellipsis when text was cut. */
+    bool clamped = style->line_clamp > 0 && line_count > (size_t)style->line_clamp && !is_input && !is_select;
+    if (clamped)
+        line_count = (size_t)style->line_clamp;
     for (size_t li = 0; li < line_count; li++) {
         const tbox_layout_line *line = &line_items[li];
+        bool after_break             = li > 0 && line_items[li - 1].end < word_count && word_items[line_items[li - 1].end].hard_break;
+        double line_indent           = li == 0 || (style->text_indent_each_line && after_break) ? indent : 0.0;
+
+        /* The paragraph's last line, or one ended by a forced break, takes
+         * text-align-last (auto: text-align, with justify falling back to
+         * left). */
+        bool last_line                   = (li + 1 == line_count && !clamped) || (line->end < word_count && word_items[line->end].hard_break);
+        tbox_style_text_align line_align = style->text_align;
+        if (last_line) {
+            switch (style->text_align_last) {
+            case TBOX_STYLE_TEXT_ALIGN_LAST_LEFT: line_align = TBOX_STYLE_TEXT_ALIGN_LEFT; break;
+            case TBOX_STYLE_TEXT_ALIGN_LAST_CENTER: line_align = TBOX_STYLE_TEXT_ALIGN_CENTER; break;
+            case TBOX_STYLE_TEXT_ALIGN_LAST_RIGHT: line_align = TBOX_STYLE_TEXT_ALIGN_RIGHT; break;
+            case TBOX_STYLE_TEXT_ALIGN_LAST_JUSTIFY: line_align = TBOX_STYLE_TEXT_ALIGN_JUSTIFY; break;
+            case TBOX_STYLE_TEXT_ALIGN_LAST_AUTO:
+            default:
+                if (line_align == TBOX_STYLE_TEXT_ALIGN_JUSTIFY)
+                    line_align = TBOX_STYLE_TEXT_ALIGN_LEFT;
+                break;
+            }
+        }
 
         size_t runs_before = tbox_vector_length(&runs);
         double justify_gap = 0.0;
-        if (style->text_align == TBOX_STYLE_TEXT_ALIGN_JUSTIFY && !no_wrap && li + 1 < line_count && !(line->end < word_count && word_items[line->end].hard_break)) {
-            double used = li == 0 ? indent : 0.0;
+        if (line_align == TBOX_STYLE_TEXT_ALIGN_JUSTIFY && !no_wrap && !(clamped && li + 1 == line_count)) {
+            double used = line_indent;
             size_t gaps = 0;
             for (size_t w = line->start; w < line->end; w++) {
                 used += word_items[w].width;
@@ -187,13 +260,17 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
                 if (w != line->start && word_items[w].space_width > 0.0)
                     gaps++;
             }
-            if (gaps > 0 && used < available_width)
-                justify_gap = (available_width - used) / (double)gaps;
+            if (gaps > 0 && used < text_width)
+                justify_gap = (text_width - used) / (double)gaps;
         }
-        double line_used = tbox_layout_build_line_runs(arena, word_items, line, cumulative_y, content_x + (li == 0 ? indent : 0.0), block_face, justify_gap, &runs);
-        if (style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS && tbox_layout_white_space_nowrap(style) && style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN && !is_input && !is_select) {
-            const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
-            tbox_layout_ellipsize_line(&runs, runs_before, content_x, available_width, style, face, line, cumulative_y);
+        double line_used = tbox_layout_build_line_runs(arena, word_items, line, cumulative_y, text_x + line_indent, block_face, justify_gap, &runs);
+        if (style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS && tbox_layout_white_space_nowrap(style) && (style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN || style->overflow_x != TBOX_STYLE_OVERFLOW_Y_VISIBLE) && !is_input && !is_select) {
+            const tbox_font_face *face = tbox_layout_style_face(fonts, style);
+            tbox_layout_ellipsize_line(&runs, runs_before, text_x, text_width, style, face, line, cumulative_y, false);
+        }
+        if (clamped && li + 1 == line_count) {
+            const tbox_font_face *face = tbox_layout_style_face(fonts, style);
+            tbox_layout_ellipsize_line(&runs, runs_before, text_x + line_indent, text_width - line_indent, style, face, line, cumulative_y, true);
         }
         size_t runs_after = tbox_vector_length(&runs);
 
@@ -201,17 +278,17 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         for (size_t w = line->start; w < line->end; w++)
             if (word_items[w].atomic != NULL)
                 line_has_atomic = true;
-        if ((style->text_align == TBOX_STYLE_TEXT_ALIGN_CENTER || style->text_align == TBOX_STYLE_TEXT_ALIGN_RIGHT) && (runs_after > runs_before || line_has_atomic)) {
+        if ((line_align == TBOX_STYLE_TEXT_ALIGN_CENTER || line_align == TBOX_STYLE_TEXT_ALIGN_RIGHT) && (runs_after > runs_before || line_has_atomic)) {
             tbox_layout_text_run *run_items = (tbox_layout_text_run *)runs.data;
-            double line_width               = (li == 0 ? indent : 0.0) + line_used;
+            double line_width               = line_indent + line_used;
             if (runs_after > runs_before) {
                 const tbox_layout_text_run *last_run = &run_items[runs_after - 1];
-                double run_right                     = (last_run->rect.x + last_run->rect.width) - content_x;
+                double run_right                     = (last_run->rect.x + last_run->rect.width) - text_x;
                 if (run_right > line_width)
                     line_width = run_right; /* an ellipsis mark */
             }
 
-            double offset = (style->text_align == TBOX_STYLE_TEXT_ALIGN_CENTER) ? (available_width - line_width) / 2.0 : (available_width - line_width);
+            double offset = (line_align == TBOX_STYLE_TEXT_ALIGN_CENTER) ? (text_width - line_width) / 2.0 : (text_width - line_width);
 
             if (offset > 0.0) {
                 for (size_t ri = runs_before; ri < runs_after; ri++) {
@@ -227,6 +304,8 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         total_height += line->height;
     }
 
+    if (!is_preformatted && !is_input && !is_select)
+        tbox_layout_append_outside_marker(arena, node, style, fonts, images, content_x, content_y, line_count > 0 ? &line_items[0] : NULL, &runs);
     box->text_runs      = (tbox_layout_text_run *)runs.data;
     box->text_run_count = runs.length;
 

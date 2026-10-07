@@ -222,7 +222,26 @@ static tbox_css_stylesheet *tbox_css_cascade_parse_inline_style(tbox_string_view
     return result;
 }
 
+/* Whether `selector` ends in the pseudo-element `pseudo` ("marker"), or in
+ * any pseudo-element when `pseudo` is NULL. */
+static bool tbox_css_cascade_ends_in_pseudo_element(const tbox_css_selector *selector, const char *pseudo) {
+    const tbox_css_simple_selector *last = &selector->simple_selectors[selector->simple_selector_count - 1];
+    if (last->kind != TBOX_CSS_SIMPLE_SELECTOR_PSEUDO || last->name.size < 3 || last->name.data[0] != ':' || last->name.data[1] != ':')
+        return false;
+    return pseudo == NULL || tbox_string_view_equal_cstr(tbox_string_view_make(last->name.data + 2, last->name.size - 2), pseudo);
+}
+
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo);
+
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL);
+}
+
+tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo);
+}
+
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo) {
     tbox_css_computed_style result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (node == NULL) {
         return result;
@@ -251,8 +270,17 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
             tbox_css_specificity best_specificity  = { 0, 0, 0 };
             for (size_t s = 0; s < ruleset->selector_count; s++) {
                 const tbox_css_selector *selector = &ruleset->selectors[s];
-                if (!tbox_css_selector_matches(selector, node)) {
-                    continue;
+                if (pseudo == NULL) {
+                    if (!tbox_css_selector_matches(selector, node))
+                        continue;
+                } else {
+                    /* The selector without its pseudo-element must match
+                     * the element (a bare "::marker" matches any). */
+                    if (!tbox_css_cascade_ends_in_pseudo_element(selector, pseudo))
+                        continue;
+                    tbox_css_selector element = { selector->simple_selectors, selector->simple_selector_count - 1 };
+                    if (element.simple_selector_count > 0 && !tbox_css_selector_matches(&element, node))
+                        continue;
                 }
                 tbox_css_specificity specificity = tbox_css_cascade_specificity(selector);
                 if (best_selector == NULL || tbox_css_cascade_specificity_compare(specificity, best_specificity) > 0) {
@@ -286,7 +314,7 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
      * itself, so every caller (Style layer, tbox_css_cascade_resolve_stylesheet,
      * tests) gets it automatically without knowing it exists. Runs after the
      * sources loop above (unchanged) so it can reuse `winners` as-is. */
-    if (node != NULL) {
+    if (node != NULL && pseudo == NULL) {
         const tbox_html_attribute *style_attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("style", 5));
         if (style_attribute != NULL && style_attribute->value.size > 0) {
             tbox_css_stylesheet *inline_sheet = tbox_css_cascade_parse_inline_style(style_attribute->value);

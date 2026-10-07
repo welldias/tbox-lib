@@ -18,6 +18,10 @@ extern "C" {
  * header for the full definition. */
 typedef struct tbox_arena tbox_arena;
 
+/* Opaque: an element's custom properties (`--name: value`), see
+ * tbox_style.custom_properties. */
+typedef struct tbox_style_custom_properties tbox_style_custom_properties;
+
 /* Not thread-safe: like the rest of tbox, there is no internal locking.
  *
  * Bridges tbox_css_computed_style (plain text: property/value pairs, no
@@ -38,7 +42,41 @@ typedef enum tbox_style_length_kind {
 typedef struct tbox_style_length {
     tbox_style_length_kind kind;
     double value; /* px or percent, per kind; meaningless (0) when kind == AUTO */
+    /* PERCENT only: px added after resolving the percentage -- the length
+     * part of a calc() such as `calc(100% - 20px)`. 0 for every plain
+     * length; resolve through tbox_style_length_resolve. */
+    double px_offset;
+    /* PERCENT only: px bounds from min()/max()/clamp() mixing px with a
+     * percentage (`clamp(200px, 50%, 600px)`), applied after resolving;
+     * bit 0 of `bounds` enables clamp_min, bit 1 clamp_max. */
+    unsigned char bounds;
+    double clamp_min, clamp_max;
 } tbox_style_length;
+
+/* A PX or PERCENT length in px, percentages (plus px_offset, within the
+ * min()/max() bounds) taken of `percent_base`; 0 for AUTO. */
+static inline double tbox_style_length_resolve(tbox_style_length length, double percent_base) {
+    if (length.kind == TBOX_STYLE_LENGTH_PX)
+        return length.value;
+    if (length.kind != TBOX_STYLE_LENGTH_PERCENT)
+        return 0.0;
+    double value = percent_base * length.value / 100.0 + length.px_offset;
+    if ((length.bounds & 2u) && value > length.clamp_max)
+        value = length.clamp_max;
+    if ((length.bounds & 1u) && value < length.clamp_min)
+        value = length.clamp_min;
+    return value;
+}
+
+/* Intrinsic size keywords for `width`/`height` (and the logical sizes).
+ * The length itself stays AUTO, so code that knows nothing about them
+ * treats the box as auto-sized. */
+typedef enum tbox_style_size_keyword {
+    TBOX_STYLE_SIZE_KEYWORD_NONE, /* initial */
+    TBOX_STYLE_SIZE_KEYWORD_MIN_CONTENT,
+    TBOX_STYLE_SIZE_KEYWORD_MAX_CONTENT,
+    TBOX_STYLE_SIZE_KEYWORD_FIT_CONTENT,
+} tbox_style_size_keyword;
 
 typedef enum tbox_style_display {
     TBOX_STYLE_DISPLAY_BLOCK,
@@ -95,6 +133,9 @@ typedef enum tbox_style_overflow_y {
     TBOX_STYLE_OVERFLOW_Y_HIDDEN,
 } tbox_style_overflow_y;
 
+/* The same values, for `overflow-x`. */
+typedef tbox_style_overflow_y tbox_style_overflow;
+
 typedef enum tbox_style_box_sizing {
     TBOX_STYLE_BOX_SIZING_CONTENT_BOX,
     TBOX_STYLE_BOX_SIZING_BORDER_BOX,
@@ -118,8 +159,8 @@ typedef enum tbox_style_text_overflow {
 } tbox_style_text_overflow;
 
 /* Border and outline styles. `none`/`hidden` and "no border declared" all
- * resolve to NONE. `groove`, `ridge`, `inset` and `outset` paint as SOLID
- * (no 3D shading). Rounded boxes paint every style as SOLID. */
+ * resolve to NONE. Rounded boxes paint every style but dashed/dotted as
+ * one solid ring. */
 typedef enum tbox_style_border_style {
     TBOX_STYLE_BORDER_STYLE_NONE, /* initial */
     TBOX_STYLE_BORDER_STYLE_SOLID,
@@ -127,6 +168,12 @@ typedef enum tbox_style_border_style {
     TBOX_STYLE_BORDER_STYLE_DOTTED,
     TBOX_STYLE_BORDER_STYLE_DOUBLE,
     TBOX_STYLE_BORDER_STYLE_WAVY, /* text-decoration only */
+    /* 3D styles: two shades of the color, darker on the top/left sides for
+     * inset and groove's outer half, lighter there for outset and ridge's. */
+    TBOX_STYLE_BORDER_STYLE_GROOVE,
+    TBOX_STYLE_BORDER_STYLE_RIDGE,
+    TBOX_STYLE_BORDER_STYLE_INSET,
+    TBOX_STYLE_BORDER_STYLE_OUTSET,
 } tbox_style_border_style;
 
 /* the visual-offset axis of `position: relative`.
@@ -212,6 +259,7 @@ typedef enum tbox_style_white_space {
     TBOX_STYLE_WHITE_SPACE_PRE,      /* spaces and newlines kept, no wrapping */
     TBOX_STYLE_WHITE_SPACE_PRE_WRAP, /* spaces and newlines kept, wraps */
     TBOX_STYLE_WHITE_SPACE_PRE_LINE, /* spaces collapse, newlines kept, wraps */
+    TBOX_STYLE_WHITE_SPACE_BREAK_SPACES, /* as pre-wrap, but preserved spaces take room and may wrap */
 } tbox_style_white_space;
 
 typedef enum tbox_style_text_transform {
@@ -220,6 +268,146 @@ typedef enum tbox_style_text_transform {
     TBOX_STYLE_TEXT_TRANSFORM_LOWERCASE,
     TBOX_STYLE_TEXT_TRANSFORM_CAPITALIZE,
 } tbox_style_text_transform;
+
+/* `text-align-last`: AUTO follows text-align, except that a justified
+ * paragraph's last line aligns left. */
+typedef enum tbox_style_text_align_last {
+    TBOX_STYLE_TEXT_ALIGN_LAST_AUTO, /* initial */
+    TBOX_STYLE_TEXT_ALIGN_LAST_LEFT,
+    TBOX_STYLE_TEXT_ALIGN_LAST_CENTER,
+    TBOX_STYLE_TEXT_ALIGN_LAST_RIGHT,
+    TBOX_STYLE_TEXT_ALIGN_LAST_JUSTIFY,
+} tbox_style_text_align_last;
+
+typedef enum tbox_style_user_select {
+    TBOX_STYLE_USER_SELECT_AUTO, /* initial */
+    TBOX_STYLE_USER_SELECT_NONE,
+    TBOX_STYLE_USER_SELECT_TEXT,
+    TBOX_STYLE_USER_SELECT_ALL,
+} tbox_style_user_select;
+
+/* `cursor` keywords; url() cursors are not supported. Whether a shape is
+ * shown depends on the output backend. */
+typedef enum tbox_style_cursor {
+    TBOX_STYLE_CURSOR_AUTO, /* initial */
+    TBOX_STYLE_CURSOR_DEFAULT,
+    TBOX_STYLE_CURSOR_POINTER,
+    TBOX_STYLE_CURSOR_TEXT,
+    TBOX_STYLE_CURSOR_MOVE,
+    TBOX_STYLE_CURSOR_WAIT,
+    TBOX_STYLE_CURSOR_HELP,
+    TBOX_STYLE_CURSOR_CROSSHAIR,
+    TBOX_STYLE_CURSOR_NOT_ALLOWED,
+    TBOX_STYLE_CURSOR_GRAB,
+    TBOX_STYLE_CURSOR_GRABBING,
+    TBOX_STYLE_CURSOR_COL_RESIZE,
+    TBOX_STYLE_CURSOR_ROW_RESIZE,
+    TBOX_STYLE_CURSOR_EW_RESIZE,
+    TBOX_STYLE_CURSOR_NS_RESIZE,
+    TBOX_STYLE_CURSOR_PROGRESS,
+    TBOX_STYLE_CURSOR_NONE,
+} tbox_style_cursor;
+
+typedef enum tbox_style_background_size_kind {
+    TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT, /* initial: background_size, AUTO meaning intrinsic */
+    TBOX_STYLE_BACKGROUND_SIZE_COVER,
+    TBOX_STYLE_BACKGROUND_SIZE_CONTAIN,
+} tbox_style_background_size_kind;
+
+typedef enum tbox_style_gradient_kind {
+    TBOX_STYLE_GRADIENT_NONE, /* initial */
+    TBOX_STYLE_GRADIENT_LINEAR,
+    TBOX_STYLE_GRADIENT_RADIAL,
+} tbox_style_gradient_kind;
+
+#define TBOX_STYLE_MAX_GRADIENT_STOPS 8
+
+/* One color stop. `position` is a PERCENT or PX length along the gradient
+ * line (radius for radial gradients), or AUTO for a stop declared without
+ * one, spaced evenly between its neighbors when painted. */
+typedef struct tbox_style_gradient_stop {
+    tbox_css_rgba color;
+    tbox_style_length position;
+} tbox_style_gradient_stop;
+
+/* How far a radial gradient's ending shape reaches. */
+typedef enum tbox_style_gradient_extent {
+    TBOX_STYLE_GRADIENT_FARTHEST_CORNER, /* initial */
+    TBOX_STYLE_GRADIENT_FARTHEST_SIDE,
+    TBOX_STYLE_GRADIENT_CLOSEST_CORNER,
+    TBOX_STYLE_GRADIENT_CLOSEST_SIDE,
+} tbox_style_gradient_extent;
+
+/* A `linear-gradient()`/`radial-gradient()` background image (and their
+ * `repeating-` forms). A linear gradient runs along `angle` degrees (0 =
+ * toward the top, 90 = toward the right, CSS's convention) or, when
+ * `corner` is nonzero, toward that corner (x: -1 left, 1 right; y: -1 top,
+ * 1 bottom), whose angle depends on the box's proportions. A radial one is
+ * centered at `center` (as background-position) and reaches `extent`, as
+ * an ellipse unless `circle`. */
+typedef struct tbox_style_gradient {
+    tbox_style_gradient_kind kind;
+    bool repeating;
+    double angle;
+    int corner[2];
+    bool circle;
+    tbox_style_gradient_extent extent;
+    tbox_style_length center[2];
+    tbox_style_gradient_stop stops[TBOX_STYLE_MAX_GRADIENT_STOPS];
+    size_t stop_count;
+} tbox_style_gradient;
+
+#define TBOX_STYLE_MAX_SHADOWS 4
+
+/* One `box-shadow`/`text-shadow` entry; color alpha 0 paints nothing. */
+typedef struct tbox_style_shadow {
+    double offset_x, offset_y, blur, spread;
+    tbox_css_rgba color;
+    bool inset; /* box-shadow only */
+} tbox_style_shadow;
+
+typedef enum tbox_style_background_origin {
+    TBOX_STYLE_BACKGROUND_ORIGIN_PADDING_BOX, /* initial */
+    TBOX_STYLE_BACKGROUND_ORIGIN_BORDER_BOX,
+    TBOX_STYLE_BACKGROUND_ORIGIN_CONTENT_BOX,
+} tbox_style_background_origin;
+
+typedef enum tbox_style_scrollbar_width {
+    TBOX_STYLE_SCROLLBAR_WIDTH_AUTO, /* initial */
+    TBOX_STYLE_SCROLLBAR_WIDTH_THIN,
+    TBOX_STYLE_SCROLLBAR_WIDTH_NONE, /* still scrolls, no bar painted */
+} tbox_style_scrollbar_width;
+
+typedef enum tbox_style_clip_path_kind {
+    TBOX_STYLE_CLIP_PATH_NONE, /* initial */
+    TBOX_STYLE_CLIP_PATH_INSET,
+    TBOX_STYLE_CLIP_PATH_CIRCLE,
+    TBOX_STYLE_CLIP_PATH_ELLIPSE,
+} tbox_style_clip_path_kind;
+
+/* `clip-path` basic shapes over the border box: inset(<1-4 lengths>
+ * [round <radius>]), circle([<r>] [at <position>]), ellipse([<rx> <ry>]
+ * [at <position>]). A radius left AUTO is `closest-side`. */
+typedef struct tbox_style_clip_path {
+    tbox_style_clip_path_kind kind;
+    tbox_style_length inset[4];      /* top right bottom left */
+    double round_h[4], round_v[4];   /* inset() corner radii, px */
+    tbox_style_length radius[2];     /* circle: [0]; ellipse: rx, ry */
+    tbox_style_length center[2];     /* initial 50% 50% */
+} tbox_style_clip_path;
+
+/* One background image layer beyond the first (see
+ * tbox_style.background_layers). */
+typedef struct tbox_style_background_layer {
+    char image[256];
+    tbox_style_gradient gradient;
+    tbox_style_background_size_kind size_kind;
+    tbox_style_length size[2];
+    tbox_style_length position[2];
+    bool repeat_x, repeat_y;
+} tbox_style_background_layer;
+
+#define TBOX_STYLE_MAX_BACKGROUND_LAYERS 4
 
 typedef enum tbox_style_caption_side {
     TBOX_STYLE_CAPTION_TOP,
@@ -235,22 +423,52 @@ typedef struct tbox_style {
      * ARCHITECTURE.md's Style section. */
     tbox_style_display display;
     tbox_style_overflow_y overflow_y;             /* initial: visible; auto scrolls, auto/hidden clip */
+    tbox_style_overflow overflow_x;               /* initial: visible; auto/hidden clip horizontally, auto scrolls */
     tbox_style_box_sizing box_sizing;             /* initial: content-box */
     bool visibility_hidden;                       /* inheritable; hidden keeps layout */
+    bool visibility_collapse;                     /* `collapse`: table rows/columns take no room; elsewhere as hidden */
     tbox_style_text_overflow text_overflow;       /* clip or ellipsis; not inheritable */
-    tbox_style_white_space white_space;           /* inheritable; initial AUTO */
+    char text_overflow_string[16];                /* `text-overflow: "<string>"` (as ELLIPSIS with this mark); "" is the ellipsis */
+    bool display_list_item;                       /* `display: list-item`: a block with a list marker */
+    tbox_style_white_space white_space;           /* inheritable; initial AUTO; also set by white-space-collapse/text-wrap(-mode) */
+    bool text_wrap_balance;                       /* inheritable; `text-wrap: balance` evens out line lengths */
     bool overflow_wrap_break_word;                /* inheritable; normal by default */
     bool overflow_wrap_anywhere;                  /* inheritable; emergency breaks count for min-content */
     bool word_break_all;                          /* inheritable; `word-break: break-all` */
+    bool word_break_keep_all;                     /* inheritable; `keep-all`: no breaks inside CJK runs either */
+    bool hyphens_none;                            /* inheritable; `hyphens: none` ignores soft hyphens (manual/auto use them) */
+    double tab_size;                              /* inheritable; a number of spaces, or px when tab_size_length; initial 8 */
+    bool tab_size_length;
+    bool list_style_inside;                       /* inheritable; `list-style-position: inside` */
+    char list_style_image[256];                   /* inheritable; `list-style-image: url()`, "" is none */
+    /* `::marker` overrides (only through tbox_style_resolve_tree, which
+     * resolves the pseudo-element of list items): color, font, and a
+     * `content` string replacing the marker text. */
+    bool marker_styled;
+    tbox_css_rgba marker_color;
+    double marker_font_size;
+    int marker_font_weight;
+    bool marker_italic;
+    char marker_font_family[64];
+    bool marker_has_content;
+    char marker_content[32];
+    tbox_style_user_select user_select;           /* not inheritable (CSS computes from the parent for auto) */
+    tbox_style_cursor cursor;                     /* inheritable */
+    double aspect_ratio;                          /* width / height; 0 is `auto` */
+    int line_clamp;                               /* `line-clamp`/`-webkit-line-clamp`: max lines, 0 is none */
     tbox_style_text_transform text_transform;     /* inheritable; initial NONE */
     tbox_style_list_style_type list_style_type;   /* inheritable */
     bool pointer_events_none;                     /* inheritable; auto by default */
     tbox_style_length width, height;              /* also inline-size/block-size in horizontal LTR; initial: AUTO */
+    tbox_style_size_keyword width_keyword;        /* min-/max-/fit-content; `width` is then AUTO */
+    tbox_style_size_keyword height_keyword;       /* same; heights are content-sized anyway, so these act as auto */
     tbox_style_length min_width, max_width;       /* also min/max-inline-size; AUTO means no constraint */
     tbox_style_length min_height, max_height;     /* also min/max-block-size; AUTO means no constraint */
     tbox_style_length margin[4];                  /* top right bottom left; initial: 0px each */
     tbox_style_length padding[4];                 /* top right bottom left; initial: 0px each */
     tbox_style_length text_indent;                /* inheritable; first line, px or %; initial 0px */
+    bool text_indent_hanging;                     /* inheritable; every line but the first is indented */
+    bool text_indent_each_line;                   /* inheritable; also lines after a forced break */
     double word_spacing;                          /* inheritable; px; initial 0 */
     double letter_spacing;                        /* inheritable; px; initial 0 */
     tbox_style_line_height_kind line_height_kind; /* inheritable */
@@ -258,6 +476,21 @@ typedef struct tbox_style {
     tbox_css_rgba color;                          /* inheritable; initial (no parent): opaque black */
     tbox_css_rgba background_color;               /* not inheritable; initial: transparent, i.e. {0, 0, 0, 0} */
     tbox_style_background_clip background_clip;    /* initial: border-box */
+    /* `background-image: url(...)`, resolved by the image cache like an
+     * <img> src. Fixed buffer for the same reason as font_family below;
+     * "" is none. A gradient, when present, is painted instead. */
+    char background_image[256];
+    tbox_style_gradient background_gradient;
+    tbox_style_background_size_kind background_size_kind;
+    tbox_style_length background_size[2];          /* width, height; AUTO keeps the intrinsic size/ratio */
+    tbox_style_length background_position[2];      /* percent of the free space or px from the left/top; initial 0% 0% */
+    bool background_repeat_x, background_repeat_y; /* initial: repeat both */
+    tbox_style_background_origin background_origin; /* the area background-position/size refer to */
+    /* Comma-separated layers: the fields above are the first (topmost)
+     * one, background_layers[i] the (i + 2)-th; background_layer_count
+     * counts them all (0 or 1 for a single layer). */
+    tbox_style_background_layer background_layers[TBOX_STYLE_MAX_BACKGROUND_LAYERS - 1];
+    size_t background_layer_count;
     /* always absolute px, never a tbox_style_length -- unlike
      * width/height (PERCENT deferred to the Layout Tree, whose containing
      * block doesn't exist yet at Style-resolve time), font-size in em/%
@@ -267,9 +500,23 @@ typedef struct tbox_style {
      * inheritance). Initial value (no parent): 16px, the same default
      * already used by Fonte/Texto since v0. */
     double font_size;
+    /* The root element's font size, which `rem` is relative to: the
+     * parent's value, or this element's own font_size with no parent. */
+    double root_font_size;
     /* Only the bold/not-bold axis: bold/600-900 versus normal/100-500.
      * Inheritable like `color`; initial value (no parent): false. */
     bool font_weight_bold;
+    /* The numeric weight, 1..1000 (normal 400, bold 700); font_weight_bold
+     * is font_weight >= 600. bolder/lighter follow CSS's relative table. */
+    int font_weight;
+    /* `font-stretch` as a percentage (normal 100, condensed 75, ...). */
+    double font_stretch;
+    /* `font-variant: small-caps` (and `font-variant-caps`): lowercase
+     * letters render as smaller capitals. Inheritable. */
+    bool font_small_caps;
+    /* `font-kerning`: auto/normal apply the font's kerning pairs (the
+     * initial value auto does), none disables them. Inheritable. */
+    bool font_kerning_none;
     /* `border` shorthand (width + style + color, order-free, each
      * optional -- only `solid` is ever painted). Not inheritable, same
      * treatment as `width`/`background-color`: always cascade-or-initial,
@@ -294,10 +541,18 @@ typedef struct tbox_style {
     /* `position: relative` + offsets. Not inheritable. */
     tbox_style_position position; /* initial STATIC */
     tbox_style_length offset[4];  /* top right bottom left; initial: AUTO, same type as margin/padding */
+    /* `z-index` on positioned boxes: painted in increasing order among
+     * the positioned descendants of the nearest stacking parent. */
+    int z_index;
+    bool z_index_auto; /* initial true */
+    /* `transform: translate(...)`/`translateX/Y` and `translate`: a visual
+     * offset like `position: relative`'s, percentages of the border box. */
+    tbox_style_length translate_x, translate_y;
     /* `text-align`. Inheritable, same mechanism as `color`/
      * `font_weight_bold` above (herda do pai já resolvido se não
      * declarado/reconhecido; `LEFT` -- o valor inicial -- sem pai). */
     tbox_style_text_align text_align;
+    tbox_style_text_align_last text_align_last; /* inheritable */
     /* `font-family`. Fixed buffer, NOT a tbox_string_view -- every
      * field of tbox_style is copied by value, pointing at no external memory;
      * a view would dangle for the synthetic `style=""` stylesheet (v9),
@@ -329,6 +584,8 @@ typedef struct tbox_style {
     tbox_style_caption_side caption_side;
     bool border_collapse;
     double border_spacing_x, border_spacing_y;
+    bool empty_cells_hide;   /* inheritable; `empty-cells: hide` skips empty cells' background and borders */
+    bool table_layout_fixed; /* `table-layout: fixed`: columns sized from the first row only */
     /* Circular corner radii in px. The scalar retains the old uniform value
      * for callers that build styles directly; shorthand and longhand CSS
      * resolve into border_radius_corners in clockwise order. Elliptical
@@ -339,6 +596,11 @@ typedef struct tbox_style {
      * against the smaller side of the border box -- a circular stand-in for
      * CSS's elliptical percentage radii, exact for squares (50% = circle). */
     double border_radius_percent[4];
+    /* The vertical radii of elliptical corners (`10px / 20px`), same
+     * corner order and px/percent split; equal to the horizontal ones for
+     * circular corners. Percentages are of the border box height. */
+    double border_radius_vertical[4];
+    double border_radius_vertical_percent[4];
     /* NOVO (visual fidelity): `box-shadow: <offset-x> <offset-y>
      * [<blur-radius>] <color>` -- ONE shadow only (no comma-separated list,
      * no `inset`, no spread-radius -- see tbox_style_resolve_box_shadow).
@@ -349,15 +611,30 @@ typedef struct tbox_style {
     double box_shadow_offset_x, box_shadow_offset_y, box_shadow_blur; /* px; initial 0.0 */
     double box_shadow_spread;                                         /* px, may be negative; initial 0.0 */
     tbox_css_rgba box_shadow_color;                                   /* initial transparent */
+    bool box_shadow_inset;
+    /* Every comma-separated shadow, first one painted on top; the single
+     * box_shadow_* fields above mirror box_shadows[0]. A hand-built style
+     * with box_shadow_count 0 still paints those single fields. */
+    tbox_style_shadow box_shadows[TBOX_STYLE_MAX_SHADOWS];
+    size_t box_shadow_count;
     /* `text-shadow`: one shadow, `<x> <y> [<blur>] [<color>]`. Inheritable;
      * text_shadow_color.a == 0 means none (the initial value). */
     double text_shadow_offset_x, text_shadow_offset_y, text_shadow_blur; /* px */
     tbox_css_rgba text_shadow_color;
+    tbox_style_shadow text_shadows[TBOX_STYLE_MAX_SHADOWS]; /* same convention as box_shadows */
+    size_t text_shadow_count;
     /* `opacity`, 0..1 (numbers or percentages, clamped). NOT inheritable,
      * but Render multiplies it into the element's whole subtree. Initial
      * 1.0 -- a hand-built, zero-initialized tbox_style must set it, or the
      * element paints nothing. */
     double opacity;
+    /* `filter` color functions (grayscale, sepia, saturate, hue-rotate,
+     * invert, opacity, brightness, contrast) folded into one 4x5 color
+     * matrix over 0..1 RGBA, rows R G B A, columns r g b a + offset;
+     * has_filter false means none. blur()/drop-shadow() are ignored. */
+    bool has_filter;
+    double filter_matrix[20];
+    tbox_style_clip_path clip_path;
     /* Replaced images: fit and position pixels inside their CSS content box.
      * Positions are percentages of the free space, or px offsets from the
      * left/top edge. Initial position is 50% 50%. */
@@ -369,6 +646,15 @@ typedef struct tbox_style {
      * same "alpha 0 means absent" convention as box_shadow_color. */
     tbox_css_rgba accent_color; /* checked checkbox mark and radio dot */
     tbox_css_rgba caret_color;  /* text insertion caret */
+    /* `scrollbar-color: <thumb> <track>`, inheritable; alpha 0 is auto. */
+    tbox_css_rgba scrollbar_thumb_color, scrollbar_track_color;
+    /* Custom properties in scope (own and inherited), which var() in any
+     * declaration resolves against. Allocated in the arena given to
+     * tbox_style_resolve_tree(_in_viewport), so valid as long as the style
+     * table; tbox_style_resolve alone has no arena and passes the parent's
+     * on (its own `--x` declarations still apply to itself). NULL: none. */
+    const tbox_style_custom_properties *custom_properties;
+    tbox_style_scrollbar_width scrollbar_width; /* not inheritable */
     /* flexbox, none inheritable. Container properties: */
     tbox_style_flex_direction flex_direction;
     tbox_style_flex_wrap flex_wrap;
@@ -478,8 +764,33 @@ typedef struct tbox_style {
  * `flex-flow`, `justify-content`, `align-items`, `align-self`,
  * `align-content`, `gap`/`row-gap`/`column-gap`, `flex-grow`,
  * `flex-shrink`, `flex-basis`, the `flex` shorthand and `order`.
- * Out of scope: `float`, flex/grid, `z-index`, `break-spaces`, `tab-size`. */
+ * Added since: every length accepts rem/ex/ch/pt/pc/in/cm/mm/Q, viewport
+ * units (with a viewport, see tbox_style_resolve_in_viewport) and calc();
+ * the CSS-wide keywords inherit/initial/unset on every property;
+ * `overflow-x` and two-value `overflow`; `white-space: break-spaces`;
+ * `tab-size`; `word-break: keep-all`; `list-style-position`; `user-select`;
+ * `cursor`; `aspect-ratio`; `line-clamp`/`-webkit-line-clamp`;
+ * `background-image` (url() and gradients) with `background-size`/
+ * `-position`/`-repeat` and the full `background` shorthand; elliptical
+ * `border-radius`; multiple and inset `box-shadow`, multiple `text-shadow`;
+ * `z-index`; numeric `font-weight`, `font-stretch`, `font-variant:
+ * small-caps`; `text-align-last`; `empty-cells`; `table-layout`;
+ * `visibility: collapse`; `transform: translate()` and `translate`.
+ * Then (v19): CSS Color 4/5 colors, min()/max()/clamp(), intrinsic size
+ * keywords, `place-*`, 3D border styles, `scrollbar-color`/`-width`,
+ * `background-origin` and background layers, `text-wrap`/
+ * `text-wrap-mode`/`white-space-collapse`, `text-overflow` strings,
+ * `display: flow-root | list-item`, `text-indent` keywords, `clip-path`
+ * basic shapes, `filter` color functions, custom properties and var(),
+ * `list-style-image`, `::marker`, real `position: sticky`,
+ * `font-kerning` and `hyphens`.
+ * Out of scope: `float`, grid, transforms other than translation. */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
+
+/* tbox_style_resolve with a viewport size for the vw/vh/vmin/vmax units.
+ * tbox_style_resolve passes 0x0, which makes those units invalid (the
+ * declaration falls back as if unparsable). */
+tbox_style tbox_style_resolve_in_viewport(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed, double viewport_width, double viewport_height);
 
 /* The painted border width of `side` (0 top, 1 right, 2 bottom, 3 left):
  * its width unless that side's style is NONE, 0 otherwise -- the space the
@@ -520,6 +831,10 @@ typedef struct tbox_style_table {
  * ARCHITECTURE.md's Style section. A single-source, AUTHOR-origin caller
  * passes `source_count == 1`. */
 tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count);
+
+/* tbox_style_resolve_tree with a viewport size, see
+ * tbox_style_resolve_in_viewport. */
+tbox_style_table tbox_style_resolve_tree_in_viewport(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height);
 
 /* Linear scan for `node`'s entry, same pattern as tbox_css_computed_style_find
  * and tbox_css_selector_match -- acceptable for UI-sized trees (tens to a

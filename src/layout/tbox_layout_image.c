@@ -79,9 +79,7 @@ tbox_layout_replaced_image tbox_layout_image_prepare(tbox_arena *arena,
     content.fallback_text = alt != NULL ?
         tbox_string_collapse_whitespace(arena, alt->value) : tbox_string_view_make(NULL, 0);
     if (content.fallback_text.size > 0)
-        content.fallback_face = tbox_font_face_cache_get(fonts,
-            tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-            style->font_italic, style->font_size);
+        content.fallback_face = tbox_layout_style_face(fonts, style);
     return content;
 }
 
@@ -97,7 +95,7 @@ double tbox_layout_image_auto_width(const tbox_layout_replaced_image *content,
                 (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? vertical_edges : 0.0)) *
                 image->width / image->height;
         else if (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)
-            width = (style->height.value / 100.0 * container.height -
+            width = (tbox_style_length_resolve(style->height, container.height) -
                 (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? vertical_edges : 0.0)) *
                 image->width / image->height;
     }
@@ -112,7 +110,7 @@ double tbox_layout_image_height(const tbox_layout_replaced_image *content,
         content->fallback_face != NULL ? tbox_font_face_line_height(content->fallback_face) : 16.0;
     if (style->height.kind == TBOX_STYLE_LENGTH_PX) height = style->height.value;
     else if (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)
-        height = style->height.value / 100.0 * container.height;
+        height = tbox_style_length_resolve(style->height, container.height);
     else if (image != NULL && image->width > 0)
         height = content_width * image->height / image->width;
     if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX &&

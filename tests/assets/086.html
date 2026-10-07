@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.box { background: white; border: 2px solid #3b82f6; padding: 6px; margin-bottom: 10px; }
+.min { width: min-content; }
+.max { width: max-content; }
+.fit { width: fit-content; }
+.fit-long { width: fit-content; max-width: 400px; }
+.row { display: flex; gap: 10px; margin-top: 10px; }
+.row div { background: #fef3c7; border: 2px solid #f59e0b; padding: 6px; }
+.row .mc { width: min-content; }
+</style></head><body>
+<h1>width: min-content, max-content e fit-content</h1>
+<div class="box">auto: ocupa toda a largura disponivel</div>
+<div class="box min">min-content: a maior palavra decide</div>
+<div class="box max">max-content: tudo numa linha so</div>
+<div class="box fit">fit-content curto</div>
+<div class="box fit-long">fit-content com texto longo que precisa quebrar porque passa do limite de largura</div>
+<div class="row"><div class="mc">item flex com min-content</div><div>item normal</div></div>
+</body></html>

@@ -94,6 +94,9 @@ if(TBOX_ENABLE_WAYLAND AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PkgConfig_FOUN
     pkg_check_modules(WAYLAND_CLIENT QUIET wayland-client)
     pkg_check_modules(WAYLAND_PROTOCOLS QUIET wayland-protocols)
     pkg_check_modules(XKBCOMMON QUIET xkbcommon)
+    # Optional: themed pointer cursors (CSS `cursor`). Without it the window
+    # keeps whatever cursor the compositor shows.
+    pkg_check_modules(WAYLAND_CURSOR QUIET wayland-cursor)
 
     # wayland-scanner is a CLI tool, not a linkable library: try pkg-config's
     # variable first, then fall back to a plain PATH search.
@@ -110,6 +113,13 @@ if(TBOX_ENABLE_WAYLAND AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PkgConfig_FOUN
 
         if(EXISTS "${XDG_SHELL_XML}")
             set(TBOX_WAYLAND_FOUND TRUE)
+            if(WAYLAND_CURSOR_FOUND)
+                # Every target linking the Wayland client libraries (the
+                # library and the static-linked executables) gets it too.
+                list(APPEND WAYLAND_CLIENT_LIBRARIES ${WAYLAND_CURSOR_LIBRARIES})
+                list(APPEND WAYLAND_CLIENT_LIBRARY_DIRS ${WAYLAND_CURSOR_LIBRARY_DIRS})
+                list(APPEND WAYLAND_CLIENT_INCLUDE_DIRS ${WAYLAND_CURSOR_INCLUDE_DIRS})
+            endif()
         else()
             message(WARNING "wayland-protocols found but xdg-shell.xml is missing at "
                              "${XDG_SHELL_XML}; skipping the Wayland backend and tbox_wayland example.")

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 14px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.grid { display: flex; flex-wrap: wrap; gap: 16px; width: 760px; }
+.c { width: 170px; height: 120px; background: linear-gradient(135deg, #2563eb, #db2777); color: white; padding: 8px; box-sizing: border-box; }
+.img { background: url(bird.png) center / cover; }
+.i1 { clip-path: inset(10px 20px); }
+.i2 { clip-path: inset(10% round 20px); }
+.c1 { clip-path: circle(); }
+.c2 { clip-path: circle(40px at 30% 40%); }
+.e1 { clip-path: ellipse(); }
+.e2 { clip-path: ellipse(60px 30px at right 20px bottom 30px); }
+</style></head><body>
+<h1>clip-path: inset(), circle() e ellipse()</h1>
+<div class="grid">
+  <div class="c i1">inset(10px 20px)</div>
+  <div class="c i2">inset(10% round 20px)</div>
+  <div class="c img c1">circle()</div>
+  <div class="c c2">circle(40px at 30% 40%) com texto que passa do recorte</div>
+  <div class="c img e1"></div>
+  <div class="c e2">ellipse no canto</div>
+</div>
+</body></html>

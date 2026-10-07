@@ -95,9 +95,7 @@ void tbox_context_sync_select_boxes(tbox_context *ctx, tbox_layout_box *box) {
             if (field != NULL && field->selected != NULL && box->style != NULL) {
                 tbox_string_view label = tbox_context_option_label(ctx, field->selected);
                 const tbox_style *style = box->style;
-                const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
-                    tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-                    style->font_italic, style->font_size);
+                const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
                 if (face != NULL && label.size > 0) {
                     tbox_layout_text_run *run = tbox_arena_alloc(&ctx->frame_arena, sizeof(*run));
                     if (run != NULL) {
@@ -142,9 +140,7 @@ static bool tbox_context_popup_geometry(tbox_context *ctx, tbox_popup_geometry *
     size_t count = tbox_context_option_count(ctx->open_select);
     if (count == 0) return false;
     const tbox_style *style = box->style;
-    const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
-        tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-        style->font_italic, style->font_size);
+    const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
     double row_height = face != NULL ? tbox_font_face_line_height(face) + 8.0 : 24.0;
     if (row_height < 24.0) row_height = 24.0;
     size_t desired = count < 6 ? count : 6;
@@ -211,9 +207,7 @@ void tbox_context_paint_select_popup(tbox_context *ctx, tbox_vector *items) {
     if (!tbox_context_popup_geometry(ctx, &popup)) return;
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_select);
     const tbox_style *style = box->style;
-    const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
-        tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-        style->font_italic, style->font_size);
+    const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
     tbox_context_push_fill(items, popup.rect, (tbox_css_rgba){105, 112, 122, 255}, false, (tbox_rect){0});
     tbox_rect inner = {popup.rect.x + 1.0, popup.rect.y + 1.0,
                        popup.rect.width - 2.0, popup.rect.height - 2.0};

@@ -299,7 +299,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
         { ctx->stylesheet,          TBOX_CSS_ORIGIN_AUTHOR     },
         { ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR     },
     };
-    tbox_style_table styles = tbox_style_resolve_tree(&ctx->frame_arena, root, sources, 3);
+    tbox_style_table styles = tbox_style_resolve_tree_in_viewport(&ctx->frame_arena, root, sources, 3, viewport_width, viewport_height);
     ctx->styles             = styles;
 
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
@@ -308,6 +308,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     ctx->root = tbox_layout_build(&ctx->frame_arena, root, &styles, ctx->fonts, ctx->images, viewport_width, viewport_height);
     tbox_context_apply_scroll(ctx, ctx->root);
     tbox_context_reveal_focused(ctx);
+    tbox_context_apply_sticky(ctx, viewport_width, viewport_height);
     tbox_context_sync_select_boxes(ctx, ctx->root);
     tbox_context_layout_textareas(ctx, ctx->root);
     ctx->viewport_width  = viewport_width;

@@ -100,7 +100,7 @@ static bool tbox_layout_flex_definite(tbox_style_length length, double base, boo
     if (length.kind == TBOX_STYLE_LENGTH_PX)
         *out = length.value;
     else if (length.kind == TBOX_STYLE_LENGTH_PERCENT && base_definite)
-        *out = length.value / 100.0 * base;
+        *out = tbox_style_length_resolve(length, base);
     else
         return false;
     if (style->box_sizing != TBOX_STYLE_BOX_SIZING_BORDER_BOX)
@@ -129,7 +129,7 @@ double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, con
     bool cross_definite = row ? height_definite : true;
     double cross_size   = row ? content_height : content_width;
     double column_gap   = style->column_gap.kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 : tbox_layout_resolve_edge(style->column_gap, content_width);
-    double row_gap      = style->row_gap.kind == TBOX_STYLE_LENGTH_PX ? style->row_gap.value : style->row_gap.kind == TBOX_STYLE_LENGTH_PERCENT && height_definite ? style->row_gap.value / 100.0 * content_height : 0.0;
+    double row_gap      = style->row_gap.kind == TBOX_STYLE_LENGTH_PX ? style->row_gap.value : style->row_gap.kind == TBOX_STYLE_LENGTH_PERCENT && height_definite ? tbox_style_length_resolve(style->row_gap, content_height) : 0.0;
     double main_gap = row ? column_gap : row_gap, cross_gap = row ? row_gap : column_gap;
     /* Axis indices into top/right/bottom/left arrays. */
     size_t main_start = row ? 3 : 0, main_end = row ? 1 : 2;
@@ -249,11 +249,24 @@ double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, con
 
         double specified;
         bool has_specified = !item->anonymous && tbox_layout_flex_definite(main_length, main_size, main_definite, s, main_edges, &specified);
+        /* aspect-ratio transfers a definite cross size to the main axis
+         * (of box-sizing's box) when the main size is auto. */
+        double cross_border;
+        if (!item->anonymous && !has_specified && s->aspect_ratio > 0.0 && main_length.kind == TBOX_STYLE_LENGTH_AUTO &&
+            tbox_layout_flex_definite(cross_length, cross_size, row ? height_definite : true, s, cross_edges, &cross_border)) {
+            bool border_box  = s->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX;
+            double cross_ref = border_box ? cross_border : cross_border - cross_edges;
+            double main_ref  = row ? cross_ref * s->aspect_ratio : cross_ref / s->aspect_ratio;
+            specified        = border_box ? main_ref : main_ref + main_edges;
+            has_specified    = true;
+        }
         double basis;
         if (!item->anonymous && tbox_layout_flex_definite(s->flex_basis, main_size, main_definite, s, main_edges, &basis)) {
             /* definite flex-basis */
         } else if (has_specified) {
             basis = specified;
+        } else if (!item->anonymous && (row ? s->width_keyword : s->height_keyword) == TBOX_STYLE_SIZE_KEYWORD_MIN_CONTENT) {
+            basis = content_min;
         } else {
             basis = content_max;
         }

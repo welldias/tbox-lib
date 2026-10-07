@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font: 16px sans-serif;
+            background: #eef2f7;
+            color: #1e293b;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 24px;
+        }
+
+        .card {
+            width: 300px;
+            background: white;
+            border: 1px solid #94a3b8;
+            padding: 10px;
+            margin-bottom: 12px;
+        }
+
+        .c2 {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            overflow: hidden;
+        }
+
+        .c3 {
+            line-clamp: 3;
+            overflow: hidden;
+        }
+
+        .c1 {
+            -webkit-line-clamp: 1;
+            display: -webkit-box;
+            overflow: hidden;
+        }
+
+        p.c2 {
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>line-clamp</h1>
+    <div class="card">Sem limite: este paragrafo comprido continua por varias linhas sem nenhum corte, mostrando todo o
+        texto ate o final da frase.</div>
+    <div class="card c2">-webkit-line-clamp: 2 corta este paragrafo comprido na segunda linha e termina com reticencias
+        no lugar do resto do texto.</div>
+    <div class="card c3">line-clamp: 3 mostra ate tres linhas deste texto de exemplo, que e propositalmente longo para
+        passar do limite configurado.</div>
+    <div class="card c1">uma linha so com reticencias no final do texto</div>
+    <div class="card">
+        <p class="c2">Tambem funciona em paragrafo: limite de duas linhas aplicado ao elemento p dentro do cartao.</p>
+    </div>
+</body>
+
+</html>

@@ -21,5 +21,8 @@ bool tbox_backend_wayland_pointer_position(const tbox_backend_wayland *backend, 
 bool tbox_backend_wayland_clipboard_copy(tbox_backend_wayland *backend, const char *text, size_t length, uint32_t serial);
 bool tbox_backend_wayland_clipboard_paste(tbox_backend_wayland *backend);
 void tbox_backend_wayland_present(tbox_backend_wayland *backend, const tbox_display_list *list);
+/* Shows the themed pointer cursor for `cursor` over the window (a no-op
+ * without wayland-cursor). AUTO shows the default arrow. */
+void tbox_backend_wayland_set_cursor(tbox_backend_wayland *backend, tbox_style_cursor cursor);
 
 #endif

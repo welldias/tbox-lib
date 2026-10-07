@@ -21,5 +21,6 @@ bool tbox_window_backend_pointer_position(const tbox_window_backend *window, dou
 bool tbox_window_backend_clipboard_copy(tbox_window_backend *window, const char *text, size_t length, uint32_t serial);
 bool tbox_window_backend_clipboard_paste(tbox_window_backend *window);
 void tbox_window_backend_present(tbox_window_backend *window, const tbox_display_list *list);
+void tbox_window_backend_set_cursor(tbox_window_backend *window, tbox_style_cursor cursor);
 
 #endif

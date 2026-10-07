@@ -17,7 +17,7 @@ double tbox_layout_resolve_edge(tbox_style_length length, double percent_base) {
     case TBOX_STYLE_LENGTH_PX:
         return length.value;
     case TBOX_STYLE_LENGTH_PERCENT:
-        return length.value / 100.0 * percent_base;
+        return tbox_style_length_resolve(length, percent_base);
     case TBOX_STYLE_LENGTH_AUTO:
     default:
         return 0.0;

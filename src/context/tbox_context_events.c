@@ -171,7 +171,7 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
         const tbox_layout_box *input_box = tbox_context_find_box(ctx->root, focus);
         if (field != NULL && input_box != NULL && input_box->style != NULL) {
             const tbox_style *style    = input_box->style;
-            const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts, tbox_string_view_from_cstr(style->font_family), style->font_weight_bold, style->font_italic, style->font_size);
+            const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
             if (face != NULL) {
                 size_t best   = tbox_context_is_textarea(focus) ? tbox_context_cursor_at_point(field, input_box, face, x, y) : tbox_context_cursor_at_x(field, input_box, face, x);
                 field->cursor = best;
@@ -479,7 +479,7 @@ bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
             const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->focused_node);
             if (box == NULL || box->style == NULL || field->line_count == 0)
                 return false;
-            const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts, tbox_string_view_from_cstr(box->style->font_family), box->style->font_weight_bold, box->style->font_italic, box->style->font_size);
+            const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, box->style);
             if (face == NULL)
                 return false;
             size_t row = 0;

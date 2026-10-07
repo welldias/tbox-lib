@@ -87,7 +87,10 @@ static bool tbox_font_source_fontconfig_resolve(void *self, tbox_font_query quer
     }
 
     FcPatternAddString(pattern, FC_FAMILY, (const FcChar8 *)family);
-    FcPatternAddInteger(pattern, FC_WEIGHT, query.bold ? FC_WEIGHT_BOLD : FC_WEIGHT_REGULAR);
+    int weight = query.weight > 0 ? query.weight : query.bold ? 700 : 400;
+    FcPatternAddInteger(pattern, FC_WEIGHT, FcWeightFromOpenType(weight));
+    if (query.stretch > 0.0 && query.stretch != 100.0)
+        FcPatternAddInteger(pattern, FC_WIDTH, (int)(query.stretch + 0.5)); /* FC_WIDTH uses the same percentages */
     FcPatternAddInteger(pattern, FC_SLANT, query.italic ? FC_SLANT_ITALIC : FC_SLANT_ROMAN);
 
     FcConfigSubstitute(NULL, pattern, FcMatchPattern);

@@ -75,7 +75,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         content_width = style->width.value - (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? horizontal_edges : 0.0);
         break;
     case TBOX_STYLE_LENGTH_PERCENT:
-        content_width = style->width.value / 100.0 * container.width - (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? horizontal_edges : 0.0);
+        content_width = tbox_style_length_resolve(style->width, container.width) - (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? horizontal_edges : 0.0);
         break;
     case TBOX_STYLE_LENGTH_AUTO:
     default:
@@ -88,6 +88,20 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
             content_width = tbox_layout_image_auto_width(&image_content, style, container, vertical_edges);
         if (tbox_layout_is_textarea(node))
             content_width = tbox_layout_textarea_auto_width(node, style, fonts, content_width);
+        /* min-/max-/fit-content: the intrinsic widths instead of filling
+         * the containing block (fit-content: the available width, kept
+         * between the two). */
+        if (style->width_keyword != TBOX_STYLE_SIZE_KEYWORD_NONE && !is_image_input && !tbox_layout_is_textarea(node) && !is_table_row) {
+            tbox_layout_intrinsic outer = tbox_layout_intrinsic_outer(arena, node, styles, fonts, images);
+            double outside              = margin_left + margin_right + horizontal_edges;
+            double minimum = outer.min - outside, maximum = outer.max - outside;
+            if (style->width_keyword == TBOX_STYLE_SIZE_KEYWORD_MIN_CONTENT)
+                content_width = minimum;
+            else if (style->width_keyword == TBOX_STYLE_SIZE_KEYWORD_MAX_CONTENT)
+                content_width = maximum;
+            else
+                content_width = content_width > maximum ? maximum : content_width < minimum ? minimum : content_width;
+        }
         break;
     }
     if (row_column_widths != NULL && row_column_count == 0 && tbox_layout_table_cell_node(node))
@@ -101,6 +115,32 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         content_width = tbox_layout_constrain_width(style, content_width, container.width, horizontal_edges);
     if (forced != NULL && forced->has_width)
         content_width = forced->width > horizontal_edges ? forced->width - horizontal_edges : 0.0;
+
+    /* aspect-ratio (width / height, of box-sizing's box): an auto height
+     * follows the width; an auto width follows a definite height. Content
+     * taller than the ratio still grows the box unless it clips (CSS's
+     * automatic minimum size). */
+    bool ratio_height           = false;
+    double ratio_content_height = 0.0;
+    if (style->aspect_ratio > 0.0 && !is_image_input && !is_table && !is_table_row && !(forced != NULL && forced->has_height)) {
+        bool border_box     = style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX;
+        bool height_defined = style->height.kind == TBOX_STYLE_LENGTH_PX || (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite);
+        if (!height_defined) {
+            double outer         = (border_box ? content_width + horizontal_edges : content_width) / style->aspect_ratio;
+            ratio_content_height = border_box ? outer - vertical_edges : outer;
+            if (ratio_content_height < 0.0)
+                ratio_content_height = 0.0;
+            ratio_content_height = tbox_layout_constrain_height(style, ratio_content_height, container.height, container.height_definite, vertical_edges);
+            ratio_height         = true;
+        } else if (style->width.kind == TBOX_STYLE_LENGTH_AUTO && !(forced != NULL && forced->has_width) && !tbox_layout_table_cell_node(node)) {
+            double outer  = tbox_style_length_resolve(style->height, container.height) * style->aspect_ratio;
+            content_width = border_box ? outer - horizontal_edges : outer;
+            if (content_width < 0.0)
+                content_width = 0.0;
+            content_width = tbox_layout_constrain_width(style, content_width, container.width, horizontal_edges);
+        }
+    }
+    bool ratio_grows = ratio_height && style->overflow_y == TBOX_STYLE_OVERFLOW_Y_VISIBLE;
 
     double content_x;
     double content_y;
@@ -143,7 +183,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         if (!top_auto || bottom_auto || height_known_early) {
             double margin_box_height = 0.0; /* only read by tbox_layout_resolve_absolute_edge's opposite-side branch, taken below */
             if (top_auto && !bottom_auto && height_known_early) {
-                double early_content_height = (style->height.kind == TBOX_STYLE_LENGTH_PX) ? style->height.value : style->height.value / 100.0 * container.height;
+                double early_content_height = (style->height.kind == TBOX_STYLE_LENGTH_PX) ? style->height.value : tbox_style_length_resolve(style->height, container.height);
                 if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
                     early_content_height = early_content_height > vertical_edges ? early_content_height - vertical_edges : 0.0;
                 early_content_height           = tbox_layout_constrain_height(style, early_content_height, container.height, container.height_definite, vertical_edges);
@@ -179,7 +219,9 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
      * (no scrollport anywhere in the project for a "stuck" threshold to ever
      * cross), so it must resolve to IDENTICAL geometry given the same
      * offsets, not just similar. */
-    if (style->position == TBOX_STYLE_POSITION_RELATIVE || style->position == TBOX_STYLE_POSITION_STICKY) {
+    /* sticky boxes are placed by Context once scroll offsets are known
+     * (tbox_context_apply_sticky), not shifted here. */
+    if (style->position == TBOX_STYLE_POSITION_RELATIVE) {
         double dx = tbox_layout_resolve_offset(style->offset[3], style->offset[1], container.width, true);
         double dy = tbox_layout_resolve_offset(style->offset[0], style->offset[2], container.height, container.height_definite);
         content_x += dx;
@@ -201,12 +243,15 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
             content_height  = forced->height > vertical_edges ? forced->height - vertical_edges : 0.0;
             height_definite = true;
         } else if (style->height.kind == TBOX_STYLE_LENGTH_PX || (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)) {
-            content_height = style->height.kind == TBOX_STYLE_LENGTH_PX ? style->height.value : style->height.value / 100.0 * container.height;
+            content_height = style->height.kind == TBOX_STYLE_LENGTH_PX ? style->height.value : tbox_style_length_resolve(style->height, container.height);
             if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
                 content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
             height_definite = true;
         } else if (stretch_height) {
             content_height  = stretched_height;
+            height_definite = true;
+        } else if (ratio_height) {
+            content_height  = ratio_content_height;
             height_definite = true;
         } else {
             content_height = 0.0;
@@ -238,9 +283,11 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         if (tbox_layout_is_textarea(node)) {
             content_height = tbox_layout_textarea_height(node, style, fonts, container, vertical_edges, content_height);
         } else if (style->height.kind == TBOX_STYLE_LENGTH_PX || (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)) {
-            content_height = style->height.kind == TBOX_STYLE_LENGTH_PX ? style->height.value : style->height.value / 100.0 * container.height;
+            content_height = style->height.kind == TBOX_STYLE_LENGTH_PX ? style->height.value : tbox_style_length_resolve(style->height, container.height);
             if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
                 content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
+        } else if (ratio_height && (!ratio_grows || content_height < ratio_content_height)) {
+            content_height = ratio_content_height;
         }
     } else if (is_table) {
         /* NOVO (table support): a <table>'s content_height is ALWAYS the
@@ -277,7 +324,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
                 break;
             case TBOX_STYLE_LENGTH_PERCENT:
                 if (container.height_definite) {
-                    content_height = style->height.value / 100.0 * container.height;
+                    content_height = tbox_style_length_resolve(style->height, container.height);
                     if (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX)
                         content_height = content_height > vertical_edges ? content_height - vertical_edges : 0.0;
                     height_definite = true;
@@ -294,6 +341,10 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
                 }
                 break;
             }
+        if (ratio_height && !height_definite) {
+            content_height  = ratio_content_height;
+            height_definite = true;
+        }
 
         /* decide what positioned_context THIS box's own descendants
          * see, per ARCHITECTURE.md "Layout Tree -- containing block
@@ -332,7 +383,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         };
         double children_total_height = tbox_layout_build_children(arena, node, styles, fonts, images, children_container, content_y, box, context_for_children, style);
         box->scroll_content_height   = children_total_height;
-        if (!height_definite) {
+        if (!height_definite || (ratio_grows && children_total_height > content_height)) {
             content_height = children_total_height;
         }
     }

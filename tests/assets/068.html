@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font: 16px sans-serif;
+            background: #eef2f7;
+            color: #1e293b;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 24px;
+        }
+
+        .box {
+            width: 260px;
+            height: 70px;
+            border: 2px solid #475569;
+            background: white;
+            margin-bottom: 14px;
+        }
+
+        .wide {
+            width: 420px;
+            height: 30px;
+            background: #93c5fd;
+        }
+
+        .tall {
+            width: 120px;
+            height: 120px;
+            background: #fca5a5;
+        }
+
+        .x {
+            overflow-x: hidden;
+        }
+
+        .both {
+            overflow: hidden clip;
+        }
+
+        .vis {
+            overflow: visible;
+        }
+
+        .ell {
+            overflow-x: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            height: auto;
+            padding: 6px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>overflow-x e overflow com dois valores</h1>
+    <div class="box vis">
+        <div class="wide">visible: vaza a direita</div>
+    </div>
+    <div class="box x">
+        <div class="wide">overflow-x: hidden corta a direita</div>
+    </div>
+    <div class="box both">
+        <div class="tall">overflow: hidden clip</div>
+    </div>
+    <div class="box ell">overflow-x: hidden com text-overflow: ellipsis em texto longo demais</div>
+</body>
+
+</html>

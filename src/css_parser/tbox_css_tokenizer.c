@@ -24,9 +24,8 @@ static bool tbox_css_is_ident_char(char c) {
 
 /* True if an `ident` production (CSS2.1: -?{nmstart}{nmchar}*) begins at
  * t->input[pos]: either an nmstart directly, or a single '-' followed by an
- * nmstart. A second leading '-' (as in "--foo", CSS3 custom-property
- * syntax) does NOT match -- this is the deliberate CSS2.1-only-grammar
- * simplification documented in the tokenizer header. */
+ * nmstart -- or, as in CSS Syntax 3, "--" followed by an nmchar (custom
+ * property names such as "--brand"). */
 static bool tbox_css_ident_starts_at(const tbox_css_tokenizer *t, size_t pos) {
     if (pos >= t->length) {
         return false;
@@ -35,6 +34,8 @@ static bool tbox_css_ident_starts_at(const tbox_css_tokenizer *t, size_t pos) {
     if (tbox_css_is_ident_start(c)) {
         return true;
     }
+    if (c == '-' && pos + 2 < t->length && t->input[pos + 1] == '-' && tbox_css_is_ident_char(t->input[pos + 2]))
+        return true;
     return c == '-' && pos + 1 < t->length && tbox_css_is_ident_start(t->input[pos + 1]);
 }
 
@@ -63,6 +64,8 @@ static void tbox_css_token_init(tbox_css_token *out, tbox_css_token_type type, t
 static void tbox_css_tokenizer_consume_ident(tbox_css_tokenizer *t) {
     if (t->input[t->position] == '-') {
         t->position++;
+        if (t->position < t->length && t->input[t->position] == '-')
+            t->position++; /* "--" of a custom property name */
     }
     t->position++; /* the nmstart byte itself */
 

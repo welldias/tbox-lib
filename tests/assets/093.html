@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.root { display: flow-root; background: white; border: 2px solid #94a3b8; padding: 8px; margin-bottom: 12px; }
+.steps { padding-left: 30px; }
+.steps div { display: list-item; margin: 4px 0; }
+.squares span { display: list-item; list-style-type: square; margin-left: 24px; }
+.roman p { display: list-item; list-style: upper-roman inside; margin: 2px 0; }
+</style></head><body>
+<h1>display: flow-root e list-item</h1>
+<div class="root">flow-root se comporta como um bloco</div>
+<div class="root steps"><div>div com display list-item</div><div>segundo item</div><div>terceiro item</div></div>
+<div class="root squares"><span>span como list-item quadrado</span><span>outro</span></div>
+<div class="root roman"><p>paragrafo como item romano inside</p><p>segundo</p></div>
+</body></html>

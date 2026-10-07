@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 15px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+p { width: 280px; white-space: nowrap; overflow: hidden; background: white; border: 1px solid #94a3b8; padding: 6px; margin: 0 0 8px; }
+.e { text-overflow: ellipsis; }
+.s1 { text-overflow: " [...]"; }
+.s2 { text-overflow: "~"; }
+.s3 { text-overflow: clip "->"; }
+</style></head><body>
+<h1>text-overflow com string</h1>
+<p class="e">ellipsis: um texto comprido demais para caber nesta caixa</p>
+<p class="s1">string " [...]": um texto comprido demais para caber aqui</p>
+<p class="s2">string "~": um texto comprido demais para caber nesta caixa</p>
+<p class="s3">dois valores, o do fim vale: texto comprido demais para caber</p>
+</body></html>

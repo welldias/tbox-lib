@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html><head><style>
+body { font: 13px sans-serif; background: #eef2f7; color: #1e293b; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 24px; }
+.grid { display: flex; flex-wrap: wrap; gap: 12px; width: 780px; }
+.f { width: 180px; }
+.f div { height: 90px; background: url(bird.png) center / cover; }
+.f p { margin: 4px 0 0; }
+.g { filter: grayscale(1); } .s { filter: sepia(100%); } .sat { filter: saturate(3); } .h { filter: hue-rotate(180deg); }
+.i { filter: invert(1); } .o { filter: opacity(0.4); } .b { filter: brightness(1.6); } .c { filter: contrast(2.5); }
+.combo { filter: grayscale(1) brightness(1.3) contrast(1.4); }
+.card { filter: hue-rotate(90deg); width: 180px; height: 90px; background: #2563eb; color: white; padding: 6px; box-sizing: border-box; border: 4px solid #f59e0b; }
+</style></head><body>
+<h1>filter: funcoes de cor</h1>
+<div class="grid">
+  <div class="f"><div></div><p>sem filtro</p></div>
+  <div class="f g"><div></div><p>grayscale(1)</p></div>
+  <div class="f s"><div></div><p>sepia(100%)</p></div>
+  <div class="f sat"><div></div><p>saturate(3)</p></div>
+  <div class="f h"><div></div><p>hue-rotate(180deg)</p></div>
+  <div class="f i"><div></div><p>invert(1)</p></div>
+  <div class="f o"><div></div><p>opacity(0.4)</p></div>
+  <div class="f b"><div></div><p>brightness(1.6)</p></div>
+  <div class="f c"><div></div><p>contrast(2.5)</p></div>
+  <div class="f combo"><div></div><p>grayscale + brightness + contrast</p></div>
+  <div class="card">hue-rotate(90deg) em cores e borda</div>
+</div>
+</body></html>

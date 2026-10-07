@@ -90,9 +90,7 @@ double tbox_context_control_size(tbox_style_length length, double fallback) {
 }
 
 const tbox_font_face *tbox_context_control_font(tbox_context *ctx, const tbox_style *style) {
-    return ctx->fonts != NULL ? tbox_font_face_cache_get(ctx->fonts,
-        tbox_string_view_from_cstr(style->font_family), style->font_weight_bold,
-        style->font_italic, style->font_size) : NULL;
+    return ctx->fonts != NULL ? tbox_layout_style_face(ctx->fonts, style) : NULL;
 }
 
 static void tbox_context_control_corners(tbox_paint_op *op, const tbox_style *style,

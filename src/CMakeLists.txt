@@ -107,6 +107,9 @@ if(TBOX_BUILD_STATIC)
     endif()
     if(TBOX_WAYLAND_FOUND)
         target_compile_definitions(tbox_static PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)
+        if(WAYLAND_CURSOR_FOUND)
+            target_compile_definitions(tbox_static PRIVATE TBOX_HAS_WAYLAND_CURSOR=1)
+        endif()
         add_dependencies(tbox_static tbox_wayland_xdg_shell_protocol)
         target_include_directories(tbox_static PRIVATE
             "${TBOX_XDG_SHELL_PROTOCOL_DIR}"
@@ -140,6 +143,9 @@ if(TBOX_BUILD_SHARED)
     endif()
     if(TBOX_WAYLAND_FOUND)
         target_compile_definitions(tbox_shared PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)
+        if(WAYLAND_CURSOR_FOUND)
+            target_compile_definitions(tbox_shared PRIVATE TBOX_HAS_WAYLAND_CURSOR=1)
+        endif()
         add_dependencies(tbox_shared tbox_wayland_xdg_shell_protocol)
         target_include_directories(tbox_shared PRIVATE
             "${TBOX_XDG_SHELL_PROTOCOL_DIR}"

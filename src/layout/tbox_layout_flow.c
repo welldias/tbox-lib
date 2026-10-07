@@ -266,6 +266,35 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.border_spacing_y         = container_style->border_spacing_y;
     anon.accent_color             = container_style->accent_color;
     anon.caret_color              = container_style->caret_color;
+    anon.root_font_size           = container_style->root_font_size;
+    anon.custom_properties        = container_style->custom_properties;
+    anon.font_weight              = container_style->font_weight;
+    anon.font_stretch             = container_style->font_stretch;
+    anon.font_small_caps          = container_style->font_small_caps;
+    anon.font_kerning_none        = container_style->font_kerning_none;
+    anon.word_break_keep_all      = container_style->word_break_keep_all;
+    anon.hyphens_none             = container_style->hyphens_none;
+    anon.tab_size                 = container_style->tab_size;
+    anon.tab_size_length          = container_style->tab_size_length;
+    anon.list_style_inside        = container_style->list_style_inside;
+    anon.cursor                   = container_style->cursor;
+    anon.text_align_last          = container_style->text_align_last;
+    anon.visibility_collapse      = container_style->visibility_collapse;
+    anon.empty_cells_hide         = container_style->empty_cells_hide;
+    anon.image_rendering_pixelated     = container_style->image_rendering_pixelated;
+    anon.text_underline_position_under = container_style->text_underline_position_under;
+    memcpy(anon.text_shadows, container_style->text_shadows, sizeof(anon.text_shadows));
+    anon.text_shadow_count = container_style->text_shadow_count;
+    /* Not inherited, but they act on the block container's lines, which
+     * live in its anonymous boxes. */
+    anon.line_clamp    = container_style->line_clamp;
+    anon.text_overflow = container_style->text_overflow;
+    memcpy(anon.text_overflow_string, container_style->text_overflow_string, sizeof(anon.text_overflow_string));
+    anon.text_wrap_balance     = container_style->text_wrap_balance;
+    anon.text_indent_hanging   = container_style->text_indent_hanging;
+    anon.text_indent_each_line = container_style->text_indent_each_line;
+    if (container_style->overflow_x != TBOX_STYLE_OVERFLOW_Y_VISIBLE && container_style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS)
+        anon.overflow_x = TBOX_STYLE_OVERFLOW_Y_HIDDEN;
 
     /* `box->style` is a pointer that must outlive this call -- unlike `anon`
      * itself (a local), the synthesized style needs arena-backed storage,

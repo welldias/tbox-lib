@@ -65,7 +65,12 @@ typedef struct tbox_layout_box {
 
     tbox_rect margin_box, border_box, padding_box, content_box;
     double scroll_content_height; /* laid-out children extent before viewport clipping */
+    /* style->background_image decoded through the image cache, NULL when
+     * there is none or it failed to load. */
+    const tbox_image *background_image;
+    const tbox_image *background_layer_images[3]; /* style->background_layers' images, same convention */
     bool table_suppress_border;   /* collapsed tables paint shared edges once */
+    bool empty_cell_hidden;       /* `empty-cells: hide` on an empty cell: no background or border */
     struct tbox_table_edge *table_edges;
     size_t table_edge_count;
 
@@ -118,6 +123,11 @@ typedef struct tbox_table_edge {
  * the top of ARCHITECTURE.md). Returns NULL only if `root` has no ELEMENT
  * to lay out (e.g. an empty document, or a DOCUMENT node with no ELEMENT
  * child). */
+/* The face `style` renders with: its font-family, numeric weight (from
+ * font_weight_bold when a hand-built style leaves it 0), stretch, italic
+ * flag and size. */
+const tbox_font_face *tbox_layout_style_face(tbox_font_face_cache *fonts, const tbox_style *style);
+
 tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double viewport_width, double viewport_height);
 
 #ifdef __cplusplus

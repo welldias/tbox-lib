@@ -86,7 +86,7 @@ static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbo
                 }
                 if (line_width > text_width) text_width = line_width;
             } else {
-                const tbox_font_face *face = tbox_font_face_cache_get(fonts, tbox_string_view_from_cstr(cell_style->font_family), cell_style->font_weight_bold, cell_style->font_italic, cell_style->font_size);
+                const tbox_font_face *face = tbox_layout_style_face(fonts, cell_style);
                 tbox_string_view text = tbox_html_node_text_content(arena, cell);
                 if (face != NULL) {
                     text_width = tbox_font_measure_text_spaced(face, text, cell_style->letter_spacing);

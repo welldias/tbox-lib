@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    .row {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .box {
+      background: #3b82f6;
+      color: white;
+      padding: 8px;
+      font-size: 13px;
+    }
+
+    .sq {
+      width: 120px;
+      aspect-ratio: 1;
+    }
+
+    .wide {
+      width: 240px;
+      aspect-ratio: 16 / 9;
+      background: #10b981;
+    }
+
+    .tall {
+      height: 120px;
+      aspect-ratio: 1 / 2;
+      background: #f59e0b;
+    }
+
+    .bb {
+      width: 160px;
+      aspect-ratio: 2 / 1;
+      box-sizing: border-box;
+      border: 6px solid #1e3a8a;
+      background: #93c5fd;
+      color: #1e3a8a;
+    }
+
+    .grow {
+      width: 120px;
+      aspect-ratio: 4;
+      background: #ef4444;
+    }
+
+    .block {
+      aspect-ratio: 5 / 1;
+      background: #8b5cf6;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>aspect-ratio</h1>
+  <div class="row">
+    <div class="box sq">1 / 1</div>
+    <div class="box wide">16 / 9</div>
+    <div class="box tall">altura 120, 1/2</div>
+    <div class="box bb">border-box 2/1</div>
+  </div>
+  <div class="row">
+    <div class="box grow">conteudo maior que a proporcao faz crescer</div>
+  </div>
+  <div class="box block">bloco com largura automatica e proporcao 5 / 1</div>
+</body>
+
+</html>

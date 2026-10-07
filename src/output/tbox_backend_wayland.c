@@ -4,6 +4,13 @@
 
 #include "tbox_backend_wayland.h"
 
+#ifndef TBOX_HAS_WAYLAND_CURSOR
+#define TBOX_HAS_WAYLAND_CURSOR 0
+#endif
+#if TBOX_HAS_WAYLAND_CURSOR
+#include <wayland-cursor.h>
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -120,6 +127,12 @@ struct tbox_backend_wayland {
     /* Events are queued in compositor delivery order. Pointer position is
      * tracked separately for hover and click coordinates. */
     bool pointer_has_focus;
+    uint32_t pointer_enter_serial; /* wl_pointer.set_cursor needs the latest enter serial */
+    tbox_style_cursor cursor;
+#if TBOX_HAS_WAYLAND_CURSOR
+    struct wl_cursor_theme *cursor_theme;
+    struct wl_surface *cursor_surface;
+#endif
     double pointer_x;
     double pointer_y;
     bool pointer_pressed;
@@ -676,13 +689,77 @@ static const struct wl_keyboard_listener tbox_backend_wayland_keyboard_listener 
  * handler here, same reasoning as the keyboard listener's comment above;
  * axis_value120 (v8) and axis_relative_direction (v9) are not reachable at
  * that version and are left out. */
+/* Applies backend->cursor to the pointer: CSS's cursor name first, then the
+ * classic X11 name most themes also carry. */
+static void tbox_backend_wayland_apply_cursor(tbox_backend_wayland *backend) {
+#if TBOX_HAS_WAYLAND_CURSOR
+    if (backend->pointer == NULL || !backend->pointer_has_focus)
+        return;
+    if (backend->cursor == TBOX_STYLE_CURSOR_NONE) {
+        wl_pointer_set_cursor(backend->pointer, backend->pointer_enter_serial, NULL, 0, 0);
+        return;
+    }
+    if (backend->cursor_theme == NULL && backend->shm != NULL)
+        backend->cursor_theme = wl_cursor_theme_load(NULL, 24, backend->shm);
+    if (backend->cursor_surface == NULL && backend->compositor != NULL)
+        backend->cursor_surface = wl_compositor_create_surface(backend->compositor);
+    if (backend->cursor_theme == NULL || backend->cursor_surface == NULL)
+        return;
+    static const char *const names[][2] = {
+        [TBOX_STYLE_CURSOR_AUTO]        = { "default", "left_ptr" },
+        [TBOX_STYLE_CURSOR_DEFAULT]     = { "default", "left_ptr" },
+        [TBOX_STYLE_CURSOR_POINTER]     = { "pointer", "hand2" },
+        [TBOX_STYLE_CURSOR_TEXT]        = { "text", "xterm" },
+        [TBOX_STYLE_CURSOR_MOVE]        = { "move", "fleur" },
+        [TBOX_STYLE_CURSOR_WAIT]        = { "wait", "watch" },
+        [TBOX_STYLE_CURSOR_HELP]        = { "help", "question_arrow" },
+        [TBOX_STYLE_CURSOR_CROSSHAIR]   = { "crosshair", "cross" },
+        [TBOX_STYLE_CURSOR_NOT_ALLOWED] = { "not-allowed", "crossed_circle" },
+        [TBOX_STYLE_CURSOR_GRAB]        = { "grab", "openhand" },
+        [TBOX_STYLE_CURSOR_GRABBING]    = { "grabbing", "closedhand" },
+        [TBOX_STYLE_CURSOR_COL_RESIZE]  = { "col-resize", "sb_h_double_arrow" },
+        [TBOX_STYLE_CURSOR_ROW_RESIZE]  = { "row-resize", "sb_v_double_arrow" },
+        [TBOX_STYLE_CURSOR_EW_RESIZE]   = { "ew-resize", "sb_h_double_arrow" },
+        [TBOX_STYLE_CURSOR_NS_RESIZE]   = { "ns-resize", "sb_v_double_arrow" },
+        [TBOX_STYLE_CURSOR_PROGRESS]    = { "progress", "left_ptr_watch" },
+        [TBOX_STYLE_CURSOR_NONE]        = { "default", "left_ptr" },
+    };
+    size_t index = (size_t)backend->cursor < sizeof(names) / sizeof(names[0]) ? (size_t)backend->cursor : 0;
+    struct wl_cursor *cursor = wl_cursor_theme_get_cursor(backend->cursor_theme, names[index][0]);
+    if (cursor == NULL)
+        cursor = wl_cursor_theme_get_cursor(backend->cursor_theme, names[index][1]);
+    if (cursor == NULL)
+        cursor = wl_cursor_theme_get_cursor(backend->cursor_theme, "left_ptr");
+    if (cursor == NULL || cursor->image_count == 0)
+        return;
+    struct wl_cursor_image *image = cursor->images[0];
+    struct wl_buffer *buffer      = wl_cursor_image_get_buffer(image);
+    if (buffer == NULL)
+        return;
+    wl_pointer_set_cursor(backend->pointer, backend->pointer_enter_serial, backend->cursor_surface, (int32_t)image->hotspot_x, (int32_t)image->hotspot_y);
+    wl_surface_attach(backend->cursor_surface, buffer, 0, 0);
+    wl_surface_damage(backend->cursor_surface, 0, 0, (int32_t)image->width, (int32_t)image->height);
+    wl_surface_commit(backend->cursor_surface);
+#else
+    (void)backend;
+#endif
+}
+
+void tbox_backend_wayland_set_cursor(tbox_backend_wayland *backend, tbox_style_cursor cursor) {
+    if (backend == NULL || backend->cursor == cursor)
+        return;
+    backend->cursor = cursor;
+    tbox_backend_wayland_apply_cursor(backend);
+}
+
 static void tbox_backend_wayland_pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
     (void)pointer;
-    (void)serial;
     tbox_backend_wayland *backend = data;
 
     if (surface == backend->surface) {
-        backend->pointer_has_focus = true;
+        backend->pointer_has_focus    = true;
+        backend->pointer_enter_serial = serial;
+        tbox_backend_wayland_apply_cursor(backend);
     }
     backend->pointer_x = wl_fixed_to_double(surface_x);
     backend->pointer_y = wl_fixed_to_double(surface_y);
@@ -919,6 +996,10 @@ void tbox_backend_wayland_destroy(tbox_backend_wayland *backend) {
         return;
     }
 
+#if TBOX_HAS_WAYLAND_CURSOR
+    if (backend->cursor_surface != NULL) wl_surface_destroy(backend->cursor_surface);
+    if (backend->cursor_theme != NULL) wl_cursor_theme_destroy(backend->cursor_theme);
+#endif
     if (backend->paste_fd >= 0) close(backend->paste_fd);
     free(backend->paste_buffer);
     for (tbox_clipboard_write *pending = backend->writes; pending != NULL;) {

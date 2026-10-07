@@ -12,7 +12,9 @@
  * bold_data, same as before this cache understood any other family. */
 typedef struct tbox_font_face_cache_entry {
     char family[64];
-    bool bold;
+    bool kerning;
+    int weight;
+    double stretch;
     bool italic;
     double size_px;
     tbox_font_face *face;
@@ -25,7 +27,8 @@ typedef struct tbox_font_face_cache_entry {
  * (tbox_font_face_cache_copy_bytes), same as regular_data/bold_data. */
 typedef struct tbox_font_face_cache_family_blob {
     char family[64];
-    bool bold;
+    int weight;
+    double stretch;
     bool italic;
     const void *data;
     size_t size;
@@ -110,9 +113,22 @@ void tbox_font_face_cache_destroy(tbox_font_face_cache *cache) {
 }
 
 const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox_string_view family, bool bold, bool italic, double size_px) {
+    return tbox_font_face_cache_get_styled(cache, family, bold ? 700 : 400, 100.0, italic, size_px);
+}
+
+const tbox_font_face *tbox_font_face_cache_get_styled(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px) {
+    return tbox_font_face_cache_get_kerned(cache, family, weight, stretch, italic, size_px, true);
+}
+
+const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px, bool kerning) {
     if (cache == NULL) {
         return NULL;
     }
+    if (weight <= 0)
+        weight = 400;
+    if (stretch <= 0.0)
+        stretch = 100.0;
+    bool bold = weight >= 600;
 
     /* Truncate-not-reject, same posture as
      * tbox_font_source_fontconfig_family_cstr (src/font/tbox_font_source_fontconfig.c)
@@ -127,7 +143,7 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox
     size_t entry_count = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < entry_count; i++) {
         const tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
-        if (entry->bold == bold && entry->italic == italic && entry->size_px == size_px && strcmp(entry->family, family_buf) == 0) {
+        if (entry->weight == weight && entry->stretch == stretch && entry->italic == italic && entry->kerning == kerning && entry->size_px == size_px && strcmp(entry->family, family_buf) == 0) {
             return entry->face;
         }
     }
@@ -135,7 +151,8 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox
     const void *data = NULL;
     size_t size      = 0;
 
-    if (family_buf[0] == '\0' && !italic) {
+    bool preloaded = family_buf[0] == '\0' && !italic && (weight == 400 || weight == 700) && stretch == 100.0;
+    if (preloaded) {
         /* Default family, non-italic -- exactly the original v0..v12
          * behavior, no resolver call: regular_data/bold_data were preloaded
          * eagerly for exactly this case. */
@@ -163,27 +180,31 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox
         size_t blob_count                            = tbox_vector_length(&cache->family_blobs);
         for (size_t i = 0; i < blob_count; i++) {
             const tbox_font_face_cache_family_blob *candidate = tbox_vector_at(&cache->family_blobs, i);
-            if (candidate->bold == bold && candidate->italic == italic && strcmp(candidate->family, family_buf) == 0) {
+            if (candidate->weight == weight && candidate->stretch == stretch && candidate->italic == italic && strcmp(candidate->family, family_buf) == 0) {
                 blob = candidate;
                 break;
             }
         }
 
+        /* The default family at another weight/stretch without a working
+         * resolver still gets its closest preloaded face. */
+        bool default_upright = family_buf[0] == '\0' && !italic;
         if (blob == NULL) {
-            if (cache->resolver == NULL) {
-                return NULL;
-            }
-
             tbox_font_query query = {
-                .family = family,
-                .bold   = bold,
-                .italic = italic,
+                .family  = family,
+                .bold    = bold,
+                .italic  = italic,
+                .weight  = weight,
+                .stretch = stretch,
             };
 
             const void *resolved_data = NULL;
             size_t resolved_size      = 0;
-            if (!cache->resolver(cache->resolver_userdata, query, &resolved_data, &resolved_size)) {
-                return NULL;
+            if (cache->resolver == NULL || !cache->resolver(cache->resolver_userdata, query, &resolved_data, &resolved_size)) {
+                if (!default_upright)
+                    return NULL;
+                resolved_data = bold ? cache->bold_data : cache->regular_data;
+                resolved_size = bold ? cache->bold_size : cache->regular_size;
             }
 
             const void *copied_data = tbox_font_face_cache_copy_bytes(&cache->arena, resolved_data, resolved_size);
@@ -193,8 +214,9 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox
 
             tbox_font_face_cache_family_blob *new_blob = tbox_vector_push(&cache->family_blobs);
             memcpy(new_blob->family, family_buf, sizeof(family_buf));
-            new_blob->bold   = bold;
-            new_blob->italic = italic;
+            new_blob->weight  = weight;
+            new_blob->stretch = stretch;
+            new_blob->italic  = italic;
             new_blob->data   = copied_data;
             new_blob->size   = resolved_size;
             blob             = new_blob;
@@ -211,9 +233,12 @@ const tbox_font_face *tbox_font_face_cache_get(tbox_font_face_cache *cache, tbox
         return NULL;
     }
 
+    tbox_font_face_set_kerning(face, kerning);
     tbox_font_face_cache_entry *entry = tbox_vector_push(&cache->entries);
+    entry->kerning                    = kerning;
     memcpy(entry->family, family_buf, sizeof(family_buf));
-    entry->bold    = bold;
+    entry->weight  = weight;
+    entry->stretch = stretch;
     entry->italic  = italic;
     entry->size_px = size_px;
     entry->face    = face;

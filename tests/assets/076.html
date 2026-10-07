@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      width: 760px;
+    }
+
+    .tile {
+      width: 170px;
+      height: 120px;
+      border: 2px solid #475569;
+      background-color: #fff;
+      color: #0f172a;
+      font-size: 13px;
+    }
+
+    .repeat {
+      background-image: url(pixel-heart.png);
+    }
+
+    .norepeat {
+      background: #fef3c7 url(bird.png) no-repeat;
+    }
+
+    .cover {
+      background: url(bird.png) center / cover no-repeat;
+    }
+
+    .contain {
+      background: #e0f2fe url(bird.png) center / contain no-repeat;
+    }
+
+    .pos {
+      background: #dcfce7 url(pixel-heart.png) right 10px bottom 10px / 32px 32px no-repeat;
+      image-rendering: pixelated;
+    }
+
+    .rx {
+      background: #fce7f3 url(pixel-heart.png) 0 50% / 24px repeat-x;
+      image-rendering: pixelated;
+    }
+
+    .rounded {
+      border-radius: 30px;
+      background: url(bird.png) center / cover;
+    }
+
+    .clip {
+      padding: 12px;
+      border: 10px dashed #64748b;
+      background: url(yellow.png) 0 0 / 40px 40px;
+      background-clip: content-box;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>background-image, size, position e repeat</h1>
+  <div class="grid">
+    <div class="tile repeat">repeat</div>
+    <div class="tile norepeat">no-repeat</div>
+    <div class="tile cover">cover</div>
+    <div class="tile contain">contain</div>
+    <div class="tile pos">right 10px bottom 10px</div>
+    <div class="tile rx">repeat-x</div>
+    <div class="tile rounded"></div>
+    <div class="tile clip">content-box</div>
+  </div>
+</body>
+
+</html>

@@ -53,6 +53,54 @@ void tbox_context_apply_scroll(tbox_context *ctx, tbox_layout_box *box) {
     }
 }
 
+/* position: sticky -- after scrolling, a sticky box whose `top` (or
+ * `bottom`) edge would pass the matching edge of its scrollport (the
+ * nearest scroll container's padding box, or the viewport) plus the offset
+ * is held there, but never pushed out of its parent's content box. */
+static void tbox_context_stick(tbox_layout_box *box, tbox_rect scrollport) {
+    for (; box != NULL; box = box->next_sibling) {
+        const tbox_style *style = box->style;
+        tbox_rect child_port    = scrollport;
+        if (style != NULL && style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO)
+            child_port = box->padding_box;
+        if (style != NULL && style->position == TBOX_STYLE_POSITION_STICKY && box->parent != NULL) {
+            const tbox_layout_box *parent = box->parent;
+            double dy                     = 0.0;
+            if (style->offset[0].kind != TBOX_STYLE_LENGTH_AUTO) {
+                double threshold = scrollport.y + tbox_style_length_resolve(style->offset[0], scrollport.height);
+                if (box->border_box.y < threshold) {
+                    double room = parent->content_box.y + parent->content_box.height - (box->margin_box.y + box->margin_box.height);
+                    dy          = threshold - box->border_box.y;
+                    if (dy > room)
+                        dy = room > 0.0 ? room : 0.0;
+                }
+            } else if (style->offset[2].kind != TBOX_STYLE_LENGTH_AUTO) {
+                double threshold = scrollport.y + scrollport.height - tbox_style_length_resolve(style->offset[2], scrollport.height);
+                double bottom    = box->border_box.y + box->border_box.height;
+                if (bottom > threshold) {
+                    double room = box->margin_box.y - parent->content_box.y;
+                    dy          = threshold - bottom;
+                    if (-dy > room)
+                        dy = room > 0.0 ? -room : 0.0;
+                }
+            }
+            if (dy != 0.0) {
+                box->margin_box.y += dy;
+                box->border_box.y += dy;
+                box->padding_box.y += dy;
+                box->content_box.y += dy;
+                for (size_t i = 0; i < box->text_run_count; i++) box->text_runs[i].rect.y += dy;
+                tbox_context_shift_subtree(box->first_child, dy);
+            }
+        }
+        tbox_context_stick(box->first_child, child_port);
+    }
+}
+
+void tbox_context_apply_sticky(tbox_context *ctx, double viewport_width, double viewport_height) {
+    tbox_context_stick(ctx->root, (tbox_rect){ 0.0, 0.0, viewport_width, viewport_height });
+}
+
 void tbox_context_reveal_focused(tbox_context *ctx) {
     if (!ctx->focus_scroll_pending) return;
     ctx->focus_scroll_pending = false;
@@ -96,7 +144,10 @@ static bool tbox_context_scrollbar_geometry(const tbox_layout_box *box, double o
         box->content_box.height <= 0.0) return false;
     double max_scroll = box->scroll_content_height - box->content_box.height;
     if (max_scroll <= 0.0) return false;
-    double width = box->padding_box.width < 10.0 ? box->padding_box.width : 10.0;
+    /* scrollbar-width: thin is a narrower bar; none keeps scrolling but
+     * paints and hit-tests no bar (see tbox_context_scrollbar_visible). */
+    double bar   = box->style->scrollbar_width == TBOX_STYLE_SCROLLBAR_WIDTH_THIN ? 6.0 : 10.0;
+    double width = box->padding_box.width < bar ? box->padding_box.width : bar;
     tbox_rect track = {box->padding_box.x + box->padding_box.width - width,
                        box->padding_box.y, width, box->padding_box.height};
     double thumb_height = track.height * track.height / (track.height + max_scroll);
@@ -112,6 +163,10 @@ static bool tbox_context_scrollbar_geometry(const tbox_layout_box *box, double o
     return true;
 }
 
+static bool tbox_context_scrollbar_visible(const tbox_layout_box *box) {
+    return box->style != NULL && box->style->scrollbar_width != TBOX_STYLE_SCROLLBAR_WIDTH_NONE;
+}
+
 static tbox_scroll_state *tbox_context_existing_scroll_state(tbox_context *ctx, const tbox_html_node *node) {
     for (tbox_scroll_state *state = ctx->scroll_states; state != NULL; state = state->next)
         if (state->node == node) return state;
@@ -122,7 +177,7 @@ static size_t tbox_context_scrollbar_count(const tbox_layout_box *box) {
     size_t count = 0;
     for (; box != NULL; box = box->next_sibling) {
         tbox_scrollbar_geometry geometry;
-        if (tbox_context_scrollbar_geometry(box, 0.0, &geometry)) count++;
+        if (tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, 0.0, &geometry)) count++;
         count += tbox_context_scrollbar_count(box->first_child);
     }
     return count;
@@ -133,18 +188,21 @@ static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_b
     for (; box != NULL; box = box->next_sibling) {
         tbox_scrollbar_geometry geometry;
         tbox_scroll_state *state = box->node != NULL ? tbox_context_existing_scroll_state(ctx, box->node) : NULL;
-        if (tbox_context_scrollbar_geometry(box, state != NULL ? state->y : 0.0, &geometry)) {
+        if (tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, state != NULL ? state->y : 0.0, &geometry)) {
+            /* scrollbar-color, alpha 0 being the default colors. */
+            tbox_css_rgba track_color = box->style->scrollbar_track_color.a != 0 ? box->style->scrollbar_track_color : (tbox_css_rgba){ 220, 224, 230, 255 };
+            tbox_css_rgba thumb_color = box->style->scrollbar_thumb_color.a != 0 ? box->style->scrollbar_thumb_color : (tbox_css_rgba){ 100, 110, 122, 255 };
             tbox_rect clip = geometry.track;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
             items[(*index)++] = (tbox_paint_op){
                 .kind = TBOX_PAINT_FILL_RECT, .rect = geometry.track,
-                .color = {220, 224, 230, 255}, .has_clip = true, .clip = clip,
+                .color = track_color, .has_clip = true, .clip = clip,
             };
             items[(*index)++] = (tbox_paint_op){
                 .kind = TBOX_PAINT_FILL_RECT, .rect = geometry.thumb,
-                .color = {100, 110, 122, 255}, .radius = 4.0,
+                .color = thumb_color, .radius = geometry.thumb.width / 2.5,
                 .has_clip = true, .clip = clip,
             };
         }
@@ -172,7 +230,7 @@ static const tbox_layout_box *tbox_context_scrollbar_at(const tbox_layout_box *b
         if (has_clip && !tbox_context_point_in_rect(clip, x, y)) continue;
         tbox_scrollbar_geometry geometry;
         if ((box->style == NULL || !box->style->pointer_events_none) &&
-            tbox_context_scrollbar_geometry(box, 0.0, &geometry) &&
+            tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, 0.0, &geometry) &&
             tbox_context_point_in_rect(geometry.track, x, y)) last = box;
         bool child_has_clip = has_clip;
         tbox_rect child_clip = clip;
