@@ -3710,6 +3710,111 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* Stable gutter reserves space even before overflow; :active follows a
+     * pointer press and clears on release. */
+    {
+        const char *html = "<div id='panel'><button id='press'>Press</button><div id='child'>x</div></div>";
+        const char *css = "#panel { width: 100px; height: 70px; overflow-y: auto; scrollbar-gutter: stable; scrollbar-width: thin; }"
+                          "#child { width: 100%; } button:active { background-color: red; }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 200.0, 120.0, &list);
+            const tbox_layout_box *button = tbox_context_hit_test(ctx, 5.0, 5.0);
+            TBOX_TEST_ASSERT(button != NULL);
+            if (button != NULL) {
+                double x = button->border_box.x + 2.0, y = button->border_box.y + 2.0;
+                const tbox_layout_box *panel = button;
+                while (panel->parent != NULL) panel = panel->parent;
+                TBOX_TEST_ASSERT(panel->scrollbar_gutter == 6.0 && panel->content_box.width == 94.0 && panel->border_box.width == 100.0);
+                TBOX_TEST_ASSERT(tbox_context_set_active_at(ctx, true, x, y));
+                tbox_context_run_frame(ctx, 200.0, 120.0, &list);
+                button = tbox_context_hit_test(ctx, x, y);
+                TBOX_TEST_ASSERT(button != NULL && button->style != NULL && button->style->background_color.r == 255 && button->style->background_color.g == 0);
+                TBOX_TEST_ASSERT(tbox_context_set_active_at(ctx, false, 0.0, 0.0));
+                tbox_context_run_frame(ctx, 200.0, 120.0, &list);
+                button = tbox_context_hit_test(ctx, x, y);
+                TBOX_TEST_ASSERT(button != NULL && button->style != NULL && button->style->background_color.r != 255);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* A media breakpoint changes the target; transition paints intermediate
+     * values on subsequent frames and finishes at the resolved color. */
+    {
+        const char *css = "#box { width: 80px; height: 30px; background-color: red; transition: background-color 1s linear; }"
+                          "@media screen and (min-width: 500px) { #box { background-color: blue; }"
+                          "@media (orientation: landscape) { #box { color: green; } } }";
+        tbox_context *ctx = open_cstr("<div id='box'>x</div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_set_animation_time(ctx, 0.0);
+            tbox_context_run_frame(ctx, 400.0, 200.0, &list);
+            const tbox_layout_box *box = tbox_context_hit_test(ctx, 5.0, 5.0);
+            while (box != NULL && box->parent != NULL) box = box->parent;
+            TBOX_TEST_ASSERT(box != NULL && box->style->background_color.r == 255 && box->style->background_color.b == 0);
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            box = tbox_context_hit_test(ctx, 5.0, 5.0);
+            while (box != NULL && box->parent != NULL) box = box->parent;
+            TBOX_TEST_ASSERT(box != NULL && box->style->background_color.r == 255 && tbox_context_animations_active(ctx));
+            TBOX_TEST_ASSERT(box != NULL && box->style->color.g == 128);
+            tbox_context_set_animation_time(ctx, 0.5);
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            box = tbox_context_hit_test(ctx, 5.0, 5.0);
+            while (box != NULL && box->parent != NULL) box = box->parent;
+            TBOX_TEST_ASSERT(box != NULL && box->style->background_color.r >= 126 && box->style->background_color.r <= 129 && box->style->background_color.b >= 126);
+            tbox_context_set_animation_time(ctx, 1.0);
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            box = tbox_context_hit_test(ctx, 5.0, 5.0);
+            while (box != NULL && box->parent != NULL) box = box->parent;
+            TBOX_TEST_ASSERT(box != NULL && box->style->background_color.b == 255 && !tbox_context_animations_active(ctx));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* @font-face registers a local font and the layout uses that exact face. */
+    {
+        const char *css = "@font-face { font-family: 'Fixture Font'; src: url('../../external/liberation-sans/LiberationSans-Regular.ttf'); }"
+                          "#box { font-family: 'Fixture Font'; font-size: 19px; }";
+        tbox_context_options options = tbox_context_options_default();
+        options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
+        tbox_context *ctx = tbox_context_open_with_options("<div id='box'>Font fixture</div>", strlen("<div id='box'>Font fixture</div>"), css, strlen(css), fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            const tbox_font_face *registered = tbox_font_face_cache_get(fonts, tbox_string_view_make("Fixture Font", 12), false, false, 19.0);
+            TBOX_TEST_ASSERT(registered != NULL);
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            bool used = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN && list.items[i].face == registered) used = true;
+            TBOX_TEST_ASSERT(used);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* The caller's reduced-motion preference participates in @media. */
+    {
+        const char *html = "<div id='box'>motion</div>";
+        const char *css = "#box { color: red; transition: color 1s; }"
+                          "@media (prefers-reduced-motion: reduce) { #box { color: green; transition: none; } }";
+        tbox_context_options options = tbox_context_options_default();
+        options.prefers_reduced_motion = true;
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css, strlen(css), fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            const tbox_layout_box *box = tbox_context_hit_test(ctx, 5.0, 5.0);
+            while (box != NULL && box->parent != NULL) box = box->parent;
+            TBOX_TEST_ASSERT(box != NULL && box->style->color.g == 128 && box->style->transition_duration[0] == 0.0);
+            tbox_context_close(ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

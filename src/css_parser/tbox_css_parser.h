@@ -27,7 +27,7 @@ void tbox_css_parser_init(tbox_css_parser *parser, const char *input, size_t len
  * no error/has_error state at all; "failure" of an individual grammar
  * production just means "produce nothing here, and let the caller's
  * recovery logic resynchronize." */
-void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_rulesets, size_t *out_ruleset_count);
+void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_rulesets, size_t *out_ruleset_count, tbox_css_font_face_rule **out_faces, size_t *out_face_count);
 
 /* Parses a standalone selector-group -- the same grammar as the
  * `selector_group` embedded in a ruleset (e.g. "div.foo > p, #bar[href]"),

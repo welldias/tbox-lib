@@ -161,8 +161,8 @@ supports solid, dashed, dotted, and double strokes. Images support
 `object-fit: fill|contain|cover|none|scale-down`, centered in the CSS image box. See
 `tests/assets/040.html` for examples.
 `object-position` aligns the fitted image with `left`, `center`, `right`,
-`top`, `bottom`, percentages, or pixel/`em` offsets (one or two values;
-three/four-value edge-offset syntax is not supported).
+`top`, `bottom`, percentages, or pixel/`em` offsets, including three/four-value
+edge offsets such as `right 10px bottom 20px`.
 See `tests/assets/041.html` for positioning examples.
 `none` keeps intrinsic image pixels and clips overflow; `scale-down` picks
 the smaller result of `none` and `contain`. See `tests/assets/043.html`.
@@ -280,6 +280,42 @@ sticky` holds boxes against their scrollport; see `tests/assets/100.html`.
 `font-kerning` (on by default); see `tests/assets/101.html`. Soft hyphens
 (`&shy;`) break with a visible hyphen unless `hyphens: none`; see
 `tests/assets/102.html`.
+`word-wrap` is an alias of `overflow-wrap`; `text-wrap-style: balance|auto`
+uses the existing line balancing behavior. Logical corner radii
+(`border-start-start-radius`, `border-start-end-radius`,
+`border-end-end-radius`, `border-end-start-radius`) map to physical corners
+in the supported horizontal left-to-right writing mode.
+`background-repeat: space|round` now spaces or resizes tiles, including
+the aspect-ratio adjustment for an auto size on the other axis. Attribute
+selectors accept an explicit case-sensitive `s` modifier. See
+`tests/assets/103.html` for these additions.
+Desktop viewport units `svw`/`svh`, `lvw`/`lvh`, and `dvw`/`dvh` (plus their
+`min`/`max` forms) resolve to the current window size, as this backend has
+no browser chrome. `cursor` also accepts `copy`, `zoom-in`, and `zoom-out`;
+the Wayland theme may fall back to an arrow if a shape is unavailable.
+`list-style-type` accepts `lower-greek`, `disclosure-open`, and
+`disclosure-closed`. `:active` matches a pointer-pressed element and its
+ancestors until release. `background-attachment: fixed` positions each
+background layer against the window while clipping it to its element;
+`local` currently behaves like `scroll`. `scrollbar-gutter: stable` reserves
+the vertical bar's space for `overflow-y: auto|hidden`; `both-edges` is not
+implemented. See `tests/assets/104.html` for these additions.
+
+`@media` now applies nested rules according to the viewport during each
+frame, including resize. It supports `screen`/`all`, comma-separated
+alternatives, `and`/`not`, `min-width`/`max-width`, `min-height`/`max-height`
+and `orientation` (`px`, `em`, `rem` for dimensions). The caller can set
+`tbox_context_options.prefers_reduced_motion` for the corresponding media
+query. `print`, other device and user preference queries, and range syntax
+are not yet supported. `transition`
+animates `color`, `background-color` and `opacity` with duration, delay and
+the basic `ease`/`linear`/`ease-in`/`ease-out`/`ease-in-out` curves; the
+shorthand accepts comma-separated entries. The application renders frames
+while a transition is active. `@font-face` loads local `url()` font files
+from the document directory (or the external stylesheet directory), with
+`font-family`, single `font-weight` and `font-style` descriptors; remote URLs,
+font-face rules nested in `@media`, and weight ranges are not supported.
+See `tests/assets/105.html` for all three features.
 
 ## Build and checks
 

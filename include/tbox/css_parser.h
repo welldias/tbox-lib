@@ -76,6 +76,7 @@ typedef struct tbox_css_simple_selector {
     tbox_css_attribute_operator attribute_operator; /* meaningful for ATTRIBUTE only */
     tbox_string_view attribute_value;                /* ATTRIBUTE with value operator; empty for EXISTS */
     bool attribute_case_insensitive;                  /* ATTRIBUTE value modifier `i` (ASCII only) */
+    bool attribute_case_sensitive;                    /* ATTRIBUTE explicit `s`, including HTML enumerated values */
     tbox_string_view pseudo_argument;                /* PSEUDO functional form only (":lang(en)" -> "en"); empty otherwise */
     struct tbox_css_simple_selector *negated_selector; /* :not() argument: one type, universal, ID, class, or attribute selector */
 } tbox_css_simple_selector;
@@ -98,12 +99,24 @@ typedef struct tbox_css_declaration {
                                  * tokenized further -- that is future work. */
 } tbox_css_declaration;
 
+/* Conditions enclosing a ruleset, ordered from inner to outer. */
+typedef struct tbox_css_media_condition {
+    tbox_string_view query;
+    const struct tbox_css_media_condition *parent;
+} tbox_css_media_condition;
+
 typedef struct tbox_css_ruleset {
     tbox_css_selector *selectors;
     size_t selector_count; /* always >= 1 */
     tbox_css_declaration *declarations;
     size_t declaration_count; /* may be 0, e.g. "p { }" */
+    const tbox_css_media_condition *media; /* NULL for an unconditional rule */
 } tbox_css_ruleset;
+
+typedef struct tbox_css_font_face_rule {
+    tbox_css_declaration *declarations;
+    size_t declaration_count;
+} tbox_css_font_face_rule;
 
 /* Opaque: owns the arena backing every ruleset/selector/declaration/string
  * reachable from it. */
@@ -116,10 +129,9 @@ typedef struct tbox_css_stylesheet tbox_css_stylesheet;
  * Grammar coverage: rulesets (selector-group '{' declaration-list '}'),
  * structured selectors (type/universal/id/class/attribute/pseudo-class-or
  * -element, joined by descendant/child/adjacent-sibling combinators), and
- * declarations (property + raw value text). At-rules (@media, @import,
- * @charset, @font-face, @page, ...) are recognized structurally just enough
- * to be skipped whole (their block, if any, or up to the next ';'); nothing
- * about their contents is stored. Property/value validity is not checked at
+ * declarations (property + raw value text). @media preserves nested
+ * rulesets and their conditions; @font-face preserves top-level descriptors.
+ * Other at-rules are skipped whole. Property/value validity is not checked at
  * all in this version (future work); declaration values are stored
  * verbatim, unparsed.
  *
@@ -138,6 +150,8 @@ size_t tbox_css_stylesheet_ruleset_count(const tbox_css_stylesheet *stylesheet);
 /* Array of tbox_css_stylesheet_ruleset_count(stylesheet) elements, in source
  * order. NULL if ruleset_count == 0. */
 const tbox_css_ruleset *tbox_css_stylesheet_rulesets(const tbox_css_stylesheet *stylesheet);
+size_t tbox_css_stylesheet_font_face_count(const tbox_css_stylesheet *stylesheet);
+const tbox_css_font_face_rule *tbox_css_stylesheet_font_faces(const tbox_css_stylesheet *stylesheet);
 
 /* Frees the stylesheet's arena and everything allocated from it. */
 void tbox_css_stylesheet_destroy(tbox_css_stylesheet *stylesheet);

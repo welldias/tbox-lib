@@ -48,6 +48,7 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding) {
 static bool tbox_context_dispatch_click_node(tbox_context *ctx, const tbox_html_node *node) {
     tbox_css_selector_set_hover_context(ctx->hovered_node);
     tbox_css_selector_set_focus_context(ctx->focused_node);
+    tbox_css_selector_set_active_context(ctx->active_node);
     bool dispatched      = false;
     size_t handler_count = tbox_vector_length(&ctx->handlers);
 

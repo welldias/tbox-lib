@@ -65,6 +65,7 @@ typedef struct tbox_layout_box {
 
     tbox_rect margin_box, border_box, padding_box, content_box;
     double scroll_content_height; /* laid-out children extent before viewport clipping */
+    double scrollbar_gutter; /* reserved inline-end width, zero without stable gutter */
     /* style->background_image decoded through the image cache, NULL when
      * there is none or it failed to load. */
     const tbox_image *background_image;

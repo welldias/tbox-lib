@@ -13,6 +13,7 @@
  * than threaded through every selector-matching signature. */
 static const tbox_html_node *tbox_css_selector_hovered_node = NULL;
 static const tbox_html_node *tbox_css_selector_focused_node = NULL;
+static const tbox_html_node *tbox_css_selector_active_node = NULL;
 
 void tbox_css_selector_set_hover_context(const tbox_html_node *hovered) {
     tbox_css_selector_hovered_node = hovered;
@@ -20,6 +21,10 @@ void tbox_css_selector_set_hover_context(const tbox_html_node *hovered) {
 
 void tbox_css_selector_set_focus_context(const tbox_html_node *focused) {
     tbox_css_selector_focused_node = focused;
+}
+
+void tbox_css_selector_set_active_context(const tbox_html_node *active) {
+    tbox_css_selector_active_node = active;
 }
 
 static const tbox_html_attribute *tbox_css_selector_find_attribute(const tbox_html_node *node, tbox_string_view name) {
@@ -240,7 +245,7 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
             return true;
         case TBOX_CSS_ATTR_EQUALS:
             if (tbox_string_view_equal_cstr(node->element.tag_name, "input") &&
-                tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("type", 4)))
+                tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("type", 4)) && !item->attribute_case_sensitive)
                 return tbox_string_view_equal_ascii_ci(attribute->value, item->attribute_value);
             return tbox_css_selector_value_equal(attribute->value, item->attribute_value, item->attribute_case_insensitive);
         case TBOX_CSS_ATTR_INCLUDES:
@@ -327,6 +332,12 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
         if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("hover", 5))) {
             if (node->type != TBOX_HTML_NODE_ELEMENT) return false;
             for (const tbox_html_node *ancestor = tbox_css_selector_hovered_node; ancestor != NULL; ancestor = ancestor->parent)
+                if (ancestor == node) return true;
+            return false;
+        }
+        if (tbox_string_view_equal_cstr(item->name, "active")) {
+            if (node->type != TBOX_HTML_NODE_ELEMENT) return false;
+            for (const tbox_html_node *ancestor = tbox_css_selector_active_node; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor == node) return true;
             return false;
         }

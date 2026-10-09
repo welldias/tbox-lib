@@ -12,7 +12,7 @@ typedef struct tbox_style_field {
 } tbox_style_field;
 
 #define TBOX_STYLE_FIELD(member) { offsetof(tbox_style, member), sizeof(((tbox_style *)0)->member) }
-#define TBOX_STYLE_MAX_FIELDS 12
+#define TBOX_STYLE_MAX_FIELDS 15
 
 typedef struct tbox_style_property_fields {
     const char *name;
@@ -34,6 +34,7 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "white-space-collapse",       true,  { TBOX_STYLE_FIELD(white_space) } },
     { "text-wrap-mode",             true,  { TBOX_STYLE_FIELD(white_space) } },
     { "text-wrap",                  true,  { TBOX_STYLE_FIELD(white_space), TBOX_STYLE_FIELD(text_wrap_balance) } },
+    { "text-wrap-style",            true,  { TBOX_STYLE_FIELD(text_wrap_balance) } },
     { "tab-size",                   true,  { TBOX_STYLE_FIELD(tab_size) } },
     { "overflow-wrap",              true,  { TBOX_STYLE_FIELD(overflow_wrap_break_word), TBOX_STYLE_FIELD(overflow_wrap_anywhere) } },
     { "word-wrap",                  true,  { TBOX_STYLE_FIELD(overflow_wrap_break_word), TBOX_STYLE_FIELD(overflow_wrap_anywhere) } },
@@ -66,13 +67,14 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "line-height",                true,  { TBOX_STYLE_FIELD(line_height_kind), TBOX_STYLE_FIELD(line_height_value) } },
     { "color",                      true,  { TBOX_STYLE_FIELD(color) } },
     { "background-color",           false, { TBOX_STYLE_FIELD(background_color) } },
-    { "background",                 false, { TBOX_STYLE_FIELD(background_color), TBOX_STYLE_FIELD(background_image), TBOX_STYLE_FIELD(background_gradient), TBOX_STYLE_FIELD(background_size), TBOX_STYLE_FIELD(background_size_kind), TBOX_STYLE_FIELD(background_position), TBOX_STYLE_FIELD(background_repeat_x), TBOX_STYLE_FIELD(background_repeat_y), TBOX_STYLE_FIELD(background_clip), TBOX_STYLE_FIELD(background_origin), TBOX_STYLE_FIELD(background_layers), TBOX_STYLE_FIELD(background_layer_count) } },
+    { "background",                 false, { TBOX_STYLE_FIELD(background_color), TBOX_STYLE_FIELD(background_image), TBOX_STYLE_FIELD(background_gradient), TBOX_STYLE_FIELD(background_size), TBOX_STYLE_FIELD(background_size_kind), TBOX_STYLE_FIELD(background_position), TBOX_STYLE_FIELD(background_repeat_x), TBOX_STYLE_FIELD(background_repeat_y), TBOX_STYLE_FIELD(background_repeat_mode_x), TBOX_STYLE_FIELD(background_repeat_mode_y), TBOX_STYLE_FIELD(background_attachment_fixed), TBOX_STYLE_FIELD(background_clip), TBOX_STYLE_FIELD(background_origin), TBOX_STYLE_FIELD(background_layers), TBOX_STYLE_FIELD(background_layer_count) } },
     { "background-image",           false, { TBOX_STYLE_FIELD(background_image), TBOX_STYLE_FIELD(background_gradient), TBOX_STYLE_FIELD(background_layers), TBOX_STYLE_FIELD(background_layer_count) } },
     { "background-size",            false, { TBOX_STYLE_FIELD(background_size), TBOX_STYLE_FIELD(background_size_kind) } },
     { "background-position",        false, { TBOX_STYLE_FIELD(background_position) } },
     { "background-position-x",      false, { TBOX_STYLE_FIELD(background_position[0]) } },
     { "background-position-y",      false, { TBOX_STYLE_FIELD(background_position[1]) } },
-    { "background-repeat",          false, { TBOX_STYLE_FIELD(background_repeat_x), TBOX_STYLE_FIELD(background_repeat_y) } },
+    { "background-repeat",          false, { TBOX_STYLE_FIELD(background_repeat_x), TBOX_STYLE_FIELD(background_repeat_y), TBOX_STYLE_FIELD(background_repeat_mode_x), TBOX_STYLE_FIELD(background_repeat_mode_y) } },
+    { "background-attachment",      false, { TBOX_STYLE_FIELD(background_attachment_fixed), TBOX_STYLE_FIELD(background_layers) } },
     { "background-clip",            false, { TBOX_STYLE_FIELD(background_clip) } },
     { "background-origin",          false, { TBOX_STYLE_FIELD(background_origin) } },
     { "font-size",                  true,  { TBOX_STYLE_FIELD(font_size) } },
@@ -108,9 +110,13 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "table-layout",               false, { TBOX_STYLE_FIELD(table_layout_fixed) } },
     { "border-radius",              false, { TBOX_STYLE_FIELD(border_radius_corners), TBOX_STYLE_FIELD(border_radius_percent), TBOX_STYLE_FIELD(border_radius_vertical), TBOX_STYLE_FIELD(border_radius_vertical_percent) } },
     { "border-top-left-radius",     false, { TBOX_STYLE_FIELD(border_radius_corners[0]), TBOX_STYLE_FIELD(border_radius_percent[0]), TBOX_STYLE_FIELD(border_radius_vertical[0]), TBOX_STYLE_FIELD(border_radius_vertical_percent[0]) } },
+    { "border-start-start-radius",  false, { TBOX_STYLE_FIELD(border_radius_corners[0]), TBOX_STYLE_FIELD(border_radius_percent[0]), TBOX_STYLE_FIELD(border_radius_vertical[0]), TBOX_STYLE_FIELD(border_radius_vertical_percent[0]) } },
     { "border-top-right-radius",    false, { TBOX_STYLE_FIELD(border_radius_corners[1]), TBOX_STYLE_FIELD(border_radius_percent[1]), TBOX_STYLE_FIELD(border_radius_vertical[1]), TBOX_STYLE_FIELD(border_radius_vertical_percent[1]) } },
+    { "border-start-end-radius",    false, { TBOX_STYLE_FIELD(border_radius_corners[1]), TBOX_STYLE_FIELD(border_radius_percent[1]), TBOX_STYLE_FIELD(border_radius_vertical[1]), TBOX_STYLE_FIELD(border_radius_vertical_percent[1]) } },
     { "border-bottom-right-radius", false, { TBOX_STYLE_FIELD(border_radius_corners[2]), TBOX_STYLE_FIELD(border_radius_percent[2]), TBOX_STYLE_FIELD(border_radius_vertical[2]), TBOX_STYLE_FIELD(border_radius_vertical_percent[2]) } },
+    { "border-end-end-radius",      false, { TBOX_STYLE_FIELD(border_radius_corners[2]), TBOX_STYLE_FIELD(border_radius_percent[2]), TBOX_STYLE_FIELD(border_radius_vertical[2]), TBOX_STYLE_FIELD(border_radius_vertical_percent[2]) } },
     { "border-bottom-left-radius",  false, { TBOX_STYLE_FIELD(border_radius_corners[3]), TBOX_STYLE_FIELD(border_radius_percent[3]), TBOX_STYLE_FIELD(border_radius_vertical[3]), TBOX_STYLE_FIELD(border_radius_vertical_percent[3]) } },
+    { "border-end-start-radius",    false, { TBOX_STYLE_FIELD(border_radius_corners[3]), TBOX_STYLE_FIELD(border_radius_percent[3]), TBOX_STYLE_FIELD(border_radius_vertical[3]), TBOX_STYLE_FIELD(border_radius_vertical_percent[3]) } },
     { "box-shadow",                 false, { TBOX_STYLE_FIELD(box_shadow_offset_x), TBOX_STYLE_FIELD(box_shadow_offset_y), TBOX_STYLE_FIELD(box_shadow_blur), TBOX_STYLE_FIELD(box_shadow_spread), TBOX_STYLE_FIELD(box_shadow_color), TBOX_STYLE_FIELD(box_shadow_inset), TBOX_STYLE_FIELD(box_shadows), TBOX_STYLE_FIELD(box_shadow_count) } },
     { "text-shadow",                true,  { TBOX_STYLE_FIELD(text_shadow_offset_x), TBOX_STYLE_FIELD(text_shadow_offset_y), TBOX_STYLE_FIELD(text_shadow_blur), TBOX_STYLE_FIELD(text_shadow_color), TBOX_STYLE_FIELD(text_shadows), TBOX_STYLE_FIELD(text_shadow_count) } },
     { "opacity",                    false, { TBOX_STYLE_FIELD(opacity) } },
@@ -125,6 +131,7 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "caret-color",                true,  { TBOX_STYLE_FIELD(caret_color) } },
     { "scrollbar-color",            true,  { TBOX_STYLE_FIELD(scrollbar_thumb_color), TBOX_STYLE_FIELD(scrollbar_track_color) } },
     { "scrollbar-width",            false, { TBOX_STYLE_FIELD(scrollbar_width) } },
+    { "scrollbar-gutter",           false, { TBOX_STYLE_FIELD(scrollbar_gutter_stable) } },
     { "line-clamp",                 false, { TBOX_STYLE_FIELD(line_clamp) } },
     { "-webkit-line-clamp",         false, { TBOX_STYLE_FIELD(line_clamp) } },
     { "flex-direction",             false, { TBOX_STYLE_FIELD(flex_direction) } },

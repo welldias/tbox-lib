@@ -61,6 +61,19 @@ typedef struct tbox_text_field {
     struct tbox_text_field *next;
 } tbox_text_field;
 
+typedef struct tbox_transition_track {
+    double start[4], target[4];
+    double start_time, duration;
+    unsigned char timing;
+    bool active;
+} tbox_transition_track;
+
+typedef struct tbox_transition_state {
+    const tbox_html_node *node;
+    tbox_transition_track tracks[3];
+    struct tbox_transition_state *next;
+} tbox_transition_state;
+
 typedef struct tbox_text_line {
     size_t start, end;
     double width;
@@ -121,6 +134,7 @@ struct tbox_context {
     tbox_vector handlers;                     /* tbox_context_click_binding elements, arena-backed by handler_arena; array + linear scan on dispatch, same shape as tbox_style_table */
     int next_handler_id;                      /* monotonic counter for tbox_context_on_click's returned handle -- never reused, even after tbox_context_unbind_click removes a binding */
     const tbox_html_node *hovered_node;       /* the node currently under the pointer, or NULL -- a plain struct field with its own lifetime, deliberately NOT part of frame_arena (must survive every tbox_context_run_frame's arena reset so tbox_context_update_hover can compare across frames; see <tbox/context.h>) */
+    const tbox_html_node *active_node;        /* pointer-pressed node, retained until release for :active */
     const tbox_html_node *focused_node;
     tbox_text_field *text_fields;
     tbox_file_field *file_fields;
@@ -157,7 +171,14 @@ struct tbox_context {
     tbox_context_submit_handler submit_handler;
     void *submit_userdata;
     tbox_style_table styles; /* last frame's styles, for focus visibility checks */
+    tbox_transition_state *transitions;
+    double animation_time;
+    bool animations_active;
+    bool prefers_reduced_motion;
 };
+
+void tbox_context_apply_transitions(tbox_context *ctx);
+void tbox_context_register_font_faces(tbox_font_face_cache *fonts, const tbox_css_stylesheet *sheet, const char *base_dir);
 
 double tbox_context_style_line_height(const tbox_style *style, const tbox_font_face *face);
 bool tbox_context_is_textarea(const tbox_html_node *node);

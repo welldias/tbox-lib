@@ -9,6 +9,8 @@ struct tbox_css_stylesheet {
     tbox_arena arena;
     tbox_css_ruleset *rulesets;
     size_t ruleset_count;
+    tbox_css_font_face_rule *font_faces;
+    size_t font_face_count;
 };
 
 /* Internal constructor for stylesheets assembled without parsing CSS text. */

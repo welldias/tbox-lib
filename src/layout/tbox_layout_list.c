@@ -29,6 +29,22 @@ static size_t tbox_layout_format_list_counter(tbox_style_list_style_type type, s
             digits[i]             = digits[count - 1 - i];
             digits[count - 1 - i] = tmp;
         }
+    } else if (type == TBOX_STYLE_LIST_STYLE_LOWER_GREEK && index > 0) {
+        static const char *const greek[24] = {
+            "α", "β", "γ", "δ", "ε", "ζ", "η", "θ", "ι", "κ", "λ", "μ",
+            "ν", "ξ", "ο", "π", "ρ", "σ", "τ", "υ", "φ", "χ", "ψ", "ω"
+        };
+        unsigned char letters[10];
+        size_t length = 0;
+        for (size_t n = index; n > 0; n = (n - 1) / 24) {
+            if (length == sizeof(letters)) return 0;
+            letters[length++] = (unsigned char)((n - 1) % 24);
+        }
+        for (size_t i = length; i > 0; i--) {
+            if (count + 2 > sizeof(digits)) return 0;
+            memcpy(digits + count, greek[letters[i - 1]], 2);
+            count += 2;
+        }
     } else if ((type == TBOX_STYLE_LIST_STYLE_LOWER_ROMAN || type == TBOX_STYLE_LIST_STYLE_UPPER_ROMAN) && index > 0 && index < 4000) {
         static const struct {
             size_t value;
@@ -162,15 +178,22 @@ static bool tbox_layout_list_marker_text(tbox_arena *arena, const tbox_html_node
 
     /* Glyph markers fall back to the plain bullet when the face lacks
      * U+25E6 (white bullet) or U+25AA (small black square). */
-    if (type == TBOX_STYLE_LIST_STYLE_DISC || type == TBOX_STYLE_LIST_STYLE_CIRCLE || type == TBOX_STYLE_LIST_STYLE_SQUARE) {
+    if (type == TBOX_STYLE_LIST_STYLE_DISC || type == TBOX_STYLE_LIST_STYLE_CIRCLE || type == TBOX_STYLE_LIST_STYLE_SQUARE ||
+        type == TBOX_STYLE_LIST_STYLE_DISCLOSURE_OPEN || type == TBOX_STYLE_LIST_STYLE_DISCLOSURE_CLOSED) {
         static const tbox_string_view bullet = { "\xE2\x80\xA2", 3 };
         static const tbox_string_view circle = { "\xE2\x97\xA6", 3 };
         static const tbox_string_view square = { "\xE2\x96\xAA", 3 };
+        static const tbox_string_view open = { "\xE2\x96\xBE", 3 };
+        static const tbox_string_view closed = { "\xE2\x96\xB8", 3 };
         tbox_string_view marker              = bullet;
         if (type == TBOX_STYLE_LIST_STYLE_CIRCLE && tbox_font_face_has_glyph(face, 0x25E6))
             marker = circle;
         if (type == TBOX_STYLE_LIST_STYLE_SQUARE && tbox_font_face_has_glyph(face, 0x25AA))
             marker = square;
+        if (type == TBOX_STYLE_LIST_STYLE_DISCLOSURE_OPEN && tbox_font_face_has_glyph(face, 0x25BE))
+            marker = open;
+        if (type == TBOX_STYLE_LIST_STYLE_DISCLOSURE_CLOSED && tbox_font_face_has_glyph(face, 0x25B8))
+            marker = closed;
         *out_text = marker;
         return true;
     }

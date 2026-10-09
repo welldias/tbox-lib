@@ -1514,6 +1514,76 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* `space` distributes fixed tiles; `round` resizes them to an integer fit. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.background_gradient.kind = TBOX_STYLE_GRADIENT_LINEAR;
+        style.background_gradient.stop_count = 2;
+        style.background_size_kind = TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT;
+        style.background_size[0] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 30.0, 0.0, 0, 0.0, 0.0 };
+        style.background_size[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 18.0, 0.0, 0, 0.0, 0.0 };
+        style.background_repeat_x = style.background_repeat_y = true;
+        style.background_repeat_mode_x = style.background_repeat_mode_y = TBOX_STYLE_BACKGROUND_REPEAT_SPACE;
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = box.padding_box = box.content_box = (tbox_rect){ 0, 0, 100, 50 };
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 6);
+        if (list.count == 6) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_GRADIENT && list.items[0].rect.x == 0.0 && list.items[0].rect.y == 0.0);
+            TBOX_TEST_ASSERT(list.items[1].rect.x == 35.0 && list.items[2].rect.x == 70.0 && list.items[3].rect.y == 32.0);
+        }
+        tbox_arena_destroy(&arena);
+
+        style.background_repeat_mode_x = style.background_repeat_mode_y = TBOX_STYLE_BACKGROUND_REPEAT_ROUND;
+        arena = tbox_arena_create(0);
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 9);
+        if (list.count == 9) {
+            TBOX_TEST_ASSERT(fabs(list.items[0].rect.width - 100.0 / 3.0) < 0.001);
+            TBOX_TEST_ASSERT(fabs(list.items[0].rect.height - 50.0 / 3.0) < 0.001);
+            TBOX_TEST_ASSERT(fabs(list.items[8].rect.x - 200.0 / 3.0) < 0.001);
+        }
+        tbox_arena_destroy(&arena);
+
+        /* An auto opposite axis keeps an image's aspect ratio after round. */
+        style.background_gradient.kind = TBOX_STYLE_GRADIENT_NONE;
+        strcpy(style.background_image, "tile.png");
+        style.background_size[1].kind = TBOX_STYLE_LENGTH_AUTO;
+        style.background_repeat_mode_y = TBOX_STYLE_BACKGROUND_REPEAT_NO_REPEAT;
+        style.background_repeat_y = false;
+        tbox_image image = { .width = 30, .height = 10, .pixels = NULL };
+        box.background_image = &image;
+        arena = tbox_arena_create(0);
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 3);
+        if (list.count == 3)
+            TBOX_TEST_ASSERT(fabs(list.items[0].rect.height - 100.0 / 9.0) < 0.001);
+        tbox_arena_destroy(&arena);
+    }
+
+    /* A fixed background positions its tile against the viewport while
+     * retaining the element's own background clip. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.background_gradient.kind = TBOX_STYLE_GRADIENT_LINEAR;
+        style.background_gradient.stop_count = 2;
+        style.background_attachment_fixed = true;
+        style.background_size_kind = TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT;
+        style.background_size[0] = style.background_size[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 20.0, 0.0, 0, 0.0, 0.0 };
+        style.background_position[0] = style.background_position[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 25.0, 0.0, 0, 0.0, 0.0 };
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = box.padding_box = box.content_box = (tbox_rect){ 40, 20, 80, 50 };
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list_in_viewport(&arena, &box, 200.0, 100.0);
+        TBOX_TEST_ASSERT(list.count == 1);
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT(list.items[0].rect.x == 45.0 && list.items[0].rect.y == 20.0);
+            TBOX_TEST_ASSERT(list.items[0].clip.x == 40.0 && list.items[0].clip.width == 80.0);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
     tbox_font_face_destroy(bold_font);
     tbox_font_face_destroy(font);
     free(font_data);

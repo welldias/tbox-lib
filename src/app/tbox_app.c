@@ -1,8 +1,10 @@
+#define _POSIX_C_SOURCE 200809L
 #include <tbox/app.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <tbox/context.h>
 #include <tbox/font.h>
@@ -214,6 +216,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
         return NULL;
     }
 
+    if (options.asset_base_dir == NULL) options.asset_base_dir = base_dir;
     tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css, strlen(css), fonts, images, options);
     if (ctx == NULL) {
         tbox_image_cache_destroy(images);
@@ -252,6 +255,8 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     app->redraw_requested = false;
     app->paste_target     = NULL;
     app->options          = options;
+    app->options.asset_base_dir = NULL;
+    app->options.css_base_dir = NULL;
     app->control_css_copy = NULL;
     if (options.control_css != NULL) {
         app->control_css_copy = malloc(options.control_css_length + 1);
@@ -370,6 +375,11 @@ static tbox_app *tbox_app_create_from_files_impl(const char *html_path, const ch
 
     char base_dir[TBOX_APP_PATH_BUF_SIZE];
     tbox_app_dirname(html_path, base_dir, sizeof(base_dir));
+    char css_dir[TBOX_APP_PATH_BUF_SIZE];
+    if (css_path != NULL) {
+        tbox_app_dirname(css_path, css_dir, sizeof(css_dir));
+        options.css_base_dir = css_dir;
+    }
 
     tbox_app *app = tbox_app_create_impl(html, css != NULL ? css : "", base_dir, width, height, options);
 
@@ -405,11 +415,18 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
     }
     char base_dir[TBOX_APP_PATH_BUF_SIZE];
     tbox_app_dirname(html_path, base_dir, sizeof(base_dir));
+    char css_dir[TBOX_APP_PATH_BUF_SIZE];
+    if (css_path != NULL) {
+        tbox_app_dirname(css_path, css_dir, sizeof(css_dir));
+    }
     tbox_image_cache *images = tbox_image_cache_create(base_dir);
     tbox_context *ctx        = NULL;
     if (images != NULL) {
         const char *css_text = css != NULL ? css : "";
-        ctx                  = tbox_context_open_with_options(html, strlen(html), css_text, strlen(css_text), app->fonts, images, app->options);
+        tbox_context_options options = app->options;
+        options.asset_base_dir = base_dir;
+        options.css_base_dir = css_path != NULL ? css_dir : NULL;
+        ctx                  = tbox_context_open_with_options(html, strlen(html), css_text, strlen(css_text), app->fonts, images, options);
     }
     free(css);
     free(html);
@@ -457,6 +474,11 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
 
     char base_dir[TBOX_APP_PATH_BUF_SIZE];
     tbox_app_dirname(html_path, base_dir, sizeof(base_dir));
+    char css_dir[TBOX_APP_PATH_BUF_SIZE];
+    if (css_path != NULL) {
+        tbox_app_dirname(css_path, css_dir, sizeof(css_dir));
+        options.css_base_dir = css_dir;
+    }
 
     bool ok = false;
 
@@ -465,6 +487,7 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
     if (fonts != NULL) {
         tbox_image_cache *images = tbox_image_cache_create(base_dir);
         if (images != NULL) {
+            if (options.asset_base_dir == NULL) options.asset_base_dir = base_dir;
             tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts, images, options);
             if (ctx != NULL) {
                 tbox_display_list list;
@@ -552,6 +575,8 @@ void tbox_app_step(tbox_app *app) {
                 dirty = true;
                 break;
             }
+            if (tbox_context_set_active_at(app->ctx, true, event.data.click.x, event.data.click.y))
+                dirty = true;
             tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
             if (event.data.click.double_click) {
                 tbox_context_dispatch_key(app->ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true });
@@ -576,6 +601,8 @@ void tbox_app_step(tbox_app *app) {
         case TBOX_INPUT_POINTER_RELEASE:
             tbox_context_scrollbar_release(app->ctx);
             tbox_context_range_release(app->ctx);
+            if (tbox_context_set_active_at(app->ctx, false, 0.0, 0.0))
+                dirty = true;
             break;
         case TBOX_INPUT_POINTER_SCROLL:
             if (tbox_context_scroll(app->ctx, event.data.scroll.x, event.data.scroll.y, event.data.scroll.delta_y))
@@ -659,7 +686,11 @@ void tbox_app_step(tbox_app *app) {
         dirty            = true;
     }
 
+    if (tbox_context_animations_active(app->ctx)) dirty = true;
     if (dirty) {
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) == 0)
+            tbox_context_set_animation_time(app->ctx, (double)now.tv_sec + (double)now.tv_nsec / 1000000000.0);
         tbox_display_list list;
         tbox_context_run_frame(app->ctx, (double)app->last_width, (double)app->last_height, &list);
         tbox_window_backend_present(app->backend, &list);

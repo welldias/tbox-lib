@@ -2231,5 +2231,55 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Small CSS additions reuse existing wrapping, positioning and radius paths. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p></p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { word-wrap: break-word; text-wrap-style: balance; object-position: right 10px bottom 20%;"
+            " border-radius: 2px; border-start-start-radius: 12px 8px; border-end-end-radius: 6px;"
+            " background: url(pixel-heart.png) 0 0 / 20px 20px space round; }"
+            "p { overflow-wrap: normal; text-wrap-style: auto; border-top-left-radius: 4px;"
+            " border-start-start-radius: 9px; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.overflow_wrap_break_word && !parent.overflow_wrap_anywhere);
+        TBOX_TEST_ASSERT(!child.overflow_wrap_break_word && !child.text_wrap_balance && parent.text_wrap_balance);
+        TBOX_TEST_ASSERT(parent.object_position[0].kind == TBOX_STYLE_LENGTH_PERCENT && parent.object_position[0].value == 100.0 && parent.object_position[0].px_offset == -10.0);
+        TBOX_TEST_ASSERT(parent.object_position[1].value == 80.0);
+        TBOX_TEST_ASSERT(parent.border_radius_corners[0] == 12.0 && parent.border_radius_vertical[0] == 8.0 && parent.border_radius_corners[2] == 6.0);
+        TBOX_TEST_ASSERT(child.border_radius_corners[0] == 9.0);
+        TBOX_TEST_ASSERT(parent.background_repeat_mode_x == TBOX_STYLE_BACKGROUND_REPEAT_SPACE && parent.background_repeat_mode_y == TBOX_STYLE_BACKGROUND_REPEAT_ROUND);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Desktop viewport aliases, new cursor/marker values and background modes. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { width: 25dvw; height: 10svh; margin-left: 5lvmin; cursor: copy;"
+            " background: url(tile.png) fixed no-repeat; scrollbar-gutter: stable; overflow-y: auto; }"
+            "p { min-width: 20dvmax; padding-left: 10lvw; cursor: zoom-in;"
+            " list-style-type: lower-greek; background-attachment: scroll; }");
+        tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(sheet, div);
+        tbox_style parent = tbox_style_resolve_in_viewport(div, NULL, &computed, 800.0, 600.0);
+        tbox_css_computed_style_destroy(&computed);
+        computed = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        tbox_style child = tbox_style_resolve_in_viewport(p, &parent, &computed, 800.0, 600.0);
+        TBOX_TEST_ASSERT(parent.width.value == 200.0 && parent.height.value == 60.0 && parent.margin[3].value == 30.0);
+        TBOX_TEST_ASSERT(child.min_width.value == 160.0 && child.padding[3].value == 80.0);
+        TBOX_TEST_ASSERT(parent.cursor == TBOX_STYLE_CURSOR_COPY && child.cursor == TBOX_STYLE_CURSOR_ZOOM_IN);
+        TBOX_TEST_ASSERT(child.list_style_type == TBOX_STYLE_LIST_STYLE_LOWER_GREEK);
+        TBOX_TEST_ASSERT(parent.background_attachment_fixed && !child.background_attachment_fixed);
+        TBOX_TEST_ASSERT(parent.scrollbar_gutter_stable && !child.scrollbar_gutter_stable);
+        tbox_css_computed_style_destroy(&computed);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

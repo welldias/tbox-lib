@@ -478,16 +478,20 @@ static tbox_rect tbox_render_intersect(tbox_rect a, tbox_rect b) {
  * per background-repeat, and clipped to `clip_box` (background-clip) with
  * its rounded corners. A gradient has no intrinsic size: it fills the
  * padding box unless background-size says otherwise. */
-static void tbox_render_push_background_image(tbox_vector *items, const tbox_layout_box *box, const tbox_style_background_layer *layer, const tbox_image *image, tbox_rect clip_box, const double clip_h[4], const double clip_v[4], bool rounded) {
+static void tbox_render_push_background_image(tbox_vector *items, const tbox_layout_box *box, const tbox_style_background_layer *layer, const tbox_image *image, tbox_rect clip_box, const double clip_h[4], const double clip_v[4], bool rounded, tbox_rect viewport) {
     const tbox_style *style  = box->style;
     bool gradient            = layer->gradient.kind != TBOX_STYLE_GRADIENT_NONE;
-    tbox_rect area           = style->background_origin == TBOX_STYLE_BACKGROUND_ORIGIN_BORDER_BOX ? box->border_box : style->background_origin == TBOX_STYLE_BACKGROUND_ORIGIN_CONTENT_BOX ? box->content_box : box->padding_box;
+    tbox_style_background_repeat mode_x = layer->repeat_mode_x == TBOX_STYLE_BACKGROUND_REPEAT_NO_REPEAT && layer->repeat_x ? TBOX_STYLE_BACKGROUND_REPEAT_REPEAT : layer->repeat_mode_x;
+    tbox_style_background_repeat mode_y = layer->repeat_mode_y == TBOX_STYLE_BACKGROUND_REPEAT_NO_REPEAT && layer->repeat_y ? TBOX_STYLE_BACKGROUND_REPEAT_REPEAT : layer->repeat_mode_y;
+    tbox_rect area           = layer->attachment_fixed && viewport.width > 0.0 && viewport.height > 0.0 ? viewport : style->background_origin == TBOX_STYLE_BACKGROUND_ORIGIN_BORDER_BOX ? box->border_box : style->background_origin == TBOX_STYLE_BACKGROUND_ORIGIN_CONTENT_BOX ? box->content_box : box->padding_box;
     if ((!gradient && (image == NULL || image->width <= 0 || image->height <= 0)) || area.width <= 0.0 || area.height <= 0.0 || clip_box.width <= 0.0 || clip_box.height <= 0.0)
         return;
 
     double intrinsic_w = gradient ? area.width : (double)image->width;
     double intrinsic_h = gradient ? area.height : (double)image->height;
     double tile_w = intrinsic_w, tile_h = intrinsic_h;
+    bool auto_w = layer->size_kind == TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT && layer->size[0].kind == TBOX_STYLE_LENGTH_AUTO;
+    bool auto_h = layer->size_kind == TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT && layer->size[1].kind == TBOX_STYLE_LENGTH_AUTO;
     if (layer->size_kind != TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT) {
         if (!gradient) {
             double sx = area.width / intrinsic_w, sy = area.height / intrinsic_h;
@@ -497,7 +501,6 @@ static void tbox_render_push_background_image(tbox_vector *items, const tbox_lay
         }
     } else {
         tbox_style_length sw = layer->size[0], sh = layer->size[1];
-        bool auto_w = sw.kind == TBOX_STYLE_LENGTH_AUTO, auto_h = sh.kind == TBOX_STYLE_LENGTH_AUTO;
         if (!auto_w)
             tile_w = tbox_style_length_resolve(sw, area.width);
         if (!auto_h)
@@ -510,20 +513,53 @@ static void tbox_render_push_background_image(tbox_vector *items, const tbox_lay
     if (tile_w < 0.5 || tile_h < 0.5)
         return;
 
+    /* round fits an integer number of tiles exactly into the positioning area. */
+    if (mode_x == TBOX_STYLE_BACKGROUND_REPEAT_ROUND) {
+        double old_width = tile_w;
+        tile_w = area.width / fmax(1.0, floor(area.width / tile_w + 0.5));
+        if (auto_h && mode_y != TBOX_STYLE_BACKGROUND_REPEAT_ROUND && !gradient)
+            tile_h *= tile_w / old_width;
+    }
+    if (mode_y == TBOX_STYLE_BACKGROUND_REPEAT_ROUND) {
+        double old_height = tile_h;
+        tile_h = area.height / fmax(1.0, floor(area.height / tile_h + 0.5));
+        if (auto_w && mode_x != TBOX_STYLE_BACKGROUND_REPEAT_ROUND && !gradient)
+            tile_w *= tile_h / old_height;
+    }
+    if (tile_w < 0.5 || tile_h < 0.5)
+        return;
+
     double x = area.x + tbox_style_length_resolve(layer->position[0], area.width - tile_w);
     double y = area.y + tbox_style_length_resolve(layer->position[1], area.height - tile_h);
     double x_start = x, y_start = y, x_end = x + tile_w, y_end = y + tile_h;
-    if (layer->repeat_x) {
+    double x_step = tile_w, y_step = tile_h;
+    if (mode_x == TBOX_STYLE_BACKGROUND_REPEAT_ROUND) {
+        x_start = area.x;
+        x_end = area.x + area.width;
+    } else if (mode_x == TBOX_STYLE_BACKGROUND_REPEAT_SPACE && floor(area.width / tile_w) >= 2.0) {
+        double count = floor(area.width / tile_w);
+        x_start = area.x;
+        x_step = tile_w + (area.width - count * tile_w) / (count - 1.0);
+        x_end = area.x + area.width;
+    } else if (mode_x == TBOX_STYLE_BACKGROUND_REPEAT_REPEAT) {
         x_start = x - ceil((x - clip_box.x) / tile_w) * tile_w;
         x_end   = clip_box.x + clip_box.width;
     }
-    if (layer->repeat_y) {
+    if (mode_y == TBOX_STYLE_BACKGROUND_REPEAT_ROUND) {
+        y_start = area.y;
+        y_end = area.y + area.height;
+    } else if (mode_y == TBOX_STYLE_BACKGROUND_REPEAT_SPACE && floor(area.height / tile_h) >= 2.0) {
+        double count = floor(area.height / tile_h);
+        y_start = area.y;
+        y_step = tile_h + (area.height - count * tile_h) / (count - 1.0);
+        y_end = area.y + area.height;
+    } else if (mode_y == TBOX_STYLE_BACKGROUND_REPEAT_REPEAT) {
         y_start = y - ceil((y - clip_box.y) / tile_h) * tile_h;
         y_end   = clip_box.y + clip_box.height;
     }
     size_t tiles = 0;
-    for (double ty = y_start; ty < y_end - 1e-6 && tiles < TBOX_RENDER_MAX_TILES; ty += tile_h) {
-        for (double tx = x_start; tx < x_end - 1e-6 && tiles < TBOX_RENDER_MAX_TILES; tx += tile_w) {
+    for (double ty = y_start; ty < y_end - 1e-6 && tiles < TBOX_RENDER_MAX_TILES; ty += y_step) {
+        for (double tx = x_start; tx < x_end - 1e-6 && tiles < TBOX_RENDER_MAX_TILES; tx += x_step) {
             tbox_rect tile = { tx, ty, tile_w, tile_h };
             if (tbox_render_intersect(tile, clip_box).width <= 0.0 || tbox_render_intersect(tile, clip_box).height <= 0.0)
                 continue;
@@ -570,6 +606,12 @@ static bool tbox_render_clips(const tbox_layout_box *box) {
     return box->style != NULL && (box->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE || box->style->overflow_x != TBOX_STYLE_OVERFLOW_Y_VISIBLE);
 }
 
+static tbox_rect tbox_render_overflow_clip(const tbox_layout_box *box) {
+    tbox_rect clip = box->padding_box;
+    clip.width = clip.width > box->scrollbar_gutter ? clip.width - box->scrollbar_gutter : 0.0;
+    return clip;
+}
+
 /* A z-indexed box waiting for its stacking context, with the clip its
  * overflow ancestors put on it. */
 typedef struct tbox_render_layer {
@@ -591,14 +633,15 @@ static void tbox_render_collect_layers(const tbox_layout_box *first, bool has_cl
         bool child_has_clip  = has_clip;
         tbox_rect child_clip = clip;
         if (tbox_render_clips(box)) {
-            child_clip     = child_has_clip ? tbox_render_intersect(child_clip, box->padding_box) : box->padding_box;
+            tbox_rect scrollport = tbox_render_overflow_clip(box);
+            child_clip     = child_has_clip ? tbox_render_intersect(child_clip, scrollport) : scrollport;
             child_has_clip = true;
         }
         tbox_render_collect_layers(box->first_child, child_has_clip, child_clip, layers);
     }
 }
 
-static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool has_clip, tbox_rect clip, tbox_arena *arena);
+static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool has_clip, tbox_rect clip, tbox_arena *arena, tbox_rect viewport);
 
 /* The next layer to paint among `layers` whose z-index is negative
  * (`negative`) or not: the lowest z-index not `done`, tree order among
@@ -617,12 +660,12 @@ static size_t tbox_render_next_layer(const tbox_vector *layers, const bool *done
 
 /* Paints `layers` whose z-index is negative (`negative`) or not, in
  * increasing z-index order, tree order among equals. */
-static void tbox_render_paint_layers(const tbox_vector *layers, bool negative, tbox_vector *items, tbox_arena *arena) {
+static void tbox_render_paint_layers(const tbox_vector *layers, bool negative, tbox_vector *items, tbox_arena *arena, tbox_rect viewport) {
     bool *done = layers->length > 0 ? (bool *)tbox_arena_alloc_zero(arena, layers->length) : NULL;
     for (size_t best; (best = tbox_render_next_layer(layers, done, negative)) < layers->length;) {
         done[best]                     = true;
         const tbox_render_layer *layer = (const tbox_render_layer *)tbox_vector_at_const(layers, best);
-        tbox_render_box(layer->box, items, layer->has_clip, layer->clip, arena);
+        tbox_render_box(layer->box, items, layer->has_clip, layer->clip, arena, viewport);
     }
 }
 
@@ -634,7 +677,8 @@ static void tbox_render_order_box(const tbox_layout_box *box, bool has_clip, tbo
     bool child_has_clip  = has_clip;
     tbox_rect child_clip = clip;
     if (tbox_render_clips(box)) {
-        child_clip     = child_has_clip ? tbox_render_intersect(child_clip, box->padding_box) : box->padding_box;
+        tbox_rect scrollport = tbox_render_overflow_clip(box);
+        child_clip     = child_has_clip ? tbox_render_intersect(child_clip, scrollport) : scrollport;
         child_has_clip = true;
     }
     tbox_vector layers;
@@ -824,7 +868,7 @@ static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, const 
     }
 }
 
-static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool has_clip, tbox_rect clip, tbox_arena *arena) {
+static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool has_clip, tbox_rect clip, tbox_arena *arena, tbox_rect viewport) {
     size_t own_start  = items->length;
     bool visible      = box->style == NULL || !box->style->visibility_hidden;
     bool decorated    = visible && !box->empty_cell_hidden;
@@ -888,7 +932,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         for (size_t l = box->style->background_layer_count > 1 ? box->style->background_layer_count : 1; l > 1; l--) {
             const tbox_style_background_layer *layer = &box->style->background_layers[l - 2];
             if (layer->image[0] != '\0' || layer->gradient.kind != TBOX_STYLE_GRADIENT_NONE)
-                tbox_render_push_background_image(items, box, layer, box->background_layer_images[l - 2], background_box, background_h, background_v, rounded);
+                tbox_render_push_background_image(items, box, layer, box->background_layer_images[l - 2], background_box, background_h, background_v, rounded, viewport);
         }
         if (box->style->background_image[0] != '\0' || box->style->background_gradient.kind != TBOX_STYLE_GRADIENT_NONE) {
             tbox_style_background_layer *first = (tbox_style_background_layer *)tbox_arena_alloc(arena, sizeof(tbox_style_background_layer));
@@ -902,7 +946,10 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
                 first->position[1] = box->style->background_position[1];
                 first->repeat_x    = box->style->background_repeat_x;
                 first->repeat_y    = box->style->background_repeat_y;
-                tbox_render_push_background_image(items, box, first, box->background_image, background_box, background_h, background_v, rounded);
+                first->repeat_mode_x = box->style->background_repeat_mode_x;
+                first->repeat_mode_y = box->style->background_repeat_mode_y;
+                first->attachment_fixed = box->style->background_attachment_fixed;
+                tbox_render_push_background_image(items, box, first, box->background_image, background_box, background_h, background_v, rounded, viewport);
             }
         }
         for (size_t s = shadow_count; s > 0; s--)
@@ -1044,14 +1091,15 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     bool child_has_clip  = has_clip;
     tbox_rect child_clip = clip;
     if (tbox_render_clips(box)) {
-        child_clip     = child_has_clip ? tbox_render_intersect(child_clip, box->padding_box) : box->padding_box;
+        tbox_rect scrollport = tbox_render_overflow_clip(box);
+        child_clip     = child_has_clip ? tbox_render_intersect(child_clip, scrollport) : scrollport;
         child_has_clip = true;
     }
     tbox_vector layers;
     tbox_vector_init(&layers, arena, sizeof(tbox_render_layer), 0);
     if (context) {
         tbox_render_collect_layers(box->first_child, child_has_clip, child_clip, &layers);
-        tbox_render_paint_layers(&layers, true, items, arena);
+        tbox_render_paint_layers(&layers, true, items, arena, viewport);
     }
 
     size_t text_start = items->length;
@@ -1233,7 +1281,8 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     if (tbox_render_clips(box)) {
         for (size_t i = text_start; i < items->length; i++) {
             tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, i);
-            op->clip          = op->has_clip ? tbox_render_intersect(op->clip, box->padding_box) : box->padding_box;
+            tbox_rect scrollport = tbox_render_overflow_clip(box);
+            op->clip          = op->has_clip ? tbox_render_intersect(op->clip, scrollport) : scrollport;
             op->has_clip      = true;
         }
     }
@@ -1247,9 +1296,9 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     }
     for (const tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
         if (!tbox_render_is_layer(child))
-            tbox_render_box(child, items, child_has_clip, child_clip, arena);
+            tbox_render_box(child, items, child_has_clip, child_clip, arena, viewport);
     if (context)
-        tbox_render_paint_layers(&layers, false, items, arena);
+        tbox_render_paint_layers(&layers, false, items, arena, viewport);
     for (size_t i = 0; visible && i < box->table_edge_count; i++) {
         size_t index = items->length;
         tbox_render_push_fill_rect(items, box->table_edges[i].rect, box->table_edges[i].color);
@@ -1281,17 +1330,23 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     }
 }
 
-tbox_display_list tbox_render_build_display_list(tbox_arena *arena, const tbox_layout_box *root) {
+tbox_display_list tbox_render_build_display_list_in_viewport(tbox_arena *arena, const tbox_layout_box *root, double viewport_width, double viewport_height) {
     tbox_vector items;
     tbox_vector_init(&items, arena, sizeof(tbox_paint_op), 0);
 
     /* The root is the outermost stacking context; its siblings (none in a
      * normal tree) paint in order after it. */
     for (const tbox_layout_box *box = root; box != NULL; box = box->next_sibling)
-        tbox_render_box(box, &items, false, (tbox_rect){ 0 }, arena);
+        tbox_render_box(box, &items, false, (tbox_rect){ 0 }, arena, (tbox_rect){ 0.0, 0.0, viewport_width, viewport_height });
 
     tbox_display_list list;
     list.items = (tbox_paint_op *)items.data;
     list.count = items.length;
     return list;
+}
+
+tbox_display_list tbox_render_build_display_list(tbox_arena *arena, const tbox_layout_box *root) {
+    return tbox_render_build_display_list_in_viewport(arena, root,
+        root != NULL ? root->border_box.width : 0.0,
+        root != NULL ? root->border_box.height : 0.0);
 }

@@ -167,6 +167,12 @@ static bool tbox_context_scrollbar_visible(const tbox_layout_box *box) {
     return box->style != NULL && box->style->scrollbar_width != TBOX_STYLE_SCROLLBAR_WIDTH_NONE;
 }
 
+static tbox_rect tbox_context_scrollport(const tbox_layout_box *box) {
+    tbox_rect port = box->padding_box;
+    port.width = port.width > box->scrollbar_gutter ? port.width - box->scrollbar_gutter : 0.0;
+    return port;
+}
+
 static tbox_scroll_state *tbox_context_existing_scroll_state(tbox_context *ctx, const tbox_html_node *node) {
     for (tbox_scroll_state *state = ctx->scroll_states; state != NULL; state = state->next)
         if (state->node == node) return state;
@@ -195,7 +201,7 @@ static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_b
             tbox_rect clip = geometry.track;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
-                    clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
+                    clip = tbox_context_rect_intersection(clip, tbox_context_scrollport(ancestor));
             items[(*index)++] = (tbox_paint_op){
                 .kind = TBOX_PAINT_FILL_RECT, .rect = geometry.track,
                 .color = track_color, .has_clip = true, .clip = clip,
@@ -235,7 +241,8 @@ static const tbox_layout_box *tbox_context_scrollbar_at(const tbox_layout_box *b
         bool child_has_clip = has_clip;
         tbox_rect child_clip = clip;
         if (box->style != NULL && box->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE) {
-            child_clip = has_clip ? tbox_context_rect_intersection(clip, box->padding_box) : box->padding_box;
+            tbox_rect scrollport = tbox_context_scrollport(box);
+            child_clip = has_clip ? tbox_context_rect_intersection(clip, scrollport) : scrollport;
             child_has_clip = true;
         }
         const tbox_layout_box *child = tbox_context_scrollbar_at(box->first_child, x, y,

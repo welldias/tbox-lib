@@ -26,6 +26,20 @@ bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, d
     return true;
 }
 
+bool tbox_context_set_active_at(tbox_context *ctx, bool pressed, double x, double y) {
+    if (ctx == NULL) return false;
+    const tbox_html_node *node = NULL;
+    if (pressed) {
+        const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);
+        while (box != NULL && box->node == NULL) box = box->parent;
+        if (box != NULL && box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT)
+            node = box->node;
+    }
+    if (ctx->active_node == node) return false;
+    ctx->active_node = node;
+    return true;
+}
+
 static const tbox_html_node *tbox_context_next_node(const tbox_html_node *root, const tbox_html_node *node) {
     if (node->first_child != NULL) {
         return node->first_child;

@@ -8,7 +8,9 @@
  *
  *   stylesheet      : [ CDO | CDC | S | statement ]*
  *   statement       : ruleset | at_rule
- *   at_rule         : AT_KEYWORD <anything> [ block | ';' ]     -- contents discarded
+ *   at_rule         : AT_KEYWORD <anything> [ block | ';' ]
+ *                     -- @media rules and top-level @font-face retained;
+ *                        other contents discarded
  *   ruleset         : selector_group '{' declaration_list '}'
  *   selector_group  : selector [ ',' S* selector ]*
  *   selector        : compound [ combinator compound ]*
@@ -209,6 +211,7 @@ static tbox_css_simple_selector *tbox_css_parser_push_simple_selector(tbox_vecto
     item->attribute_operator       = TBOX_CSS_ATTR_EXISTS;
     item->attribute_value          = tbox_string_view_make(NULL, 0);
     item->attribute_case_insensitive = false;
+    item->attribute_case_sensitive = false;
     item->pseudo_argument          = tbox_string_view_make(NULL, 0);
     item->negated_selector         = NULL;
     return item;
@@ -257,6 +260,7 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
 
     tbox_string_view value = tbox_string_view_make(NULL, 0);
     bool case_insensitive = false;
+    bool case_sensitive = false;
     if (op != TBOX_CSS_ATTR_EXISTS) {
         tbox_css_parser_skip_s(parser);
         if (parser->current.type != TBOX_CSS_TOKEN_IDENT && parser->current.type != TBOX_CSS_TOKEN_STRING) {
@@ -266,8 +270,10 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
         tbox_css_parser_advance(parser);
         tbox_css_parser_skip_s(parser);
         if (parser->current.type == TBOX_CSS_TOKEN_IDENT &&
-            tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("i"))) {
-            case_insensitive = true;
+            (tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("i")) ||
+             tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("s")))) {
+            case_insensitive = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("i"));
+            case_sensitive = !case_insensitive;
             tbox_css_parser_advance(parser);
             tbox_css_parser_skip_s(parser);
         }
@@ -282,6 +288,7 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
     item->attribute_operator       = op;
     item->attribute_value          = value;
     item->attribute_case_insensitive = case_insensitive;
+    item->attribute_case_sensitive = case_sensitive;
     return true;
 }
 
@@ -662,10 +669,7 @@ static bool tbox_css_parser_parse_ruleset(tbox_css_parser *parser, tbox_css_rule
  * past where it started (recovery always finds a block to discard or
  * reaches EOF). So the parser can never spin without making progress on
  * malformed input. */
-void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_rulesets, size_t *out_ruleset_count) {
-    tbox_vector rulesets;
-    tbox_vector_init(&rulesets, parser->arena, sizeof(tbox_css_ruleset), 0);
-
+static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *rulesets, tbox_vector *faces, const tbox_css_media_condition *media, bool nested) {
     for (;;) {
         while (parser->current.type == TBOX_CSS_TOKEN_S || parser->current.type == TBOX_CSS_TOKEN_CDO || parser->current.type == TBOX_CSS_TOKEN_CDC) {
             tbox_css_parser_advance(parser);
@@ -673,20 +677,74 @@ void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_ruleset
         if (parser->current.type == TBOX_CSS_TOKEN_EOF) {
             break;
         }
-        if (parser->current.type == TBOX_CSS_TOKEN_AT_KEYWORD) {
+        if (nested && parser->current.type == TBOX_CSS_TOKEN_RBRACE) {
             tbox_css_parser_advance(parser);
+            break;
+        }
+        if (parser->current.type == TBOX_CSS_TOKEN_AT_KEYWORD) {
+            bool is_media = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("media"));
+            bool is_font_face = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("font-face"));
+            tbox_css_parser_advance(parser);
+            if (is_font_face) {
+                while (parser->current.type == TBOX_CSS_TOKEN_S) tbox_css_parser_advance(parser);
+                if (parser->current.type == TBOX_CSS_TOKEN_LBRACE) {
+                    tbox_css_ruleset block = {0};
+                    tbox_css_parser_parse_declaration_list(parser, &block);
+                    if (media == NULL) {
+                        tbox_css_font_face_rule *face = tbox_vector_push(faces);
+                        face->declarations = block.declarations;
+                        face->declaration_count = block.declaration_count;
+                    }
+                } else tbox_css_parser_skip_at_rule(parser);
+                continue;
+            }
+            if (is_media) {
+                size_t start = parser->current.offset;
+                int depth = 0;
+                while (parser->current.type != TBOX_CSS_TOKEN_EOF) {
+                    tbox_css_token_type type = parser->current.type;
+                    if (depth == 0 && (type == TBOX_CSS_TOKEN_LBRACE || type == TBOX_CSS_TOKEN_SEMICOLON)) break;
+                    if (tbox_css_token_opens_nested(type)) depth++;
+                    else if (tbox_css_token_closes_nested(type) && depth > 0) depth--;
+                    tbox_css_parser_advance(parser);
+                }
+                if (parser->current.type == TBOX_CSS_TOKEN_LBRACE) {
+                    size_t end = parser->current.offset;
+                    tbox_css_media_condition *condition = tbox_arena_alloc(parser->arena, sizeof(*condition));
+                    if (condition != NULL) {
+                        condition->query = tbox_css_parser_copy(parser, tbox_string_view_make(parser->tokenizer.input + start, end - start));
+                        condition->parent = media;
+                        tbox_css_parser_advance(parser);
+                        tbox_css_parser_parse_rules(parser, rulesets, faces, condition, true);
+                    } else {
+                        tbox_css_parser_skip_block(parser);
+                    }
+                } else if (parser->current.type == TBOX_CSS_TOKEN_SEMICOLON) tbox_css_parser_advance(parser);
+                continue;
+            }
             tbox_css_parser_skip_at_rule(parser);
             continue;
         }
 
-        tbox_css_ruleset ruleset;
+        tbox_css_ruleset ruleset = {0};
         if (tbox_css_parser_parse_ruleset(parser, &ruleset)) {
-            *(tbox_css_ruleset *)tbox_vector_push(&rulesets) = ruleset;
+            ruleset.media = media;
+            *(tbox_css_ruleset *)tbox_vector_push(rulesets) = ruleset;
         }
     }
+}
+
+void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_rulesets, size_t *out_ruleset_count, tbox_css_font_face_rule **out_faces, size_t *out_face_count) {
+    tbox_vector rulesets;
+    tbox_vector_init(&rulesets, parser->arena, sizeof(tbox_css_ruleset), 0);
+    tbox_vector faces;
+    tbox_vector_init(&faces, parser->arena, sizeof(tbox_css_font_face_rule), 0);
+    tbox_css_parser_parse_rules(parser, &rulesets, &faces, NULL, false);
 
     *out_rulesets      = rulesets.data;
     *out_ruleset_count = rulesets.length;
+    *out_faces = faces.data;
+    *out_face_count = faces.length;
 }
 
 /* selector_group with no trailing declaration block; see the header comment

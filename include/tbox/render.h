@@ -134,6 +134,10 @@ typedef struct tbox_display_list {
  * arena's (see "Convenções" at the top of ARCHITECTURE.md). */
 tbox_display_list tbox_render_build_display_list(tbox_arena *arena, const tbox_layout_box *root);
 
+/* Uses the actual window dimensions for background-attachment: fixed.
+ * The original entry point uses the root border box as a fallback viewport. */
+tbox_display_list tbox_render_build_display_list_in_viewport(tbox_arena *arena, const tbox_layout_box *root, double viewport_width, double viewport_height);
+
 #ifdef __cplusplus
 }
 #endif

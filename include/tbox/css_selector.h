@@ -25,7 +25,8 @@ extern "C" {
  * "nth-last-of-type(an+b)", "root", and "empty" are structural.
  * "disabled"/"enabled" and "required"/"optional" match eligible form
  * controls by their own attributes. "hover" matches the context's hovered
- * node and its ancestors; "focus" matches the focused node; "focus-within" also
+ * node and its ancestors; "active" matches the pressed node and its ancestors;
+ * "focus" matches the focused node; "focus-within" also
  * matches ancestors of the focused node. "link" and "any-link" match
  * a/area/link elements with href (no visited history). "checked" matches a
  * checked input type=checkbox. "lang" uses the nearest ancestor's `lang`
@@ -125,8 +126,8 @@ bool tbox_css_selector_matches(const tbox_css_selector *selector, const tbox_htm
 
 /* Defines the node currently under the pointer (or NULL for none) for
  * subsequent tbox_css_selector_matches calls to evaluate a simple selector
- * PSEUDO named "hover" -- matches iff `node == hovered` (pointer equality);
- * :focus matches the focused node set by the context; :checked reads a
+ * PSEUDO named "hover" -- matches the hovered node and its ancestors;
+ * :active uses the pressed node, :focus uses the focused node; :checked reads a
  * checkbox's checked attribute. Other unsupported
  * pseudo-classes/pseudo-elements remain "never matches", as
  * documented above. Backed by a single file-static global (this library is already
@@ -138,6 +139,9 @@ void tbox_css_selector_set_hover_context(const tbox_html_node *hovered);
 
 /* Sets the node matched by :focus for subsequent selector evaluations. */
 void tbox_css_selector_set_focus_context(const tbox_html_node *focused);
+
+/* Sets the element held by a pointer press for :active; its ancestors also match. */
+void tbox_css_selector_set_active_context(const tbox_html_node *active);
 
 #ifdef __cplusplus
 }

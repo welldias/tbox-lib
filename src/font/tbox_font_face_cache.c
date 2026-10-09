@@ -18,6 +18,7 @@ typedef struct tbox_font_face_cache_entry {
     bool italic;
     double size_px;
     tbox_font_face *face;
+    unsigned generation;
 } tbox_font_face_cache_entry;
 
 /* One family's resolved font bytes, keyed by (family, bold, italic) --
@@ -32,6 +33,7 @@ typedef struct tbox_font_face_cache_family_blob {
     bool italic;
     const void *data;
     size_t size;
+    bool registered;
 } tbox_font_face_cache_family_blob;
 
 /* Own lifetime (real _destroy, no caller arena), same as tbox_css_stylesheet
@@ -50,6 +52,7 @@ struct tbox_font_face_cache {
     void *resolver_userdata;
     tbox_vector entries;      /* tbox_font_face_cache_entry, linear-scanned by _get. */
     tbox_vector family_blobs; /* tbox_font_face_cache_family_blob, linear-scanned by _get. */
+    unsigned generation;
 };
 
 static void *tbox_font_face_cache_copy_bytes(tbox_arena *arena, const void *data, size_t size) {
@@ -91,8 +94,27 @@ tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size
 
     tbox_vector_init(&cache->entries, &cache->arena, sizeof(tbox_font_face_cache_entry), 0);
     tbox_vector_init(&cache->family_blobs, &cache->arena, sizeof(tbox_font_face_cache_family_blob), 0);
+    cache->generation = 0;
 
     return cache;
+}
+
+bool tbox_font_face_cache_register(tbox_font_face_cache *cache, tbox_string_view family, int weight, bool italic, const void *data, size_t size) {
+    if (cache == NULL || family.size == 0 || family.size >= 64 || data == NULL || size == 0) return false;
+    const void *copy = tbox_font_face_cache_copy_bytes(&cache->arena, data, size);
+    if (copy == NULL) return false;
+    tbox_font_face_cache_family_blob *blob = tbox_vector_push(&cache->family_blobs);
+    if (blob == NULL) return false;
+    memset(blob, 0, sizeof(*blob));
+    memcpy(blob->family, family.data, family.size);
+    blob->weight = weight > 0 ? weight : 400;
+    blob->stretch = 100.0;
+    blob->italic = italic;
+    blob->data = copy;
+    blob->size = size;
+    blob->registered = true;
+    cache->generation++;
+    return true;
 }
 
 void tbox_font_face_cache_destroy(tbox_font_face_cache *cache) {
@@ -143,7 +165,7 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
     size_t entry_count = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < entry_count; i++) {
         const tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
-        if (entry->weight == weight && entry->stretch == stretch && entry->italic == italic && entry->kerning == kerning && entry->size_px == size_px && strcmp(entry->family, family_buf) == 0) {
+        if (entry->generation == cache->generation && entry->weight == weight && entry->stretch == stretch && entry->italic == italic && entry->kerning == kerning && entry->size_px == size_px && strcmp(entry->family, family_buf) == 0) {
             return entry->face;
         }
     }
@@ -178,8 +200,8 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
          * italic) never call the resolver again. */
         const tbox_font_face_cache_family_blob *blob = NULL;
         size_t blob_count                            = tbox_vector_length(&cache->family_blobs);
-        for (size_t i = 0; i < blob_count; i++) {
-            const tbox_font_face_cache_family_blob *candidate = tbox_vector_at(&cache->family_blobs, i);
+        for (size_t i = blob_count; i > 0; i--) {
+            const tbox_font_face_cache_family_blob *candidate = tbox_vector_at(&cache->family_blobs, i - 1);
             if (candidate->weight == weight && candidate->stretch == stretch && candidate->italic == italic && strcmp(candidate->family, family_buf) == 0) {
                 blob = candidate;
                 break;
@@ -219,6 +241,7 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
             new_blob->italic  = italic;
             new_blob->data   = copied_data;
             new_blob->size   = resolved_size;
+            new_blob->registered = false;
             blob             = new_blob;
         }
 
@@ -242,5 +265,6 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
     entry->italic  = italic;
     entry->size_px = size_px;
     entry->face    = face;
+    entry->generation = cache->generation;
     return face;
 }

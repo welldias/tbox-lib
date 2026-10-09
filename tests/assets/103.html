@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      color: #172033;
+      background: #edf2f8;
+      padding: 24px;
+    }
+
+    h1 {
+      font-size: 25px;
+      margin: 0 0 8px;
+    }
+
+    h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+    }
+
+    p {
+      margin: 0 0 15px;
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .card {
+      width: 185px;
+      min-height: 100px;
+      padding: 12px;
+      background-color: white;
+      border: 1px solid #94a3b8;
+    }
+
+    .wrap {
+      word-wrap: break-word;
+    }
+
+    .balanced {
+      text-wrap-style: balance;
+      width: 160px;
+    }
+
+    .photo {
+      width: 185px;
+      height: 105px;
+      object-fit: cover;
+      border: 1px solid #64748b;
+    }
+
+    .photo.first {
+      object-position: right 20px bottom 10px;
+    }
+
+    .photo.second {
+      object-position: left 10% bottom 12px;
+    }
+
+    .corners {
+      border-radius: 4px;
+      border-start-start-radius: 24px 12px;
+      border-end-end-radius: 24px 12px;
+      background: #c7d2fe;
+    }
+
+    .tile {
+      width: 210px;
+      height: 105px;
+      border: 1px solid #64748b;
+      background-image: url(pixel-heart.png);
+      background-size: 32px 32px;
+      image-rendering: pixelated;
+    }
+
+    .space {
+      background-repeat: space;
+    }
+
+    .round {
+      background-repeat: round;
+    }
+
+    .state {
+      padding: 9px;
+      background: white;
+      border: 1px solid #94a3b8;
+    }
+
+    .state[data-state="Active" s] {
+      background: #bbf7d0;
+    }
+
+    .state[data-state="active" s] {
+      background: #fecaca;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Adicoes pequenas de CSS</h1>
+  <p>Exemplo de word-wrap, text-wrap-style, object-position, raios logicos, background-repeat e seletor [s].</p>
+
+  <h2>Quebra de texto e linhas equilibradas</h2>
+  <div class="row">
+    <div class="card wrap">word-wrap: break-word<br>Supercalifragilisticexpialidocious</div>
+    <div class="card balanced">text-wrap-style: balance<br>Uma frase com varias palavras distribuida em linhas mais
+      equilibradas.</div>
+  </div>
+
+  <h2>Posicao da imagem e cantos logicos</h2>
+  <div class="row">
+    <div><img class="photo first" src="bird.png" alt="Passaro">
+      <p>right 20px bottom 10px</p>
+    </div>
+    <div><img class="photo second" src="bird.png" alt="Passaro">
+      <p>left 10% bottom 12px</p>
+    </div>
+    <div class="card corners">border-start-start-radius e border-end-end-radius</div>
+  </div>
+
+  <h2>Repeticao com espacos e ajuste de tamanho</h2>
+  <div class="row">
+    <div>
+      <div class="tile space"></div>
+      <p>background-repeat: space</p>
+    </div>
+    <div>
+      <div class="tile round"></div>
+      <p>background-repeat: round</p>
+    </div>
+  </div>
+
+  <h2>Seletor de atributo com comparacao explicita de caixa</h2>
+  <div class="row">
+    <div class="state" data-state="Active">[data-state="Active" s]</div>
+    <div class="state" data-state="active">[data-state="active" s]</div>
+  </div>
+</body>
+
+</html>

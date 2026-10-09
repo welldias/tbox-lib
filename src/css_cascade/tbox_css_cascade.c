@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
@@ -13,6 +14,116 @@
  * same definition tbox_css_selector_match.c uses. */
 static bool tbox_css_cascade_is_space(char byte) {
     return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == '\f';
+}
+
+static tbox_string_view tbox_css_media_trim(tbox_string_view view) {
+    while (view.size && tbox_css_cascade_is_space(*view.data)) view.data++, view.size--;
+    while (view.size && tbox_css_cascade_is_space(view.data[view.size - 1])) view.size--;
+    return view;
+}
+
+static bool tbox_css_media_equals(tbox_string_view view, const char *text) {
+    return tbox_string_view_equal_ascii_ci(view, tbox_string_view_from_cstr(text));
+}
+
+static bool tbox_css_media_feature(tbox_string_view clause, double width, double height, bool reduced_motion) {
+    clause = tbox_css_media_trim(clause);
+    if (clause.size < 3 || clause.data[0] != '(' || clause.data[clause.size - 1] != ')') return false;
+    clause.data++, clause.size -= 2;
+    clause = tbox_css_media_trim(clause);
+    size_t colon = 0;
+    while (colon < clause.size && clause.data[colon] != ':') colon++;
+    if (colon == clause.size) return false;
+    tbox_string_view name = tbox_css_media_trim(tbox_string_view_make(clause.data, colon));
+    tbox_string_view value = tbox_css_media_trim(tbox_string_view_make(clause.data + colon + 1, clause.size - colon - 1));
+    if (tbox_css_media_equals(name, "prefers-reduced-motion")) {
+        if (tbox_css_media_equals(value, "reduce")) return reduced_motion;
+        if (tbox_css_media_equals(value, "no-preference")) return !reduced_motion;
+        return false;
+    }
+    if (tbox_css_media_equals(name, "orientation")) {
+        if (tbox_css_media_equals(value, "landscape")) return width > height;
+        if (tbox_css_media_equals(value, "portrait")) return height >= width;
+        return false;
+    }
+    bool min = false, max = false;
+    if (name.size > 4 && tbox_css_media_equals(tbox_string_view_make(name.data, 4), "min-")) {
+        name.data += 4, name.size -= 4, min = true;
+    } else if (name.size > 4 && tbox_css_media_equals(tbox_string_view_make(name.data, 4), "max-")) {
+        name.data += 4, name.size -= 4, max = true;
+    }
+    double actual;
+    if (tbox_css_media_equals(name, "width")) actual = width;
+    else if (tbox_css_media_equals(name, "height")) actual = height;
+    else return false;
+    char number[64];
+    if (value.size == 0 || value.size >= sizeof(number)) return false;
+    memcpy(number, value.data, value.size);
+    number[value.size] = '\0';
+    char *end = NULL;
+    double target = strtod(number, &end);
+    if (end == number || !isfinite(target) || target < 0.0) return false;
+    if (strcmp(end, "px") == 0 || *end == '\0') { /* CSS px */ }
+    else if (strcmp(end, "em") == 0 || strcmp(end, "rem") == 0) target *= 16.0;
+    else return false;
+    return min ? actual >= target : max ? actual <= target : actual == target;
+}
+
+static bool tbox_css_media_one(tbox_string_view query, double width, double height, bool reduced_motion) {
+    query = tbox_css_media_trim(query);
+    bool negate = false;
+    if (query.size > 4 && tbox_css_media_equals(tbox_string_view_make(query.data, 4), "not ")) {
+        query.data += 4, query.size -= 4, negate = true;
+    } else if (query.size > 5 && tbox_css_media_equals(tbox_string_view_make(query.data, 5), "only ")) {
+        query.data += 5, query.size -= 5;
+    }
+    bool result = true, saw = false;
+    while (query.size) {
+        query = tbox_css_media_trim(query);
+        if (!query.size) break;
+        size_t end = 0;
+        if (query.data[0] == '(') {
+            int depth = 0;
+            do {
+                if (query.data[end] == '(') depth++;
+                else if (query.data[end] == ')') depth--;
+                end++;
+            } while (end < query.size && depth > 0);
+            if (depth != 0) return false;
+            result &= tbox_css_media_feature(tbox_string_view_make(query.data, end), width, height, reduced_motion);
+        } else {
+            while (end < query.size && !tbox_css_cascade_is_space(query.data[end])) end++;
+            tbox_string_view token = tbox_string_view_make(query.data, end);
+            if (tbox_css_media_equals(token, "and")) { query.data += end, query.size -= end; continue; }
+            result &= tbox_css_media_equals(token, "all") || tbox_css_media_equals(token, "screen");
+        }
+        saw = true;
+        query.data += end, query.size -= end;
+    }
+    return saw && (negate ? !result : result);
+}
+
+static bool tbox_css_media_matches(const tbox_css_media_condition *media, double width, double height, bool reduced_motion) {
+    for (; media != NULL; media = media->parent) {
+        if (width <= 0.0 || height <= 0.0) return false;
+        bool matched = false;
+        tbox_string_view query = media->query;
+        while (query.size) {
+            size_t end = 0;
+            int depth = 0;
+            while (end < query.size) {
+                if (query.data[end] == '(') depth++;
+                else if (query.data[end] == ')') depth--;
+                else if (query.data[end] == ',' && depth == 0) break;
+                end++;
+            }
+            matched |= tbox_css_media_one(tbox_string_view_make(query.data, end), width, height, reduced_motion);
+            query.data += end + (end < query.size);
+            query.size -= end + (end < query.size);
+        }
+        if (!matched) return false;
+    }
+    return true;
 }
 
 /* Copies `view`'s bytes into `arena`, returning a NEW tbox_string_view that
@@ -231,17 +342,25 @@ static bool tbox_css_cascade_ends_in_pseudo_element(const tbox_css_selector *sel
     return pseudo == NULL || tbox_string_view_equal_cstr(tbox_string_view_make(last->name.data + 2, last->name.size - 2), pseudo);
 }
 
-static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo);
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion);
 
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0.0, 0.0, false);
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, 0.0, 0.0, false);
 }
 
-static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo) {
+tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, viewport_width, viewport_height, reduced_motion);
+}
+
+tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, viewport_width, viewport_height, reduced_motion);
+}
+
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion) {
     tbox_css_computed_style result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (node == NULL) {
         return result;
@@ -265,6 +384,7 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
 
         for (size_t r = 0; r < ruleset_count; r++) {
             const tbox_css_ruleset *ruleset = &rulesets[r];
+            if (ruleset->media != NULL && !tbox_css_media_matches(ruleset->media, viewport_width, viewport_height, reduced_motion)) continue;
 
             const tbox_css_selector *best_selector = NULL;
             tbox_css_specificity best_specificity  = { 0, 0, 0 };

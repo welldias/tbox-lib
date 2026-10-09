@@ -106,6 +106,9 @@ typedef struct tbox_context_options {
     tbox_ua_style_config ua_style;
     const char *control_css;
     size_t control_css_length;
+    const char *asset_base_dir; /* base directory for @font-face url() files */
+    const char *css_base_dir; /* external stylesheet URLs; defaults to asset_base_dir */
+    bool prefers_reduced_motion; /* exposed to @media (prefers-reduced-motion: ...) */
 } tbox_context_options;
 
 tbox_context_options tbox_context_options_default(void);
@@ -163,6 +166,11 @@ void tbox_context_close(tbox_context *ctx);
  * ({NULL, 0}) rather than crashing -- tbox_render_build_display_list
  * already handles a NULL layout root that way. */
 void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double viewport_height, tbox_display_list *out_list);
+
+/* Sets a monotonic time in seconds before run_frame. The application does
+ * this automatically; callers rendering deterministic frames can supply it. */
+void tbox_context_set_animation_time(tbox_context *ctx, double seconds);
+bool tbox_context_animations_active(const tbox_context *ctx);
 
 /* Linear search, from the layout tree computed by the most recent
  * tbox_context_run_frame, for the deepest box that contains (x, y) --
@@ -226,6 +234,10 @@ void tbox_context_scrollbar_release(tbox_context *ctx);
  * was true -- so the cascade always sees the CURRENT hover state, not just
  * the state as of whenever it last changed. */
 bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, double y);
+
+/* Records the hit element on pointer press for :active. Release (pressed=false)
+ * clears it. Returns true when the active target changed. */
+bool tbox_context_set_active_at(tbox_context *ctx, bool pressed, double x, double y);
 
 /* v1 -- Interatividade: event delegation by CSS selector. See
  * ARCHITECTURE.md's "v1 -- Interatividade" -> "Orchestration (tbox_context)

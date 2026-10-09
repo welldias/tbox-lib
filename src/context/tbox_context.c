@@ -92,6 +92,9 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
         return NULL;
     }
 
+    tbox_context_register_font_faces(fonts, stylesheet, options.css_base_dir != NULL ? options.css_base_dir : options.asset_base_dir);
+    tbox_context_register_font_faces(fonts, internal_stylesheet, options.asset_base_dir);
+
     tbox_css_stylesheet *ua_stylesheet = tbox_ua_stylesheet_create(options.ua_style);
     if (ua_stylesheet == NULL) {
         tbox_css_stylesheet_destroy(stylesheet);
@@ -134,6 +137,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     tbox_vector_init(&ctx->handlers, &ctx->handler_arena, sizeof(tbox_context_click_binding), 0);
     ctx->next_handler_id = 0;
     ctx->hovered_node    = NULL;
+    ctx->active_node     = NULL;
     ctx->focused_node    = NULL;
     ctx->text_fields     = NULL;
     ctx->file_fields     = NULL;
@@ -171,6 +175,10 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->submit_handler                                     = NULL;
     ctx->submit_userdata                                    = NULL;
     ctx->styles                                             = (tbox_style_table){ 0 };
+    ctx->transitions                                        = NULL;
+    ctx->animation_time                                     = 0.0;
+    ctx->animations_active                                  = false;
+    ctx->prefers_reduced_motion                              = options.prefers_reduced_motion;
 
     tbox_context_sanitize_inputs(ctx, (tbox_html_node *)tbox_html_document_root(document));
     tbox_context_capture_form_defaults(ctx, tbox_html_document_root(document));
@@ -191,6 +199,12 @@ tbox_context *tbox_context_open(const char *html, size_t html_length, const char
 void tbox_context_close(tbox_context *ctx) {
     if (ctx == NULL) {
         return;
+    }
+
+    for (tbox_transition_state *state = ctx->transitions; state != NULL;) {
+        tbox_transition_state *next = state->next;
+        free(state);
+        state = next;
     }
 
     for (tbox_text_field *field = ctx->text_fields; field != NULL;) {
@@ -232,6 +246,7 @@ void tbox_context_close(tbox_context *ctx) {
     }
     tbox_arena_destroy(&ctx->handler_arena);
 
+    tbox_css_selector_set_active_context(NULL);
     tbox_css_stylesheet_destroy(ctx->ua_stylesheet);
     tbox_css_stylesheet_destroy(ctx->control_stylesheet);
     tbox_css_stylesheet_destroy(ctx->stylesheet);
@@ -252,6 +267,8 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     if (ctx->focused_node != NULL && !tbox_context_node_attached(ctx, ctx->focused_node)) {
         ctx->focused_node = NULL;
     }
+    if (ctx->active_node != NULL && !tbox_context_node_attached(ctx, ctx->active_node))
+        ctx->active_node = NULL;
     if (ctx->open_select != NULL && !tbox_context_node_attached(ctx, ctx->open_select)) {
         ctx->open_select     = NULL;
         ctx->popup_highlight = NULL;
@@ -279,6 +296,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * contract this call fulfills. */
     tbox_css_selector_set_hover_context(ctx->hovered_node);
     tbox_css_selector_set_focus_context(ctx->focused_node);
+    tbox_css_selector_set_active_context(ctx->active_node);
 
     /* three cascade sources -- the user-agent stylesheet, the
      * external author stylesheet, and  the internal stylesheet
@@ -299,8 +317,9 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
         { ctx->stylesheet,          TBOX_CSS_ORIGIN_AUTHOR     },
         { ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR     },
     };
-    tbox_style_table styles = tbox_style_resolve_tree_in_viewport(&ctx->frame_arena, root, sources, 3, viewport_width, viewport_height);
+    tbox_style_table styles = tbox_style_resolve_tree_in_viewport_with_preferences(&ctx->frame_arena, root, sources, 3, viewport_width, viewport_height, ctx->prefers_reduced_motion);
     ctx->styles             = styles;
+    tbox_context_apply_transitions(ctx);
 
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
      * so tbox_context_hit_test has something to search (or not) between
@@ -316,7 +335,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
 
     /* tbox_render_build_display_list already treats a NULL root as "empty
      * subtree", producing {NULL, 0} -- no special-casing needed here. */
-    *out_list = tbox_render_build_display_list(&ctx->frame_arena, ctx->root);
+    *out_list = tbox_render_build_display_list_in_viewport(&ctx->frame_arena, ctx->root, viewport_width, viewport_height);
     tbox_context_paint_text_input_caret(ctx, out_list);
     tbox_context_paint_textarea_caret(ctx, out_list);
     tbox_context_append_scrollbars(ctx, out_list);

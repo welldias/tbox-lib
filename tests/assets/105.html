@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<style>
+@font-face {
+  font-family: "Fonte do Projeto";
+  src: url("../../external/liberation-sans/LiberationSans-Regular.ttf");
+  font-weight: 400;
+  font-style: normal;
+}
+body { margin: 24px; background: #f1f5f9; color: #172033; font-family: "Fonte do Projeto"; font-size: 17px; }
+h1 { margin: 0 0 10px; font-size: 29px; }
+p { margin: 0 0 14px; }
+.status { padding: 10px 14px; background: #dbeafe; border: 1px solid #3b82f6; margin-bottom: 16px; }
+.status .wide { display: none; }
+.cards { display: flex; gap: 16px; margin-bottom: 20px; }
+.card {
+  width: 210px; height: 115px; padding: 18px;
+  background-color: #38bdf8; color: #082f49;
+  border: 2px solid #0284c7;
+  transition: background-color 450ms ease, color 450ms ease, opacity 450ms linear;
+}
+.card:hover { background-color: #7c3aed; color: white; opacity: 0.72; }
+@media screen and (max-width: 600px) {
+  .cards { flex-direction: column; }
+  .card { width: 80%; }
+}
+@media screen and (min-width: 601px) {
+  .status { background: #dcfce7; border-color: #16a34a; }
+  .status .narrow { display: none; }
+  .status .wide { display: inline; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none; }
+}
+</style>
+</head>
+<body>
+  <h1>@media, transition e @font-face</h1>
+  <p>Redimensione a janela para mudar a disposição dos cartões. Passe o ponteiro sobre eles para ver a transição.</p>
+  <div class="status"><span class="narrow">Janela estreita</span><span class="wide">Janela larga</span></div>
+  <div class="cards">
+    <div class="card">Cor de fundo e texto animados.</div>
+    <div class="card">Opacidade animada no mesmo intervalo.</div>
+  </div>
+  <p>Todo o texto usa uma fonte local declarada por @font-face.</p>
+</body>
+</html>

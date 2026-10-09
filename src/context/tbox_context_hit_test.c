@@ -6,6 +6,12 @@
 
 static const tbox_layout_box *tbox_context_hit_test_clipped(const tbox_layout_box *box, double x, double y);
 
+static tbox_rect tbox_context_scrollport(const tbox_layout_box *box) {
+    tbox_rect rect = box->padding_box;
+    rect.width = rect.width > box->scrollbar_gutter ? rect.width - box->scrollbar_gutter : 0.0;
+    return rect;
+}
+
 static const tbox_layout_box *tbox_context_hit_test_clipped(const tbox_layout_box *box, double x, double y) {
     if (box == NULL) {
         return NULL;
@@ -13,7 +19,7 @@ static const tbox_layout_box *tbox_context_hit_test_clipped(const tbox_layout_bo
 
     const tbox_layout_box *last_hit = NULL;
     if (box->style == NULL || box->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_VISIBLE ||
-        tbox_context_point_in_rect(box->padding_box, x, y)) {
+        tbox_context_point_in_rect(tbox_context_scrollport(box), x, y)) {
         for (const tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling) {
             const tbox_layout_box *hit = tbox_context_hit_test_clipped(child, x, y);
             if (hit != NULL) last_hit = hit;

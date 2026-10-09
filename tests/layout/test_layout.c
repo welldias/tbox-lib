@@ -1241,6 +1241,7 @@ int tbox_test_layout_run(void) {
         } cases[] = {
             { "li { list-style-position: inside; } ol { list-style-type: lower-alpha; }",                                         { "a. x", "b. x", "c. x", "d. x" }                                         },
             { "li { list-style-position: inside; } ol { list-style-type: decimal-leading-zero; }",                                { "01. x", "02. x", "03. x", "04. x" }                                   },
+            { "li { list-style-position: inside; } ol { list-style-type: lower-greek; }",                                       { "α. x", "β. x", "γ. x", "δ. x" }                                       },
             { "li { list-style-position: inside; } ol { list-style: upper-roman inside; }",                                       { "I. x", "II. x", "III. x", "IV. x" }                                     },
             { "li { list-style-position: inside; } ol { list-style-type: lower-roman; } li + li + li { list-style-type: none; }", { "i. x", "ii. x", "x", "x" }                                              },
             { "li { list-style-position: inside; } ol { list-style-type: disc; }",                                                { "\xE2\x80\xA2 x", "\xE2\x80\xA2 x", "\xE2\x80\xA2 x", "\xE2\x80\xA2 x" } },
@@ -1273,6 +1274,26 @@ int tbox_test_layout_run(void) {
             tbox_css_stylesheet_destroy(sheet);
             tbox_html_document_destroy(doc);
         }
+        tbox_html_document *doc = parse_html_cstr("<ul><li>x</li><li>x</li></ul>");
+        tbox_css_stylesheet *sheet = parse_css_cstr("li { list-style-position: inside; } li:first-child { list-style-type: disclosure-open; } li:last-child { list-style-type: disclosure-closed; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        tbox_layout_box *ul = tbox_layout_build(&arena, tbox_html_document_root(doc), &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(ul != NULL && ul->first_child != NULL && ul->first_child->next_sibling != NULL);
+        if (ul != NULL && ul->first_child != NULL && ul->first_child->next_sibling != NULL) {
+            const tbox_layout_box *open = ul->first_child, *closed = open->next_sibling;
+            TBOX_TEST_ASSERT(open->text_run_count > 0 && closed->text_run_count > 0);
+            if (open->text_run_count > 0 && closed->text_run_count > 0) {
+                const char *open_text = tbox_font_face_has_glyph(open->text_runs[0].font, 0x25BE) ? "▾ x" : "• x";
+                const char *closed_text = tbox_font_face_has_glyph(closed->text_runs[0].font, 0x25B8) ? "▸ x" : "• x";
+                TBOX_TEST_ASSERT(string_view_equal_cstr(open->text_runs[0].text, open_text));
+                TBOX_TEST_ASSERT(string_view_equal_cstr(closed->text_runs[0].text, closed_text));
+            }
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
     }
 
     /* text-transform rewrites the measured text; inline children inherit

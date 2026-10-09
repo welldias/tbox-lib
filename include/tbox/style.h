@@ -245,6 +245,9 @@ typedef enum tbox_style_list_style_type {
     TBOX_STYLE_LIST_STYLE_UPPER_ALPHA,
     TBOX_STYLE_LIST_STYLE_LOWER_ROMAN,
     TBOX_STYLE_LIST_STYLE_UPPER_ROMAN,
+    TBOX_STYLE_LIST_STYLE_LOWER_GREEK,
+    TBOX_STYLE_LIST_STYLE_DISCLOSURE_OPEN,
+    TBOX_STYLE_LIST_STYLE_DISCLOSURE_CLOSED,
     TBOX_STYLE_LIST_STYLE_NONE,
 } tbox_style_list_style_type;
 
@@ -305,6 +308,9 @@ typedef enum tbox_style_cursor {
     TBOX_STYLE_CURSOR_EW_RESIZE,
     TBOX_STYLE_CURSOR_NS_RESIZE,
     TBOX_STYLE_CURSOR_PROGRESS,
+    TBOX_STYLE_CURSOR_COPY,
+    TBOX_STYLE_CURSOR_ZOOM_IN,
+    TBOX_STYLE_CURSOR_ZOOM_OUT,
     TBOX_STYLE_CURSOR_NONE,
 } tbox_style_cursor;
 
@@ -396,6 +402,13 @@ typedef struct tbox_style_clip_path {
     tbox_style_length center[2];     /* initial 50% 50% */
 } tbox_style_clip_path;
 
+typedef enum tbox_style_background_repeat {
+    TBOX_STYLE_BACKGROUND_REPEAT_NO_REPEAT,
+    TBOX_STYLE_BACKGROUND_REPEAT_REPEAT,
+    TBOX_STYLE_BACKGROUND_REPEAT_SPACE,
+    TBOX_STYLE_BACKGROUND_REPEAT_ROUND,
+} tbox_style_background_repeat;
+
 /* One background image layer beyond the first (see
  * tbox_style.background_layers). */
 typedef struct tbox_style_background_layer {
@@ -405,6 +418,8 @@ typedef struct tbox_style_background_layer {
     tbox_style_length size[2];
     tbox_style_length position[2];
     bool repeat_x, repeat_y;
+    tbox_style_background_repeat repeat_mode_x, repeat_mode_y;
+    bool attachment_fixed;
 } tbox_style_background_layer;
 
 #define TBOX_STYLE_MAX_BACKGROUND_LAYERS 4
@@ -484,7 +499,9 @@ typedef struct tbox_style {
     tbox_style_background_size_kind background_size_kind;
     tbox_style_length background_size[2];          /* width, height; AUTO keeps the intrinsic size/ratio */
     tbox_style_length background_position[2];      /* percent of the free space or px from the left/top; initial 0% 0% */
-    bool background_repeat_x, background_repeat_y; /* initial: repeat both */
+    bool background_repeat_x, background_repeat_y; /* compatibility flags: mode != NO_REPEAT */
+    tbox_style_background_repeat background_repeat_mode_x, background_repeat_mode_y;
+    bool background_attachment_fixed;
     tbox_style_background_origin background_origin; /* the area background-position/size refer to */
     /* Comma-separated layers: the fields above are the first (topmost)
      * one, background_layers[i] the (i + 2)-th; background_layer_count
@@ -628,6 +645,9 @@ typedef struct tbox_style {
      * 1.0 -- a hand-built, zero-initialized tbox_style must set it, or the
      * element paints nothing. */
     double opacity;
+    /* transition: color, background-color, opacity; one timing per property. */
+    double transition_duration[3], transition_delay[3];
+    unsigned char transition_timing[3]; /* 0 ease, 1 linear, 2 ease-in, 3 ease-out, 4 ease-in-out */
     /* `filter` color functions (grayscale, sepia, saturate, hue-rotate,
      * invert, opacity, brightness, contrast) folded into one 4x5 color
      * matrix over 0..1 RGBA, rows R G B A, columns r g b a + offset;
@@ -655,6 +675,7 @@ typedef struct tbox_style {
      * on (its own `--x` declarations still apply to itself). NULL: none. */
     const tbox_style_custom_properties *custom_properties;
     tbox_style_scrollbar_width scrollbar_width; /* not inheritable */
+    bool scrollbar_gutter_stable; /* reserve the vertical scrollbar's inline-end space */
     /* flexbox, none inheritable. Container properties: */
     tbox_style_flex_direction flex_direction;
     tbox_style_flex_wrap flex_wrap;
@@ -835,6 +856,7 @@ tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node
 /* tbox_style_resolve_tree with a viewport size, see
  * tbox_style_resolve_in_viewport. */
 tbox_style_table tbox_style_resolve_tree_in_viewport(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height);
+tbox_style_table tbox_style_resolve_tree_in_viewport_with_preferences(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion);
 
 /* Linear scan for `node`'s entry, same pattern as tbox_css_computed_style_find
  * and tbox_css_selector_match -- acceptable for UI-sized trees (tens to a

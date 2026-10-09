@@ -235,6 +235,10 @@ tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size
  * byte buffers and the cache struct itself. A no-op if cache == NULL. */
 void tbox_font_face_cache_destroy(tbox_font_face_cache *cache);
 
+/* Registers a document font from bytes (for @font-face). The cache copies
+ * them and prefers the latest matching family/weight/style over its resolver. */
+bool tbox_font_face_cache_register(tbox_font_face_cache *cache, tbox_string_view family, int weight, bool italic, const void *data, size_t size);
+
 /* Looks up (family, bold, italic, size_px) in the cache; on a miss, calls
  * tbox_font_face_load internally and stores the result before returning it
  * -- same arena/malloc-backed vector-plus-linear-scan idiom already used by

@@ -555,22 +555,42 @@ int tbox_test_css_selector_run(void) {
         tbox_html_document_destroy(doc);
     }
 
-    /* The `i` modifier folds ASCII for each value operator; unmodified
-     * selectors remain case-sensitive. */
+    /* `i` folds ASCII; `s` explicitly preserves case, including on HTML
+     * enumerated attributes that otherwise compare case-insensitively. */
     {
-        tbox_html_document *doc = parse_html_cstr("<div data-name='Alpha-BETA' data-tags='FOO Bar'></div>");
+        tbox_html_document *doc = parse_html_cstr("<div data-name='Alpha-BETA' data-tags='FOO Bar'><input type='TEXT'></div>");
         const tbox_html_node *root = tbox_html_document_root(doc);
         const char *selectors[] = {
             "[data-name='alpha-beta' i]", "[data-tags~=foo i]", "[data-name|=alpha i]",
             "[data-name^=alpha i]", "[data-name$=beta i]", "[data-name*=HA-be i]",
-            "[data-name='alpha-beta']", "[data-name^=alpha]", "[data-name='alpha-beta' s]"
+            "[data-name='alpha-beta']", "[data-name^=alpha]", "[data-name='alpha-beta' s]",
+            "[data-name='Alpha-BETA' s]", "input[type='text']", "input[type='text' s]", "input[type='TEXT' s]"
         };
-        const size_t expected[] = { 1, 1, 1, 1, 1, 1, 0, 0, 0 };
+        const size_t expected[] = { 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1 };
         for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
             tbox_css_selector_node_set set = select_cstr(root, selectors[i]);
             TBOX_TEST_ASSERT(set.count == expected[i]);
             tbox_css_selector_node_set_destroy(&set);
         }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* :active covers the pressed element and its ancestors until release. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><button><span>x</span></button><p>y</p></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        const tbox_html_node *span = root->first_child->first_child->first_child;
+        tbox_css_selector_set_active_context(span);
+        tbox_css_selector_node_set set = select_cstr(root, ":active");
+        TBOX_TEST_ASSERT(set.count == 3);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "p:active");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_css_selector_set_active_context(NULL);
+        set = select_cstr(root, ":active");
+        TBOX_TEST_ASSERT(set.count == 0);
+        tbox_css_selector_node_set_destroy(&set);
         tbox_html_document_destroy(doc);
     }
 

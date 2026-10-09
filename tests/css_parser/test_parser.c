@@ -301,14 +301,15 @@ int tbox_test_css_parser_parser_run(void) {
         tbox_css_stylesheet_destroy(ss);
     }
 
-    /* 23: an at-rule with a block is fully skipped without affecting either
-     * neighbor. */
+    /* 23: @media preserves its nested rule and source order. */
     {
         tbox_css_stylesheet *ss   = parse_cstr("p{color:red;} @media screen { div{color:blue;} } a{color:green;}");
         const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
-        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 2);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 3);
         TBOX_TEST_ASSERT(text_eq(r[0].selectors[0].simple_selectors[0].name, "p"));
-        TBOX_TEST_ASSERT(text_eq(r[1].selectors[0].simple_selectors[0].name, "a"));
+        TBOX_TEST_ASSERT(text_eq(r[1].selectors[0].simple_selectors[0].name, "div"));
+        TBOX_TEST_ASSERT(r[1].media != NULL);
+        TBOX_TEST_ASSERT(text_eq(r[2].selectors[0].simple_selectors[0].name, "a"));
         tbox_css_stylesheet_destroy(ss);
     }
 
@@ -321,8 +322,7 @@ int tbox_test_css_parser_parser_run(void) {
         tbox_css_stylesheet_destroy(ss);
     }
 
-    /* 25: @charset/@font-face/@page are each individually skipped without
-     * breaking a following ruleset. */
+    /* 25: @font-face retains descriptors; other at-rules remain skipped. */
     {
         tbox_css_stylesheet *ss = parse_cstr("@charset \"utf-8\"; p{color:red;}");
         TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 1);
@@ -330,6 +330,8 @@ int tbox_test_css_parser_parser_run(void) {
 
         tbox_css_stylesheet *ss2 = parse_cstr("@font-face { font-family: X; src: url(x.woff); } p{color:red;}");
         TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss2) == 1);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_font_face_count(ss2) == 1);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_font_faces(ss2)[0].declaration_count == 2);
         tbox_css_stylesheet_destroy(ss2);
 
         tbox_css_stylesheet *ss3 = parse_cstr("@page { margin: 1in; } p{color:red;}");
@@ -397,11 +399,14 @@ int tbox_test_css_parser_parser_run(void) {
     {
         tbox_css_stylesheet *ss   = parse_cstr("@media screen { div { color: red; } } span { color: blue; }");
         const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
-        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 1);
-        TBOX_TEST_ASSERT(text_eq(r[0].selectors[0].simple_selectors[0].name, "span"));
-        TBOX_TEST_ASSERT(r[0].declaration_count == 1);
-        TBOX_TEST_ASSERT(text_eq(r[0].declarations[0].property, "color"));
-        TBOX_TEST_ASSERT(text_eq(r[0].declarations[0].value, "blue"));
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 2);
+        TBOX_TEST_ASSERT(r[0].media != NULL);
+        TBOX_TEST_ASSERT(text_eq(r[0].selectors[0].simple_selectors[0].name, "div"));
+        TBOX_TEST_ASSERT(text_eq(r[1].selectors[0].simple_selectors[0].name, "span"));
+        TBOX_TEST_ASSERT(r[1].media == NULL);
+        TBOX_TEST_ASSERT(r[1].declaration_count == 1);
+        TBOX_TEST_ASSERT(text_eq(r[1].declarations[0].property, "color"));
+        TBOX_TEST_ASSERT(text_eq(r[1].declarations[0].value, "blue"));
         tbox_css_stylesheet_destroy(ss);
     }
 
@@ -441,8 +446,9 @@ int tbox_test_css_parser_parser_run(void) {
     {
         tbox_css_stylesheet *ss   = parse_cstr("@media (min-width: calc(500px)) { div { color: red; } } span { color: blue; }");
         const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
-        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 1);
-        TBOX_TEST_ASSERT(text_eq(r[0].selectors[0].simple_selectors[0].name, "span"));
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 2);
+        TBOX_TEST_ASSERT(r[0].media != NULL);
+        TBOX_TEST_ASSERT(text_eq(r[1].selectors[0].simple_selectors[0].name, "span"));
         tbox_css_stylesheet_destroy(ss);
     }
 
