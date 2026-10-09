@@ -467,6 +467,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "tbox_app_create_from_files failed\n");
         return 1;
     }
+    /* TBOX_DEBUG_DAMAGE=1 outlines the regions each frame repaints. */
+    tbox_app_set_debug_damage(app, tbox_env_bool("TBOX_DEBUG_DAMAGE"));
 
     /* unbind_target_binding is a plain local (automatic storage duration,
      * NOT static/global -- it simply needs an address that outlives the

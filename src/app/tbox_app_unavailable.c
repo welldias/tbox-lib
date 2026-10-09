@@ -54,6 +54,7 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
 
 tbox_context *tbox_app_context(tbox_app *app) { (void)app; return NULL; }
 void tbox_app_request_redraw(tbox_app *app) { (void)app; }
+void tbox_app_set_debug_damage(tbox_app *app, bool enabled) { (void)app; (void)enabled; }
 void tbox_app_step(tbox_app *app) { (void)app; }
 bool tbox_app_should_close(const tbox_app *app) { (void)app; return true; }
 void tbox_app_close(tbox_app *app) { (void)app; }

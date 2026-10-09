@@ -5057,6 +5057,175 @@ em `tests/assets/084.html` a `102.html` (sem PNG de referência).
 `list-item` em elementos com filhos de bloco, gamut mapping além do corte
 por canal, `min()`/`max()` com várias porcentagens.
 
+## v20 — Repintura parcial (damage tracking)
+
+Antes, todo frame sujo limpava o buffer inteiro, rasterizava todas as ops
+e reportava a janela toda ao compositor. Agora só as regiões que mudaram
+são repintadas e reportadas. Estilo, layout e display list continuam
+recalculados por completo a cada frame (recálculo incremental fica para
+uma etapa futura).
+
+### Output Display
+
+- `tbox_damage_tracker` (`src/output/tbox_raster_damage.c`, API em
+  `<tbox/output.h>`) guarda, do frame anterior, só uma assinatura por op:
+  `{bounds, hash}`, em memória própria — nunca ponteiros para o
+  `frame_arena`. O hash (FNV-1a) é campo a campo, incluindo os bytes do
+  texto, o gradiente e a matriz de filtro.
+- Bounds conservadores (`tbox_raster_op_paint_bounds`, em
+  `tbox_raster_internal.h`): `rect` limitado por `clip`/`rounded_clip`,
+  arredondado para fora em pixels inteiros. `TEXT_RUN` ganha folga de meia
+  linha (overhang); `IMAGE`, 1px; `WAVY_LINE`, a amplitude da onda. Fica em
+  Output, não em Render, porque o bound de texto usa métrica de fonte.
+- Diff: corta prefixo e sufixo comuns; no miolo, ops só de um lado
+  danificam seus bounds (antigo e novo); mesmo conjunto em outra ordem
+  (z-order) danifica o miolo inteiro.
+- `tbox_damage`: até `TBOX_DAMAGE_MAX_RECTS` (16) retângulos inteiros, sem
+  sobreposição. Acima disso, funde os mais próximos; acima de 60% da área,
+  vira `full`. Também `full` no primeiro frame, após `invalidate` e em
+  mudança de tamanho.
+- `tbox_raster_display_list_damaged`: para cada região, limpa de branco e
+  rasteriza as ops que a intersectam com `clip ∩ região`. Como todo clip do
+  raster faz `floor` nas bordas e `floor` comuta com `min`/`max`, recortar
+  por uma região inteira não muda nenhum pixel dentro dela — o resultado é
+  idêntico a uma repintura completa (teste de equivalência de pixels em
+  `tests/output/test_raster.c`).
+- Backend Wayland: o buffer shm persiste entre frames (já persistia), então
+  serve de base. `ensure_buffer` invalida o tracker ao realocar; `present`
+  emite um `wl_surface_damage_buffer` por região e, sem dano, não faz
+  attach nem commit (só um commit se houver configure confirmado pendente).
+
+### Application
+
+- `tbox_app_set_debug_damage(app, enabled)` contorna em magenta cada região
+  repintada. No frame seguinte, as quatro faixas de borda de cada contorno
+  antigo são repintadas à parte (fora do `tbox_damage`, cuja fusão
+  transformaria um contorno do tamanho da janela em repintura total). A lib não lê o ambiente: `example/tbox_app.c` mapeia
+  `TBOX_DEBUG_DAMAGE=1` para essa chamada.
+
+### Detecção de mudanças por hash
+
+**A ideia.** Um hash é uma "impressão digital" de um dado: transforma
+qualquer quantidade de bytes num número de tamanho fixo (aqui, 64 bits). A
+mesma entrada dá sempre o mesmo número, e entradas diferentes quase sempre
+dão números diferentes — basta um bit (uma cor `#ff0000` virando `#ff0001`)
+para o resultado mudar por completo. Para saber se uma op mudou, basta
+comparar o número dela com o do frame anterior.
+
+**Por que não guardar a display list antiga e comparar direto.** As ops
+vivem no `frame_arena`, zerado no início de cada frame, e texto, gradiente
+e filtro são ponteiros para essa memória. No frame seguinte a lista antiga
+já não existe. Então o tracker guarda, em memória própria, só 40 bytes por
+op:
+
+```c
+typedef struct tbox_damage_signature {
+    uint64_t hash;    /* resume todo o conteúdo visual da op */
+    tbox_rect bounds; /* área em pixels que ela pode pintar */
+} tbox_damage_signature;
+```
+
+**O algoritmo: FNV-1a.** Parte de uma constante fixa
+(`14695981039346656037`) e, para cada byte:
+
+```c
+hash ^= byte;             /* injeta o byte (XOR) */
+hash *= 1099511628211ull; /* espalha por todos os 64 bits (primo FNV) */
+```
+
+Não é criptográfico, mas é rápido e distribui bem — suficiente, já que
+ninguém está forjando colisões de propósito.
+
+**O que entra no hash** (`tbox_damage_hash_op`): tipo e geometria (`kind`,
+`rect`, `inner_rect`, raios), cor, os **bytes** do texto (não o ponteiro) e
+`letter_spacing`, fonte e imagem (por ponteiro), cada campo do gradiente,
+as 20 entradas da matriz de filtro, e `clip`/`rounded_clip` com seus raios.
+Três cuidados:
+
+- Campo a campo, nunca a struct inteira: os bytes de *padding* que o
+  compilador insere entre campos podem conter lixo, e ops idênticas dariam
+  hashes diferentes.
+- Texto pelo conteúdo: o ponteiro muda a cada frame (arena recriada), o
+  conteúdo não.
+- Fonte e imagem pelo ponteiro: vêm de caches que vivem a vida inteira do
+  app (`tbox_font_face_cache`, `tbox_image_cache`), então mesmo ponteiro
+  significa mesmo recurso. `-0.0` é normalizado para `0.0` (pintam igual,
+  bits diferentes).
+
+**Colisões.** Uma colisão (conteúdos diferentes com o mesmo hash) faria uma
+mudança real não ser repintada. Com 64 bits e a comparação sempre entre op
+antiga e nova correspondentes, a chance prática é da ordem de 1 em 10¹⁹. O
+casamento exige ainda `bounds` iguais, e resize, `invalidate` e buffer novo
+forçam repintura total.
+
+**Custo medido.** O hash cresce com o tamanho da display list em bytes; a
+repintura cresce com a área em pixels (cada pixel é escrito ao limpar e de
+novo por cada op que o cobre, com blending e rasterização de glifos).
+Medição de 2026-10-08: página `example/tbox_app_demo.html`, janela
+1280×800, média de 50 frames, lib em build Debug (sem otimização: os tempos
+absolutos caem em Release, a proporção entre as etapas é o que importa):
+
+| Etapa | Tempo |
+| --- | --- |
+| Estilo + layout + display list | 20,5 ms |
+| Hash + diff (291 ops, ~125 KB) | 0,35 ms |
+| Repintura completa | 32,5 ms |
+| Repintura parcial (uma caixa de 157×140, 2,2% da janela) | 0,87 ms |
+
+- Mudança pequena, o caso comum (hover, digitação, cursor piscando):
+  0,35 + 0,87 ≈ 1,2 ms contra 32,5 ms antes — a pintura fica ~27× mais
+  rápida.
+- Pior caso, tudo muda (scroll da página inteira, resize): a repintura é
+  completa e o hash foi trabalho perdido — 0,35 ms sobre 32,5 ms, ~1% a
+  mais.
+
+O benchmark não está no repositório; para reproduzir, basta um programa que
+abra o demo com `tbox_context_open` e cronometre `tbox_context_run_frame`,
+`tbox_damage_tracker_update` e `tbox_raster_display_list_damaged` (com dano
+`full` e com uma op alterada). Se um dia o hash pesar (dezenas de milhares
+de ops), o FNV-1a, que lê um byte por vez, pode ser trocado por um hash que
+processa 8 bytes por vez (xxHash, por exemplo). A medição também mostra
+que, resolvida a pintura, estilo e layout passam a dominar o frame — ver
+"Próximos passos".
+
+### Fora de escopo
+
+Estilo/layout incrementais (marcação de nós sujos), espera por
+`wl_buffer.release` / buffer duplo, e o caminho de screenshot headless (que
+continua repintando tudo).
+
+### Próximos passos
+
+Em ordem de prioridade:
+
+1. **Buffer duplo e `wl_buffer.release`.** Hoje o backend escreve no mesmo
+   buffer shm que o compositor pode ainda estar lendo, o que arrisca
+   corrupção visual momentânea. Com dois buffers alternados, só se escreve
+   no que o compositor já liberou (`wl_buffer.release`). Ponto de atenção
+   com a v20: o buffer livre guarda o frame de *dois* presents atrás, então
+   antes de repintar o dano atual é preciso copiar para ele, do outro
+   buffer, as regiões sujas do frame anterior (ou acumular o dano dos dois
+   últimos frames). Escopo pequeno, contido em
+   `src/output/tbox_backend_wayland.c`.
+2. **Estilo e layout incrementais.** Depois da v20, o custo dominante por
+   frame passa a ser `tbox_style_resolve_tree` + `tbox_layout_build` sobre
+   o documento inteiro. O passo seguinte é marcar nós sujos na origem da
+   mudança (hover, foco, `:active`, texto digitado, scroll, mutação via
+   API) e recalcular só o necessário:
+   - Estilo: invalidar o nó, seus descendentes (herança) e os afetados por
+     seletores que dependem dele (`:hover > x`, combinadores `+`/`~`,
+     `:has` se vier a existir).
+   - Layout: reaproveitar caixas cujo estilo e conteúdo não mudaram;
+     mudança de tamanho propaga para pais e irmãos seguintes.
+   - Arenas: hoje tudo vive no `frame_arena`, resetado a cada frame; reter
+     árvores entre frames exige outro esquema de tempo de vida.
+   - Transições, sticky, scroll e hit-test leem a árvore completa e
+     precisam continuar consistentes.
+   O damage tracking da v20 continua valendo como está: ele compara a
+   display list, independentemente de como ela foi produzida.
+3. **Screenshot headless incremental** (baixa prioridade): só importa se o
+   caminho de captura passar a ser usado em loop.
+
 ## Perguntas em aberto (consolidado)
 
 Nenhuma pendência de curto prazo restante. Toda lacuna identificada foi

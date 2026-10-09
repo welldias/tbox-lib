@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "tbox_raster_internal.h"
 #include "utf8.h"
 
 /* stb_image_resize2 is third-party, vendored code (external/stb_image/, see
@@ -592,81 +593,134 @@ void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_he
     tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, 1.0, false, (tbox_rect){0}, false, NULL, NULL);
 }
 
+/* Rasterizes one op -- the dispatch tbox_raster_display_list and
+ * tbox_raster_display_list_damaged share. */
+static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_paint_op *op) {
+    switch (op->kind) {
+    case TBOX_PAINT_GRADIENT:
+        tbox_raster_gradient(pixels, buffer_width, buffer_height, op);
+        break;
+    case TBOX_PAINT_FILL_RECT:
+        if (op->elliptical || op->has_rounded_clip) {
+            tbox_raster_fill_shape(pixels, buffer_width, buffer_height, op);
+        } else if (op->corner_radii[0] > 0.0 || op->corner_radii[1] > 0.0 ||
+            op->corner_radii[2] > 0.0 || op->corner_radii[3] > 0.0 || op->radius > 0.0) {
+            double corners[4];
+            bool has_corners = op->corner_radii[0] > 0.0 || op->corner_radii[1] > 0.0 ||
+                op->corner_radii[2] > 0.0 || op->corner_radii[3] > 0.0;
+            for (size_t j = 0; j < 4; j++)
+                corners[j] = has_corners ? op->corner_radii[j] : op->radius;
+            tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, op->rect, corners, op->color, op->has_clip, op->clip);
+        } else {
+            tbox_rect rect = op->rect;
+            if (op->has_clip) {
+                double x0 = rect.x > op->clip.x ? rect.x : op->clip.x;
+                double y0 = rect.y > op->clip.y ? rect.y : op->clip.y;
+                double x1 = rect.x + rect.width < op->clip.x + op->clip.width ? rect.x + rect.width : op->clip.x + op->clip.width;
+                double y1 = rect.y + rect.height < op->clip.y + op->clip.height ? rect.y + rect.height : op->clip.y + op->clip.height;
+                rect = (tbox_rect){x0, y0, x1 - x0, y1 - y0};
+            }
+            if (rect.width > 0.0 && rect.height > 0.0) tbox_raster_fill_rect(pixels, buffer_width, buffer_height, rect, op->color);
+        }
+        break;
+    case TBOX_PAINT_TEXT_RUN:
+        tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0}, op->has_rounded_clip ? op : NULL);
+        break;
+    case TBOX_PAINT_IMAGE:
+        if (op->has_rounded_clip) {
+            tbox_rect clip = op->rounded_clip;
+            if (op->has_clip) {
+                double cx0 = fmax(clip.x, op->clip.x), cy0 = fmax(clip.y, op->clip.y);
+                double cx1 = fmin(clip.x + clip.width, op->clip.x + op->clip.width), cy1 = fmin(clip.y + clip.height, op->clip.y + op->clip.height);
+                clip       = (tbox_rect){ cx0, cy0, cx1 > cx0 ? cx1 - cx0 : 0.0, cy1 > cy0 ? cy1 - cy0 : 0.0 };
+            }
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, true, clip, op->image_pixelated, op, op->color_filter);
+        } else {
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated, NULL, op->color_filter);
+        }
+        break;
+    case TBOX_PAINT_FILL_RING:
+        tbox_raster_fill_ring_clipped(pixels, buffer_width, buffer_height, op);
+        break;
+    case TBOX_PAINT_WAVY_LINE: {
+        double thickness = op->rect.height;
+        if (thickness <= 0.0 || op->rect.width <= 0.0) break;
+        double amplitude = thickness > 1.0 ? thickness : 1.0;
+        double period = 6.0 * amplitude;
+        int32_t x0 = (int32_t)floor(op->rect.x);
+        int32_t x1 = (int32_t)floor(op->rect.x + op->rect.width);
+        for (int32_t x = x0; x < x1; x++) {
+            double phase = ((double)x + 0.5 - op->rect.x) / period;
+            double wave_y = op->rect.y + amplitude * (1.0 - cos(6.283185307179586 * phase));
+            tbox_rect segment = { (double)x, wave_y, 1.0, thickness };
+            if (op->has_clip) {
+                double top = segment.y > op->clip.y ? segment.y : op->clip.y;
+                double bottom = segment.y + segment.height < op->clip.y + op->clip.height ? segment.y + segment.height : op->clip.y + op->clip.height;
+                if (x < op->clip.x || x >= op->clip.x + op->clip.width || bottom <= top) continue;
+                segment.y = top;
+                segment.height = bottom - top;
+            }
+            tbox_raster_fill_rect(pixels, buffer_width, buffer_height, segment, op->color);
+        }
+        break;
+    }
+    }
+}
+
 void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list) {
     if (list == NULL) {
         return;
     }
 
-    for (size_t i = 0; i < list->count; i++) {
-        const tbox_paint_op *op = &list->items[i];
-        switch (op->kind) {
-        case TBOX_PAINT_GRADIENT:
-            tbox_raster_gradient(pixels, buffer_width, buffer_height, op);
-            break;
-        case TBOX_PAINT_FILL_RECT:
-            if (op->elliptical || op->has_rounded_clip) {
-                tbox_raster_fill_shape(pixels, buffer_width, buffer_height, op);
-            } else if (op->corner_radii[0] > 0.0 || op->corner_radii[1] > 0.0 ||
-                op->corner_radii[2] > 0.0 || op->corner_radii[3] > 0.0 || op->radius > 0.0) {
-                double corners[4];
-                bool has_corners = op->corner_radii[0] > 0.0 || op->corner_radii[1] > 0.0 ||
-                    op->corner_radii[2] > 0.0 || op->corner_radii[3] > 0.0;
-                for (size_t j = 0; j < 4; j++)
-                    corners[j] = has_corners ? op->corner_radii[j] : op->radius;
-                tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, op->rect, corners, op->color, op->has_clip, op->clip);
-            } else {
-                tbox_rect rect = op->rect;
-                if (op->has_clip) {
-                    double x0 = rect.x > op->clip.x ? rect.x : op->clip.x;
-                    double y0 = rect.y > op->clip.y ? rect.y : op->clip.y;
-                    double x1 = rect.x + rect.width < op->clip.x + op->clip.width ? rect.x + rect.width : op->clip.x + op->clip.width;
-                    double y1 = rect.y + rect.height < op->clip.y + op->clip.height ? rect.y + rect.height : op->clip.y + op->clip.height;
-                    rect = (tbox_rect){x0, y0, x1 - x0, y1 - y0};
-                }
-                if (rect.width > 0.0 && rect.height > 0.0) tbox_raster_fill_rect(pixels, buffer_width, buffer_height, rect, op->color);
-            }
-            break;
-        case TBOX_PAINT_TEXT_RUN:
-            tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0}, op->has_rounded_clip ? op : NULL);
-            break;
-        case TBOX_PAINT_IMAGE:
-            if (op->has_rounded_clip) {
-                tbox_rect clip = op->rounded_clip;
-                if (op->has_clip) {
-                    double cx0 = fmax(clip.x, op->clip.x), cy0 = fmax(clip.y, op->clip.y);
-                    double cx1 = fmin(clip.x + clip.width, op->clip.x + op->clip.width), cy1 = fmin(clip.y + clip.height, op->clip.y + op->clip.height);
-                    clip       = (tbox_rect){ cx0, cy0, cx1 > cx0 ? cx1 - cx0 : 0.0, cy1 > cy0 ? cy1 - cy0 : 0.0 };
-                }
-                tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, true, clip, op->image_pixelated, op, op->color_filter);
-            } else {
-                tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated, NULL, op->color_filter);
-            }
-            break;
-        case TBOX_PAINT_FILL_RING:
-            tbox_raster_fill_ring_clipped(pixels, buffer_width, buffer_height, op);
-            break;
-        case TBOX_PAINT_WAVY_LINE: {
-            double thickness = op->rect.height;
-            if (thickness <= 0.0 || op->rect.width <= 0.0) break;
-            double amplitude = thickness > 1.0 ? thickness : 1.0;
-            double period = 6.0 * amplitude;
-            int32_t x0 = (int32_t)floor(op->rect.x);
-            int32_t x1 = (int32_t)floor(op->rect.x + op->rect.width);
-            for (int32_t x = x0; x < x1; x++) {
-                double phase = ((double)x + 0.5 - op->rect.x) / period;
-                double wave_y = op->rect.y + amplitude * (1.0 - cos(6.283185307179586 * phase));
-                tbox_rect segment = { (double)x, wave_y, 1.0, thickness };
-                if (op->has_clip) {
-                    double top = segment.y > op->clip.y ? segment.y : op->clip.y;
-                    double bottom = segment.y + segment.height < op->clip.y + op->clip.height ? segment.y + segment.height : op->clip.y + op->clip.height;
-                    if (x < op->clip.x || x >= op->clip.x + op->clip.width || bottom <= top) continue;
-                    segment.y = top;
-                    segment.height = bottom - top;
-                }
-                tbox_raster_fill_rect(pixels, buffer_width, buffer_height, segment, op->color);
-            }
-            break;
+    for (size_t i = 0; i < list->count; i++)
+        tbox_raster_paint_op(pixels, buffer_width, buffer_height, &list->items[i]);
+}
+
+void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list, const tbox_damage *damage) {
+    if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || damage == NULL)
+        return;
+    if (damage->full) {
+        size_t pixel_count = (size_t)buffer_width * (size_t)buffer_height;
+        for (size_t i = 0; i < pixel_count; i++)
+            pixels[i] = 0xFFFFFFFFu;
+        tbox_raster_display_list(pixels, buffer_width, buffer_height, list);
+        return;
+    }
+    for (size_t d = 0; d < damage->count; d++) {
+        tbox_rect region = damage->rects[d];
+        int32_t x0 = (int32_t)region.x, y0 = (int32_t)region.y;
+        int32_t x1 = (int32_t)(region.x + region.width), y1 = (int32_t)(region.y + region.height);
+        if (x0 < 0) x0 = 0;
+        if (y0 < 0) y0 = 0;
+        if (x1 > buffer_width) x1 = buffer_width;
+        if (y1 > buffer_height) y1 = buffer_height;
+        if (x0 >= x1 || y0 >= y1)
+            continue;
+        for (int32_t y = y0; y < y1; y++) {
+            uint32_t *row = pixels + (size_t)y * (size_t)buffer_width;
+            for (int32_t x = x0; x < x1; x++)
+                row[x] = 0xFFFFFFFFu;
         }
+        region = (tbox_rect){ (double)x0, (double)y0, (double)(x1 - x0), (double)(y1 - y0) };
+        for (size_t i = 0; list != NULL && i < list->count; i++) {
+            const tbox_paint_op *op = &list->items[i];
+            tbox_rect bounds;
+            if (!tbox_raster_op_paint_bounds(op, buffer_width, buffer_height, &bounds) || bounds.x >= region.x + region.width || region.x >= bounds.x + bounds.width ||
+                bounds.y >= region.y + region.height || region.y >= bounds.y + bounds.height)
+                continue;
+            /* Every op clip floors its edges, and floor commutes with
+             * min/max, so clipping to a whole-pixel region changes nothing
+             * inside it. */
+            tbox_paint_op clipped = *op;
+            if (clipped.has_clip) {
+                double cx0 = fmax(clipped.clip.x, region.x), cy0 = fmax(clipped.clip.y, region.y);
+                double cx1 = fmin(clipped.clip.x + clipped.clip.width, region.x + region.width), cy1 = fmin(clipped.clip.y + clipped.clip.height, region.y + region.height);
+                clipped.clip = (tbox_rect){ cx0, cy0, cx1 > cx0 ? cx1 - cx0 : 0.0, cy1 > cy0 ? cy1 - cy0 : 0.0 };
+            } else {
+                clipped.has_clip = true;
+                clipped.clip     = region;
+            }
+            tbox_raster_paint_op(pixels, buffer_width, buffer_height, &clipped);
         }
     }
 }

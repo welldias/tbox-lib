@@ -552,6 +552,13 @@ void tbox_app_request_redraw(tbox_app *app) {
     }
 }
 
+void tbox_app_set_debug_damage(tbox_app *app, bool enabled) {
+    if (app != NULL) {
+        tbox_window_backend_set_debug_damage(app->backend, enabled);
+        app->redraw_requested = true;
+    }
+}
+
 void tbox_app_step(tbox_app *app) {
     if (app == NULL) {
         return;
@@ -791,6 +798,10 @@ tbox_context *tbox_app_context(tbox_app *app) {
 }
 void tbox_app_request_redraw(tbox_app *app) {
     (void)app;
+}
+void tbox_app_set_debug_damage(tbox_app *app, bool enabled) {
+    (void)app;
+    (void)enabled;
 }
 void tbox_app_step(tbox_app *app) {
     (void)app;

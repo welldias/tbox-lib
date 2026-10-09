@@ -98,6 +98,11 @@ struct tbox_backend_wayland {
     struct wl_buffer *buffer;
     int32_t buffer_width; /* size the current shm buffer/pool was allocated at */
     int32_t buffer_height;
+    tbox_damage_tracker *damage; /* what changed since the last present; the buffer keeps the previous frame */
+    bool commit_pending;         /* a configure was acked and no commit followed yet */
+    bool debug_damage;           /* outline each repainted region, see tbox_backend_wayland_set_debug_damage */
+    tbox_rect debug_outlines[TBOX_DAMAGE_MAX_RECTS]; /* last frame's outlined regions, repainted away next frame */
+    size_t debug_outline_count;
 
     struct xkb_context *xkb_context;
     struct xkb_keymap *xkb_keymap;
@@ -926,7 +931,8 @@ static void tbox_backend_wayland_surface_configure(void *data, struct xdg_surfac
 
     backend->width      = new_width;
     backend->height     = new_height;
-    backend->configured = true;
+    backend->configured     = true;
+    backend->commit_pending = true;
 }
 
 static const struct xdg_surface_listener tbox_backend_wayland_surface_listener = {
@@ -1056,6 +1062,7 @@ void tbox_backend_wayland_destroy(tbox_backend_wayland *backend) {
     if (backend->buffer != NULL) {
         wl_buffer_destroy(backend->buffer);
     }
+    tbox_damage_tracker_destroy(backend->damage);
     if (backend->xdg_toplevel != NULL) {
         xdg_toplevel_destroy(backend->xdg_toplevel);
     }
@@ -1210,6 +1217,11 @@ tbox_backend_wayland *tbox_backend_wayland_open(int32_t width, int32_t height, c
     }
     backend->shm_fd = -1;
     backend->paste_fd = -1;
+    backend->damage = tbox_damage_tracker_create();
+    if (backend->damage == NULL) {
+        free(backend);
+        return NULL;
+    }
     backend->width  = width;
     backend->height = height;
 
@@ -1331,6 +1343,8 @@ static bool tbox_backend_wayland_ensure_buffer(tbox_backend_wayland *backend) {
     backend->buffer        = buffer;
     backend->buffer_width  = backend->width;
     backend->buffer_height = backend->height;
+    /* Fresh shm memory holds no previous frame to repaint over. */
+    tbox_damage_tracker_invalidate(backend->damage);
     return true;
 }
 
@@ -1346,23 +1360,78 @@ void tbox_backend_wayland_present(tbox_backend_wayland *backend, const tbox_disp
     }
 
     uint32_t *pixels   = backend->shm_data;
-    size_t pixel_count = (size_t)backend->width * (size_t)backend->height;
+    int32_t width      = backend->width;
+    int32_t height     = backend->height;
+    tbox_damage damage = tbox_damage_tracker_update(backend->damage, list, width, height);
 
-    /* Clear to opaque white first: tbox_raster_* alpha-blends rather than
-     * overwriting, so a stale previous frame (or uninitialized shm memory on
-     * the very first present) would otherwise show through wherever the
-     * display list has no fully-opaque coverage. White matches every
-     * browser's real default canvas background -- closer to expected v0
-     * output than showing nothing/black, given v0 has no UA stylesheet to
-     * otherwise supply one (see ARCHITECTURE.md's "Orchestration / Main
-     * Loop" section). */
-    for (size_t i = 0; i < pixel_count; i++) {
-        pixels[i] = 0xFFFFFFFFu;
+    /* Last frame's debug outlines live only in the buffer, not in any
+     * display list: repaint their four edge strips away (a full repaint
+     * already does). Kept apart from `damage`, whose merging would turn a
+     * window-sized outline into a full repaint every frame. */
+    bool erased = false;
+    if (!damage.full) {
+        for (size_t i = 0; i < backend->debug_outline_count; i++) {
+            tbox_rect r        = backend->debug_outlines[i];
+            tbox_damage strips = { .count = 4, .full = false };
+            strips.rects[0]    = (tbox_rect){ r.x, r.y, r.width, 1.0 };
+            strips.rects[1]    = (tbox_rect){ r.x, r.y + r.height - 1.0, r.width, 1.0 };
+            strips.rects[2]    = (tbox_rect){ r.x, r.y, 1.0, r.height };
+            strips.rects[3]    = (tbox_rect){ r.x + r.width - 1.0, r.y, 1.0, r.height };
+            tbox_raster_display_list_damaged(pixels, width, height, list, &strips);
+            for (size_t e = 0; e < 4; e++)
+                wl_surface_damage_buffer(backend->surface, (int32_t)strips.rects[e].x, (int32_t)strips.rects[e].y, (int32_t)strips.rects[e].width, (int32_t)strips.rects[e].height);
+            erased = true;
+        }
+    }
+    backend->debug_outline_count = 0;
+
+    if (!damage.full && damage.count == 0 && !erased) {
+        /* Nothing on screen changes; only honor an acked configure. */
+        if (backend->commit_pending) {
+            wl_surface_commit(backend->surface);
+            backend->commit_pending = false;
+        }
+        return;
     }
 
-    tbox_raster_display_list(pixels, backend->width, backend->height, list);
+    /* Repaints only the damaged regions over the previous frame (cleared to
+     * opaque white first, matching every browser's default canvas: the
+     * rasterizer alpha-blends rather than overwriting). */
+    tbox_raster_display_list_damaged(pixels, width, height, list, &damage);
 
     wl_surface_attach(backend->surface, backend->buffer, 0, 0);
-    wl_surface_damage_buffer(backend->surface, 0, 0, backend->width, backend->height);
+    if (damage.full) {
+        wl_surface_damage_buffer(backend->surface, 0, 0, width, height);
+    } else {
+        for (size_t i = 0; i < damage.count; i++) {
+            tbox_rect r = damage.rects[i];
+            wl_surface_damage_buffer(backend->surface, (int32_t)r.x, (int32_t)r.y, (int32_t)r.width, (int32_t)r.height);
+        }
+    }
+    if (backend->debug_damage) {
+        static const tbox_css_rgba magenta = { 255, 0, 255, 255 };
+        size_t count                       = damage.full ? 1 : damage.count;
+        for (size_t i = 0; i < count; i++) {
+            tbox_rect r        = damage.full ? (tbox_rect){ 0.0, 0.0, (double)width, (double)height } : damage.rects[i];
+            tbox_rect edges[4] = {
+                { r.x, r.y, r.width, 1.0 },
+                { r.x, r.y + r.height - 1.0, r.width, 1.0 },
+                { r.x, r.y, 1.0, r.height },
+                { r.x + r.width - 1.0, r.y, 1.0, r.height },
+            };
+            for (size_t e = 0; e < 4; e++)
+                tbox_raster_fill_rect(pixels, width, height, edges[e], magenta);
+            backend->debug_outlines[backend->debug_outline_count++] = r;
+        }
+    }
     wl_surface_commit(backend->surface);
+    backend->commit_pending = false;
+}
+
+void tbox_backend_wayland_set_debug_damage(tbox_backend_wayland *backend, bool enabled) {
+    if (backend == NULL)
+        return;
+    backend->debug_damage = enabled;
+    /* The next frame repaints everything, without (or now with) outlines. */
+    tbox_damage_tracker_invalidate(backend->damage);
 }

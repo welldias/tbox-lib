@@ -23,6 +23,7 @@ typedef struct tbox_window_backend_ops {
     bool (*clipboard_paste)(void *impl);
     void (*present)(void *impl, const tbox_display_list *list);
     void (*set_cursor)(void *impl, tbox_style_cursor cursor);
+    void (*set_debug_damage)(void *impl, bool enabled);
 } tbox_window_backend_ops;
 
 struct tbox_window_backend {
@@ -41,11 +42,13 @@ static bool wayland_clipboard_copy(void *impl, const char *text, size_t length, 
 static bool wayland_clipboard_paste(void *impl) { return tbox_backend_wayland_clipboard_paste(impl); }
 static void wayland_present(void *impl, const tbox_display_list *list) { tbox_backend_wayland_present(impl, list); }
 static void wayland_set_cursor(void *impl, tbox_style_cursor cursor) { tbox_backend_wayland_set_cursor(impl, cursor); }
+static void wayland_set_debug_damage(void *impl, bool enabled) { tbox_backend_wayland_set_debug_damage(impl, enabled); }
 
 static const tbox_window_backend_ops wayland_ops = {
     wayland_destroy, wayland_poll, wayland_should_close, wayland_size,
     wayland_take_event, wayland_pointer_position, wayland_clipboard_copy,
-    wayland_clipboard_paste, wayland_present, wayland_set_cursor
+    wayland_clipboard_paste, wayland_present, wayland_set_cursor,
+    wayland_set_debug_damage
 };
 #endif
 
@@ -115,4 +118,8 @@ void tbox_window_backend_present(tbox_window_backend *window, const tbox_display
 
 void tbox_window_backend_set_cursor(tbox_window_backend *window, tbox_style_cursor cursor) {
     if (window != NULL) window->ops->set_cursor(window->impl, cursor);
+}
+
+void tbox_window_backend_set_debug_damage(tbox_window_backend *window, bool enabled) {
+    if (window != NULL) window->ops->set_debug_damage(window->impl, enabled);
 }

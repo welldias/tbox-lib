@@ -20,7 +20,13 @@ bool tbox_backend_wayland_take_event(tbox_backend_wayland *backend, tbox_input_e
 bool tbox_backend_wayland_pointer_position(const tbox_backend_wayland *backend, double *x, double *y);
 bool tbox_backend_wayland_clipboard_copy(tbox_backend_wayland *backend, const char *text, size_t length, uint32_t serial);
 bool tbox_backend_wayland_clipboard_paste(tbox_backend_wayland *backend);
+/* Repaints and reports to the compositor only the regions that changed
+ * since the previous present (see tbox_damage_tracker); skips the commit
+ * entirely when nothing changed. */
 void tbox_backend_wayland_present(tbox_backend_wayland *backend, const tbox_display_list *list);
+/* Outlines every repainted region in magenta, for inspecting partial
+ * repaints. Forces one full repaint. */
+void tbox_backend_wayland_set_debug_damage(tbox_backend_wayland *backend, bool enabled);
 /* Shows the themed pointer cursor for `cursor` over the window (a no-op
  * without wayland-cursor). AUTO shows the default arrow. */
 void tbox_backend_wayland_set_cursor(tbox_backend_wayland *backend, tbox_style_cursor cursor);

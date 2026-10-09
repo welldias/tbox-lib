@@ -80,6 +80,53 @@ void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32
  * switching on op->kind itself. A NULL `list` is a no-op. */
 void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list);
 
+/* Partial repaint. A tbox_damage is the set of pixel-aligned buffer regions
+ * whose contents changed between two display lists -- or `full` when the
+ * whole buffer must be repainted (first frame, resize, invalidation, or
+ * changes covering most of the buffer). `rects` are integral, already
+ * clipped to the buffer, and never overlap; count == 0 && !full means the
+ * new list paints exactly what the previous one did. */
+#define TBOX_DAMAGE_MAX_RECTS 16
+
+typedef struct tbox_damage {
+    tbox_rect rects[TBOX_DAMAGE_MAX_RECTS];
+    size_t count;
+    bool full;
+} tbox_damage;
+
+/* Remembers the previous frame's display list as one {bounds, hash}
+ * signature per op (copied into its own heap memory, so the list itself --
+ * usually living in a per-frame arena -- may be freed or reset right after
+ * each update). */
+typedef struct tbox_damage_tracker tbox_damage_tracker;
+
+/* NULL on allocation failure. */
+tbox_damage_tracker *tbox_damage_tracker_create(void);
+void tbox_damage_tracker_destroy(tbox_damage_tracker *tracker);
+
+/* The next update reports `full` (e.g. after the buffer's pixels were lost). */
+void tbox_damage_tracker_invalidate(tbox_damage_tracker *tracker);
+
+/* Compares `list` against the list passed to the previous update and
+ * records `list` as the new previous one. Changed, added, removed or
+ * reordered ops damage their bounds (both old and new position); a text
+ * run's bounds include a margin for glyph overhang. A size different from
+ * the previous update's, the first update, or a NULL tracker yields
+ * `full`. */
+tbox_damage tbox_damage_tracker_update(tbox_damage_tracker *tracker, const tbox_display_list *list, int32_t buffer_width, int32_t buffer_height);
+
+/* Adds `rect` (snapped outward to whole pixels, clipped to the buffer) to
+ * `damage`, merging overlapping regions; falls back to `full` when the
+ * damaged area grows past most of the buffer. No-op on a full damage. */
+void tbox_damage_add(tbox_damage *damage, tbox_rect rect, int32_t buffer_width, int32_t buffer_height);
+
+/* Repaints only `damage` over a buffer still holding the previous frame:
+ * each damaged rect is cleared to opaque white and every op of `list` is
+ * rasterized clipped to it, so the result equals clearing the whole buffer
+ * and calling tbox_raster_display_list. A `full` damage does exactly that;
+ * an empty one touches nothing. */
+void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list, const tbox_damage *damage);
+
 /* Writes `pixels` (buffer_width x buffer_height, XRGB8888 -- same layout
  * every tbox_raster_* function above reads/writes) to a PNG file at `path`:
  * color type 2 (truecolor, no alpha channel -- every pixel this rasterizer

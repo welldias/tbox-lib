@@ -108,6 +108,12 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
  * layout and painting. Multiple requests before a step coalesce. */
 void tbox_app_request_redraw(tbox_app *app);
 
+/* Debug aid: outlines, in magenta, every region repainted by each frame
+ * (frames only repaint what changed since the previous one). The library
+ * never reads the environment itself; example programs map an environment
+ * variable such as TBOX_DEBUG_DAMAGE onto this. A no-op if app == NULL. */
+void tbox_app_set_debug_damage(tbox_app *app, bool enabled);
+
 /* Pumps a nonblocking round of backend events, dispatches pointer and
  * translated keyboard input to the context, and recomputes a frame when
  * input, resize, or tbox_app_request_redraw changes visible state.

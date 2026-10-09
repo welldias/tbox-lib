@@ -1051,6 +1051,236 @@ static void tbox_test_raster_elliptical_corners(int *failures_ptr) {
     *failures_ptr = failures;
 }
 
+
+/* ---- partial repaint (tbox_damage_tracker) ---- */
+
+static tbox_paint_op tbox_test_damage_rect_op(double x, double y, double w, double h, tbox_css_rgba color) {
+    tbox_paint_op op;
+    memset(&op, 0, sizeof(op));
+    op.kind  = TBOX_PAINT_FILL_RECT;
+    op.rect  = (tbox_rect){ x, y, w, h };
+    op.color = color;
+    return op;
+}
+
+static bool tbox_test_damage_covers(const tbox_damage *damage, tbox_rect r) {
+    /* Every pixel of `r` lies in some damage rect. */
+    for (int32_t y = (int32_t)r.y; y < (int32_t)(r.y + r.height); y++)
+        for (int32_t x = (int32_t)r.x; x < (int32_t)(r.x + r.width); x++) {
+            bool inside = false;
+            for (size_t i = 0; i < damage->count && !inside; i++) {
+                tbox_rect d = damage->rects[i];
+                inside      = x >= d.x && x < d.x + d.width && y >= d.y && y < d.y + d.height;
+            }
+            if (!inside)
+                return false;
+        }
+    return true;
+}
+
+static double tbox_test_damage_area(const tbox_damage *damage) {
+    double area = 0.0;
+    for (size_t i = 0; i < damage->count; i++)
+        area += damage->rects[i].width * damage->rects[i].height;
+    return area;
+}
+
+static void tbox_test_raster_damage_tracker(int *failures_ptr) {
+    int failures = *failures_ptr;
+
+    const int32_t width = 200, height = 200;
+    tbox_css_rgba red = { 255, 0, 0, 255 }, blue = { 0, 0, 255, 255 }, green = { 0, 128, 0, 255 };
+    tbox_damage_tracker *tracker = tbox_damage_tracker_create();
+    TBOX_TEST_ASSERT(tracker != NULL);
+    if (tracker != NULL) {
+        tbox_paint_op ops[3] = {
+            tbox_test_damage_rect_op(10, 10, 20, 20, red),
+            tbox_test_damage_rect_op(50, 50, 20, 20, blue),
+            tbox_test_damage_rect_op(100, 100, 20, 20, green),
+        };
+        tbox_display_list list = { ops, 3 };
+
+        tbox_damage damage = tbox_damage_tracker_update(tracker, &list, width, height);
+        TBOX_TEST_ASSERT(damage.full);
+
+        damage = tbox_damage_tracker_update(tracker, &list, width, height);
+        TBOX_TEST_ASSERT(!damage.full && damage.count == 0);
+
+        /* Recolor: exactly that op's bounds. */
+        ops[1].color = red;
+        damage       = tbox_damage_tracker_update(tracker, &list, width, height);
+        TBOX_TEST_ASSERT(!damage.full && damage.count == 1);
+        TBOX_TEST_ASSERT(damage.count == 1 && damage.rects[0].x == 50.0 && damage.rects[0].y == 50.0 && damage.rects[0].width == 20.0 && damage.rects[0].height == 20.0);
+
+        /* Move: old and new position. */
+        ops[1].rect = (tbox_rect){ 140, 20, 20, 20 };
+        damage      = tbox_damage_tracker_update(tracker, &list, width, height);
+        TBOX_TEST_ASSERT(!damage.full);
+        TBOX_TEST_ASSERT(tbox_test_damage_covers(&damage, (tbox_rect){ 50, 50, 20, 20 }));
+        TBOX_TEST_ASSERT(tbox_test_damage_covers(&damage, (tbox_rect){ 140, 20, 20, 20 }));
+        TBOX_TEST_ASSERT(tbox_test_damage_area(&damage) == 800.0);
+
+        /* Remove the last op, then add it back. */
+        list.count = 2;
+        damage     = tbox_damage_tracker_update(tracker, &list, width, height);
+        TBOX_TEST_ASSERT(!damage.full && damage.count == 1 && tbox_test_damage_covers(&damage, (tbox_rect){ 100, 100, 20, 20 }));
+        list.count = 3;
+        damage     = tbox_damage_tracker_update(tracker, &list, width, height);
+        TBOX_TEST_ASSERT(!damage.full && damage.count == 1 && tbox_test_damage_covers(&damage, (tbox_rect){ 100, 100, 20, 20 }));
+
+        /* Swapping the paint order of two overlapping ops damages both. */
+        ops[1].rect = (tbox_rect){ 15, 15, 20, 20 };
+        tbox_damage_tracker_update(tracker, &list, width, height);
+        tbox_paint_op swap = ops[0];
+        ops[0]             = ops[1];
+        ops[1]             = swap;
+        damage             = tbox_damage_tracker_update(tracker, &list, width, height);
+        TBOX_TEST_ASSERT(!damage.full && tbox_test_damage_covers(&damage, (tbox_rect){ 10, 10, 25, 25 }));
+
+        /* Invalidation and a size change force a full repaint. */
+        tbox_damage_tracker_invalidate(tracker);
+        TBOX_TEST_ASSERT(tbox_damage_tracker_update(tracker, &list, width, height).full);
+        TBOX_TEST_ASSERT(tbox_damage_tracker_update(tracker, &list, width + 1, height).full);
+
+        /* Changes covering most of the buffer fall back to full. */
+        tbox_paint_op big = tbox_test_damage_rect_op(0, 0, 190, 190, red);
+        tbox_display_list big_list = { &big, 1 };
+        tbox_damage_tracker_update(tracker, &big_list, width, height);
+        big.color = blue;
+        TBOX_TEST_ASSERT(tbox_damage_tracker_update(tracker, &big_list, width, height).full);
+
+        /* Many scattered changes stay within the rect budget. */
+        tbox_paint_op grid[64];
+        for (int i = 0; i < 64; i++)
+            grid[i] = tbox_test_damage_rect_op((i % 8) * 25.0, (i / 8) * 25.0, 4, 4, red);
+        tbox_display_list grid_list = { grid, 64 };
+        tbox_damage_tracker_update(tracker, &grid_list, width, height);
+        for (int i = 0; i < 64; i++)
+            grid[i].color = blue;
+        damage = tbox_damage_tracker_update(tracker, &grid_list, width, height);
+        TBOX_TEST_ASSERT(damage.full || damage.count <= TBOX_DAMAGE_MAX_RECTS);
+        for (int i = 0; i < 64 && !damage.full; i++)
+            TBOX_TEST_ASSERT(tbox_test_damage_covers(&damage, grid[i].rect));
+
+        TBOX_TEST_ASSERT(tbox_damage_tracker_update(NULL, &list, width, height).full);
+        tbox_damage_tracker_destroy(tracker);
+    }
+
+    *failures_ptr = failures;
+}
+
+/* Repainting B's damage over a buffer holding A must equal painting B from
+ * scratch, pixel for pixel. */
+static void tbox_test_damage_expect_equivalent(int *failures_ptr, const tbox_display_list *a, const tbox_display_list *b, int32_t width, int32_t height, const char *label) {
+    int failures             = *failures_ptr;
+    uint32_t *partial        = tbox_test_raster_make_buffer(width, height, 0xFFFFFFFFu);
+    uint32_t *full           = tbox_test_raster_make_buffer(width, height, 0xFFFFFFFFu);
+    tbox_damage_tracker *tracker = tbox_damage_tracker_create();
+    TBOX_TEST_ASSERT(partial != NULL && full != NULL && tracker != NULL);
+    if (partial != NULL && full != NULL && tracker != NULL) {
+        tbox_damage first = tbox_damage_tracker_update(tracker, a, width, height);
+        tbox_raster_display_list_damaged(partial, width, height, a, &first);
+        tbox_damage damage = tbox_damage_tracker_update(tracker, b, width, height);
+        TBOX_TEST_ASSERT_MSG(!damage.full, label);
+        tbox_raster_display_list_damaged(partial, width, height, b, &damage);
+        tbox_raster_display_list(full, width, height, b);
+        TBOX_TEST_ASSERT_MSG(memcmp(partial, full, sizeof(uint32_t) * (size_t)width * (size_t)height) == 0, label);
+    }
+    tbox_damage_tracker_destroy(tracker);
+    free(partial);
+    free(full);
+    *failures_ptr = failures;
+}
+
+static void tbox_test_raster_damage_pixel_equivalence(int *failures_ptr, const void *font_data, size_t font_size) {
+    int failures = *failures_ptr;
+
+    tbox_font_face *face = tbox_font_face_load(font_data, font_size, 16.0);
+    TBOX_TEST_ASSERT(face != NULL);
+    if (face != NULL) {
+        const int32_t width = 240, height = 160;
+        tbox_css_rgba red = { 220, 30, 30, 255 }, blue = { 20, 40, 200, 160 }, black = { 0, 0, 0, 255 };
+
+        unsigned char image_pixels[16] = { 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 128, 255, 255, 0, 255 };
+        tbox_image image = { 2, 2, image_pixels };
+
+        tbox_style_gradient gradient;
+        memset(&gradient, 0, sizeof(gradient));
+        gradient.kind       = TBOX_STYLE_GRADIENT_LINEAR;
+        gradient.angle      = 90.0;
+        gradient.stop_count = 2;
+        gradient.stops[0]   = (tbox_style_gradient_stop){ { 255, 200, 0, 255 }, { TBOX_STYLE_LENGTH_PERCENT, 0.0, 0.0, 0, 0.0, 0.0 } };
+        gradient.stops[1]   = (tbox_style_gradient_stop){ { 0, 120, 255, 255 }, { TBOX_STYLE_LENGTH_PERCENT, 100.0, 0.0, 0, 0.0, 0.0 } };
+
+        enum { COUNT = 7 };
+        tbox_paint_op a[COUNT];
+        a[0]         = tbox_test_damage_rect_op(0.0, 0.0, 240.0, 160.0, (tbox_css_rgba){ 245, 245, 245, 255 });
+        a[1]         = tbox_test_damage_rect_op(10.3, 12.7, 60.5, 30.2, red);
+        a[2]         = tbox_test_damage_rect_op(40.0, 30.0, 50.0, 40.0, blue);
+        a[2].radius  = 8.0;
+        a[3]         = tbox_test_damage_rect_op(120.0, 10.0, 80.0, 50.0, black);
+        a[3].kind    = TBOX_PAINT_FILL_RING;
+        a[3].inner_rect = (tbox_rect){ 124.0, 14.0, 72.0, 42.0 };
+        for (int i = 0; i < 4; i++)
+            a[3].corner_radii[i] = 10.0, a[3].inner_corner_radii[i] = 6.0;
+        a[4]          = tbox_test_damage_rect_op(20.0, 80.0, 0.0, 20.0, black);
+        a[4].kind     = TBOX_PAINT_TEXT_RUN;
+        a[4].text     = tbox_test_raster_view_from_cstr("Partial gjy");
+        a[4].face     = face;
+        a[4].rect.width = tbox_font_measure_text(face, a[4].text);
+        a[4].rect.height = tbox_font_face_line_height(face);
+        a[5]          = tbox_test_damage_rect_op(150.5, 90.5, 30.0, 30.0, (tbox_css_rgba){ 0, 0, 0, 200 });
+        a[5].kind     = TBOX_PAINT_IMAGE;
+        a[5].image    = &image;
+        a[6]          = tbox_test_damage_rect_op(100.0, 120.0, 120.0, 30.0, (tbox_css_rgba){ 0, 0, 0, 255 });
+        a[6].kind     = TBOX_PAINT_GRADIENT;
+        a[6].gradient = &gradient;
+        a[6].has_clip = true;
+        a[6].clip     = (tbox_rect){ 110.4, 118.0, 90.0, 40.0 };
+        tbox_display_list list_a = { a, COUNT };
+
+        tbox_paint_op b[COUNT];
+        tbox_display_list list_b = { b, COUNT };
+
+        memcpy(b, a, sizeof(a));
+        b[1].color = blue;
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "recolored fractional rect");
+
+        memcpy(b, a, sizeof(a));
+        b[2].rect.x += 13.0, b[2].rect.y -= 5.0;
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "moved rounded rect over others");
+
+        memcpy(b, a, sizeof(a));
+        b[4].text       = tbox_test_raster_view_from_cstr("Changed text");
+        b[4].rect.width = tbox_font_measure_text(face, b[4].text);
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "changed text run");
+
+        memcpy(b, a, sizeof(a));
+        b[5].rect = (tbox_rect){ 60.2, 100.8, 18.0, 24.0 };
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "moved and resized image");
+
+        memcpy(b, a, sizeof(a));
+        b[6].clip.width -= 25.0;
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "narrowed gradient clip");
+
+        memcpy(b, a, sizeof(a));
+        b[3].color = red;
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "recolored ring");
+
+        memcpy(b, a, sizeof(a));
+        b[1] = a[2], b[2] = a[1];
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "swapped overlapping ops");
+
+        list_b.count = COUNT - 1;
+        memcpy(b, a, sizeof(a));
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "removed last op");
+
+        tbox_font_face_destroy(face);
+    }
+
+    *failures_ptr = failures;
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
@@ -1076,6 +1306,7 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_elliptical_corners(&failures);
     tbox_test_raster_write_png_round_trip(&failures);
     tbox_test_raster_write_png_invalid_args(&failures);
+    tbox_test_raster_damage_tracker(&failures);
 
     size_t font_size = 0;
     char *font_data  = read_file(TBOX_TEST_LIBERATION_SANS_PATH, &font_size);
@@ -1084,6 +1315,7 @@ int tbox_test_output_raster_run(void) {
     if (font_data != NULL) {
         tbox_test_raster_text_run_basic(&failures, font_data, font_size);
         tbox_test_raster_display_list_matches_direct_calls(&failures, font_data, font_size);
+        tbox_test_raster_damage_pixel_equivalence(&failures, font_data, font_size);
         free(font_data);
     } else {
         failures++;
