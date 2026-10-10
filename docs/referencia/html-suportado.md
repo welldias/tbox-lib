@@ -8,6 +8,8 @@ Legenda: `X` = suportado; `X*` = suportado com limitações (o capítulo do
 assunto descreve quais); vazio = não suportado. Itens não suportados são
 ignorados sem erro — o parser é tolerante.
 
+IMPORTANTE: Implementar apenas elementos HTML que sejam suportado pelo HTML5. Em breve removeremos todos que não são suportados e que foram implementados no passado.
+
 | Supported | Tag | Description |
 | --- | --- | --- |
 | X | `<!--...-->` | Defines a comment |
@@ -95,9 +97,9 @@ ignorados sem erro — o parser é tolerante.
 | X | `<pre>` | Defines preformatted text |
 | X* | `<progress>` | Represents the progress of a task |
 | X* | `<q>` | Defines a short quotation |
-|  | `<rp>` | Defines what to show in browsers that do not support ruby annotations |
-|  | `<rt>` | Defines an explanation/pronunciation of characters (for East Asian typography) |
-|  | `<ruby>` | Defines a ruby annotation (for East Asian typography) |
+| X* | `<rp>` | Defines what to show in browsers that do not support ruby annotations |
+| X* | `<rt>` | Defines an explanation/pronunciation of characters (for East Asian typography) |
+| X* | `<ruby>` | Defines a ruby annotation (for East Asian typography) |
 | X | `<s>` | Defines text that is no longer correct |
 | X | `<samp>` | Defines sample output from a computer program |
 | X* | `<script>` | Defines a client-side script |

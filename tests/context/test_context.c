@@ -4149,6 +4149,55 @@ int tbox_test_context_run(void) {
         tbox_image_cache_destroy(images);
     }
 
+    /* Ruby pairs each base segment with its rt, centers the annotation above
+     * it, and suppresses rp fallback punctuation. */
+    {
+        const char *html = "<div><p>Antes <ruby>base<rp>(</rp><rt>annotation</rt><rp>)</rp></ruby> depois</p>"
+            "<p><ruby>A<rt>alpha</rt>B<rt>beta</rt></ruby></p></div>";
+        tbox_context *ctx = open_cstr(html, "ruby { font-size: 24px; } rt { font-size: 12px; color: red; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 500.0, 250.0, &list);
+            const tbox_html_node *root = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            const tbox_html_node *first_ruby = root->first_child->first_child->next_sibling;
+            const tbox_html_node *second_ruby = root->last_child->first_child;
+            const tbox_layout_box *first = find_context_box(ctx, first_ruby);
+            const tbox_layout_box *second = find_context_box(ctx, second_ruby);
+            TBOX_TEST_ASSERT(first != NULL && second != NULL);
+            if (first != NULL) {
+                TBOX_TEST_ASSERT(first->text_run_count == 2);
+                if (first->text_run_count == 2) {
+                    const tbox_layout_text_run *rt = &first->text_runs[0];
+                    const tbox_layout_text_run *base = &first->text_runs[1];
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(rt->text, "annotation"));
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(base->text, "base"));
+                    TBOX_TEST_ASSERT(rt->rect.y + rt->rect.height <= base->rect.y);
+                    TBOX_TEST_ASSERT(rt->style->font_size == 12.0 && base->style->font_size == 24.0);
+                    TBOX_TEST_ASSERT(rt->rect.x >= first->content_box.x &&
+                        rt->rect.x + rt->rect.width <= first->content_box.x + first->content_box.width + 0.1);
+                }
+            }
+            if (second != NULL) {
+                TBOX_TEST_ASSERT(second->text_run_count == 4);
+                if (second->text_run_count == 4) {
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(second->text_runs[0].text, "alpha"));
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(second->text_runs[1].text, "A"));
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(second->text_runs[2].text, "beta"));
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(second->text_runs[3].text, "B"));
+                    TBOX_TEST_ASSERT(second->text_runs[1].rect.x < second->text_runs[3].rect.x);
+                }
+            }
+            bool punctuation = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    (string_view_equal_cstr(list.items[i].text, "(") || string_view_equal_cstr(list.items[i].text, ")")))
+                    punctuation = true;
+            TBOX_TEST_ASSERT(!punctuation);
+            tbox_context_close(ctx);
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

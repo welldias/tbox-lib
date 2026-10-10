@@ -139,6 +139,8 @@ typedef struct tbox_layout_replaced_image {
 
 tbox_layout_replaced_image tbox_layout_image_prepare(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_image_cache *images);
 tbox_string_view tbox_layout_image_url(tbox_arena *arena, const tbox_html_node *node);
+double tbox_layout_ruby_intrinsic_width(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts);
+double tbox_layout_build_ruby_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, double x, double y, tbox_layout_box *box);
 double tbox_layout_image_auto_width(const tbox_layout_replaced_image *content, const tbox_style *style, tbox_layout_containing_block container, double vertical_edges);
 double tbox_layout_image_height(const tbox_layout_replaced_image *content, const tbox_style *style, tbox_layout_containing_block container, double content_width, double vertical_edges);
 void tbox_layout_image_append_run(tbox_arena *arena, const tbox_layout_replaced_image *content, const tbox_style *style, tbox_layout_box *box);

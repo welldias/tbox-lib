@@ -299,7 +299,9 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
             context_for_children.nearest_ancestor = (tbox_rect){ content_x - padding_left, content_y - padding_top, content_width + padding_left + padding_right, padding_top + padding_bottom };
         /* Gauge children are fallback text in the DOM, not visible control content. */
         const tbox_html_node *text_children = (tbox_layout_tag(node, "progress") || tbox_layout_tag(node, "meter")) ? NULL : node->first_child;
-        content_height = tbox_layout_build_text_runs(arena, node, text_children, NULL, style, styles, fonts, images, content_x, content_y, content_width, box, &context_for_children);
+        content_height = tbox_layout_tag(node, "ruby") ?
+            tbox_layout_build_ruby_runs(arena, node, styles, fonts, content_x, content_y, box) :
+            tbox_layout_build_text_runs(arena, node, text_children, NULL, style, styles, fonts, images, content_x, content_y, content_width, box, &context_for_children);
         if (tbox_layout_tag(node, "summary") && node->parent != NULL &&
             tbox_layout_tag(node->parent, "details")) {
             bool first_summary = true;
