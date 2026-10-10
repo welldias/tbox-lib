@@ -89,6 +89,8 @@ tbox_style_cursor tbox_context_cursor_at(const tbox_context *ctx, double x, doub
     const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);
     if (box == NULL)
         return TBOX_STYLE_CURSOR_DEFAULT;
+    if (tbox_context_image_area_at(ctx, box, x, y) != NULL)
+        return TBOX_STYLE_CURSOR_POINTER;
     /* Inline elements have no box of their own: the run under the pointer
      * carries their style, which leads back to their node. */
     const tbox_style *style    = box->style;

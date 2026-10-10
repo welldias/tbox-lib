@@ -1,0 +1,10 @@
+body {
+    margin: 24px;
+    background: #edf4fa;
+    color: #274876;
+}
+
+p {
+    border-left: 4px solid #274876;
+    padding-left: 12px;
+}

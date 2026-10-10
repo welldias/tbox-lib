@@ -17,12 +17,12 @@ ignorados sem erro — o parser é tolerante.
 | X | `<acronym>` | Not supported in HTML5. Use `<abbr>` instead. Defines an acronym |
 | X* | `<address>` | Defines contact information for the author/owner of a document |
 |  | `<applet>` | Not supported in HTML5. Use `<embed>` or `<object>` instead. Defines an embedded applet |
-|  | `<area>` | Defines an area inside an image map |
+| X* | `<area>` | Defines an area inside an image map |
 | X | `<article>` | Defines an article |
 | X | `<aside>` | Defines content aside from the page content |
 |  | `<audio>` | Defines embedded sound content |
 | X | `<b>` | Defines bold text |
-|  | `<base>` | Specifies the base URL/target for all relative URLs in a document |
+| X* | `<base>` | Specifies the base URL/target for all relative URLs in a document |
 |  | `<basefont>` | Not supported in HTML5. Use CSS instead. Specifies a default color, size, and font for all text in a document |
 | X* | `<bdi>` | Isolates a part of text that might be formatted in a different direction from other text outside it |
 | X* | `<bdo>` | Overrides the current text direction |
@@ -74,9 +74,9 @@ ignorados sem erro — o parser é tolerante.
 | X* | `<label>` | Defines a label for an `<input>` element |
 | X* | `<legend>` | Defines a caption for a `<fieldset>` element |
 | X | `<li>` | Defines a list item |
-|  | `<link>` | Defines the relationship between a document and an external resource (most used to link to style sheets) |
+| X* | `<link>` | Defines the relationship between a document and an external resource (most used to link to style sheets) |
 | X | `<main>` | Specifies the main content of a document |
-|  | `<map>` | Defines an image map |
+| X* | `<map>` | Defines an image map |
 | X | `<mark>` | Defines marked/highlighted text |
 | X* | `<menu>` | Defines an unordered list |
 |  | `<meta>` | Defines metadata about an HTML document |
@@ -105,7 +105,7 @@ ignorados sem erro — o parser é tolerante.
 | X | `<section>` | Defines a section in a document |
 | X | `<select>` | Defines a drop-down list |
 | X | `<small>` | Defines smaller text |
-|  | `<source>` | Defines multiple media resources for media elements (`<video>` and `<audio>`) |
+| X* | `<source>` | Selects an image source inside `<picture>`; media resources for `<video>` and `<audio>` are not supported |
 | X | `<span>` | Defines a section in a document |
 | X | `<strike>` | Not supported in HTML5. Use `<del>` or `<s>` instead. Defines strikethrough text |
 | X | `<strong>` | Defines important text |

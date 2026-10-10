@@ -125,7 +125,7 @@ struct tbox_context {
     tbox_css_stylesheet *stylesheet;          /* owned, same lifecycle; author-only (see tbox_context_run_frame) */
     tbox_css_stylesheet *ua_stylesheet;       /* owned: built from typed UA rules and config, TBOX_CSS_ORIGIN_USER_AGENT in the cascade */
     tbox_css_stylesheet *control_stylesheet;  /* owned: internal picker theme, never cascaded into document nodes */
-    tbox_css_stylesheet *internal_stylesheet; /* owned, same lifecycle as `stylesheet` -- NULL se o documento não tem nenhum <style>; concatenação de todo <style> encontrado na árvore, mesma origem TBOX_CSS_ORIGIN_AUTHOR que `stylesheet` em tbox_context_run_frame */
+    tbox_css_stylesheet *internal_stylesheet; /* owned; CSS from <style> and local <link>, in document order, AUTHOR origin */
     tbox_font_face_cache *fonts;              /* borrowed -- built/destroyed by the caller, never by tbox_context (was a single tbox_font_face) */
     tbox_image_cache *images;                 /* borrowed, same lifecycle stance as `fonts` above -- may be NULL ("no images", see <tbox/image.h>) */
     tbox_layout_box *root;                    /* last computed layout tree (lives in frame_arena); NULL until the first run_frame */
@@ -185,6 +185,7 @@ double tbox_context_style_line_height(const tbox_style *style, const tbox_font_f
 bool tbox_context_is_textarea(const tbox_html_node *node);
 bool tbox_context_is_summary(const tbox_html_node *node);
 bool tbox_context_toggle_details(tbox_context *ctx, const tbox_html_node *summary);
+const tbox_html_node *tbox_context_image_area_at(const tbox_context *ctx, const tbox_layout_box *box, double x, double y);
 bool tbox_context_is_text_control(const tbox_html_node *node);
 bool tbox_context_is_select(const tbox_html_node *node);
 bool tbox_context_is_color_input(const tbox_html_node *node);

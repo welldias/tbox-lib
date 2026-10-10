@@ -85,7 +85,9 @@ bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node)
                    tbox_context_is_color_input(node) || tbox_context_is_range_input(node) ||
                    tbox_context_is_calendar_input(node) || tbox_context_is_file_input(node) ||
                    tbox_context_is_text_control(node) ||
-                   tbox_context_is_select(node) || tbox_context_is_summary(node);
+                   tbox_context_is_select(node) || tbox_context_is_summary(node) ||
+                   (tbox_string_view_equal_cstr(tag, "area") &&
+                    tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("href")) != NULL);
     if (!control || tbox_html_node_get_attribute(node, tbox_string_view_make("disabled", 8)) != NULL) {
         return false;
     }

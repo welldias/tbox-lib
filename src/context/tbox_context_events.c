@@ -138,8 +138,10 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
         return false;
     }
 
+    const tbox_html_node *area = tbox_context_image_area_at(ctx, box, x, y);
+    const tbox_html_node *target = area != NULL ? area : box->node;
     const tbox_html_node *focus = NULL;
-    for (const tbox_html_node *node = box->node; node != NULL; node = node->parent) {
+    for (const tbox_html_node *node = target; node != NULL; node = node->parent) {
         if (tbox_context_focusable(ctx, node)) {
             focus = node;
             break;
@@ -204,7 +206,7 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
         if (number_box != NULL && number_box->content_box.width >= 20.0 && number_box->content_box.height >= 14.0 && x >= number_box->content_box.x + number_box->content_box.width - 16.0 && x < number_box->content_box.x + number_box->content_box.width && y >= number_box->content_box.y && y < number_box->content_box.y + number_box->content_box.height)
             stepped = tbox_context_number_step(ctx, focus, y < number_box->content_box.y + number_box->content_box.height / 2.0 ? 1 : -1, false);
     }
-    bool clicked   = tbox_context_dispatch_click_node(ctx, box->node);
+    bool clicked   = tbox_context_dispatch_click_node(ctx, target);
     bool submitted = tbox_context_is_submit_input(box->node) && tbox_context_submit_form(ctx, box->node, box->node);
     return clicked || submitted || toggled || toggled_details || selected_radio || reset_form || cleared_search || changed_range || opened_color || (clicked_color && focus == previous_color) || clicked_date || opened_file || (clicked_file && focus == previous_file) || stepped;
 }
@@ -542,7 +544,7 @@ bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
             bool submitted = tbox_context_submit_form(ctx, ctx->focused_node, ctx->focused_node);
             return clicked || submitted;
         }
-        if (tbox_string_view_equal_cstr(tag, "button") || tbox_context_is_button_input(ctx->focused_node) || tbox_context_is_image_input(ctx->focused_node)) {
+        if (tbox_string_view_equal_cstr(tag, "button") || tbox_string_view_equal_cstr(tag, "area") || tbox_context_is_button_input(ctx->focused_node) || tbox_context_is_image_input(ctx->focused_node)) {
             return tbox_context_dispatch_click_node(ctx, ctx->focused_node);
         }
         if (event.key == TBOX_KEY_SPACE && tbox_context_is_checkbox_input(ctx->focused_node)) {

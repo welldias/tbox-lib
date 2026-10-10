@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <style>
+    body {
+      margin: 24px;
+    }
+
+    img {
+      width: 300px;
+      height: 300px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Regiões de imagem</h1>
+  <p>Passe o ponteiro sobre as regiões: esquerda, círculo no alto à direita e triângulo abaixo.</p>
+  <img src="yellow.png" alt="Mapa de imagem" usemap="#regioes">
+  <map name="regioes">
+    <area shape="rect" coords="0,0,100,200" href="#esquerda" alt="Esquerda">
+    <area shape="circle" coords="150,50,40" href="#circulo" alt="Círculo">
+    <area shape="poly" coords="110,110,190,110,150,190" href="#triangulo" alt="Triângulo">
+  </map>
+  <p>As áreas podem ser tratadas com callbacks de clique registrados pela aplicação.</p>
+</body>
+
+</html>

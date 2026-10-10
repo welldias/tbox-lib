@@ -2,7 +2,7 @@
 #include "tbox_ua_style.h"
 
 static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_list *list);
-static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder);
+static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder, const char *asset_base, tbox_string_view document_base);
 
 static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_list *list) {
     if (ctx->select_fields == NULL && ctx->open_select == NULL && ctx->open_color == NULL && ctx->open_date == NULL && ctx->open_file == NULL && !ctx->has_file_input && !ctx->has_number_input && !ctx->has_range_input && !ctx->has_search_input && !ctx->has_gauge)
@@ -27,28 +27,90 @@ static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_li
     list->count = items.length;
 }
 
-/* pre-order traversal of the WHOLE document tree (starting at
- * tbox_html_document_root -- the real root, which may have several
- * top-level children such as <head> and <body>, not the single "first
- * top-level element" tbox_layout_build isolates for itself in a separate
- * layer -- see docs/dev/historico.md's v9 "Escopo"), appending the raw text
- * content of every <style> element found onto `builder`, in document
- * order. tbox_html_node_text_content already returns raw (non-entity-
- * decoded) text for a raw-text element like <style>, which is exactly what
- * CSS text needs. Pure function: reads the tree, writes only to `builder`
- * (a parameter) -- no global/static state. */
-static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder) {
+/* Collect author CSS from <style> and local <link rel=stylesheet> in document
+ * order, starting at the real document root so <head> is included. */
+static const tbox_html_node *tbox_context_first_base(const tbox_html_node *node) {
+    if (node == NULL) return NULL;
+    if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "base") &&
+        tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("href")) != NULL) return node;
+    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+        const tbox_html_node *found = tbox_context_first_base(child);
+        if (found != NULL) return found;
+    }
+    return NULL;
+}
+
+static bool tbox_context_resource_path(char *path, size_t capacity, const char *asset_base,
+    tbox_string_view document_base, tbox_string_view url) {
+    if (url.size == 0 || url.size >= capacity || document_base.size >= capacity ||
+        memchr(url.data, ':', url.size) != NULL) return false;
+    int length = 0;
+    if (url.data[0] == '/') length = snprintf(path, capacity, "%.*s", (int)url.size, url.data);
+    else if (document_base.size > 0 && document_base.data[0] == '/')
+        length = snprintf(path, capacity, "%.*s%.*s", (int)document_base.size, document_base.data, (int)url.size, url.data);
+    else if (document_base.size > 0 && asset_base != NULL && asset_base[0] != '\0')
+        length = snprintf(path, capacity, "%s/%.*s%.*s", asset_base, (int)document_base.size, document_base.data, (int)url.size, url.data);
+    else if (document_base.size > 0)
+        length = snprintf(path, capacity, "%.*s%.*s", (int)document_base.size, document_base.data, (int)url.size, url.data);
+    else if (asset_base != NULL && asset_base[0] != '\0')
+        length = snprintf(path, capacity, "%s/%.*s", asset_base, (int)url.size, url.data);
+    else length = snprintf(path, capacity, "%.*s", (int)url.size, url.data);
+    return length >= 0 && (size_t)length < capacity;
+}
+
+static bool tbox_context_rel_has_stylesheet(tbox_string_view value) {
+    size_t index = 0;
+    while (index < value.size) {
+        while (index < value.size && isspace((unsigned char)value.data[index])) index++;
+        size_t start = index;
+        while (index < value.size && !isspace((unsigned char)value.data[index])) index++;
+        if (tbox_string_view_equal_ascii_ci(tbox_string_view_make(value.data + start, index - start),
+            tbox_string_view_from_cstr("stylesheet"))) return true;
+    }
+    return false;
+}
+
+static void tbox_context_append_link_css(const tbox_html_node *node, tbox_string_builder *builder,
+    const char *asset_base, tbox_string_view document_base) {
+    const tbox_html_attribute *rel = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("rel"));
+    const tbox_html_attribute *href = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("href"));
+    if (rel == NULL || href == NULL || !tbox_context_rel_has_stylesheet(rel->value)) return;
+    char path[4096];
+    if (!tbox_context_resource_path(path, sizeof(path), asset_base, document_base, href->value)) return;
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) return;
+    if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return; }
+    long size = ftell(file);
+    if (size < 0 || fseek(file, 0, SEEK_SET) != 0) { fclose(file); return; }
+    char *buffer = malloc((size_t)size + 1);
+    if (buffer == NULL) { fclose(file); return; }
+    bool read_ok = fread(buffer, 1, (size_t)size, file) == (size_t)size;
+    fclose(file);
+    if (read_ok) {
+        tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
+        tbox_string_builder_append_view(builder, tbox_string_view_make(buffer, (size_t)size));
+        tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
+    }
+    free(buffer);
+}
+
+static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder,
+    const char *asset_base, tbox_string_view document_base) {
     if (node == NULL) {
         return;
     }
 
     if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "style")) {
         tbox_string_view text = tbox_html_node_text_content(arena, node);
+        tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
         tbox_string_builder_append_view(builder, text);
+        tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
     }
+    if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "link"))
+        tbox_context_append_link_css(node, builder, asset_base, document_base);
 
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
-        tbox_context_collect_style_elements(arena, child, builder);
+        tbox_context_collect_style_elements(arena, child, builder, asset_base, document_base);
     }
 }
 
@@ -64,15 +126,17 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
         return NULL;
     }
 
-    /* gathers every <style> element's raw text from the WHOLE
-     * document (not just what Layout later renders) into one concatenated
-     * buffer, parsed as a single extra author stylesheet below. `scratch`
-     * only needs to survive long enough for tbox_css_parse to copy the
-     * concatenated text into its own arena -- destroyed right after. */
+    /* Collects embedded and linked local CSS into one author stylesheet.
+     * The scratch buffer only needs to survive until tbox_css_parse copies it. */
     tbox_arena scratch = tbox_arena_create(0);
     tbox_string_builder style_builder;
     tbox_string_builder_init(&style_builder, &scratch, 0);
-    tbox_context_collect_style_elements(&scratch, tbox_html_document_root(document), &style_builder);
+    const tbox_html_node *base = tbox_context_first_base(tbox_html_document_root(document));
+    const tbox_html_attribute *base_href = base != NULL ? tbox_html_node_get_attribute(base, tbox_string_view_from_cstr("href")) : NULL;
+    tbox_string_view document_base = base_href != NULL ? base_href->value : tbox_string_view_make(NULL, 0);
+    if (document_base.size > 0 && memchr(document_base.data, ':', document_base.size) != NULL)
+        document_base = tbox_string_view_make(NULL, 0);
+    tbox_context_collect_style_elements(&scratch, tbox_html_document_root(document), &style_builder, options.asset_base_dir, document_base);
     tbox_string_view internal_css_text = tbox_string_builder_finish(&style_builder);
 
     tbox_css_stylesheet *internal_stylesheet = NULL;
@@ -302,8 +366,8 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     tbox_css_selector_set_active_context(ctx->active_node);
 
     /* three cascade sources -- the user-agent stylesheet, the
-     * external author stylesheet, and  the internal stylesheet
-     * assembled from every <style> element found in the document -- replacing
+     * application author stylesheet, and the document stylesheet assembled
+     * from <style> and local <link> elements -- replacing
      * the 1-element placeholder array TASKS.md's Tarefa 1/Tarefa 3 left here.
      * Order in this array does not affect cascade priority BETWEEN DIFFERENT
      * origins (tbox_css_cascade_resolve already ranks by origin internally

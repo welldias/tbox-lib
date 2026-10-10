@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <style>
+    body {
+      margin: 24px;
+    }
+
+    img {
+      width: 160px;
+      height: 160px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Imagem escolhida por source</h1>
+  <picture>
+    <source type="image/png" srcset="yellow.png">
+    <img src="black.png" alt="Quadrado colorido">
+  </picture>
+  <p>A imagem amarela vem de source; black.png é o fallback do img.</p>
+</body>
+
+</html>

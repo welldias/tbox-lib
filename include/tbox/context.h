@@ -106,8 +106,8 @@ typedef struct tbox_context_options {
     tbox_ua_style_config ua_style;
     const char *control_css;
     size_t control_css_length;
-    const char *asset_base_dir; /* base directory for @font-face url() files */
-    const char *css_base_dir; /* external stylesheet URLs; defaults to asset_base_dir */
+    const char *asset_base_dir; /* local HTML resources and @font-face url() files */
+    const char *css_base_dir; /* @font-face URLs in the CSS passed by the application; defaults to asset_base_dir */
     bool prefers_reduced_motion; /* exposed to @media (prefers-reduced-motion: ...) */
 } tbox_context_options;
 

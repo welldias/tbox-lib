@@ -73,8 +73,7 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
     const tbox_font_face *face   = tbox_layout_style_face(fonts, style);
 
     if (tbox_layout_is_replaced_image(node)) {
-        const tbox_html_attribute *src = tbox_html_node_get_attribute(node, tbox_string_view_make("src", 3));
-        const tbox_image *image        = src != NULL ? tbox_image_cache_get(images, src->value) : NULL;
+        const tbox_image *image = tbox_image_cache_get(images, tbox_layout_image_url(arena, node));
         result.min = result.max = image != NULL ? (double)image->width : 16.0;
         /* A px height with an auto width keeps the image's aspect ratio. */
         if (image != NULL && image->height > 0 && style->height.kind == TBOX_STYLE_LENGTH_PX) {

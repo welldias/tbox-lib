@@ -4000,6 +4000,155 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* A local stylesheet participates in document order with <style>. */
+    {
+        tbox_context_options options = tbox_context_options_default();
+        options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
+        const char *html = "<div><link rel='stylesheet' href='110.css'><p>Ligado</p></div>";
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 120.0, &list);
+            const tbox_layout_box *p = find_box_by_tag(find_context_box(ctx,
+                tbox_html_document_root(tbox_context_document(ctx))->first_child), "p");
+            TBOX_TEST_ASSERT(p != NULL && p->style->color.r == 160 && p->style->color.g == 52);
+            tbox_context_close(ctx);
+        }
+        html = "<div><link rel='stylesheet' href='110.css'><style>p { color: blue; }</style><p>Depois</p></div>";
+        ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 120.0, &list);
+            const tbox_layout_box *p = find_box_by_tag(find_context_box(ctx,
+                tbox_html_document_root(tbox_context_document(ctx))->first_child), "p");
+            TBOX_TEST_ASSERT(p != NULL && p->style->color.b == 255 && p->style->color.r == 0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* A first supported <source> replaces the <img> fallback; media sources
+     * that this version cannot evaluate leave the fallback in place. */
+    {
+        tbox_image_cache *images = tbox_image_cache_create(TBOX_TEST_ASSETS_DIR);
+        TBOX_TEST_ASSERT(images != NULL);
+        if (images != NULL) {
+            const char *html = "<div><picture><source type='image/png' srcset='yellow.png'>"
+                "<img src='black.png' alt='fallback'></picture></div>";
+            tbox_context *ctx = tbox_context_open(html, strlen(html), "", 0, fonts, images);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx != NULL) {
+                tbox_display_list list;
+                tbox_context_run_frame(ctx, 300.0, 300.0, &list);
+                bool chosen = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_IMAGE &&
+                        list.items[i].image == tbox_image_cache_get(images, tbox_string_view_make("yellow.png", 10))) chosen = true;
+                TBOX_TEST_ASSERT(chosen);
+                tbox_context_close(ctx);
+            }
+            html = "<div><picture><source media='(max-width: 500px)' srcset='yellow.png'>"
+                "<img src='black.png' alt='fallback'></picture></div>";
+            ctx = tbox_context_open(html, strlen(html), "", 0, fonts, images);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx != NULL) {
+                tbox_display_list list;
+                tbox_context_run_frame(ctx, 300.0, 300.0, &list);
+                bool fallback = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_IMAGE &&
+                        list.items[i].image == tbox_image_cache_get(images, tbox_string_view_make("black.png", 9))) fallback = true;
+                TBOX_TEST_ASSERT(fallback);
+                tbox_context_close(ctx);
+            }
+            tbox_image_cache_destroy(images);
+        }
+    }
+
+    /* The first <base href> redirects both linked CSS and image src. */
+    {
+        tbox_image_cache *images = tbox_image_cache_create(TBOX_TEST_ASSETS_DIR);
+        tbox_context_options options = tbox_context_options_default();
+        options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
+        const char *html = "<div><base href='base-demo/'><link rel='stylesheet' href='112.css'>"
+            "<p>Base</p><img src='yellow.png' width='40' height='40'></div>";
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, images, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 200.0, &list);
+            const tbox_layout_box *p = find_box_by_tag(find_context_box(ctx,
+                tbox_html_document_root(tbox_context_document(ctx))->first_child), "p");
+            TBOX_TEST_ASSERT(p != NULL && tbox_style_border_side_width(p->style, 3) == 4.0);
+            bool image_found = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_IMAGE && list.items[i].image ==
+                    tbox_image_cache_get(images, tbox_string_view_make("base-demo/yellow.png", 20))) image_found = true;
+            TBOX_TEST_ASSERT(image_found);
+            tbox_context_close(ctx);
+        }
+        tbox_image_cache_destroy(images);
+    }
+
+    /* Image maps route scaled image coordinates to rect, circle and poly
+     * areas, keeping the area node as the callback target. */
+    {
+        tbox_image_cache *images = tbox_image_cache_create(TBOX_TEST_ASSETS_DIR);
+        const char *html = "<div><img src='yellow.png' usemap='#regions' width='300' height='300' style='display:block'>"
+            "<map name='regions'><area shape='rect' coords='0,0,100,200' href='#left'>"
+            "<area shape='circle' coords='150,50,40' href='#circle'>"
+            "<area shape='poly' coords='110,110,190,110,150,190' href='#triangle'></map></div>";
+        tbox_context *ctx = tbox_context_open(html, strlen(html), "", 0, fonts, images);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 340.0, 340.0, &list);
+            const tbox_html_node *root = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            const tbox_html_node *map = root->first_child->next_sibling;
+            const tbox_layout_box *img = find_context_box(ctx, root->first_child);
+            TBOX_TEST_ASSERT(img != NULL && img->text_run_count > 0);
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "area", 4, record_click, &capture) >= 0);
+            if (img != NULL && img->text_run_count > 0) {
+                tbox_rect rect = img->text_runs[0].rect;
+                TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, rect.x + 30, rect.y + 30) == TBOX_STYLE_CURSOR_POINTER);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, rect.x + 30, rect.y + 30));
+                TBOX_TEST_ASSERT(capture.node == map->first_child);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, rect.x + 225, rect.y + 75));
+                TBOX_TEST_ASSERT(capture.node == map->first_child->next_sibling);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, rect.x + 225, rect.y + 225));
+                TBOX_TEST_ASSERT(capture.node == map->last_child);
+                TBOX_TEST_ASSERT(capture.call_count == 3);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+                TBOX_TEST_ASSERT(capture.call_count == 4);
+            }
+            tbox_context_close(ctx);
+        }
+        html = "<div><p><img src='yellow.png' usemap='#small' width='200' height='200'></p>"
+            "<map name='small'><area shape='rect' coords='0,0,100,200' href='#left'></map></div>";
+        ctx = tbox_context_open(html, strlen(html), "", 0, fonts, images);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 300.0, &list);
+            click_capture capture;
+            click_capture_reset(&capture);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "area", 4, record_click, &capture) >= 0);
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_IMAGE && list.items[i].image ==
+                    tbox_image_cache_get(images, tbox_string_view_make("yellow.png", 10))) {
+                    tbox_rect rect = list.items[i].rect;
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, rect.x + 20, rect.y + 20));
+                    break;
+                }
+            TBOX_TEST_ASSERT(capture.call_count == 1);
+            tbox_context_close(ctx);
+        }
+        tbox_image_cache_destroy(images);
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

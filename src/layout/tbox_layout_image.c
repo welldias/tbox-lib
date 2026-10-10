@@ -1,6 +1,62 @@
 #include "tbox_layout_internal.h"
 #include <string.h>
 
+static const tbox_html_node *tbox_layout_first_base(const tbox_html_node *node) {
+    if (node == NULL) return NULL;
+    if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "base") &&
+        tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("href")) != NULL) return node;
+    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+        const tbox_html_node *found = tbox_layout_first_base(child);
+        if (found != NULL) return found;
+    }
+    return NULL;
+}
+
+static tbox_string_view tbox_layout_picture_source(const tbox_html_node *img) {
+    if (img->parent == NULL || img->parent->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(img->parent->element.tag_name, "picture")) return tbox_string_view_make(NULL, 0);
+    for (const tbox_html_node *node = img->parent->first_child; node != img; node = node->next_sibling) {
+        if (node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(node->element.tag_name, "source")) continue;
+        if (tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("media")) != NULL) continue;
+        const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("type"));
+        if (type != NULL && !tbox_string_view_equal_cstr(type->value, "image/png") &&
+            !tbox_string_view_equal_cstr(type->value, "image/jpeg") &&
+            !tbox_string_view_equal_cstr(type->value, "image/gif") &&
+            !tbox_string_view_equal_cstr(type->value, "image/bmp")) continue;
+        const tbox_html_attribute *srcset = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("srcset"));
+        if (srcset == NULL) continue;
+        size_t start = 0;
+        while (start < srcset->value.size && (srcset->value.data[start] == ' ' || srcset->value.data[start] == '\n')) start++;
+        size_t end = start;
+        while (end < srcset->value.size && srcset->value.data[end] != ' ' && srcset->value.data[end] != '\n' && srcset->value.data[end] != ',') end++;
+        if (end > start) return tbox_string_view_make(srcset->value.data + start, end - start);
+    }
+    return tbox_string_view_make(NULL, 0);
+}
+
+tbox_string_view tbox_layout_image_url(tbox_arena *arena, const tbox_html_node *node) {
+    tbox_string_view url = tbox_layout_picture_source(node);
+    if (url.size == 0) {
+        const tbox_html_attribute *src = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("src"));
+        if (src == NULL) return tbox_string_view_make(NULL, 0);
+        url = src->value;
+    }
+    if (url.size == 0 || url.data[0] == '/') return url;
+    const tbox_html_node *root = node;
+    while (root->parent != NULL) root = root->parent;
+    const tbox_html_node *base = tbox_layout_first_base(root);
+    const tbox_html_attribute *href = base != NULL ? tbox_html_node_get_attribute(base, tbox_string_view_from_cstr("href")) : NULL;
+    if (href == NULL || href->value.size == 0 || href->value.size > 4096 || url.size > 4096 ||
+        memchr(href->value.data, ':', href->value.size) != NULL) return url;
+    size_t size = href->value.size + url.size;
+    char *path = tbox_arena_alloc(arena, size + 1);
+    if (path == NULL) return url;
+    memcpy(path, href->value.data, href->value.size);
+    memcpy(path + href->value.size, url.data, url.size);
+    path[size] = '\0';
+    return tbox_string_view_make(path, size);
+}
+
 
 
 /* Pushes one tbox_layout_word for an <img> element (see
@@ -41,8 +97,8 @@
 
 
 void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node *img_node, const tbox_style *img_style, const tbox_font_face *context_face, tbox_image_cache *images, double containing_width, tbox_vector *words) {
-    const tbox_html_attribute *src_attr = tbox_html_node_get_attribute(img_node, tbox_string_view_make("src", 3));
-    const tbox_image *image             = src_attr != NULL ? tbox_image_cache_get(images, src_attr->value) : NULL;
+    tbox_string_view src = tbox_layout_image_url(arena, img_node);
+    const tbox_image *image = tbox_image_cache_get(images, src);
 
     if (image == NULL) {
         const tbox_html_attribute *alt_attr = tbox_html_node_get_attribute(img_node, tbox_string_view_make("alt", 3));
@@ -72,8 +128,7 @@ tbox_layout_replaced_image tbox_layout_image_prepare(tbox_arena *arena,
     const tbox_html_node *node, const tbox_style *style,
     tbox_font_face_cache *fonts, tbox_image_cache *images) {
     tbox_layout_replaced_image content = {0};
-    const tbox_html_attribute *src = tbox_html_node_get_attribute(node, tbox_string_view_make("src", 3));
-    content.image = src != NULL ? tbox_image_cache_get(images, src->value) : NULL;
+    content.image = tbox_image_cache_get(images, tbox_layout_image_url(arena, node));
     const tbox_html_attribute *alt = content.image == NULL ?
         tbox_html_node_get_attribute(node, tbox_string_view_make("alt", 3)) : NULL;
     content.fallback_text = alt != NULL ?
