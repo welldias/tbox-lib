@@ -5,7 +5,7 @@ static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_li
 static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder);
 
 static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_list *list) {
-    if (ctx->select_fields == NULL && ctx->open_select == NULL && ctx->open_color == NULL && ctx->open_date == NULL && ctx->open_file == NULL && !ctx->has_file_input && !ctx->has_number_input && !ctx->has_range_input && !ctx->has_search_input)
+    if (ctx->select_fields == NULL && ctx->open_select == NULL && ctx->open_color == NULL && ctx->open_date == NULL && ctx->open_file == NULL && !ctx->has_file_input && !ctx->has_number_input && !ctx->has_range_input && !ctx->has_search_input && !ctx->has_gauge)
         return;
     tbox_vector items;
     tbox_vector_init(&items, &ctx->frame_arena, sizeof(tbox_paint_op), list->count + 32);
@@ -17,6 +17,7 @@ static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_li
     tbox_context_paint_number_steppers(ctx->root, &items);
     tbox_context_paint_search_clears(ctx->root, &items);
     tbox_context_paint_ranges(ctx->root, &items);
+    tbox_context_paint_gauges(ctx->root, &items);
     tbox_context_paint_file_controls(ctx, ctx->root, &items);
     tbox_context_paint_select_popup(ctx, &items);
     tbox_context_paint_color_popup(ctx, &items);
@@ -30,7 +31,7 @@ static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_li
  * tbox_html_document_root -- the real root, which may have several
  * top-level children such as <head> and <body>, not the single "first
  * top-level element" tbox_layout_build isolates for itself in a separate
- * layer -- see ARCHITECTURE.md's v9 "Escopo"), appending the raw text
+ * layer -- see docs/dev/historico.md's v9 "Escopo"), appending the raw text
  * content of every <style> element found onto `builder`, in document
  * order. tbox_html_node_text_content already returns raw (non-entity-
  * decoded) text for a raw-text element like <style>, which is exactly what
@@ -157,6 +158,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->has_file_input                                     = false;
     ctx->has_number_input                                   = false;
     ctx->has_range_input                                    = false;
+    ctx->has_gauge                                          = false;
     ctx->has_search_input                                   = false;
     ctx->range_drag_node                                    = NULL;
     ctx->popup_highlight                                    = NULL;
@@ -259,7 +261,7 @@ void tbox_context_close(tbox_context *ctx) {
 void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double viewport_height, tbox_display_list *out_list) {
     /* Invalidates everything Style/Layout/Render produced last frame in
      * one shot -- no per-layer _destroy to call (see "Convenções" in
-     * ARCHITECTURE.md). Must happen before ctx->root is overwritten below:
+     * docs/dev/historico.md). Must happen before ctx->root is overwritten below:
      * the old tree lives in this same arena. */
     tbox_arena_reset(&ctx->frame_arena);
     ctx->styles = (tbox_style_table){ 0 };
@@ -284,6 +286,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     ctx->has_file_input        = false;
     ctx->has_number_input      = false;
     ctx->has_range_input       = false;
+    ctx->has_gauge             = false;
     ctx->has_search_input      = false;
     tbox_context_sanitize_inputs(ctx, (tbox_html_node *)root);
 
@@ -311,7 +314,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * between the two, tbox_css_cascade_wins_or_ties's ">=" tie-break makes
      * whichever comes LAST in this array win -- `internal_stylesheet` is
      * placed after `stylesheet` on purpose, so an embedded <style> wins ties
-     * against the external CSS (see ARCHITECTURE.md's v9 "Escopo"). */
+     * against the external CSS (see docs/dev/historico.md's v9 "Escopo"). */
     tbox_css_cascade_source sources[3] = {
         { ctx->ua_stylesheet,       TBOX_CSS_ORIGIN_USER_AGENT },
         { ctx->stylesheet,          TBOX_CSS_ORIGIN_AUTHOR     },

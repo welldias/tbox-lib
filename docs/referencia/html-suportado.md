@@ -1,3 +1,13 @@
+# Referência — elementos HTML suportados
+
+> - **Escopo:** lista de elementos HTML e se o tbox os reconhece.
+> - **Código relacionado:** `include/tbox/html_parser.h`, `src/html_parser/`, `src/context/tbox_ua_style.c`
+> - **Veja também:** [HTML e CSS](../07-html-e-css.md), [Formulários e controles](../10-formularios-e-controles.md)
+
+Legenda: `X` = suportado; `X*` = suportado com limitações (o capítulo do
+assunto descreve quais); vazio = não suportado. Itens não suportados são
+ignorados sem erro — o parser é tolerante.
+
 | Supported | Tag | Description |
 | --- | --- | --- |
 | X | `<!--...-->` | Defines a comment |
@@ -70,7 +80,7 @@
 | X | `<mark>` | Defines marked/highlighted text |
 | X* | `<menu>` | Defines an unordered list |
 |  | `<meta>` | Defines metadata about an HTML document |
-|  | `<meter>` | Defines a scalar measurement within a known range (a gauge) |
+| X* | `<meter>` | Defines a scalar measurement within a known range (a gauge) |
 | X | `<nav>` | Defines navigation links |
 |  | `<noframes>` | Not supported in HTML5. Defines an alternate content for users that do not support frames |
 | X* | `<noscript>` | Defines an alternate content for users that do not support client-side scripts |
@@ -78,12 +88,12 @@
 | X | `<ol>` | Defines an ordered list |
 |  | `<optgroup>` | Defines a group of related options in a drop-down list |
 | X | `<option>` | Defines an option in a drop-down list |
-|  | `<output>` | Defines the result of a calculation |
+| X* | `<output>` | Defines the result of a calculation |
 | X | `<p>` | Defines a paragraph |
 |  | `<param>` | Defines a parameter for an object |
 | X* | `<picture>` | Defines a container for multiple image resources |
 | X | `<pre>` | Defines preformatted text |
-|  | `<progress>` | Represents the progress of a task |
+| X* | `<progress>` | Represents the progress of a task |
 | X* | `<q>` | Defines a short quotation |
 |  | `<rp>` | Defines what to show in browsers that do not support ruby annotations |
 |  | `<rt>` | Defines an explanation/pronunciation of characters (for East Asian typography) |

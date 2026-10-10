@@ -153,6 +153,7 @@ struct tbox_context {
     bool has_file_input;
     bool has_number_input;
     bool has_range_input;
+    bool has_gauge;
     bool has_search_input;
     const tbox_html_node *range_drag_node;
     const tbox_html_node *popup_highlight;
@@ -244,6 +245,7 @@ void tbox_context_paint_select_arrows(const tbox_layout_box *box, tbox_vector *i
 void tbox_context_paint_number_steppers(const tbox_layout_box *box, tbox_vector *items);
 void tbox_context_paint_search_clears(const tbox_layout_box *box, tbox_vector *items);
 void tbox_context_paint_ranges(const tbox_layout_box *box, tbox_vector *items);
+void tbox_context_paint_gauges(const tbox_layout_box *box, tbox_vector *items);
 void tbox_context_paint_select_popup(tbox_context *ctx, tbox_vector *items);
 void tbox_context_paint_color_popup(tbox_context *ctx, tbox_vector *items);
 void tbox_context_date_text(tbox_vector *items, const tbox_font_face *face, tbox_rect rect, tbox_string_view value, tbox_css_rgba color);

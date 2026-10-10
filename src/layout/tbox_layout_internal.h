@@ -75,7 +75,7 @@ typedef struct tbox_layout_word {
      * tbox_layout_break_lines). Every function that pushes a REAL word
      * (tbox_layout_push_words, tbox_layout_collect_preformatted_words) sets
      * this explicitly to false -- never left to tbox_vector's zero-init,
-     * per ARCHITECTURE.md's "v11" section. */
+     * per docs/dev/historico.md's "v11" section. */
     bool hard_break;
 
     /* an `inline-block` placed as one unbreakable word. `atomic`
@@ -99,7 +99,7 @@ typedef struct tbox_layout_word {
 
 /* A half-open range [start, end) into a tbox_layout_word array, one greedy
  * line's worth of words, plus that line's own height (max line-height among
- * the faces actually used by words in this range -- see ARCHITECTURE.md;
+ * the faces actually used by words in this range -- see docs/dev/historico.md;
  * degenerates to "the one face's line-height" when every word on the line
  * shares a face, the common v2 case). */
 
@@ -112,7 +112,7 @@ typedef struct tbox_layout_line {
      * tbox_font_face_ascent instead; see tbox_layout_break_lines's three
      * line-closing points. Used by tbox_layout_build_line_runs to align
      * every run's own baseline with this line's dominant one instead of
-     * `line_y` (the line's TOP) directly -- see ARCHITECTURE.md's "v13 --
+     * `line_y` (the line's TOP) directly -- see docs/dev/historico.md's "v13 --
      * Layout Tree" section for why this is needed now (the first time this
      * project has more than one font size on the same line). */
     double ascent;

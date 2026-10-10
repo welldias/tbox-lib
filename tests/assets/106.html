@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <style>
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 18px;
+    }
+
+    h1 {
+      font-size: 28px;
+      margin: 0 0 18px;
+    }
+
+    section {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+
+    h2 {
+      font-size: 20px;
+      margin: 0 0 12px;
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    progress,
+    meter {
+      width: 260px;
+      height: 18px;
+    }
+
+    output {
+      font-weight: bold;
+      color: #245ab4;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Indicadores e resultado</h1>
+  <section>
+    <h2>Progresso de uma tarefa</h2>
+    <p>Download: <output>65%</output></p>
+    <progress value="65" max="100">65% concluído</progress>
+    <p>Aguardando uma etapa sem percentual:</p>
+    <progress>Aguardando</progress>
+  </section>
+  <section>
+    <h2>Medição em uma escala</h2>
+    <p>Faixa ideal: 40 a 70, em uma escala de 0 a 100.</p>
+    <p>Bom: <meter min="0" max="100" low="40" high="70" optimum="55" value="55">55</meter></p>
+    <p>Atenção: <meter min="0" max="100" low="40" high="70" optimum="55" value="85">85</meter></p>
+  </section>
+</body>
+
+</html>

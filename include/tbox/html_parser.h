@@ -13,7 +13,7 @@ extern "C" {
 /* Opaque here: tbox_html_node_text_content only needs a pointer to it. Full
  * definition lives in Base (src/base/tbox_arena.h); the region-based
  * allocator every tbox structure is built on (see ownership convention in
- * ARCHITECTURE.md's "Convenções"). */
+ * docs/dev/convencoes.md). */
 typedef struct tbox_arena tbox_arena;
 
 typedef enum tbox_html_node_type {
@@ -111,11 +111,11 @@ tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_
  * arena (the same arena tbox_html_node_create allocates from) -- the caller
  * doesn't need to keep the original buffers alive after the call returns.
  * No `_destroy` of its own: same arena as `document`, no individual free
- * (see "Convenções" at the top of ARCHITECTURE.md). If `node` didn't
+ * (see "Convenções" in docs/dev/convencoes.md). If `node` didn't
  * already have `name`, a new attributes array (size count+1) is allocated
  * and the existing entries copied into it -- the old array (if any) is left
  * orphaned in the arena; long-lived mutation grows the arena, an accepted
- * trade-off (see ARCHITECTURE.md's "Árvore pública de mutação" design debt)
+ * trade-off (see docs/dev/historico.md's "Árvore pública de mutação" design debt)
  * not addressed preemptively here. A no-op if `node` isn't an ELEMENT. */
 void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, tbox_string_view value);
 

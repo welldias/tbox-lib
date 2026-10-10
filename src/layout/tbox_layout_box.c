@@ -33,7 +33,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
      * being a containing block (see tbox_layout_positioned_context), but
      * only ABSOLUTE/FIXED are actually placed by resolving left/right/top/
      * bottom against `container` instead of flowing at `cursor_y` -- RELATIVE
-     * and STICKY (== RELATIVE, see ARCHITECTURE.md's scope) still flow
+     * and STICKY (== RELATIVE, see docs/dev/historico.md's scope) still flow
      * normally and only shift visually, unchanged since v4. */
     bool is_out_of_flow = (style->position == TBOX_STYLE_POSITION_ABSOLUTE || style->position == TBOX_STYLE_POSITION_FIXED);
     /* Zero-initialized: text_runs/text_run_count/parent/first_child/
@@ -66,7 +66,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
     double vertical_edges   = padding_top + padding_bottom + border_top + border_bottom;
 
     /* Width: the same rule for every node, text-tag or not -- see
-     * ARCHITECTURE.md's clarification that measured text never resizes the
+     * docs/dev/historico.md's clarification that measured text never resizes the
      * box (D4). Border counts against the available width in the AUTO
      * branch exactly like padding does. */
     double content_width;
@@ -158,7 +158,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         /* absolute/fixed geometry -- resolve the MARGIN BOX
          * position against `container` (already the right positioned
          * containing block by construction, see tbox_layout_build_children)
-         * instead of flowing at cursor_y. See ARCHITECTURE.md "Layout Tree
+         * instead of flowing at cursor_y. See docs/dev/historico.md "Layout Tree
          * -- geometria de absolute/fixed" and tbox_layout_resolve_absolute_edge
          * above for the full rationale. */
 
@@ -182,7 +182,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
          * Otherwise -- both AUTO, or the genuinely circular
          * top:auto+bottom:defined+height:auto case -- falls back to the
          * containing block's own origin, the simplification documented in
-         * ARCHITECTURE.md's "Escopo deliberadamente contido" and "Layout
+         * docs/dev/historico.md's "Escopo deliberadamente contido" and "Layout
          * Tree -- geometria de absolute/fixed". */
         bool top_auto           = style->offset[0].kind == TBOX_STYLE_LENGTH_AUTO;
         bool bottom_auto        = style->offset[2].kind == TBOX_STYLE_LENGTH_AUTO;
@@ -212,7 +212,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
     }
 
     /* `position: relative` -- a pure visual-coordinate shift, no
-     * new containing-block concept (confirmed in ARCHITECTURE.md). Applied
+     * new containing-block concept (confirmed in docs/dev/historico.md). Applied
      * to content_x/content_y BEFORE anything below derives from them --
      * children_container (so the whole subtree shifts automatically) and
      * content_box/padding_box/border_box/margin_box (all built from
@@ -224,7 +224,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
      * border/margin, never x/y), so a `position: relative` box never
      * disturbs the normal flow of any other element, exactly as CSS
      * specifies. `position: sticky` takes this exact same branch --
-     * ARCHITECTURE.md documents `sticky` as an exact synonym of `relative`
+     * docs/dev/historico.md documents `sticky` as an exact synonym of `relative`
      * (no scrollport anywhere in the project for a "stuck" threshold to ever
      * cross), so it must resolve to IDENTICAL geometry given the same
      * offsets, not just similar. */
@@ -288,7 +288,9 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         tbox_layout_positioned_context context_for_children = positioned_context;
         if (style->position != TBOX_STYLE_POSITION_STATIC) /* height unknown yet, same simplification as blocks */
             context_for_children.nearest_ancestor = (tbox_rect){ content_x - padding_left, content_y - padding_top, content_width + padding_left + padding_right, padding_top + padding_bottom };
-        content_height = tbox_layout_build_text_runs(arena, node, node->first_child, NULL, style, styles, fonts, images, content_x, content_y, content_width, box, &context_for_children);
+        /* Gauge children are fallback text in the DOM, not visible control content. */
+        const tbox_html_node *text_children = (tbox_layout_tag(node, "progress") || tbox_layout_tag(node, "meter")) ? NULL : node->first_child;
+        content_height = tbox_layout_build_text_runs(arena, node, text_children, NULL, style, styles, fonts, images, content_x, content_y, content_width, box, &context_for_children);
         if (tbox_layout_is_textarea(node)) {
             content_height = tbox_layout_textarea_height(node, style, fonts, container, vertical_edges, content_height);
         } else if (style->height.kind == TBOX_STYLE_LENGTH_PX || (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)) {
@@ -356,7 +358,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         }
 
         /* decide what positioned_context THIS box's own descendants
-         * see, per ARCHITECTURE.md "Layout Tree -- containing block
+         * see, per docs/dev/historico.md "Layout Tree -- containing block
          * posicionado" -- any non-STATIC position (RELATIVE/ABSOLUTE/FIXED/
          * STICKY all count as "positioned" for this purpose, same as CSS)
          * makes this box's own padding_box the nearest_ancestor passed down

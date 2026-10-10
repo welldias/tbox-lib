@@ -9,7 +9,7 @@
 
 /* Only tbox_raster_* is exercised here -- tbox_backend_wayland_* needs a
  * real Wayland compositor, which isn't available in CI (see
- * ARCHITECTURE.md's "Output Display" section and TASKS.md's Tarefa 8). */
+ * docs/dev/historico.md's "Output Display" section and TASKS.md's Tarefa 8). */
 
 static uint32_t tbox_test_raster_xrgb(unsigned char r, unsigned char g, unsigned char b) {
     return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;

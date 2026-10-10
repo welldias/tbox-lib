@@ -388,7 +388,7 @@ static bool tbox_style_parse_calc_bounded(tbox_string_view text, const tbox_styl
 /* Parses a <length-percentage>: the keyword "auto", a percentage (resolved
  * later by the Layout Tree, against its containing block), a number with
  * any unit tbox_style_unit_scale knows -- folded into px right here, em
- * against the node's own font size (see ARCHITECTURE.md's v8 Style section
+ * against the node's own font size (see docs/dev/historico.md's v8 Style section
  * for why this is the own node's font-size, not the parent's, unlike
  * `font-size: em` itself) -- or a calc() expression, whose percentage part
  * becomes a PERCENT length carrying the px part in `px_offset`. Anything
@@ -834,10 +834,10 @@ static tbox_style_vertical_align tbox_style_resolve_vertical_align(const tbox_cs
     return TBOX_STYLE_VERTICAL_ALIGN_BASELINE;
 }
 
-/* parses `font-family` per ARCHITECTURE.md's v12 Style section --
+/* parses `font-family` per docs/dev/historico.md's v12 Style section --
  * only the FIRST name of a comma-separated list is ever used (the rest,
  * meant for fallback, is discarded -- decision confirmed with the
- * maintainer, see ARCHITECTURE.md's v12 "Escopo"). If the (trimmed) value
+ * maintainer, see docs/dev/historico.md's v12 "Escopo"). If the (trimmed) value
  * starts with `"` or `'`, the first name is the text between that quote and
  * its matching close (an unterminated quote fails the whole parse, since a
  * comma inside a quoted name must never be treated as the list separator);
@@ -1851,7 +1851,7 @@ static tbox_css_rgba tbox_style_resolve_control_color(const tbox_css_computed_st
 
 /* `position` recognizes `static`/`relative`, case-insensitive.
  * `absolute`/`fixed`/`sticky` added, same case-insensitive
- * treatment -- see ARCHITECTURE.md's v5 Style section (`sticky` is just
+ * treatment -- see docs/dev/historico.md's v5 Style section (`sticky` is just
  * another enum value here; it is only treated as a synonym of `relative`
  * outside the Style layer). Any other value (absent, unparsable, or an
  * out-of-scope keyword) falls back to the initial value STATIC, same
@@ -3387,7 +3387,7 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
      * fallback (tbox_style_resolve_img_dimension_attribute) -- every other
      * property here is still a pure function of `computed`/`parent_style`,
      * unchanged from v0's original "kept in the signature for per-tag
-     * defaults later" stance (see ARCHITECTURE.md). */
+     * defaults later" stance (see docs/dev/historico.md). */
 
     /* Zeroed first, so every field this function doesn't set explicitly
      * has a defined (zero) initial value. */

@@ -1,4 +1,4 @@
-/* v10 (ARCHITECTURE.md's "v10 -- tbox_cmp"): visual regression tool.
+/* v10 (docs/dev/historico.md's "v10 -- tbox_cmp"): visual regression tool.
  * Renders every tests/assets/NNN.html fixture (via tbox_app_screenshot_from_files,
  * v7 -- offscreen, no Wayland window needed, see tests/CMakeLists.txt's
  * OpenCV and Fontconfig gate) and compares it
@@ -313,7 +313,7 @@ static bool read_png_size(const std::string &path, int *out_width, int *out_heig
  * offscreen, no Wayland at runtime) at golden_path's exact dimensions,
  * compares it against golden_path, and prints that pair's result. Returns
  * true if the comparison COMPLETED (even with a DIFFERENT verdict -- see
- * ARCHITECTURE.md's v10 "Escopo": several assets still exercise
+ * docs/dev/historico.md's v10 "Escopo": several assets still exercise
  * HTML/CSS tbox doesn't implement, that is expected, not an operational
  * failure); false on an operational failure (couldn't read the golden,
  * render, compare, or write the annotated image). `out_is_equal`, if non-NULL,
@@ -461,7 +461,7 @@ int main(int argc, char **argv) {
 
     /* Exit code reflects only OPERATIONAL failure (couldn't open the
      * directory, couldn't render, couldn't load an image) -- not each
-     * pair's EQUAL/DIFFERENT verdict. See ARCHITECTURE.md's v10 "Escopo":
+     * pair's EQUAL/DIFFERENT verdict. See docs/dev/historico.md's v10 "Escopo":
      * several assets still exercise HTML/CSS tbox doesn't implement,
      * DIFFERENT is expected for them today and shouldn't break `ctest`. */
     return operational_failures > 0 ? 1 : 0;

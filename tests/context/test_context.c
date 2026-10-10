@@ -312,7 +312,7 @@ static bool bubble_log_outer_handler(tbox_context *ctx, tbox_html_node *node, vo
 
 /* Exercises tbox_context_document: a handler that mutates the clicked
  * node's `class` attribute via tbox_html_node_set_attribute, the same
- * pattern the v1 vertical slice (ARCHITECTURE.md's "Fatia vertical v1")
+ * pattern the v1 vertical slice (docs/dev/historico.md's "Fatia vertical v1")
  * uses to swap a CSS class on click. */
 static bool toggle_class_handler(tbox_context *ctx, tbox_html_node *node, void *userdata) {
     (void)userdata;
@@ -1141,7 +1141,7 @@ int tbox_test_context_run(void) {
     /* 26: v5's Orchestration hit-test fix -- tbox_context_hit_test_box
      * called directly against a hand-built tbox_layout_box tree (no HTML/
      * CSS, no Style/Layout pipeline needed: this is about the hit-test
-     * algorithm itself, see ARCHITECTURE.md's "Orchestration -- correção
+     * algorithm itself, see docs/dev/historico.md's "Orchestration -- correção
      * de hit-test pra caixas fora de fluxo"). Two artificially overlapping
      * SIBLINGS: a point in the overlap must resolve to the LATER sibling
      * in `next_sibling` order (the one painted on top, since the project
@@ -1280,7 +1280,7 @@ int tbox_test_context_run(void) {
      * Wrapped in an outer <div> (rather than two top-level siblings):
      * tbox_layout_build only ever lays out the FIRST top-level element under
      * the document root (a pre-existing v0 limitation, unrelated to this
-     * task -- see ARCHITECTURE.md's v9 "Escopo" note about a <style> inside
+     * task -- see docs/dev/historico.md's v9 "Escopo" note about a <style> inside
      * a never-drawn <head>). A bare <style>.algo{...}</style><div
      * class="algo">...</div> at the top level would make <style> itself the
      * one element Layout builds, and the following <div> would never be laid
@@ -1312,7 +1312,7 @@ int tbox_test_context_run(void) {
     /* 31: the same document, but now with an external stylesheet declaring
      * .algo with the SAME specificity (a single class) but a DIFFERENT
      * color -- the internal <style> must win the tie against the external
-     * CSS (decision documented in ARCHITECTURE.md's v9 "Escopo": internal
+     * CSS (decision documented in docs/dev/historico.md's v9 "Escopo": internal
      * is placed LAST in tbox_context_run_frame's sources array). */
     {
         /* div.algo is EMPTY, same rationale as test 30 above. */
@@ -3811,6 +3811,72 @@ int tbox_test_context_run(void) {
             const tbox_layout_box *box = tbox_context_hit_test(ctx, 5.0, 5.0);
             while (box != NULL && box->parent != NULL) box = box->parent;
             TBOX_TEST_ASSERT(box != NULL && box->style->color.g == 128 && box->style->transition_duration[0] == 0.0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Passive gauges paint from current DOM attributes; output remains text
+     * and can be updated through the existing DOM mutation API. */
+    {
+        const char *html = "<div><p>Result: <output>25%</output></p>"
+            "<progress value='25' max='100'>fallback progress</progress>"
+            "<meter min='0' max='100' value='90' low='20' high='80'>fallback meter</meter>"
+            "<progress>fallback pending</progress></div>";
+        tbox_context *ctx = open_cstr(html, "meter { height: 40px; } progress { height: 24px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 500.0, 200.0, &list);
+            tbox_html_node *root = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            tbox_html_node *output = root->first_child->first_child->next_sibling;
+            tbox_html_node *progress = root->first_child->next_sibling;
+            const tbox_html_node *meter = progress->next_sibling;
+            const tbox_html_node *pending = meter->next_sibling;
+            const tbox_layout_box *progress_box = find_context_box(ctx, progress);
+            const tbox_layout_box *meter_box = find_context_box(ctx, meter);
+            const tbox_layout_box *pending_box = find_context_box(ctx, pending);
+            TBOX_TEST_ASSERT(progress_box != NULL && meter_box != NULL && pending_box != NULL);
+            TBOX_TEST_ASSERT(progress_box != NULL && progress_box->content_box.height == 24.0);
+            TBOX_TEST_ASSERT(meter_box != NULL && meter_box->content_box.height == 40.0);
+            bool output_text = false, fallback_text = false, progress_fill = false, meter_fill = false, pending_fill = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind == TBOX_PAINT_TEXT_RUN) {
+                    if (string_view_equal_cstr(op->text, "25%")) output_text = true;
+                    if (string_view_equal_cstr(op->text, "fallback")) fallback_text = true;
+                }
+                if (op->kind == TBOX_PAINT_FILL_RECT && progress_box != NULL &&
+                    op->rect.x == progress_box->content_box.x && op->rect.y == progress_box->content_box.y &&
+                    op->rect.width == progress_box->content_box.width * 0.25)
+                    progress_fill = true;
+                if (op->kind == TBOX_PAINT_FILL_RECT && meter_box != NULL &&
+                    op->rect.x == meter_box->content_box.x && op->rect.y == meter_box->content_box.y &&
+                    op->rect.width == meter_box->content_box.width * 0.9 &&
+                    op->rect.height == 40.0 &&
+                    op->color.r == 205 && op->color.g == 150)
+                    meter_fill = true;
+                if (op->kind == TBOX_PAINT_FILL_RECT && pending_box != NULL &&
+                    op->rect.x == pending_box->content_box.x + pending_box->content_box.width * 0.35 &&
+                    op->rect.y == pending_box->content_box.y &&
+                    op->rect.width == pending_box->content_box.width * 0.30)
+                    pending_fill = true;
+            }
+            TBOX_TEST_ASSERT(output_text && !fallback_text && progress_fill && meter_fill && pending_fill);
+            tbox_html_node_set_text_content(tbox_context_document(ctx), output, tbox_string_view_make("50%", 3));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), progress,
+                tbox_string_view_make("value", 5), tbox_string_view_make("50", 2));
+            tbox_context_run_frame(ctx, 500.0, 200.0, &list);
+            progress_box = find_context_box(ctx, progress);
+            bool updated_text = false, updated_fill = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind == TBOX_PAINT_TEXT_RUN && string_view_equal_cstr(op->text, "50%")) updated_text = true;
+                if (op->kind == TBOX_PAINT_FILL_RECT && progress_box != NULL &&
+                    op->rect.x == progress_box->content_box.x && op->rect.y == progress_box->content_box.y &&
+                    op->rect.width == progress_box->content_box.width * 0.5)
+                    updated_fill = true;
+            }
+            TBOX_TEST_ASSERT(updated_text && updated_fill);
             tbox_context_close(ctx);
         }
     }

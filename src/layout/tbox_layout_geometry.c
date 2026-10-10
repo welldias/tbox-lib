@@ -111,7 +111,7 @@ double tbox_layout_resolve_offset(tbox_style_length primary, tbox_style_length o
  * (`container_origin + container_size - margin_box_size - resolved(opposite)`);
  * else (both AUTO) the box falls back to the containing block's own origin --
  * a deliberate simplification (CSS defines this as the element's "static
- * position", which this project does not compute -- see ARCHITECTURE.md "v5
+ * position", which this project does not compute -- see docs/dev/historico.md "v5
  * -- Escopo deliberadamente contido" and "Layout Tree -- geometria de
  * absolute/fixed" for the vertical axis's additional circular top/bottom/
  * height case, which also lands on this same fallback). `margin_box_size`

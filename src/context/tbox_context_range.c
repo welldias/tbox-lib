@@ -35,6 +35,68 @@ void tbox_context_paint_ranges(const tbox_layout_box *box, tbox_vector *items) {
     }
 }
 
+/* Passive gauges share the range control's rectangle painter but have no
+ * thumb, focus handling, or input events. Their fallback text stays in the
+ * DOM and is suppressed by Layout while the visual gauge is available. */
+void tbox_context_paint_gauges(const tbox_layout_box *box, tbox_vector *items) {
+    for (; box != NULL; box = box->next_sibling) {
+        bool progress = box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT &&
+            tbox_string_view_equal_cstr(box->node->element.tag_name, "progress");
+        bool meter = box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT &&
+            tbox_string_view_equal_cstr(box->node->element.tag_name, "meter");
+        if ((progress || meter) && box->style != NULL && !box->style->visibility_hidden &&
+            box->content_box.width > 0.0 && box->content_box.height > 0.0) {
+            double min = 0.0, max = 1.0, value = 0.0;
+            if (meter) tbox_context_number_attribute(box->node, "min", &min);
+            if (!tbox_context_number_attribute(box->node, "max", &max) || max <= min)
+                max = progress ? 1.0 : (min > 1.0 ? min : 1.0);
+            bool determinate = tbox_context_number_attribute(box->node, "value", &value);
+            if (value < min) value = min;
+            if (value > max) value = max;
+            double fraction = max > min ? (value - min) / (max - min) : 0.0;
+            if (!determinate && meter) fraction = 0.0;
+
+            tbox_css_rgba fill = progress ? (tbox_css_rgba){65, 115, 195, 255} :
+                (tbox_css_rgba){46, 145, 83, 255};
+            if (meter) {
+                double low = min, high = max, optimum = (min + max) / 2.0;
+                tbox_context_number_attribute(box->node, "low", &low);
+                tbox_context_number_attribute(box->node, "high", &high);
+                tbox_context_number_attribute(box->node, "optimum", &optimum);
+                if (low < min) low = min;
+                if (low > max) low = max;
+                if (high < low) high = low;
+                if (high > max) high = max;
+                if (optimum < min) optimum = min;
+                if (optimum > max) optimum = max;
+                bool suboptimal = (optimum < low && value >= low && value <= high) ||
+                    (optimum > high && value >= low && value <= high) ||
+                    (optimum >= low && optimum <= high && (value < low || value > high));
+                bool bad = (optimum < low && value > high) || (optimum > high && value < low);
+                if (bad) fill = (tbox_css_rgba){190, 65, 65, 255};
+                else if (suboptimal) fill = (tbox_css_rgba){205, 150, 35, 255};
+            }
+
+            tbox_rect clip = box->content_box;
+            for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
+                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
+                    clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
+            tbox_context_push_fill(items, box->content_box,
+                (tbox_css_rgba){205, 210, 216, 255}, true, clip);
+            tbox_rect filled = box->content_box;
+            if (progress && !determinate) {
+                filled.x += filled.width * 0.35;
+                filled.width *= 0.30;
+            } else {
+                filled.width *= fraction;
+            }
+            if (filled.width > 0.0)
+                tbox_context_push_fill(items, filled, fill, true, clip);
+        }
+        tbox_context_paint_gauges(box->first_child, items);
+    }
+}
+
 void tbox_context_range_limits(const tbox_html_node *node, double *min, double *max,
                                       double *step, bool *any_step) {
     *min = 0.0;

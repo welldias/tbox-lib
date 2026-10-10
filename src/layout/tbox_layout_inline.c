@@ -86,7 +86,7 @@ static void tbox_layout_line_metrics(const tbox_layout_word *words, size_t start
  * word wider than `available_width` still lands alone on its own line
  * (`i == line_start`, so the fit check is skipped) rather than being force-
  * split -- it simply overflows visually, same policy box width already has
- * for content that's too wide (see ARCHITECTURE.md's D4). Pushes one
+ * for content that's too wide (see docs/dev/historico.md's D4). Pushes one
  * tbox_layout_line per line onto `lines`, each carrying its own height
  * (the max line-height among the faces used by the words in its range).
  *
@@ -178,7 +178,7 @@ void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, d
  * visual change). `0.15`/`0.35` are fixed fractions of `style->font_size`,
  * an approximation by common visual convention (browsers' usual order of
  * magnitude), not a real OpenType `subs`/`sups` table lookup -- out of scope,
- * see ARCHITECTURE.md's v13 "Fora de escopo". Positive moves DOWN (`sub`),
+ * see docs/dev/historico.md's v13 "Fora de escopo". Positive moves DOWN (`sub`),
  * negative moves UP (`super`), matching this project's y-down coordinate
  * space.
  *
@@ -222,7 +222,7 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
  * merges with an adjacent plain-text run even when both resolve to the
  * IDENTICAL face (no weight/size/family/italic difference declared), since
  * they still need separate `tbox_layout_text_run.style` pointers for
- * Render Pipeline's per-run background/decoration (see ARCHITECTURE.md's
+ * Render Pipeline's per-run background/decoration (see docs/dev/historico.md's
  * "v13 -- Layout Tree" section). The gap between two adjacent runs (the
  * space that would sit between them in the source text) is accounted for in
  * each run's absolute x position but deliberately belongs to neither run's
@@ -235,7 +235,7 @@ static double tbox_layout_vertical_align_offset(const tbox_style *style, const t
  * `tbox_layout_vertical_align_offset` for `sub`/`super` (zero for the
  * initial BASELINE). `rect.height` still spans the WHOLE line, not the
  * run's own reduced size -- a deliberate simplification, see
- * ARCHITECTURE.md. `run->style` is set to the SAME style that decided
+ * docs/dev/historico.md. `run->style` is set to the SAME style that decided
  * `run_face`, for the reasons above. */
 /* the top y of an atomic inline (inline-block or image) of
  * `height` whose baseline sits `ascent` below its top. `middle` centers it

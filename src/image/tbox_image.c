@@ -47,7 +47,7 @@ typedef struct tbox_image_cache_entry {
 /* Own lifetime (real _destroy, no caller arena), same pattern as
  * tbox_font_face_cache -- the internal tbox_arena is purely an
  * implementation detail for `entries`' backing storage and the copied
- * `base_dir` string, not the caller-arena pattern ARCHITECTURE.md's
+ * `base_dir` string, not the caller-arena pattern docs/dev/historico.md's
  * "Convenções" warns not to mix with a dedicated _destroy. */
 struct tbox_image_cache {
     tbox_arena arena;

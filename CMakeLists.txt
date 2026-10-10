@@ -76,7 +76,7 @@ set_target_properties(freetype PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # Wayland/xkbcommon/wayland-scanner/xdg-shell protocol codegen detection --
 # used to live entirely in example/CMakeLists.txt (only tbox_wayland needed
 # it), but src/output/tbox_backend_wayland.c (Output Display's real Wayland
-# backend, see ARCHITECTURE.md's "Output Display" section) now needs the
+# backend, see docs/dev/historico.md's "Output Display" section) now needs the
 # exact same things. src/ and example/ are sibling add_subdirectory() calls
 # below, so variables set inside one don't propagate to the other -- this has
 # to live here, one level up, same as FreeType above, so both consumers can
@@ -171,7 +171,7 @@ elseif(TBOX_ENABLE_WAYLAND)
     )
 endif()
 
-# OpenCV backs tests/tbox_cmp.c (v10, see ARCHITECTURE.md's "v10 --
+# OpenCV backs tests/tbox_cmp.c (v10, see docs/dev/historico.md's "v10 --
 # tbox_cmp"), a visual-regression tool that renders each tests/assets/*.html
 # fixture and compares it against its paired *.png reference via SSIM.
 # Entirely optional, same graceful-skip pattern as Wayland/Fontconfig above:

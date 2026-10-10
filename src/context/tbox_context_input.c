@@ -74,6 +74,10 @@ bool tbox_context_is_file_input(const tbox_html_node *node) {
 
 void tbox_context_sanitize_inputs(tbox_context *ctx, tbox_html_node *node) {
     for (; node != NULL; node = node->next_sibling) {
+        if (node->type == TBOX_HTML_NODE_ELEMENT &&
+            (tbox_string_view_equal_cstr(node->element.tag_name, "progress") ||
+             tbox_string_view_equal_cstr(node->element.tag_name, "meter")))
+            ctx->has_gauge = true;
         if (tbox_context_is_calendar_input(node)) {
             const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
             tbox_date date;

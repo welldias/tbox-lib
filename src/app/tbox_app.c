@@ -14,12 +14,12 @@
 
 #include "output/tbox_window_backend.h"
 
-/* Non-blocking, per ARCHITECTURE.md's "loop não-bloqueante": each
+/* Non-blocking, per docs/dev/historico.md's "loop não-bloqueante": each
  * tbox_app_step pumps at most this many milliseconds of Wayland events
  * before moving on to click/resize handling and returning -- see
  * tbox_backend_wayland_poll's doc comment ("0 never blocks"). tbox_app_step
  * is meant to be called every tick of a caller-driven loop (e.g. alongside a
- * future script engine's own task queue -- see ARCHITECTURE.md's "Fora de
+ * future script engine's own task queue -- see docs/dev/historico.md's "Fora de
  * escopo" about vsync), not to wait for something to happen. */
 #define TBOX_APP_POLL_TIMEOUT_MS 0
 
@@ -110,7 +110,7 @@ static bool tbox_app_font_resolver(void *userdata, tbox_font_query query, const 
 /* shared by tbox_app_create_impl and tbox_app_screenshot_from_files
  * -- both used to duplicate this exact "resolve regular, resolve bold,
  * tbox_font_face_cache_create" sequence independently (see
- * ARCHITECTURE.md's "Limpeza recomendada, junto"); now there is one copy.
+ * docs/dev/historico.md's "Limpeza recomendada, junto"); now there is one copy.
  * Resolves a real bold face alongside the regular one exactly like before
  * (see the retained comment on tbox_app_resolve_font_source above for why
  * TWO tbox_font_source_fontconfig instances are used, one per bold/non-bold
@@ -216,7 +216,8 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
         return NULL;
     }
 
-    if (options.asset_base_dir == NULL) options.asset_base_dir = base_dir;
+    if (options.asset_base_dir == NULL)
+        options.asset_base_dir = base_dir;
     tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css, strlen(css), fonts, images, options);
     if (ctx == NULL) {
         tbox_image_cache_destroy(images);
@@ -244,20 +245,20 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
         return NULL;
     }
 
-    app->fonts            = fonts;
-    app->resolver_source  = resolver_source;
-    app->images           = images;
-    app->ctx              = ctx;
-    app->backend          = backend;
-    app->last_width       = 0;
-    app->last_height      = 0;
-    app->closed           = false;
-    app->redraw_requested = false;
-    app->paste_target     = NULL;
-    app->options          = options;
+    app->fonts                  = fonts;
+    app->resolver_source        = resolver_source;
+    app->images                 = images;
+    app->ctx                    = ctx;
+    app->backend                = backend;
+    app->last_width             = 0;
+    app->last_height            = 0;
+    app->closed                 = false;
+    app->redraw_requested       = false;
+    app->paste_target           = NULL;
+    app->options                = options;
     app->options.asset_base_dir = NULL;
-    app->options.css_base_dir = NULL;
-    app->control_css_copy = NULL;
+    app->options.css_base_dir   = NULL;
+    app->control_css_copy       = NULL;
     if (options.control_css != NULL) {
         app->control_css_copy = malloc(options.control_css_length + 1);
         if (app->control_css_copy == NULL) {
@@ -295,7 +296,7 @@ tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_
 
 /* reads `path` fully into a malloc'd, NUL-terminated buffer -- same
  * read-whole-file shape as tests/context/test_context.c's read_file() and
- * example/css_cascade_origins.c's own copy (see ARCHITECTURE.md's
+ * example/css_cascade_origins.c's own copy (see docs/dev/historico.md's
  * "Application -- leitura de arquivo externo" on this being a small helper
  * this codebase already tolerates being duplicated a few times, not yet a
  * shared Base utility), with one difference: those callers hand their
@@ -422,11 +423,11 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
     tbox_image_cache *images = tbox_image_cache_create(base_dir);
     tbox_context *ctx        = NULL;
     if (images != NULL) {
-        const char *css_text = css != NULL ? css : "";
+        const char *css_text         = css != NULL ? css : "";
         tbox_context_options options = app->options;
-        options.asset_base_dir = base_dir;
-        options.css_base_dir = css_path != NULL ? css_dir : NULL;
-        ctx                  = tbox_context_open_with_options(html, strlen(html), css_text, strlen(css_text), app->fonts, images, options);
+        options.asset_base_dir       = base_dir;
+        options.css_base_dir         = css_path != NULL ? css_dir : NULL;
+        ctx                          = tbox_context_open_with_options(html, strlen(html), css_text, strlen(css_text), app->fonts, images, options);
     }
     free(css);
     free(html);
@@ -487,7 +488,8 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
     if (fonts != NULL) {
         tbox_image_cache *images = tbox_image_cache_create(base_dir);
         if (images != NULL) {
-            if (options.asset_base_dir == NULL) options.asset_base_dir = base_dir;
+            if (options.asset_base_dir == NULL)
+                options.asset_base_dir = base_dir;
             tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts, images, options);
             if (ctx != NULL) {
                 tbox_display_list list;
@@ -582,8 +584,8 @@ void tbox_app_step(tbox_app *app) {
                 dirty = true;
                 break;
             }
-            if (tbox_context_set_active_at(app->ctx, true, event.data.click.x, event.data.click.y))
-                dirty = true;
+            dirty = tbox_context_set_active_at(app->ctx, true, event.data.click.x, event.data.click.y);
+
             tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
             if (event.data.click.double_click) {
                 tbox_context_dispatch_key(app->ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true });
@@ -693,7 +695,8 @@ void tbox_app_step(tbox_app *app) {
         dirty            = true;
     }
 
-    if (tbox_context_animations_active(app->ctx)) dirty = true;
+    if (tbox_context_animations_active(app->ctx))
+        dirty = true;
     if (dirty) {
         struct timespec now;
         if (clock_gettime(CLOCK_MONOTONIC, &now) == 0)

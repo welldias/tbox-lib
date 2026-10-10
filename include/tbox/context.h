@@ -22,7 +22,7 @@ extern "C" {
  * list) and decides when to redo it. It knows nothing about Wayland or
  * any backend -- the platform event loop and presenting the resulting
  * display list is Application's job. See
- * ARCHITECTURE.md's "Orchestration / Main Loop" section for the full
+ * docs/dev/historico.md's "Orchestration / Main Loop" section for the full
  * rationale, including why an earlier draft of that section (owning the
  * event loop) was wrong.
  *
@@ -42,7 +42,7 @@ extern "C" {
 typedef struct tbox_context tbox_context;
 
 /* Orchestration's user-agent stylesheet configuration (see
- * ARCHITECTURE.md's "CSS Cascade / Orchestration -- folha de estilo
+ * docs/dev/historico.md's "CSS Cascade / Orchestration -- folha de estilo
  * user-agent" -> "Configuração da UA stylesheet"). Every number the UA
  * stylesheet text embeds (see tbox_context_open_with_config) comes from one
  * of these fields, never a literal baked into the generated CSS -- a host
@@ -88,7 +88,7 @@ typedef struct tbox_ua_style_config {
     double hr_height_px;         /* <hr>'s explicit height -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, same reasoning as list_padding_left_px above: it is a height value, not a margin one */
 } tbox_ua_style_config;
 
-/* The classic browser values ARCHITECTURE.md documents (heading em scale
+/* The classic browser values docs/dev/historico.md documents (heading em scale
  * 2/1.5/1.17/1/0.83/0.67 for h1..h6; heading margins, approximated in px,
  * 21/19/18/21/22/25; paragraph margin 16px; body margin 8px; base_px 16;
  * list margin (top/bottom of <ul>/<ol>) 16px, same as
@@ -151,10 +151,10 @@ void tbox_context_close(tbox_context *ctx);
 
 /* Redoes the whole compute pipeline against `viewport_width`/
  * `viewport_height`: no incremental invalidation in v0 (see
- * ARCHITECTURE.md), so this always resets the frame arena first --
+ * docs/dev/historico.md), so this always resets the frame arena first --
  * invalidating whatever Style/Layout/Render produced on the previous
  * call in one shot, since none of those have a `_destroy` of their own
- * (see "Convenções" in ARCHITECTURE.md) -- then runs
+ * (see "Convenções" in docs/dev/convencoes.md) -- then runs
  * tbox_style_resolve_tree -> tbox_layout_build ->
  * tbox_render_build_display_list in sequence, against TWO cascade sources
  * (this context's ua_stylesheet as TBOX_CSS_ORIGIN_USER_AGENT,
@@ -178,7 +178,7 @@ bool tbox_context_animations_active(const tbox_context *ctx);
  * (from v5 on: `position: absolute`/`fixed`) can be positioned entirely
  * outside its own DOM parent's border_box, so a box's border_box failing
  * to contain the point does not rule out a descendant containing it (see
- * ARCHITECTURE.md's "Orchestration -- correção de hit-test pra caixas fora
+ * docs/dev/historico.md's "Orchestration -- correção de hit-test pra caixas fora
  * de fluxo"). When more than one candidate box contains (x, y) -- possible
  * now that out-of-flow boxes can overlap on purpose -- the one LATER in
  * document order wins, matching paint order (no stacking context/z-index
@@ -207,7 +207,7 @@ bool tbox_context_scrollbar_drag(tbox_context *ctx, double x, double y);
 void tbox_context_scrollbar_release(tbox_context *ctx);
 
 /* v3 -- Interatividade Avançada: real ":hover" support. See
- * ARCHITECTURE.md's "v3 -- Interatividade Avançada" -> "`:hover`" section,
+ * docs/dev/historico.md's "v3 -- Interatividade Avançada" -> "`:hover`" section,
  * both the "Orchestration" block (this function) and the design rationale
  * above it (why the hover target is a file-static global inside
  * css_selector.c, set via tbox_css_selector_set_hover_context, rather than a
@@ -240,7 +240,7 @@ bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, d
 bool tbox_context_set_active_at(tbox_context *ctx, bool pressed, double x, double y);
 
 /* v1 -- Interatividade: event delegation by CSS selector. See
- * ARCHITECTURE.md's "v1 -- Interatividade" -> "Orchestration (tbox_context)
+ * docs/dev/historico.md's "v1 -- Interatividade" -> "Orchestration (tbox_context)
  * -- delegação de evento por seletor" for the full rationale (why this
  * lives here rather than on Application: a future script engine needs the
  * same "register by selector, fire on click, mutate the tree" primitive
@@ -261,7 +261,7 @@ bool tbox_context_set_active_at(tbox_context *ctx, bool pressed, double x, doubl
  * regardless of how far up the ancestor chain it would otherwise have
  * matched. Breaking change from v1's void-returning handler, same
  * accepted-breaking-change spirit as prior versions -- see
- * ARCHITECTURE.md's "v3 -- Interatividade Avançada" -> "Bubbling completo +
+ * docs/dev/historico.md's "v3 -- Interatividade Avançada" -> "Bubbling completo +
  * stopPropagation + desregistro de handler". */
 typedef bool (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *node, void *userdata);
 
@@ -309,7 +309,7 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding);
  * walking stops immediately -- no farther ancestor is even tested,
  * regardless of what would have matched there (stopPropagation). This
  * replaces v1's "per-registration, nearest-match-wins independently of
- * other registrations' order" dispatch -- see ARCHITECTURE.md's "v3 --
+ * other registrations' order" dispatch -- see docs/dev/historico.md's "v3 --
  * Interatividade Avançada" -> "Bubbling completo + stopPropagation +
  * desregistro de handler" for the full rationale.
  *

@@ -9,7 +9,7 @@
 /* Owns the bytes of whatever file the most recent resolve() call matched;
  * a fresh resolve() call replaces it (freeing the previous buffer) rather
  * than accumulating one buffer per call -- v0 only ever resolves once per
- * document (a single shared tbox_font_face, see ARCHITECTURE.md's "Fonte /
+ * document (a single shared tbox_font_face, see docs/dev/historico.md's "Fonte /
  * Texto" section), so this keeps at most one buffer alive at a time. */
 typedef struct tbox_font_source_fontconfig {
     unsigned char *data;

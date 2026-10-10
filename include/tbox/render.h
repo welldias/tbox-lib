@@ -18,7 +18,7 @@ extern "C" {
  * Walks a Layout Tree (see <tbox/layout.h>) and produces a display list -- an
  * ordered sequence of abstract, backend-agnostic paint commands. Render
  * Pipeline knows nothing about Wayland or a pixel format; that is Output
- * Display's job (see ARCHITECTURE.md's "Render Pipeline" and "Output
+ * Display's job (see docs/dev/historico.md's "Render Pipeline" and "Output
  * Display" sections, including the rationale for keeping them separate). */
 
 typedef enum tbox_paint_op_kind {
@@ -49,7 +49,7 @@ typedef struct tbox_paint_op {
     /* TEXT_RUN only (left at their empty/NULL default for FILL_RECT/IMAGE):
      * one paint op per tbox_layout_text_run, not per text-bearing
      * box, since a box's text may now wrap onto multiple lines and/or mix
-     * faces (see ARCHITECTURE.md's "Render Pipeline" section). */
+     * faces (see docs/dev/historico.md's "Render Pipeline" section). */
     tbox_string_view text;
     const tbox_font_face *face; /* injected by whoever builds the display list, never loaded here */
     double letter_spacing;      /* TEXT_RUN only; px after each codepoint */
@@ -121,7 +121,7 @@ typedef struct tbox_display_list {
  * order: each stacking context (the root, a z-index box, or one with
  * opacity below 1) paints its negative z-index layers right after its own
  * border and the rest after its children, in increasing z-index. See
- * ARCHITECTURE.md's "Render Pipeline" and v18 sections (clipping of scroll
+ * docs/dev/historico.md's "Render Pipeline" and v18 sections (clipping of scroll
  * containers and input text via `clip` below).
  *
  * This never calls into <tbox/font.h>: a run's `font` pointer is only
@@ -131,7 +131,7 @@ typedef struct tbox_display_list {
  * `arena` is supplied by the caller (same per-frame arena as
  * tbox_style_resolve_tree and tbox_layout_build upstream) -- the returned
  * tbox_display_list has no `_destroy` of its own; its lifetime is the
- * arena's (see "Convenções" at the top of ARCHITECTURE.md). */
+ * arena's (see "Convenções" in docs/dev/convencoes.md). */
 tbox_display_list tbox_render_build_display_list(tbox_arena *arena, const tbox_layout_box *root);
 
 /* Uses the actual window dimensions for background-attachment: fixed.

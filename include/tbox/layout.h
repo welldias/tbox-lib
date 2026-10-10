@@ -17,7 +17,7 @@ extern "C" {
  * geometry (position and size, in px relative to the viewport) per a
  * deliberately simplified CSS2.1 block formatting context with inline text,
  * images, positioned boxes and a table grid,  inline-blocks and NOVO
- * v16 a flex formatting context (see ARCHITECTURE.md's v15/v16 sections).
+ * v16 a flex formatting context (see docs/dev/historico.md's v15/v16 sections).
  * Grid and floats remain unsupported. */
 
 typedef struct tbox_rect {
@@ -25,7 +25,7 @@ typedef struct tbox_rect {
 } tbox_rect;
 
 /* One contiguous, same-face, same-line run of text within a text-bearing
- * box -- see ARCHITECTURE.md's "Layout Tree" section ("Layout Tree --
+ * box -- see docs/dev/historico.md's "Layout Tree" section ("Layout Tree --
  * inline formatting context real") for the full algorithm that produces
  * these (greedy word-wrap, run merging by face, per-line height). */
 typedef struct tbox_layout_text_run {
@@ -38,7 +38,7 @@ typedef struct tbox_layout_text_run {
      * passed to tbox_layout_build (or tbox_layout_default_style's address,
      * same fallback `font` itself already relies on for a node missing from
      * `styles`). Lets Render Pipeline read run->style->color/background_color/
-     * text_decoration per RUN instead of per box (see ARCHITECTURE.md's "v13
+     * text_decoration per RUN instead of per box (see docs/dev/historico.md's "v13
      * -- Layout Tree" section: `<mark>`/`<del>`/`<ins>`/`<sub>`/`<sup>` all
      * need this, and it also fixes color varying only by box, a pre-existing
      * debt since v2). Also read internally by the Layout Tree itself (see
@@ -76,7 +76,7 @@ typedef struct tbox_layout_box {
     size_t table_edge_count;
 
     /* Text runs, for the Render Pipeline's TEXT_RUN paint ops (see
-     * ARCHITECTURE.md's "Render Pipeline" section). Populated for text-bearing
+     * docs/dev/historico.md's "Render Pipeline" section). Populated for text-bearing
      * boxes and replaced images; empty when a box has no visible runs. Multiple
      * runs happen once the text wraps onto more than one line, or once the
      * face changes mid-line (e.g. a <b> inside a <p>) -- see
@@ -120,8 +120,8 @@ typedef struct tbox_table_edge {
  *
  * `arena` is supplied by the caller (same pattern as tbox_style_resolve_tree
  * and tbox_render_build_display_list downstream) -- the returned tree has no
- * `_destroy` of its own; its lifetime is the arena's (see "Convenções" at
- * the top of ARCHITECTURE.md). Returns NULL only if `root` has no ELEMENT
+ * `_destroy` of its own; its lifetime is the arena's (see "Convenções" in
+ * docs/dev/convencoes.md). Returns NULL only if `root` has no ELEMENT
  * to lay out (e.g. an empty document, or a DOCUMENT node with no ELEMENT
  * child). */
 /* The face `style` renders with: its font-family, numeric weight (from

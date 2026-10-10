@@ -364,7 +364,7 @@ int tbox_test_css_parser_parser_run(void) {
      * block must count as opening a paren scope the same way LPAREN does --
      * otherwise its matching RPAREN desyncs the skip depth counter and the
      * ruleset following the at-rule is silently lost. Regression test for
-     * the bug documented in ARCHITECTURE.md ("CSS Parser -- correção do bug
+     * the bug documented in docs/dev/historico.md ("CSS Parser -- correção do bug
      * de profundidade de parênteses"). */
     {
         tbox_css_stylesheet *ss   = parse_cstr("@keyframes spin { from { transform: rotate(0deg); } } p { color: black; }");

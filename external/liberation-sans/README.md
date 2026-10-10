@@ -30,7 +30,7 @@ consistent without that being the actual reason it was chosen.
 The upstream release ships Regular/Bold/Italic/BoldItalic for three
 families (Sans, Serif, Mono); only `LiberationSans-Regular.ttf` is
 vendored here. `tbox` v0 has no `font-weight`/`font-style` support yet (one
-`tbox_font_face` for the whole document, see `ARCHITECTURE.md`'s
+`tbox_font_face` for the whole document, see `docs/dev/historico.md`'s
 "Fonte / Texto" section), so vendoring the other weights now would be dead
 weight with no code or test exercising them. Add them if/when the Style
 layer grows `font-weight`/`font-style` and `tbox_font_source_embedded`

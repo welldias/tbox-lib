@@ -287,7 +287,7 @@ int tbox_test_html_parser_tree_run(void) {
     }
 
     /* 20: text_content concatenates across a nested element in the middle,
-     * dropping the element structure -- the ARCHITECTURE.md example. */
+     * dropping the element structure -- the docs/dev/historico.md example. */
     {
         tbox_html_document *doc = parse_cstr("<p>oi <b>mundo</b></p>");
         const tbox_html_node *p = tbox_html_document_root(doc)->first_child;

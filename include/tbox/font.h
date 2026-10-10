@@ -13,11 +13,11 @@ extern "C" {
 
 /* Fonte/Texto is a cross-cutting service, not a pipeline stage: Layout Tree
  * depends on it to measure text, Output Display depends on it to rasterize
- * glyphs (see ARCHITECTURE.md's "Fonte / Texto" section). Unlike Style/
+ * glyphs (see docs/dev/historico.md's "Fonte / Texto" section). Unlike Style/
  * Layout/Render's per-frame-arena structs, tbox_font_source and
  * tbox_font_face use their OWN explicit lifetime (real _destroy functions,
  * no caller arena) -- they are loaded once and persist across many frames,
- * matching ARCHITECTURE.md's "Convenções" first ownership pattern, not its
+ * matching docs/dev/convencoes.md's first ownership pattern, not its
  * second one. */
 
 /* An abstract request for a font: a family (a generic alias such as
@@ -54,7 +54,7 @@ typedef struct tbox_font_source tbox_font_source;
  * next call to tbox_font_source_resolve on this SAME source (a backend may
  * replace its buffer to resolve a different query) or tbox_font_source_destroy,
  * whichever comes first -- v0 only ever resolves once per document (a single
- * shared tbox_font_face, see ARCHITECTURE.md), so this doesn't come up in
+ * shared tbox_font_face, see docs/dev/historico.md), so this doesn't come up in
  * practice, but don't hold the pointer across a second resolve() call.
  * Returns false, leaving *out_data / *out_size untouched, if nothing matches
  * `query` -- the caller falls back to some other source itself (e.g. the
@@ -199,7 +199,7 @@ typedef struct tbox_font_face_cache tbox_font_face_cache;
  * it keeps src/font/tbox_font_face_cache.c free of any dependency on a
  * specific backend, same as it is today -- the Application layer is the one
  * that knows Fontconfig exists and supplies a resolver built on top of it
- * (see ARCHITECTURE.md's "v12 -- CSS font-family" -> "Escopo"). The returned
+ * (see docs/dev/historico.md's "v12 -- CSS font-family" -> "Escopo"). The returned
  * pointer's lifetime follows whatever the backing tbox_font_source behind
  * this callback documents (e.g. tbox_font_source_resolve's own aliasing
  * rules) -- tbox_font_face_cache_get copies the bytes into its own arena

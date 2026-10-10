@@ -15,13 +15,13 @@
  * tbox_app API (see <tbox/app.h>). This single fixture keeps validating all
  * four layers at once rather than forking into per-version example files:
  *
- * - v0 (ARCHITECTURE.md's "v0" section): the basic HTML+CSS-in/
+ * - v0 (docs/dev/historico.md's "v0" section): the basic HTML+CSS-in/
  *   Wayland-window-out static rendering pipeline.
  * - v1 ("v1 -- Interatividade" -> "Fatia vertical v1 -- critério de
  *   'pronto'"): a clickable element that mutates the document and redraws
  *   without closing the window, via the non-blocking tbox_app_create /
  *   tbox_app_step / tbox_app_should_close / tbox_app_close handle (v0's
- *   blocking tbox_app_open() is gone -- see ARCHITECTURE.md's Application
+ *   blocking tbox_app_open() is gone -- see docs/dev/historico.md's Application
  *   section: a breaking change, accepted since example/ was its only real
  *   consumer) plus a tbox_context_on_click handler registered before the
  *   loop starts.
@@ -34,7 +34,7 @@
  *   across multiple lines at TBOX_APP_DEMO_WIDTH, mixing plain text with a
  *   <b> run (visibly bolder) and an <em> run (same weight as plain text in
  *   this engine -- v2's Fonte/Texto only has regular/bold faces, no italic
- *   face yet, see ARCHITECTURE.md's "v2 -- Fidelidade Visual" -> "Cor não
+ *   face yet, see docs/dev/historico.md's "v2 -- Fidelidade Visual" -> "Cor não
  *   varia por run" / face-cache notes).
  * - v3 ("v3 -- Interatividade Avançada" -> "Fatia vertical v3 -- critério
  *   de 'pronto'"): real file-based loading (this is the whole point of
@@ -95,7 +95,7 @@
  * v3 behavior demonstrated here -- :hover reaching the cascade, real
  * bubbling order, stopPropagation, unbind, text mutation -- is already
  * proven end to end at the test level by tests/context/test_context.c's
- * dedicated integration tests (see ARCHITECTURE.md's "v3 -- Interatividade
+ * dedicated integration tests (see docs/dev/historico.md's "v3 -- Interatividade
  * Avançada" section and that test file for the exact cases). This file is
  * a runnable demonstration for a human who moves the mouse and clicks, not
  * itself a source of correctness proof -- same stance v1/v2's tbox_app.c
@@ -170,7 +170,7 @@
  * ancestor walk from the hit-tested node). Reads the node's current `class`
  * via tbox_html_node_get_attribute and flips it between "box off" and
  * "box on" via tbox_html_node_set_attribute -- the exact scenario
- * ARCHITECTURE.md's "Fatia vertical v1" acceptance criteria describe. The
+ * docs/dev/historico.md's "Fatia vertical v1" acceptance criteria describe. The
  * next tbox_app_step sees tbox_context_dispatch_click's `true` return,
  * treats it like a resize, and redoes Style -> Layout -> Render, so the box
  * visibly changes color (example/tbox_app_demo.css gives .off/.on different

@@ -6,7 +6,7 @@
  * FIRST entry of `words` -- called before tbox_layout_collect_words so the
  * marker always lands ahead of the <li>'s own text. A no-op unless `node` is
  * an ELEMENT `<li>` whose DIRECT parent is an ELEMENT `<ul>` or `<ol>` (see
- * ARCHITECTURE.md "v8 -- Escopo": the marker kind is decided by the parent's
+ * docs/dev/historico.md "v8 -- Escopo": the marker kind is decided by the parent's
  * tag name alone, never a CSS property, and a <li> outside <ul>/<ol> gets no
  * marker at all). Reuses tbox_layout_push_words for the actual push --
  * measuring/word-splitting the marker exactly like any other word, so it

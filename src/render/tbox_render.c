@@ -458,7 +458,7 @@ static size_t tbox_render_text_shadows(const tbox_style *style, const tbox_style
  * precede its own TEXT_RUN/IMAGE ops (/image support: one per
  * box->text_runs entry, in the order Layout Tree built them -- IMAGE for a
  * run whose `image` is non-NULL, TEXT_RUN otherwise), and all of that
- * precedes its children's ops -- see ARCHITECTURE.md's "Render Pipeline"
+ * precedes its children's ops -- see docs/dev/historico.md's "Render Pipeline"
  * section. */
 static tbox_rect tbox_render_intersect(tbox_rect a, tbox_rect b) {
     double x0 = a.x > b.x ? a.x : b.x;
@@ -1183,7 +1183,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         *op                = (tbox_paint_op){ 0 };
         op->kind           = TBOX_PAINT_TEXT_RUN;
         op->rect           = run->rect;
-        op->color          = tbox_render_checked_checkbox(box->node) ? tbox_render_accent_color(run->style) : run->style->color; /* per-run color (run->style, never NULL), replacing the one shared box->style->color -- see ARCHITECTURE.md's "v13" section */
+        op->color          = tbox_render_checked_checkbox(box->node) ? tbox_render_accent_color(run->style) : run->style->color; /* per-run color (run->style, never NULL), replacing the one shared box->style->color -- see docs/dev/historico.md's "v13" section */
         op->text           = run->text;
         op->face           = run->font;
         op->letter_spacing = run->style->letter_spacing;
@@ -1248,7 +1248,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
          * already computes: rect.y + ascent). UNDERLINE sits a little
          * below the baseline, LINE_THROUGH a little above it
          * (approximating x-height by a fraction of ascent -- see
-         * ARCHITECTURE.md's "Fora de escopo"). Painted after the
+         * docs/dev/historico.md's "Fora de escopo"). Painted after the
          * TEXT_RUN, same color as the text. */
         unsigned int decoration_lines = run->style->text_decoration_lines;
         if (decoration_lines == 0 && run->style->text_decoration != TBOX_STYLE_TEXT_DECORATION_NONE)

@@ -177,7 +177,7 @@ typedef enum tbox_style_border_style {
 } tbox_style_border_style;
 
 /* the visual-offset axis of `position: relative`.
- * `absolute`/`fixed`/`sticky` -- see ARCHITECTURE.md's v5 Style section.
+ * `absolute`/`fixed`/`sticky` -- see docs/dev/historico.md's v5 Style section.
  * `STICKY` is treated as an exact synonym of `RELATIVE` everywhere outside
  * the Style layer (Layout Tree, Render Pipeline, Orchestration); here it is
  * just one more enum value the Style layer recognizes. */
@@ -435,7 +435,7 @@ typedef struct tbox_style {
      * is no user-agent stylesheet yet to make e.g. <span> default to
      * inline while <div> defaults to block; every element defaults to
      * block until `display` is taught to read a per-tag table. See
-     * ARCHITECTURE.md's Style section. */
+     * docs/dev/historico.md's Style section. */
     tbox_style_display display;
     tbox_style_overflow_y overflow_y;             /* initial: visible; auto scrolls, auto/hidden clip */
     tbox_style_overflow overflow_x;               /* initial: visible; auto/hidden clip horizontally, auto scrolls */
@@ -537,7 +537,7 @@ typedef struct tbox_style {
     /* `border` shorthand (width + style + color, order-free, each
      * optional -- only `solid` is ever painted). Not inheritable, same
      * treatment as `width`/`background-color`: always cascade-or-initial,
-     * never looks at the parent. See ARCHITECTURE.md's v4 Style section. */
+     * never looks at the parent. See docs/dev/historico.md's v4 Style section. */
     double border_width;                  /* px; initial 0.0; thin/medium/thick = 1/3/5px */
     tbox_style_border_style border_style; /* initial NONE */
     tbox_css_rgba border_color;           /* initial: current text color */
@@ -574,7 +574,7 @@ typedef struct tbox_style {
      * field of tbox_style is copied by value, pointing at no external memory;
      * a view would dangle for the synthetic `style=""` stylesheet (v9),
      * created and destroyed entirely inside tbox_css_cascade_resolve (see
-     * ARCHITECTURE.md's v12 Style section). Inheritable, same mechanism as
+     * docs/dev/historico.md's v12 Style section). Inheritable, same mechanism as
      * `color` above. `""` = no override anywhere in the inheritance chain --
      * the initial value. */
     char font_family[64];
@@ -720,7 +720,7 @@ typedef struct tbox_style {
  * `normal` and `100` through `500` select regular; `600` through `900` select
  * bold; absent inherits), `border`
  * (width/style/color shorthand, order-free, each optional;
- * see tbox_style_border_style and ARCHITECTURE.md's v4 Style section for the
+ * see tbox_style_border_style and docs/dev/historico.md's v4 Style section for the
  * exact per-token classification; uniform `border-width`/`border-style`/
  * `border-color` longhands, now with 1-4 values, are supported with normal
  * cascade precedence, as are the per-side `border-top`/`-right`/`-bottom`/
@@ -836,8 +836,8 @@ typedef struct tbox_style_table {
 
 /* `arena` is supplied by the caller (same pattern as tbox_layout_build and
  * tbox_render_build_display_list downstream) -- tbox_style_table has no
- * `_destroy` of its own; its lifetime is the arena's (see "Convenções" at
- * the top of ARCHITECTURE.md). Walks `root`'s tree top-down (a parent is
+ * `_destroy` of its own; its lifetime is the arena's (see "Convenções" in
+ * docs/dev/convencoes.md). Walks `root`'s tree top-down (a parent is
  * always resolved before its children, since inheritance depends on it),
  * running tbox_css_cascade_resolve(sources, source_count, node) followed by
  * tbox_style_resolve on every TBOX_HTML_NODE_ELEMENT node (TEXT/COMMENT/
@@ -849,7 +849,7 @@ typedef struct tbox_style_table {
  * takes a `tbox_css_cascade_source` array instead of a single
  * `tbox_css_stylesheet*` (mirrors tbox_css_cascade_resolve's own signature)
  * so a user-agent stylesheet can be layered under the author one -- see
- * ARCHITECTURE.md's Style section. A single-source, AUTHOR-origin caller
+ * docs/dev/historico.md's Style section. A single-source, AUTHOR-origin caller
  * passes `source_count == 1`. */
 tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count);
 

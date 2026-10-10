@@ -11,7 +11,7 @@ extern "C" {
 
 /* Copies `text` into `arena`, decoding any numeric character reference
  * (`&#NNN;`/`&#xHHH;`/`&#XHHH;`, any Unicode codepoint) or named reference (a
- * fixed set of ~23 common entities -- see ARCHITECTURE.md's v6 "Escopo")
+ * fixed set of ~23 common entities -- see docs/dev/historico.md's v6 "Escopo")
  * found in `text`. A reference that isn't recognized (name outside the
  * table, numeric with no digits, or either kind missing the trailing ';')
  * is left as literal text, consuming nothing beyond the '&' itself -- same

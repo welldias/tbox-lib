@@ -1,4 +1,4 @@
-# tbox_cmp.cpp (v10, see ARCHITECTURE.md's "v10 -- tbox_cmp") is a separate
+# tbox_cmp.cpp (v10, see docs/dev/historico.md's "v10 -- tbox_cmp") is a separate
 # executable with its own main() -- a *.cpp file, so this *.c-only glob
 # never picks it up in the first place (no exclusion needed, unlike when it
 # was still tbox_cmp.c). Built on its own, conditionally, further down this
@@ -38,7 +38,7 @@ foreach(tbox_test_group arena list vector string debug html_parser_tokenizer htm
     add_test(NAME ${tbox_test_group} COMMAND tbox_tests ${tbox_test_group})
 endforeach()
 
-# tbox_cmp (v10, see ARCHITECTURE.md's "v10 -- tbox_cmp") renders each
+# tbox_cmp (v10, see docs/dev/historico.md's "v10 -- tbox_cmp") renders each
 # tests/assets/*.html fixture via tbox_app_screenshot_from_files (v7) and
 # compares it against its paired *.png reference via OpenCV/SSIM -- needs
 # OpenCV and Fontconfig. Wayland is unnecessary because screenshots render
@@ -76,7 +76,7 @@ if(TBOX_OPENCV_FOUND AND TBOX_FONTCONFIG_FOUND)
     # Deliberately NOT registered via add_test()/ctest -- the maintainer
     # wants this run manually, on demand (`./tbox_cmp [assets_dir]`), not
     # as part of the automated `ctest` run. Several assets deliberately
-    # exercise HTML/CSS tbox doesn't implement yet (see ARCHITECTURE.md's
+    # exercise HTML/CSS tbox doesn't implement yet (see docs/dev/historico.md's
     # v10 "Escopo") and are expected to report DIFERENTE today, which is
     # exactly the kind of result that shouldn't silently gate CI.
 endif()

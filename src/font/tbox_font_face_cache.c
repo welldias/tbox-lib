@@ -40,7 +40,7 @@ typedef struct tbox_font_face_cache_family_blob {
  * (see src/css_parser/tbox_css_stylesheet.c) -- the internal tbox_arena
  * below is purely an implementation detail for the copied byte buffers and
  * the entries vector's backing storage, not the caller-arena pattern
- * ARCHITECTURE.md's "Convenções" warns not to mix with a dedicated
+ * docs/dev/convencoes.md warns not to mix with a dedicated
  * _destroy. */
 struct tbox_font_face_cache {
     tbox_arena arena;
@@ -186,7 +186,7 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
          * own -- resolving one on demand, same mechanism as any other
          * family, is what lets `<i>`/`<em>` render truly slanted without a
          * `font-family` declared anywhere in the ancestor chain, the
-         * scenario ARCHITECTURE.md's v13 "Fatia vertical" criterion
+         * scenario docs/dev/historico.md's v13 "Fatia vertical" criterion
          * requires. An empty `family` view reaches the resolver unchanged --
          * tbox_font_source_fontconfig_family_cstr already treats an empty
          * family as "sans-serif", the exact same substitution

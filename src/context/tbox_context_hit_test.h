@@ -14,7 +14,7 @@
  * tests/css_parser/test_tokenizer.c).
  *
  * See tbox_context_hit_test.c's doc comment on the function itself (and
- * ARCHITECTURE.md's "Orchestration -- correção de hit-test pra caixas fora
+ * docs/dev/historico.md's "Orchestration -- correção de hit-test pra caixas fora
  * de fluxo") for what it actually does; this header only exists to give it
  * external linkage for that reason. Not declared in <tbox/context.h> --
  * `box` is an implementation detail of tbox_context_hit_test, not part of

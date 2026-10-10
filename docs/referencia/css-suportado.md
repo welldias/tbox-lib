@@ -1,3 +1,13 @@
+# Referência — propriedades CSS suportadas
+
+> - **Escopo:** lista de propriedades CSS e se o tbox as reconhece.
+> - **Código relacionado:** `include/tbox/style.h`, `src/style/`, `src/css_cascade/`
+> - **Veja também:** [HTML e CSS](../07-html-e-css.md), [Layout e pintura](../08-layout-e-pintura.md)
+
+Legenda: `X` = suportado; `X*` = suportado com limitações (o capítulo do
+assunto descreve quais); vazio = não suportado. Itens não suportados são
+ignorados sem erro — o parser é tolerante.
+
 | Supported | Name | Description |
 | --- | --- | --- |
 | X | accent-color | Specifies an accent color for user-interface controls |

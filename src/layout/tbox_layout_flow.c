@@ -8,7 +8,7 @@
  * subtree, no contribution to the height sum returned.
  *
  * adjacent siblings now collapse their touching margins (CSS2.1
- * 8.3.1's sibling case -- see ARCHITECTURE.md) instead of always summing
+ * 8.3.1's sibling case -- see docs/dev/historico.md) instead of always summing
  * them. In place of a single running `cursor_y`, this tracks `border_bottom`
  * (the y just past the last positioned sibling's OWN border_box -- not its
  * margin_box: its bottom margin hasn't been "spent" yet, so it stays free to
@@ -21,7 +21,7 @@
  * both the pending bottom margin and this child's top margin are >= 0, the
  * gap collapses to `max(pending_margin_bottom, child_margin_top)`; otherwise
  * (either one negative -- CSS2.1's full negative-margin algorithm is out of
- * scope, see ARCHITECTURE.md) the pair falls back to today's behavior, a
+ * scope, see docs/dev/historico.md) the pair falls back to today's behavior, a
  * plain sum of the two. Once the child is built, `border_bottom`/
  * `pending_margin_bottom` are refreshed for the next iteration -- deriving
  * `border_bottom` as `cursor_y + child_box->margin_box.height -
@@ -51,7 +51,7 @@
  * not participate in the block formatting context they're removed from.
  * They are still linked into `parent_box->first_child`/`last_child`/
  * `next_sibling` normally: they remain children of the same DOM parent in
- * the layout tree, just with different geometry (see ARCHITECTURE.md). The
+ * the layout tree, just with different geometry (see docs/dev/historico.md). The
  * `cursor_y` passed to tbox_layout_build_element for them is whatever
  * `border_bottom` currently holds -- a valid double, required by the
  * function's signature, but never actually used for their geometry since
@@ -67,7 +67,7 @@
  * three pre-v14 cases, all unchanged in behavior), each child is first
  * checked for whether it TRIGGERS a loose-inline-content sequence
  * (tbox_layout_is_inline_run_trigger: non-whitespace TEXT, or an in-flow
- * ELEMENT with display:inline -- see ARCHITECTURE.md's v14 "Algoritmo").
+ * ELEMENT with display:inline -- see docs/dev/historico.md's v14 "Algoritmo").
  * When it does, tbox_layout_inline_run_end finds the end of that sequence
  * (the first in-flow non-inline ELEMENT, the first out-of-flow ELEMENT, or
  * NULL), tbox_layout_build_anonymous_box builds ONE box for the whole
@@ -77,7 +77,7 @@
  * `last_child`/`next_sibling` exactly like any other child box (preserving
  * document order against real block siblings around it) and advances
  * `border_bottom` by its own height with NO margin contribution (it has
- * none, see ARCHITECTURE.md's "Escopo") -- `pending_margin_bottom` is
+ * none, see docs/dev/historico.md's "Escopo") -- `pending_margin_bottom` is
  * cleared afterwards, the same way a real block's own (here: zero) bottom
  * margin already clears it for the next sibling. A child that does NOT
  * trigger a sequence falls through to the pre-v14 behavior unchanged:
@@ -206,7 +206,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
  * convention documented since v2 and already handled safely by the Context
  * layer's hit-test, see src/context/tbox_context.c) covering the sibling
  * range [run_start, run_end) -- a contiguous sequence of loose inline
- * content directly inside a block container (see ARCHITECTURE.md's v14
+ * content directly inside a block container (see docs/dev/historico.md's v14
  * "Escopo" for the full rationale). Reuses the exact same inline formatting
  * mechanism a real text-tag element already uses
  * (tbox_layout_build_text_runs, generalized to accept a sibling range and a
@@ -216,7 +216,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
  * NON-inheritable property at its CSS2.1 initial value -- display:block,
  * zero margin/padding/border, transparent background, no position -- so the
  * anonymous box paints nothing of its own and never double-paints the
- * container's background/border, see ARCHITECTURE.md) and then copies ONLY
+ * container's background/border, see docs/dev/historico.md) and then copies ONLY
  * the inherited fields needed by anonymous text and pointer hit testing
  * from `container_style` (see
  * include/tbox/style.h's "inheritable" comments on each field): `color`,
@@ -230,7 +230,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
  * no node").
  *
  * The returned box has no margin/padding/border of its own (see
- * ARCHITECTURE.md's "Escopo" -- CSS2.1 anonymous boxes never contribute a
+ * docs/dev/historico.md's "Escopo" -- CSS2.1 anonymous boxes never contribute a
  * box model of their own), so its four rects (content/padding/border/margin
  * box) are all identical: `{content_x, cursor_y, available_width, height}`,
  * `height` coming straight out of tbox_layout_build_text_runs. */
@@ -322,7 +322,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
 }
 
 /* true when `child` alone would START a new anonymous inline-box
- * sequence inside tbox_layout_build_children (see ARCHITECTURE.md's v14
+ * sequence inside tbox_layout_build_children (see docs/dev/historico.md's v14
  * "Algoritmo de tbox_layout_build_children"): non-whitespace-only TEXT, or
  * an ELEMENT whose resolved style is display:inline AND in flow (not
  * absolute/fixed). Whitespace-only TEXT and any other ELEMENT

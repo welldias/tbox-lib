@@ -11,5 +11,5 @@ public-domain/MIT libraries from the same project:
   there, exactly once) to scale a decoded image's RGBA8 pixels to an
   `<img>`'s resolved CSS destination size before compositing it.
 
-See ARCHITECTURE.md's image-support section. See LICENSE for both files'
+See docs/dev/historico.md's image-support section. See LICENSE for both files'
 (identical) dual MIT/public-domain license.

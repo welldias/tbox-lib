@@ -111,7 +111,7 @@
 
 
   <!-- <img> -- image-support version demo, mirroring tests/assets/024.html's
-       real regression fixture (see ARCHITECTURE.md): tbox_app_demo_black.png
+       real regression fixture (see docs/dev/historico.md): tbox_app_demo_black.png
        (a 200x200 PNG copied from tests/assets/black.png) shown three ways --
        (1) both width/height AUTO, at its intrinsic 200x200 size; (2) sized
        down via bare HTML width/height ATTRIBUTES (no style=""), proving
@@ -173,7 +173,7 @@
        used everywhere else in this document. Enough running text below for
        the serif shapes (the little "feet" on strokes) to be unmistakable
        against the sans-serif default. The <em> child carries NO font-family
-       of its own -- per ARCHITECTURE.md's v12 Style section, font-family
+       of its own -- per docs/dev/historico.md's v12 Style section, font-family
        inherits down the tree exactly like text-align, so "itálico herdado"
        below must render in the SAME serifed DejaVu Serif face as the rest of
        this paragraph, never falling back to the sans-serif default -- the
@@ -440,7 +440,7 @@
        specificity (bare class selector, both here and in the external
        .css) with two strongly contrasting colors -- red here, blue in
        tbox_app_demo.css -- so whichever one the .v9-internal-wins box
-       actually renders as proves who wins the tie. Per ARCHITECTURE.md's
+       actually renders as proves who wins the tie. Per docs/dev/historico.md's
        v9 "Escopo", the later source in the array wins a tie, and internal
        is placed after external precisely so internal wins: the box below
        must render RED, never blue. -->
@@ -457,7 +457,7 @@
        (a,b,c) specificity than any bare-class/bare-ID rule elsewhere in
        this stylesheet) declared in tbox_app_demo.css as green. The same
        element also carries an inline `style="background-color: orange;"`.
-       Per ARCHITECTURE.md's v9 cascade, TBOX_CSS_ORIGIN_AUTHOR_INLINE
+       Per docs/dev/historico.md's v9 cascade, TBOX_CSS_ORIGIN_AUTHOR_INLINE
        outranks TBOX_CSS_ORIGIN_AUTHOR unconditionally, regardless of
        selector specificity -- the box must render ORANGE, never green,
        proving inline beats even the strongest author selector. -->
@@ -467,7 +467,7 @@
        on a strong ID selector (#v9-inline-important-id, declared purple
        !important in tbox_app_demo.css). The same element also carries an
        inline `style="background-color: gold !important;"`. Per
-       ARCHITECTURE.md's v9 rank table, AUTHOR_INLINE !important outranks
+       docs/dev/historico.md's v9 rank table, AUTHOR_INLINE !important outranks
        AUTHOR !important too (both sit below USER/USER_AGENT !important,
        but AUTHOR_INLINE !important is still one step above AUTHOR
        !important) -- the box must render GOLD, never purple, proving
@@ -519,7 +519,7 @@
        already substitutes "sans-serif" for an empty family
        (tbox_font_source_fontconfig_family_cstr), the same substitution
        regular_data/bold_data's own eager bootstrap already relies on, so no
-       Application-layer change was needed. See ARCHITECTURE.md's v13 Font
+       Application-layer change was needed. See docs/dev/historico.md's v13 Font
        section for the corrected design. -->
   <p class="v13-italic">v13: <i>itálico via i</i> e <em>itálico via em</em> -- ambos mostram glifos
     REALMENTE inclinados agora, mesmo sem nenhum dos dois (nem o body) declarar

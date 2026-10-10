@@ -7,7 +7,7 @@
 
 /* Current hover target for the "hover" PSEUDO, set by
  * tbox_css_selector_set_hover_context. The one global/static mutable state
- * this file introduces (see <tbox/css_selector.h> and ARCHITECTURE.md's
+ * this file introduces (see <tbox/css_selector.h> and docs/dev/historico.md's
  * "`:hover` -- pseudo-classe dinâmica de verdade"): a single, non-partitioned
  * mouse pointer justifies "what's hovered now" being process-global rather
  * than threaded through every selector-matching signature. */

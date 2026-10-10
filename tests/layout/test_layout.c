@@ -803,7 +803,7 @@ int tbox_test_layout_run(void) {
 
     /* 22: `position: absolute` child of a `position: relative`
      * parent positions against the PARENT'S padding_box (not the viewport,
-     * not the parent's content_box) -- see ARCHITECTURE.md "Layout Tree --
+     * not the parent's content_box) -- see docs/dev/historico.md "Layout Tree --
      * containing block posicionado". The parent has non-zero padding so its
      * padding_box origin differs from both its content_box origin and
      * (0, 0), making this a discriminating test. */
@@ -987,10 +987,10 @@ int tbox_test_layout_run(void) {
     /* 27: `width: auto` on an `absolute` box fills the
      * containing block (minus its own margin/padding/border), rather than
      * shrinking to its content -- the documented CSS 10.3.7 simplification
-     * (ARCHITECTURE.md "Layout Tree -- geometria de absolute/fixed"). The
+     * (docs/dev/historico.md "Layout Tree -- geometria de absolute/fixed"). The
      * SAME box's `height: auto` comes out as the (unchanged since v0)
      * flow auto-height formula: the sum of every child box's margin_box
-     * height -- ARCHITECTURE.md documents content_height as "inalterado ...
+     * height -- docs/dev/historico.md documents content_height as "inalterado ...
      * AUTO continua sendo a soma dos filhos ... exatamente como hoje" for
      * absolute/fixed too -- only content_width reuses the flow AUTO formula
      * in a way that happens to fill rather than shrink.
@@ -1068,7 +1068,7 @@ int tbox_test_layout_run(void) {
      * is <ul>), so the merged run (marker + "oi" + "mundo" all share the
      * <li>'s own face, so they land in a single run, same as before) is now
      * "• oi mundo", not "oi mundo" -- an intentional v8 behavior change, see
-     * ARCHITECTURE.md "v8 -- Layout Tree -- marcador de <li>". */
+     * docs/dev/historico.md "v8 -- Layout Tree -- marcador de <li>". */
     {
         tbox_html_document *doc    = parse_html_cstr("<ul><li>oi mundo</li></ul>");
         const tbox_html_node *root = tbox_html_document_root(doc);
@@ -1990,7 +1990,7 @@ int tbox_test_layout_run(void) {
     /* 37:  regression -- <div><li>solto</li></div>: a <li> whose
      * DIRECT parent is neither <ul> nor <ol> (here, a <div>) must get NO
      * marker at all -- deliberate simplification documented in
-     * ARCHITECTURE.md's "v8 -- Escopo" (a loose/malformed <li> is not
+     * docs/dev/historico.md's "v8 -- Escopo" (a loose/malformed <li> is not
      * treated as "always disc" the way real CSS does). The <li> itself is
      * still on the fixed text-tag list (tbox_layout_is_text_tag doesn't
      * care about the parent), so it still gets a text box -- just without a
@@ -2777,7 +2777,7 @@ int tbox_test_layout_run(void) {
     /* 58:  -- <div>texto <span style="display:none">oculto</span>
      * mais texto</div>: a display:none ELEMENT sitting in the MIDDLE of a
      * loose-inline sequence is transparent to the sequence-detection scan
-     * (per ARCHITECTURE.md's algorithm) -- it neither starts nor ends the
+     * (per docs/dev/historico.md's algorithm) -- it neither starts nor ends the
      * sequence, so the text before AND after it merge into a SINGLE
      * anonymous box, not two separate ones. The hidden element itself
      * contributes no words (same display:none treatment as anywhere else). */
@@ -2813,7 +2813,7 @@ int tbox_test_layout_run(void) {
     /* 59:  -- <div>antes <span style="position:absolute;">flutuante
      * </span> depois</div>: an out-of-flow (position:absolute) inline
      * element sitting in the MIDDLE of loose inline content TERMINATES the
-     * sequence before it (per ARCHITECTURE.md's "Fora de escopo") -- three
+     * sequence before it (per docs/dev/historico.md's "Fora de escopo") -- three
      * child boxes result, in document order: an anonymous box for "antes",
      * the <span> itself (built via the ordinary out-of-flow path, own box,
      * own node), and a SECOND, separate anonymous box for "depois". */
@@ -2867,7 +2867,7 @@ int tbox_test_layout_run(void) {
      * solto</div> must NOT give the anonymous box itself (not the text
      * inside it -- the BOX) any background/border of its own, proving it
      * never paints a second copy of the container's background/border (see
-     * ARCHITECTURE.md's "Escopo" rationale for why the alternative --
+     * docs/dev/historico.md's "Escopo" rationale for why the alternative --
      * reusing the container's own tbox_style* outright -- was rejected). */
     {
         tbox_html_document *doc    = parse_html_cstr("<div style=\"color: red; font-weight: bold;\">texto solto</div>");
@@ -3138,7 +3138,7 @@ int tbox_test_layout_run(void) {
     }
 
     /* NOVO (table support): <table>/<tr>/<th>/<td> -- real column-aligned
-     * tables (see ARCHITECTURE.md's table-support section). */
+     * tables (see docs/dev/historico.md's table-support section). */
 
     /* 1: two columns, content-proportional widths that sum to exactly the
      * table's own content width, laid out side by side (not stacked). */

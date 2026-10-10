@@ -12,7 +12,7 @@ typedef struct tbox_html_entity {
 
 /* Full HTML5 named character reference table, generated from the official
  * WHATWG `entities.json` (https://html.spec.whatwg.org/entities.json) --
- * see ARCHITECTURE.md's v7 "HTML Parser -- tabela completa de entidades
+ * see docs/dev/historico.md's v7 "HTML Parser -- tabela completa de entidades
  * nomeadas" for the exact filter used (key ends in ';', maps to exactly 1
  * codepoint) and generation process. Sorted by name for diff readability;
  * lookup below stays a linear scan. */

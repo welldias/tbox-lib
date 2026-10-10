@@ -100,7 +100,7 @@ tbox_string_view tbox_layout_transform_text(tbox_arena *arena, tbox_string_view 
  * line's measured width; `face` is kept purely as tbox_layout_break_lines's
  * line-height fallback for a blank line sandwiched between two consecutive
  * hard breaks (e.g. `<br><br>`), where the normal "max line-height among the
- * words in range" loop has nothing to iterate. See ARCHITECTURE.md's "v11 --
+ * words in range" loop has nothing to iterate. See docs/dev/historico.md's "v11 --
  * Layout Tree -- <br> (quebra forçada)". */
 void tbox_layout_push_hard_break(tbox_vector *words, const tbox_font_face *face, const tbox_style *style) {
     tbox_layout_word *entry = tbox_layout_new_word(words);
@@ -397,7 +397,7 @@ static void tbox_layout_apply_small_caps(tbox_arena *arena, tbox_vector *words, 
 }
 
 /* Walks the sibling range [first_sibling, end_exclusive) in document order
- * (see ARCHITECTURE.md's algorithm), pushing the words of an inline
+ * (see docs/dev/historico.md's algorithm), pushing the words of an inline
  * formatting context: a TEXT child contributes its words in `style`'s face
  * (the text-bearing element itself, or --  -- the container style
  * synthesized for an anonymous box); `<br>` a hard break; `<img>` one image
@@ -449,7 +449,7 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
             continue;
         /* a <br> child forces a line break -- checked BEFORE the
          * TEXT branch below and independently of the `display == INLINE`
-         * gate an ELEMENT child otherwise needs (see ARCHITECTURE.md): <br>
+         * gate an ELEMENT child otherwise needs (see docs/dev/historico.md): <br>
          * does not need `display: inline` for this to work. Uses the
          * enclosing element's face (`style`), same as the TEXT branch. */
         if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "br")) {

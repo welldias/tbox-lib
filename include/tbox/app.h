@@ -26,7 +26,7 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
 
 /* same as tbox_app_create, plus an explicit tbox_ua_style_config
  * this app's tbox_context is opened with (via tbox_context_open_with_config
- * instead of tbox_context_open -- see ARCHITECTURE.md's "Application /
+ * instead of tbox_context_open -- see docs/dev/historico.md's "Application /
  * Orchestration -- fiação do cache de fontes e do config"). Application
  * does not interpret any field of `config` itself; it only forwards it to
  * Orchestration, which is the sole reader. Font resolution (two fontconfig
@@ -43,7 +43,7 @@ tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_
  * files read fully into memory (a local helper in tbox_app.c, same
  * read-whole-file-into-a-malloc'd-buffer shape already used by
  * tests/context/test_context.c's read_file()/example/css_cascade_origins.c's
- * -- see ARCHITECTURE.md's "Application -- leitura de arquivo externo")
+ * -- see docs/dev/historico.md's "Application -- leitura de arquivo externo")
  * rather than caller-supplied strings. html_path is required: NULL, or a
  * failure to read it (missing file, can't be opened, ...), returns NULL
  * immediately without touching css_path. css_path == NULL is NOT an error --

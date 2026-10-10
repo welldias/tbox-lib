@@ -10,7 +10,7 @@ bool tbox_layout_is_text_tag(const tbox_html_node *node) {
     if (tbox_layout_is_select(node) || tbox_layout_is_textarea(node))
         return true;
 
-    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th", "caption", "button" };
+    static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th", "caption", "button", "progress", "meter" };
     tbox_string_view tag_name            = node->element.tag_name;
     for (size_t i = 0; i < sizeof(text_tags) / sizeof(text_tags[0]); i++) {
         if (tbox_string_view_equal_cstr(tag_name, text_tags[i])) {
@@ -40,11 +40,11 @@ bool tbox_layout_is_text_box(const tbox_html_node *node, const tbox_style *style
 /* `<pre>`'s own word-collection function, called by
  * tbox_layout_build_text_runs INSTEAD of tbox_layout_collect_words (never
  * both -- <pre> has no list marker and no normal word-splitting; see
- * ARCHITECTURE.md "v11 -- Layout Tree -- <pre> (texto verbatim)"). Pulls
+ * docs/dev/historico.md "v11 -- Layout Tree -- <pre> (texto verbatim)"). Pulls
  * `node`'s ENTIRE flattened text via tbox_html_node_text_content (same
  * function any nested-inline text tag already uses -- entities still
  * decode, only structure/nested faces are lost, an accepted simplification,
- * see ARCHITECTURE.md's "Escopo") WITHOUT tbox_string_collapse_whitespace:
+ * see docs/dev/historico.md's "Escopo") WITHOUT tbox_string_collapse_whitespace:
  * internal whitespace (runs of spaces, tabs) is preserved byte-for-byte.
  * Scans that text byte by byte for '\n': each physical line (the bytes
  * between two consecutive '\n's, or between the start/end and the nearest
@@ -116,7 +116,7 @@ void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_n
  * before). Also once a line's runs are built, when
  * `style->text_align` isn't the initial LEFT, that line's just-pushed runs
  * (the `[runs_before, runs_after)` range -- tbox_layout_build_line_runs
- * itself never shifts anything, see ARCHITECTURE.md "v11 -- Layout Tree --
+ * itself never shifts anything, see docs/dev/historico.md "v11 -- Layout Tree --
  * aplicação de text-align") are shifted right by the line's leftover
  * width, split evenly for CENTER or given wholly to the left gap for RIGHT
  * -- computed straight from the LAST run just pushed (`rect.x + rect.width`
