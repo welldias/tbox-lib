@@ -167,6 +167,15 @@ static void tbox_render_push_border_side(tbox_vector *items, tbox_rect strip, bo
     tbox_render_push_fill_rect(items, strip, color);
 }
 
+static const tbox_layout_box *tbox_render_find_legend(const tbox_layout_box *box, const tbox_html_node *legend) {
+    for (; box != NULL; box = box->next_sibling) {
+        if (box->node == legend) return box;
+        const tbox_layout_box *found = tbox_render_find_legend(box->first_child, legend);
+        if (found != NULL) return found;
+    }
+    return NULL;
+}
+
 static bool tbox_render_is_3d(tbox_style_border_style style) {
     return style == TBOX_STYLE_BORDER_STYLE_GROOVE || style == TBOX_STYLE_BORDER_STYLE_RIDGE || style == TBOX_STYLE_BORDER_STYLE_INSET || style == TBOX_STYLE_BORDER_STYLE_OUTSET;
 }
@@ -1005,9 +1014,32 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         bool doubles[4];
         for (size_t i = 0; i < 4; i++)
             doubles[i] = border[i] >= 3.0 && tbox_style_border_side_style(box->style, i) == TBOX_STYLE_BORDER_STYLE_DOUBLE;
+        const tbox_layout_box *legend_box = NULL;
+        if (box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT &&
+            tbox_string_view_equal_cstr(box->node->element.tag_name, "fieldset")) {
+            const tbox_html_node *first = box->node->first_child;
+            while (first != NULL && first->type != TBOX_HTML_NODE_ELEMENT) first = first->next_sibling;
+            if (first != NULL && tbox_string_view_equal_cstr(first->element.tag_name, "legend"))
+                legend_box = tbox_render_find_legend(box->first_child, first);
+        }
         for (size_t k = 0; k < 4; k++) {
             size_t i = order[k];
-            if (doubles[i])
+            if (i == 0 && border[i] > 0.0 && legend_box != NULL) {
+                double left = legend_box->border_box.x - 2.0;
+                double right = legend_box->border_box.x + legend_box->border_box.width + 2.0;
+                if (left < strips[i].x) left = strips[i].x;
+                if (right > strips[i].x + strips[i].width) right = strips[i].x + strips[i].width;
+                if (left < right) {
+                    tbox_render_push_border_side(items, (tbox_rect){strips[i].x, strips[i].y,
+                        left - strips[i].x, strips[i].height}, true,
+                        tbox_style_border_side_style(box->style, i), tbox_style_border_side_color(box->style, i));
+                    tbox_render_push_border_side(items, (tbox_rect){right, strips[i].y,
+                        strips[i].x + strips[i].width - right, strips[i].height}, true,
+                        tbox_style_border_side_style(box->style, i), tbox_style_border_side_color(box->style, i));
+                } else
+                    tbox_render_push_border_side(items, strips[i], true,
+                        tbox_style_border_side_style(box->style, i), tbox_style_border_side_color(box->style, i));
+            } else if (doubles[i])
                 tbox_render_push_double_side(items, i, border_box, padding_box, border, doubles, tbox_style_border_side_color(box->style, i));
             else if (border[i] > 0.0 && tbox_render_is_3d(tbox_style_border_side_style(box->style, i)))
                 tbox_render_push_3d_side(items, strips[i], i, tbox_style_border_side_style(box->style, i), tbox_style_border_side_color(box->style, i));

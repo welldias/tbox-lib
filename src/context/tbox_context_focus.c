@@ -2,6 +2,25 @@
 
 static const tbox_html_node *tbox_context_next_node(const tbox_html_node *root, const tbox_html_node *node);
 
+bool tbox_context_is_summary(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "summary") ||
+        node->parent == NULL || node->parent->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->parent->element.tag_name, "details")) return false;
+    for (const tbox_html_node *child = node->parent->first_child; child != NULL; child = child->next_sibling)
+        if (child->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(child->element.tag_name, "summary"))
+            return child == node;
+    return false;
+}
+
+bool tbox_context_toggle_details(tbox_context *ctx, const tbox_html_node *summary) {
+    if (ctx == NULL || !tbox_context_is_summary(summary)) return false;
+    tbox_html_node *details = summary->parent;
+    if (!tbox_html_node_remove_attribute(details, tbox_string_view_make("open", 4)))
+        tbox_html_node_set_attribute(ctx->document, details, tbox_string_view_make("open", 4), tbox_string_view_make(NULL, 0));
+    return true;
+}
+
 bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, double y) {
     if (ctx == NULL) {
         return false;
@@ -66,7 +85,7 @@ bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node)
                    tbox_context_is_color_input(node) || tbox_context_is_range_input(node) ||
                    tbox_context_is_calendar_input(node) || tbox_context_is_file_input(node) ||
                    tbox_context_is_text_control(node) ||
-                   tbox_context_is_select(node);
+                   tbox_context_is_select(node) || tbox_context_is_summary(node);
     if (!control || tbox_html_node_get_attribute(node, tbox_string_view_make("disabled", 8)) != NULL) {
         return false;
     }
@@ -77,6 +96,12 @@ bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node)
         }
         if (tbox_html_node_get_attribute(ancestor, tbox_string_view_make("hidden", 6)) != NULL) {
             return false;
+        }
+        if (ancestor != node && tbox_string_view_equal_cstr(ancestor->element.tag_name, "details") &&
+            tbox_html_node_get_attribute(ancestor, tbox_string_view_make("open", 4)) == NULL) {
+            const tbox_html_node *direct = node;
+            while (direct->parent != ancestor) direct = direct->parent;
+            if (!tbox_context_is_summary(direct)) return false;
         }
         const tbox_style *style = tbox_style_table_find(&ctx->styles, ancestor);
         if (style != NULL && style->display == TBOX_STYLE_DISPLAY_NONE) {

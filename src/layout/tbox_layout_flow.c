@@ -102,8 +102,21 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
      * anonymous box like any other loose text. Scoped to exactly these two
      * tags -- every other element keeps the new v14 behavior unchanged. */
     bool is_raw_text_container = tbox_string_view_equal_cstr(node->element.tag_name, "script") || tbox_string_view_equal_cstr(node->element.tag_name, "style");
+    bool closed_details = tbox_string_view_equal_cstr(node->element.tag_name, "details") &&
+        tbox_html_node_get_attribute(node, tbox_string_view_make("open", 4)) == NULL;
+    const tbox_html_node *details_summary = NULL;
+    if (closed_details)
+        for (const tbox_html_node *candidate = node->first_child; candidate != NULL; candidate = candidate->next_sibling)
+            if (candidate->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(candidate->element.tag_name, "summary")) {
+                details_summary = candidate;
+                break;
+            }
 
     for (const tbox_html_node *child = node->first_child; child != NULL;) {
+        if (closed_details && child != details_summary) {
+            child = child->next_sibling;
+            continue;
+        }
         if (child->type != TBOX_HTML_NODE_ELEMENT && child->type != TBOX_HTML_NODE_TEXT) {
             /* COMMENT/DOCTYPE: never a box, never a sequence trigger. */
             child = child->next_sibling;
@@ -112,7 +125,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
 
         if (!is_raw_text_container && tbox_layout_is_inline_run_trigger(arena, child, styles)) {
             const tbox_html_node *run_start = child;
-            const tbox_html_node *run_end   = tbox_layout_inline_run_end(run_start, styles);
+            const tbox_html_node *run_end   = closed_details ? child->next_sibling : tbox_layout_inline_run_end(run_start, styles);
 
             double cursor_y            = border_bottom + pending_margin_bottom;
             tbox_layout_box *child_box = tbox_layout_build_anonymous_box(arena, run_start, run_end, container_style, styles, fonts, images, children_container.x, cursor_y, children_container.width, &positioned_context);

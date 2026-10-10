@@ -186,6 +186,7 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
         tbox_context_toggle_checkbox(ctx, box->node);
     bool selected_radio = tbox_context_is_radio_input(box->node) && tbox_context_radio_select(ctx, box->node);
     bool reset_form     = tbox_context_is_reset_input(box->node) && tbox_context_reset_form(ctx, box->node);
+    bool toggled_details = tbox_context_toggle_details(ctx, focus);
     bool cleared_search = false;
     if (tbox_context_is_search_input(focus)) {
         const tbox_layout_box *search_box = tbox_context_find_box(ctx->root, focus);
@@ -205,7 +206,7 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
     }
     bool clicked   = tbox_context_dispatch_click_node(ctx, box->node);
     bool submitted = tbox_context_is_submit_input(box->node) && tbox_context_submit_form(ctx, box->node, box->node);
-    return clicked || submitted || toggled || selected_radio || reset_form || cleared_search || changed_range || opened_color || (clicked_color && focus == previous_color) || clicked_date || opened_file || (clicked_file && focus == previous_file) || stepped;
+    return clicked || submitted || toggled || toggled_details || selected_radio || reset_form || cleared_search || changed_range || opened_color || (clicked_color && focus == previous_color) || clicked_date || opened_file || (clicked_file && focus == previous_file) || stepped;
 }
 
 bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
@@ -220,6 +221,10 @@ bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
         ctx->popup_highlight = NULL;
         return tbox_context_move_focus(ctx, event.shift);
     }
+    if (tbox_context_is_summary(ctx->focused_node) &&
+        (event.key == TBOX_KEY_ENTER || event.key == TBOX_KEY_SPACE) &&
+        tbox_context_focusable(ctx, ctx->focused_node))
+        return tbox_context_toggle_details(ctx, ctx->focused_node);
     if (tbox_context_is_file_input(ctx->focused_node) && tbox_context_node_attached(ctx, ctx->focused_node) && tbox_context_focusable(ctx, ctx->focused_node)) {
         if (event.key == TBOX_KEY_ESCAPE && ctx->open_file != NULL) {
             tbox_context_file_close(ctx);

@@ -492,6 +492,10 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
     const tbox_ua_rule rules[] = {
         UA_RULE_1("body", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_QUAD(TBOX_UA_PROP_MARGIN, config.margin.body_px, config.margin.body_px, config.margin.body_px, config.margin.body_px), UA_LEN(TBOX_UA_PROP_FONT_SIZE, config.font.base_px, TBOX_UA_UNIT_PX)),
         UA_RULE_1("div", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK)),
+        UA_RULE_2("details", "summary", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK)),
+        UA_RULE_1("summary", UA_QUAD(TBOX_UA_PROP_PADDING, 2, 0, 2, 18)),
+        UA_RULE_1("fieldset", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_BORDER(1, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_PADDING, 12, 12, 12, 12), UA_QUAD(TBOX_UA_PROP_MARGIN, 14, 0, 14, 0)),
+        UA_RULE_1("legend", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 4, 0, 4)),
         UA_RULE_1("h1", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_LEN(TBOX_UA_PROP_FONT_SIZE, config.font.heading_em[0], TBOX_UA_UNIT_EM), UA_KW(TBOX_UA_PROP_FONT_WEIGHT, TBOX_UA_KW_BOLD), UA_QUAD(TBOX_UA_PROP_MARGIN, config.margin.heading_px[0], 0, config.margin.heading_px[0], 0)),
         UA_RULE_1("h2", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_LEN(TBOX_UA_PROP_FONT_SIZE, config.font.heading_em[1], TBOX_UA_UNIT_EM), UA_KW(TBOX_UA_PROP_FONT_WEIGHT, TBOX_UA_KW_BOLD), UA_QUAD(TBOX_UA_PROP_MARGIN, config.margin.heading_px[1], 0, config.margin.heading_px[1], 0)),
         UA_RULE_1("h3", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_LEN(TBOX_UA_PROP_FONT_SIZE, config.font.heading_em[2], TBOX_UA_UNIT_EM), UA_KW(TBOX_UA_PROP_FONT_WEIGHT, TBOX_UA_KW_BOLD), UA_QUAD(TBOX_UA_PROP_MARGIN, config.margin.heading_px[2], 0, config.margin.heading_px[2], 0)),

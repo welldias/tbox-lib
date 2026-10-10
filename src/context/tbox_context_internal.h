@@ -183,6 +183,8 @@ void tbox_context_register_font_faces(tbox_font_face_cache *fonts, const tbox_cs
 
 double tbox_context_style_line_height(const tbox_style *style, const tbox_font_face *face);
 bool tbox_context_is_textarea(const tbox_html_node *node);
+bool tbox_context_is_summary(const tbox_html_node *node);
+bool tbox_context_toggle_details(tbox_context *ctx, const tbox_html_node *summary);
 bool tbox_context_is_text_control(const tbox_html_node *node);
 bool tbox_context_is_select(const tbox_html_node *node);
 bool tbox_context_is_color_input(const tbox_html_node *node);

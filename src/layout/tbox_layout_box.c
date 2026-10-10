@@ -2,6 +2,15 @@
 #include <stdio.h>
 #include <string.h>
 
+static tbox_layout_box *tbox_layout_legend_box(tbox_layout_box *box, const tbox_html_node *legend) {
+    for (; box != NULL; box = box->next_sibling) {
+        if (box->node == legend) return box;
+        tbox_layout_box *found = tbox_layout_legend_box(box->first_child, legend);
+        if (found != NULL) return found;
+    }
+    return NULL;
+}
+
 /* Builds and positions the box for one ELEMENT `node` (already known to not
  * be display:none -- the caller checks that before recursing, see
  * tbox_layout_build_children and tbox_layout_build) against `container`
@@ -291,6 +300,29 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         /* Gauge children are fallback text in the DOM, not visible control content. */
         const tbox_html_node *text_children = (tbox_layout_tag(node, "progress") || tbox_layout_tag(node, "meter")) ? NULL : node->first_child;
         content_height = tbox_layout_build_text_runs(arena, node, text_children, NULL, style, styles, fonts, images, content_x, content_y, content_width, box, &context_for_children);
+        if (tbox_layout_tag(node, "summary") && node->parent != NULL &&
+            tbox_layout_tag(node->parent, "details")) {
+            bool first_summary = true;
+            for (const tbox_html_node *sibling = node->parent->first_child; sibling != node; sibling = sibling->next_sibling)
+                if (tbox_layout_tag(sibling, "summary")) first_summary = false;
+            const tbox_font_face *face = first_summary ? tbox_layout_style_face(fonts, style) : NULL;
+            if (face != NULL) {
+                bool open = tbox_html_node_get_attribute(node->parent, tbox_string_view_make("open", 4)) != NULL;
+                const char *marker = open ? (tbox_font_face_has_glyph(face, 0x25BE) ? "\xE2\x96\xBE" : "v") :
+                    (tbox_font_face_has_glyph(face, 0x25B8) ? "\xE2\x96\xB8" : ">");
+                size_t count = box->text_run_count;
+                tbox_layout_text_run *runs = tbox_arena_alloc(arena, (count + 1) * sizeof(*runs));
+                if (runs != NULL) {
+                    runs[0] = (tbox_layout_text_run){
+                        .rect = {content_x - 16.0, content_y, 14.0, tbox_font_face_line_height(face)},
+                        .text = tbox_string_view_from_cstr(marker), .font = face, .style = style,
+                    };
+                    if (count > 0) memcpy(runs + 1, box->text_runs, count * sizeof(*runs));
+                    box->text_runs = runs;
+                    box->text_run_count = count + 1;
+                }
+            }
+        }
         if (tbox_layout_is_textarea(node)) {
             content_height = tbox_layout_textarea_height(node, style, fonts, container, vertical_edges, content_height);
         } else if (style->height.kind == TBOX_STYLE_LENGTH_PX || (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)) {
@@ -442,6 +474,17 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         tbox_layout_image_append_run(arena, &image_content, style, box);
 
     tbox_layout_build_checkbox_checkmark(arena, node, style, fonts, box);
+
+    if (tbox_layout_tag(node, "fieldset")) {
+        const tbox_html_node *first = node->first_child;
+        while (first != NULL && first->type != TBOX_HTML_NODE_ELEMENT) first = first->next_sibling;
+        if (tbox_layout_tag(first, "legend")) {
+            tbox_layout_box *legend = tbox_layout_legend_box(box->first_child, first);
+            if (legend != NULL)
+                tbox_layout_translate(legend, 0.0,
+                    box->border_box.y - legend->border_box.height / 2.0 - legend->border_box.y);
+        }
+    }
 
     return box;
 }

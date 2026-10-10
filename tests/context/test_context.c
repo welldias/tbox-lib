@@ -1850,6 +1850,40 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* optgroup labels occupy popup rows; nested options remain selectable,
+     * while a disabled group blocks both API selection and keyboard travel. */
+    {
+        const char *html = "<select><option value='a'>Avulso</option>"
+            "<optgroup label='Bloqueado' disabled><option value='b'>B</option></optgroup>"
+            "<optgroup label='Grupo'><option value='c'>C</option><option value='d'>D</option></optgroup></select>";
+        tbox_context *ctx = open_cstr(html, "select { width: 140px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 250.0, 300.0, &list);
+            const tbox_html_node *select = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "a"));
+            TBOX_TEST_ASSERT(!tbox_context_select_set_value(ctx, select, tbox_string_view_make("b", 1)));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "c"));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            tbox_context_run_frame(ctx, 250.0, 300.0, &list);
+            bool group_label = false, disabled_label = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind != TBOX_PAINT_TEXT_RUN) continue;
+                if (string_view_equal_cstr(op->text, "Grupo")) group_label = true;
+                if (string_view_equal_cstr(op->text, "Bloqueado")) disabled_label = true;
+            }
+            TBOX_TEST_ASSERT(group_label && disabled_label);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_END, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "d"));
+            tbox_context_close(ctx);
+        }
+    }
+
     /* An input button paints its value, shares button activation, and cannot
      * be edited. A disabled button neither takes focus nor dispatches clicks. */
     {
@@ -3811,6 +3845,91 @@ int tbox_test_context_run(void) {
             const tbox_layout_box *box = tbox_context_hit_test(ctx, 5.0, 5.0);
             while (box != NULL && box->parent != NULL) box = box->parent;
             TBOX_TEST_ASSERT(box != NULL && box->style->color.g == 128 && box->style->transition_duration[0] == 0.0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* details keeps only its first summary in layout while closed; Enter and
+     * pointer activation toggle open, including keyboard focus traversal. */
+    {
+        const char *html = "<div><details><summary>Mostrar</summary><p>Conteúdo secreto</p>"
+            "<button>Dentro</button></details><button>Depois</button></div>";
+        tbox_context *ctx = open_cstr(html, "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 360.0, 240.0, &list);
+            const tbox_html_node *root = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            const tbox_html_node *details = root->first_child;
+            const tbox_html_node *summary = details->first_child;
+            const tbox_html_node *content = summary->next_sibling;
+            TBOX_TEST_ASSERT(find_context_box(ctx, summary) != NULL);
+            TBOX_TEST_ASSERT(find_context_box(ctx, content) == NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == summary);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(details, tbox_string_view_make("open", 4)) != NULL);
+            tbox_context_run_frame(ctx, 360.0, 240.0, &list);
+            TBOX_TEST_ASSERT(find_context_box(ctx, content) != NULL);
+            const tbox_layout_box *summary_box = find_context_box(ctx, summary);
+            TBOX_TEST_ASSERT(summary_box != NULL);
+            if (summary_box != NULL) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, summary_box->border_box.x + 30.0,
+                    summary_box->border_box.y + summary_box->border_box.height / 2.0));
+                TBOX_TEST_ASSERT(tbox_html_node_get_attribute(details, tbox_string_view_make("open", 4)) == NULL);
+            }
+            tbox_context_run_frame(ctx, 360.0, 240.0, &list);
+            TBOX_TEST_ASSERT(find_context_box(ctx, content) == NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == root->last_child);
+            tbox_context_close(ctx);
+        }
+    }
+    {
+        tbox_context *ctx = open_cstr("<div><details><summary>Título</summary><span>Oculto</span></details></div>",
+            "summary { display: inline-block; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            bool hidden_text_painted = false;
+            for (size_t i = 0; i < list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_TEXT_RUN &&
+                    string_view_equal_cstr(list.items[i].text, "Oculto")) hidden_text_painted = true;
+            TBOX_TEST_ASSERT(!hidden_text_painted);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* A fieldset places its first legend across the top border. The border
+     * is split around the legend instead of painting through its text. */
+    {
+        const char *html = "<div><fieldset><legend>Contato</legend><p>Nome</p></fieldset></div>";
+        tbox_context *ctx = open_cstr(html, "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 180.0, &list);
+            const tbox_html_node *fieldset = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *legend = fieldset->first_child;
+            const tbox_layout_box *fieldset_box = find_context_box(ctx, fieldset);
+            const tbox_layout_box *legend_box = find_context_box(ctx, legend);
+            TBOX_TEST_ASSERT(fieldset_box != NULL && legend_box != NULL);
+            if (fieldset_box != NULL && legend_box != NULL) {
+                TBOX_TEST_ASSERT(legend_box->border_box.y < fieldset_box->border_box.y);
+                TBOX_TEST_ASSERT(legend_box->border_box.y + legend_box->border_box.height > fieldset_box->border_box.y);
+                double center = legend_box->border_box.x + legend_box->border_box.width / 2.0;
+                bool border_through_legend = false, saw_border = false;
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    if (op->kind != TBOX_PAINT_FILL_RECT || op->color.r != 128 ||
+                        op->rect.y != fieldset_box->border_box.y || op->rect.height != 1.0) continue;
+                    saw_border = true;
+                    if (op->rect.x <= center && center < op->rect.x + op->rect.width)
+                        border_through_legend = true;
+                }
+                TBOX_TEST_ASSERT(saw_border && !border_through_legend);
+            }
             tbox_context_close(ctx);
         }
     }

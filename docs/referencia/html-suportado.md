@@ -42,7 +42,7 @@ ignorados sem erro — o parser é tolerante.
 | X* | `<datalist>` | Specifies a list of pre-defined options for input controls |
 | X* | `<dd>` | Defines a description/value of a term in a description list |
 | X | `<del>` | Defines text that has been deleted from a document |
-|  | `<details>` | Defines additional details that the user can view or hide |
+| X* | `<details>` | Defines additional details that the user can view or hide |
 | X | `<dfn>` | Specifies a term that is going to be defined within the content |
 | X* | `<dialog>` | Defines a dialog box or window |
 |  | `<dir>` | Not supported in HTML5. Use `<ul>` instead. Defines a directory list |
@@ -72,7 +72,7 @@ ignorados sem erro — o parser é tolerante.
 | X | `<ins>` | Defines a text that has been inserted into a document |
 | X | `<kbd>` | Defines keyboard input |
 | X* | `<label>` | Defines a label for an `<input>` element |
-|  | `<legend>` | Defines a caption for a `<fieldset>` element |
+| X* | `<legend>` | Defines a caption for a `<fieldset>` element |
 | X | `<li>` | Defines a list item |
 |  | `<link>` | Defines the relationship between a document and an external resource (most used to link to style sheets) |
 | X | `<main>` | Specifies the main content of a document |
@@ -86,7 +86,7 @@ ignorados sem erro — o parser é tolerante.
 | X* | `<noscript>` | Defines an alternate content for users that do not support client-side scripts |
 |  | `<object>` | Defines a container for an external application |
 | X | `<ol>` | Defines an ordered list |
-|  | `<optgroup>` | Defines a group of related options in a drop-down list |
+| X* | `<optgroup>` | Defines a group of related options in a drop-down list |
 | X | `<option>` | Defines an option in a drop-down list |
 | X* | `<output>` | Defines the result of a calculation |
 | X | `<p>` | Defines a paragraph |
@@ -111,7 +111,7 @@ ignorados sem erro — o parser é tolerante.
 | X | `<strong>` | Defines important text |
 | X | `<style>` | Defines style information for a document |
 | X | `<sub>` | Defines subscripted text |
-|  | `<summary>` | Defines a visible heading for a `<details>` element |
+| X* | `<summary>` | Defines a visible heading for a `<details>` element |
 | X | `<sup>` | Defines superscripted text |
 |  | `<svg>` | Defines a container for SVG graphics |
 | X | `<table>` | Defines a table |
