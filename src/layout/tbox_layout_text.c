@@ -250,7 +250,7 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
 
         size_t runs_before = tbox_vector_length(&runs);
         double justify_gap = 0.0;
-        if (line_align == TBOX_STYLE_TEXT_ALIGN_JUSTIFY && !no_wrap && !(clamped && li + 1 == line_count)) {
+        if (line_align == TBOX_STYLE_TEXT_ALIGN_JUSTIFY && !no_wrap && !(clamped && li + 1 == line_count) && !style->text_justify_none) {
             double used = line_indent;
             size_t gaps = 0;
             for (size_t w = line->start; w < line->end; w++) {

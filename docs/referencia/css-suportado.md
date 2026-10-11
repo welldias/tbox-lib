@@ -14,7 +14,7 @@ ignorados sem erro — o parser é tolerante.
 | X | align-content | Specifies the alignment between the lines inside a flexible container when the items do not use all available space |
 | X | align-items | Specifies the alignment for items inside a flexible container |
 | X | align-self | Specifies the alignment for selected items inside a flexible container |
-| | all | Resets all properties (except unicode-bidi and direction) |
+| X* | all | Resets all properties (except unicode-bidi and direction) |
 | | animation | A shorthand property for all the animation-* properties |
 | | animation-delay | Specifies a delay for the start of an animation |
 | | animation-direction | Specifies whether an animation should be played forward, backward or in alternate cycles |
@@ -42,7 +42,7 @@ ignorados sem erro — o parser é tolerante.
 | X | block-size | Specifies the size of an element in block direction |
 | X | border | A shorthand property for border-width, border-style and border-color |
 | X | border-block | A shorthand property for border-block-width, border-block-style and border-block-color |
-| | border-block-color | Sets the color of the borders at start and end in the block direction |
+| X | border-block-color | Sets the color of the borders at start and end in the block direction |
 | X | border-block-end | A shorthand property for border-block-end-width, border-block-end-style and border-block-end-color |
 | X | border-block-end-color | Sets the color of the border at the end in the block direction |
 | X | border-block-end-style | Sets the style of the border at the end in the block direction |
@@ -51,8 +51,8 @@ ignorados sem erro — o parser é tolerante.
 | X | border-block-start-color | Sets the color of the border at the start in the block direction |
 | X | border-block-start-style | Sets the style of the border at the start in the block direction |
 | X | border-block-start-width | Sets the width of the border at the start in the block direction |
-| | border-block-style | Sets the style of the borders at start and end in the block direction |
-| | border-block-width | Sets the width of the borders at start and end in the block direction |
+| X | border-block-style | Sets the style of the borders at start and end in the block direction |
+| X | border-block-width | Sets the width of the borders at start and end in the block direction |
 | X | border-bottom | A shorthand property for border-bottom-width, border-bottom-style and border-bottom-color |
 | X | border-bottom-color | Sets the color of the bottom border |
 | X | border-bottom-left-radius | Defines the radius of the border of the bottom-left corner |
@@ -70,7 +70,7 @@ ignorados sem erro — o parser é tolerante.
 | | border-image-source | Specifies the path to the image to be used as a border |
 | | border-image-width | Specifies the width of the border image |
 | X | border-inline | A shorthand property for border-inline-width, border-inline-style and border-inline-color |
-| | border-inline-color | Sets the color of the borders at start and end in the inline direction |
+| X | border-inline-color | Sets the color of the borders at start and end in the inline direction |
 | X | border-inline-end | A shorthand property for border-inline-end-width, border-inline-end-style and border-inline-end-color |
 | X | border-inline-end-color | Sets the color of the border at the end in the inline direction |
 | X | border-inline-end-style | Sets the style of the border at the end in the inline direction |
@@ -79,8 +79,8 @@ ignorados sem erro — o parser é tolerante.
 | X | border-inline-start-color | Sets the color of the border at the start in the inline direction |
 | X | border-inline-start-style | Sets the style of the border at the start in the inline direction |
 | X | border-inline-start-width | Sets the width of the border at the start in the inline direction |
-| | border-inline-style | Sets the style of the borders at start and end in the inline direction |
-| | border-inline-width | Sets the width of the borders at start and end in the inline direction |
+| X | border-inline-style | Sets the style of the borders at start and end in the inline direction |
+| X | border-inline-width | Sets the width of the borders at start and end in the inline direction |
 | X | border-left | A shorthand property for all the border-left-* properties |
 | X | border-left-color | Sets the color of the left border |
 | X | border-left-style | Sets the style of the left border |
@@ -113,7 +113,7 @@ ignorados sem erro — o parser é tolerante.
 | X | caret-color | Specifies the color of the cursor (caret) in inputs, textareas, or any element that is editable |
 | | @charset | Specifies the character encoding used in the style sheet |
 | | clear | Specifies what should happen with the element that is next to a floating element |
-| | clip | Deprecated in favor of clip-path. Clips an absolutely positioned element |
+| X* | clip | Deprecated in favor of clip-path. Clips an absolutely positioned element |
 | X* | clip-path | Clips an element to a basic shape or to an SVG source |
 | X | color | Sets the color of text |
 | | color-scheme | Indicates which operating system color scheme an element should render with |
@@ -147,7 +147,7 @@ ignorados sem erro — o parser é tolerante.
 | X | flex-wrap | Specifies whether the flexible items should wrap or not |
 | | float | Specifies whether an element should float to the left, right, or not at all |
 | X* | font | A shorthand property for the font-style, font-variant, font-weight, font-size/line-height, and the font-family properties |
-| | @font-face | Specifies a custom font to use to display text |
+| X* | @font-face | Specifies a custom font to use to display text |
 | X* | font-family | Specifies the font family for text |
 | | font-feature-settings | Allows control over advanced typographic features in OpenType fonts |
 | X | font-kerning | Controls the usage of the kerning information (how letters are spaced) |
@@ -164,7 +164,7 @@ ignorados sem erro — o parser é tolerante.
 | | font-variant-east-asian | Controls the usage of alternate glyphs for East Asian scripts (e.g Japanese and Chinese) |
 | | font-variant-ligatures | Controls which ligatures and contextual forms are used in textual content of the elements it applies to |
 | | font-variant-numeric | Controls the usage of alternate glyphs for numbers, fractions, and ordinal markers |
-| | font-variant-position | Controls the usage of alternate glyphs of smaller size positioned as superscript or subscript regarding the baseline of the font |
+| X* | font-variant-position | Controls the usage of alternate glyphs of smaller size positioned as superscript or subscript regarding the baseline of the font |
 | X | font-weight | Specifies the weight of a font |
 | X | gap | A shorthand property for the row-gap and the column-gap properties |
 | | grid | A shorthand property for the grid-template-rows, grid-template-columns, grid-template-areas, grid-auto-rows, grid-auto-columns, and the grid-auto-flow properties |
@@ -184,7 +184,7 @@ ignorados sem erro — o parser é tolerante.
 | | grid-template-rows | Specifies the size of the rows in a grid layout |
 | | hanging-punctuation | Specifies whether a punctuation character may be placed outside the line box |
 | X | height | Sets the height of an element |
-| | hyphenate-character | Sets the character used at the end of line, before a hyphenation break |
+| X* | hyphenate-character | Sets the character used at the end of line, before a hyphenation break |
 | X* | hyphens | Sets how to split words to improve the layout of text |
 | X | image-rendering | Specifies the type of algorithm to use for image scaling |
 | | @import | Allows you to import a style sheet into another style sheet |
@@ -197,7 +197,7 @@ ignorados sem erro — o parser é tolerante.
 | X | inset-inline | Specifies the distance between an element and the parent element in the inline direction |
 | X | inset-inline-end | Specifies the distance between the end of an element and the parent element in the inline direction |
 | X | inset-inline-start | Specifies the distance between the start of an element and the parent element in the inline direction |
-| | isolation | Defines whether an element must create a new stacking content |
+| X | isolation | Defines whether an element must create a new stacking content |
 | X | justify-content | Specifies the alignment between the items inside a flexible container when the items do not use all available space |
 | | justify-items | Is set on the grid container. Specifies the alignment of grid items in the inline direction |
 | | justify-self | Is set on the grid item. Specifies the alignment of the grid item in the inline direction |
@@ -205,7 +205,7 @@ ignorados sem erro — o parser é tolerante.
 | | @layer | Controls how the CSS cascade layers evaluates the order of styles |
 | X | left | Specifies the left position of a positioned element |
 | X | letter-spacing | Increases or decreases the space between characters in a text |
-| | line-break | Specifies how/if to break lines |
+| X* | line-break | Specifies how/if to break lines |
 | X | line-clamp | Limits the contents of a block to the specified number of lines |
 | X | -webkit-line-clamp | Legacy prefixed form of line-clamp (used with display: -webkit-box) |
 | X | line-height | Sets the line height |
@@ -242,7 +242,7 @@ ignorados sem erro — o parser é tolerante.
 | X | max-height | Sets the maximum height of an element |
 | X | max-inline-size | Sets the maximum size of an element in the inline direction |
 | X | max-width | Sets the maximum width of an element |
-| | @media | Sets the style rules for different media types/devices/sizes |
+| X* | @media | Sets the style rules for different media types/devices/sizes |
 | X | min-block-size | Sets the minimum size of an element in the block direction |
 | X | min-height | Sets the minimum height of an element |
 | X | min-inline-size | Sets the minimum size of an element in the inline direction |
@@ -270,11 +270,11 @@ ignorados sem erro — o parser é tolerante.
 | X | overflow-wrap | Specifies whether or not the browser can break lines with long words, if they overflow the container |
 | X* | overflow-x | Specifies whether or not to clip the left/right edges of the content, if it overflows the element's content area |
 | X* | overflow-y | Specifies whether or not to clip the top/bottom edges of the content, if it overflows the element's content area |
-| | overscroll-behavior | Specifies whether to have scroll chaining or overscroll affordance in x- and y-directions |
-| | overscroll-behavior-block | Specifies whether to have scroll chaining or overscroll affordance in the block direction |
-| | overscroll-behavior-inline | Specifies whether to have scroll chaining or overscroll affordance in the inline direction |
-| | overscroll-behavior-x | Specifies whether to have scroll chaining or overscroll affordance in x-direction |
-| | overscroll-behavior-y | Specifies whether to have scroll chaining or overscroll affordance in y-directions |
+| X | overscroll-behavior | Specifies whether to have scroll chaining or overscroll affordance in x- and y-directions |
+| X | overscroll-behavior-block | Specifies whether to have scroll chaining or overscroll affordance in the block direction |
+| X* | overscroll-behavior-inline | Specifies whether to have scroll chaining or overscroll affordance in the inline direction |
+| X* | overscroll-behavior-x | Specifies whether to have scroll chaining or overscroll affordance in x-direction |
+| X | overscroll-behavior-y | Specifies whether to have scroll chaining or overscroll affordance in y-directions |
 | X | padding | A shorthand property for all the padding-* properties |
 | X | padding-block | Specifies the padding in the block direction |
 | X | padding-block-end | Specifies the padding at the end in the block direction |
@@ -307,28 +307,28 @@ ignorados sem erro — o parser é tolerante.
 | | scale | Specifies the size of an element by scaling up or down |
 | | @scope | Allows you to select elements in specific DOM subtrees and target elements precisely without writing overly-specific selectors |
 | | scroll-behavior | Specifies whether to smoothly animate the scroll position in a scrollable box, instead of a straight jump |
-| | scroll-margin | Specifies the margin between the snap position and the container |
-| | scroll-margin-block | Specifies the margin between the snap position and the container in the block direction |
-| | scroll-margin-block-end | Specifies the end margin between the snap position and the container in the block direction |
-| | scroll-margin-block-start | Specifies the start margin between the snap position and the container in the block direction |
-| | scroll-margin-bottom | Specifies the margin between the snap position on the bottom side and the container |
-| | scroll-margin-inline | Specifies the margin between the snap position and the container in the inline direction |
-| | scroll-margin-inline-end | Specifies the end margin between the snap position and the container in the inline direction |
-| | scroll-margin-inline-start | Specifies the start margin between the snap position and the container in the inline direction |
-| | scroll-margin-left | Specifies the margin between the snap position on the left side and the container |
-| | scroll-margin-right | Specifies the margin between the snap position on the right side and the container |
-| | scroll-margin-top | Specifies the margin between the snap position on the top side and the container |
-| | scroll-padding | Specifies the distance from the container to the snap position on the child elements |
-| | scroll-padding-block | Specifies the distance in block direction from the container to the snap position on the child elements |
-| | scroll-padding-block-end | Specifies the distance in block direction from the end of the container to the snap position on the child elements |
-| | scroll-padding-block-start | Specifies the distance in block direction from the start of the container to the snap position on the child elements |
-| | scroll-padding-bottom | Specifies the distance from the bottom of the container to the snap position on the child elements |
-| | scroll-padding-inline | Specifies the distance in inline direction from the container to the snap position on the child elements |
-| | scroll-padding-inline-end | Specifies the distance in inline direction from the end of the container to the snap position on the child elements |
-| | scroll-padding-inline-start | Specifies the distance in inline direction from the start of the container to the snap position on the child elements |
-| | scroll-padding-left | Specifies the distance from the left side of the container to the snap position on the child elements |
-| | scroll-padding-right | Specifies the distance from the right side of the container to the snap position on the child elements |
-| | scroll-padding-top | Specifies the distance from the top of the container to the snap position on the child elements |
+| X* | scroll-margin | Specifies the margin between the snap position and the container |
+| X* | scroll-margin-block | Specifies the margin between the snap position and the container in the block direction |
+| X* | scroll-margin-block-end | Specifies the end margin between the snap position and the container in the block direction |
+| X* | scroll-margin-block-start | Specifies the start margin between the snap position and the container in the block direction |
+| X* | scroll-margin-bottom | Specifies the margin between the snap position on the bottom side and the container |
+| X* | scroll-margin-inline | Specifies the margin between the snap position and the container in the inline direction |
+| X* | scroll-margin-inline-end | Specifies the end margin between the snap position and the container in the inline direction |
+| X* | scroll-margin-inline-start | Specifies the start margin between the snap position and the container in the inline direction |
+| X* | scroll-margin-left | Specifies the margin between the snap position on the left side and the container |
+| X* | scroll-margin-right | Specifies the margin between the snap position on the right side and the container |
+| X* | scroll-margin-top | Specifies the margin between the snap position on the top side and the container |
+| X* | scroll-padding | Specifies the distance from the container to the snap position on the child elements |
+| X* | scroll-padding-block | Specifies the distance in block direction from the container to the snap position on the child elements |
+| X* | scroll-padding-block-end | Specifies the distance in block direction from the end of the container to the snap position on the child elements |
+| X* | scroll-padding-block-start | Specifies the distance in block direction from the start of the container to the snap position on the child elements |
+| X* | scroll-padding-bottom | Specifies the distance from the bottom of the container to the snap position on the child elements |
+| X* | scroll-padding-inline | Specifies the distance in inline direction from the container to the snap position on the child elements |
+| X* | scroll-padding-inline-end | Specifies the distance in inline direction from the end of the container to the snap position on the child elements |
+| X* | scroll-padding-inline-start | Specifies the distance in inline direction from the start of the container to the snap position on the child elements |
+| X* | scroll-padding-left | Specifies the distance from the left side of the container to the snap position on the child elements |
+| X* | scroll-padding-right | Specifies the distance from the right side of the container to the snap position on the child elements |
+| X* | scroll-padding-top | Specifies the distance from the top of the container to the snap position on the child elements |
 | | scroll-snap-align | Specifies where to position elements when the user stops scrolling |
 | | scroll-snap-stop | Specifies scroll behaviour after fast swipe on trackpad or touch screen |
 | | scroll-snap-type | Specifies how snap behaviour should be when scrolling |
@@ -353,7 +353,7 @@ ignorados sem erro — o parser é tolerante.
 | | text-emphasis-position | Specifies the position of emphasis marks |
 | | text-emphasis-style | Specifies the style of emphasis marks |
 | X | text-indent | Specifies the indentation of the first line in a text-block |
-| | text-justify | Specifies the justification method used when text-align is "justify" |
+| X* | text-justify | Specifies the justification method used when text-align is "justify" |
 | | text-orientation | Defines the orientation of characters in a line |
 | X | text-overflow | Specifies what should happen when text overflows the containing element |
 | X | text-shadow | Adds shadow to text |

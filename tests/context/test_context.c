@@ -3,6 +3,7 @@
 #include <tbox/image.h>
 #include <tbox/output.h>
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1724,6 +1725,56 @@ int tbox_test_context_run(void) {
             }
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == first);
             TBOX_TEST_ASSERT(!tbox_context_scroll(ctx, 10.0, 10.0, -100.0));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* scroll-margin on the focused control and scroll-padding on the list
+     * keep a gap when focus reveals it. */
+    {
+        tbox_context *ctx = open_cstr("<div id='list'><button>A</button><button>B</button><button>C</button><button>D</button></div>",
+            "#list { width: 100px; height: 50px; overflow-y: auto; scroll-padding-block-end: 5px; } "
+            "button { display: block; width: 70px; height: 20px; margin: 0px; padding: 0px; border: 0px solid black; scroll-margin: 0 0 10px; } "
+            "button:focus { border: 0px solid black; }",
+            fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            for (int i = 0; i < 3; i++) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            }
+            const tbox_layout_box *root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
+            while (root_box != NULL && root_box->parent != NULL)
+                root_box = root_box->parent;
+            const tbox_layout_box *focus_box = find_layout_box(root_box, tbox_context_focused_node(ctx));
+            TBOX_TEST_ASSERT(focus_box != NULL && focus_box->parent != NULL);
+            if (focus_box != NULL && focus_box->parent != NULL) {
+                tbox_rect viewport = focus_box->parent->padding_box;
+                double bottom      = focus_box->border_box.y + focus_box->border_box.height;
+                TBOX_TEST_ASSERT(fabs(bottom + 10.0 + 5.0 - (viewport.y + viewport.height)) < 0.01);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* overscroll-behavior: contain stops a wheel scroll at the inner
+     * list's limit from chaining to the outer one; auto chains. */
+    for (int contain = 0; contain < 2; contain++) {
+        char css[256];
+        snprintf(css, sizeof(css),
+            "#outer { width: 100px; height: 60px; overflow-y: auto; } "
+            "#inner { height: 40px; overflow-y: auto; overscroll-behavior: %s; } "
+            ".tall { height: 100px; }", contain ? "contain" : "auto");
+        tbox_context *ctx = open_cstr("<div id='outer'><div id='inner'><div class='tall'></div></div><div class='tall'></div></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 10.0, 10.0, 200.0)); /* inner to its end */
+            tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 10.0, 10.0, 20.0) == !contain);
             tbox_context_close(ctx);
         }
     }

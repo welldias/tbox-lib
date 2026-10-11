@@ -39,8 +39,10 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "overflow-wrap",              true,  { TBOX_STYLE_FIELD(overflow_wrap_break_word), TBOX_STYLE_FIELD(overflow_wrap_anywhere) } },
     { "word-wrap",                  true,  { TBOX_STYLE_FIELD(overflow_wrap_break_word), TBOX_STYLE_FIELD(overflow_wrap_anywhere) } },
     { "word-break",                 true,  { TBOX_STYLE_FIELD(word_break_all), TBOX_STYLE_FIELD(word_break_keep_all) } },
+    { "line-break",                 true,  { TBOX_STYLE_FIELD(line_break_anywhere) } },
     { "text-transform",             true,  { TBOX_STYLE_FIELD(text_transform) } },
     { "hyphens",                    true,  { TBOX_STYLE_FIELD(hyphens_none) } },
+    { "hyphenate-character",        true,  { TBOX_STYLE_FIELD(hyphenate_character) } },
     { "list-style",                 true,  { TBOX_STYLE_FIELD(list_style_type), TBOX_STYLE_FIELD(list_style_inside), TBOX_STYLE_FIELD(list_style_image) } },
     { "list-style-image",           true,  { TBOX_STYLE_FIELD(list_style_image) } },
     { "list-style-type",            true,  { TBOX_STYLE_FIELD(list_style_type) } },
@@ -84,6 +86,7 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "font-stretch",               true,  { TBOX_STYLE_FIELD(font_stretch) } },
     { "font-variant",               true,  { TBOX_STYLE_FIELD(font_small_caps) } },
     { "font-variant-caps",          true,  { TBOX_STYLE_FIELD(font_small_caps) } },
+    { "font-variant-position",      true,  { TBOX_STYLE_FIELD(font_variant_position) } },
     { "font-kerning",               true,  { TBOX_STYLE_FIELD(font_kerning_none) } },
     { "font",                       true,  { TBOX_STYLE_FIELD(font_size), TBOX_STYLE_FIELD(font_weight), TBOX_STYLE_FIELD(font_weight_bold), TBOX_STYLE_FIELD(font_family), TBOX_STYLE_FIELD(font_italic), TBOX_STYLE_FIELD(font_stretch), TBOX_STYLE_FIELD(font_small_caps), TBOX_STYLE_FIELD(line_height_kind), TBOX_STYLE_FIELD(line_height_value) } },
     { "outline",                    false, { TBOX_STYLE_FIELD(outline_width), TBOX_STYLE_FIELD(outline_style), TBOX_STYLE_FIELD(outline_color) } },
@@ -95,6 +98,7 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "z-index",                    false, { TBOX_STYLE_FIELD(z_index), TBOX_STYLE_FIELD(z_index_auto) } },
     { "text-align",                 true,  { TBOX_STYLE_FIELD(text_align) } },
     { "text-align-last",            true,  { TBOX_STYLE_FIELD(text_align_last) } },
+    { "text-justify",               true,  { TBOX_STYLE_FIELD(text_justify_none) } },
     { "text-decoration",            false, { TBOX_STYLE_FIELD(text_decoration), TBOX_STYLE_FIELD(text_decoration_lines), TBOX_STYLE_FIELD(text_decoration_style), TBOX_STYLE_FIELD(text_decoration_color), TBOX_STYLE_FIELD(text_decoration_thickness) } },
     { "text-decoration-line",       false, { TBOX_STYLE_FIELD(text_decoration), TBOX_STYLE_FIELD(text_decoration_lines) } },
     { "text-decoration-style",      false, { TBOX_STYLE_FIELD(text_decoration_style) } },
@@ -120,6 +124,7 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "box-shadow",                 false, { TBOX_STYLE_FIELD(box_shadow_offset_x), TBOX_STYLE_FIELD(box_shadow_offset_y), TBOX_STYLE_FIELD(box_shadow_blur), TBOX_STYLE_FIELD(box_shadow_spread), TBOX_STYLE_FIELD(box_shadow_color), TBOX_STYLE_FIELD(box_shadow_inset), TBOX_STYLE_FIELD(box_shadows), TBOX_STYLE_FIELD(box_shadow_count) } },
     { "text-shadow",                true,  { TBOX_STYLE_FIELD(text_shadow_offset_x), TBOX_STYLE_FIELD(text_shadow_offset_y), TBOX_STYLE_FIELD(text_shadow_blur), TBOX_STYLE_FIELD(text_shadow_color), TBOX_STYLE_FIELD(text_shadows), TBOX_STYLE_FIELD(text_shadow_count) } },
     { "opacity",                    false, { TBOX_STYLE_FIELD(opacity) } },
+    { "isolation",                  false, { TBOX_STYLE_FIELD(isolation_isolate) } },
     { "filter",                     false, { TBOX_STYLE_FIELD(has_filter), TBOX_STYLE_FIELD(filter_matrix) } },
     { "clip-path",                  false, { TBOX_STYLE_FIELD(clip_path) } },
     { "transform",                  false, { TBOX_STYLE_FIELD(translate_x), TBOX_STYLE_FIELD(translate_y) } },
@@ -132,6 +137,9 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "scrollbar-color",            true,  { TBOX_STYLE_FIELD(scrollbar_thumb_color), TBOX_STYLE_FIELD(scrollbar_track_color) } },
     { "scrollbar-width",            false, { TBOX_STYLE_FIELD(scrollbar_width) } },
     { "scrollbar-gutter",           false, { TBOX_STYLE_FIELD(scrollbar_gutter_stable) } },
+    { "overscroll-behavior",        false, { TBOX_STYLE_FIELD(overscroll_y) } },
+    { "overscroll-behavior-y",      false, { TBOX_STYLE_FIELD(overscroll_y) } },
+    { "overscroll-behavior-block",  false, { TBOX_STYLE_FIELD(overscroll_y) } },
     { "line-clamp",                 false, { TBOX_STYLE_FIELD(line_clamp) } },
     { "-webkit-line-clamp",         false, { TBOX_STYLE_FIELD(line_clamp) } },
     { "flex-direction",             false, { TBOX_STYLE_FIELD(flex_direction) } },
@@ -212,6 +220,8 @@ static size_t tbox_style_side_fields(tbox_string_view property, tbox_style_field
         { "margin",  offsetof(tbox_style, margin)  },
         { "padding", offsetof(tbox_style, padding) },
         { "inset",   offsetof(tbox_style, offset)  },
+        { "scroll-margin",  offsetof(tbox_style, scroll_margin)  },
+        { "scroll-padding", offsetof(tbox_style, scroll_padding) },
     };
     int sides[4];
     size_t side_count;
@@ -359,6 +369,26 @@ static bool tbox_style_field_overridden(const tbox_css_computed_style *computed,
     return false;
 }
 
+/* Copies `property`'s fields for the keyword in `decl` from the parent or
+ * the initial style, except fields a higher-priority declaration sets. */
+static void tbox_style_keyword_apply_one(tbox_style *style, const tbox_style *parent, const tbox_style *initial, const tbox_css_computed_style *computed, const tbox_css_resolved_declaration *decl, tbox_string_view property, bool *touched_borders, bool *touched_radius) {
+    tbox_style_field fields[TBOX_STYLE_MAX_FIELDS];
+    bool inherited;
+    size_t field_count = tbox_style_property_lookup(property, fields, &inherited);
+    tbox_style_keyword_kind kind = tbox_style_keyword_of(decl->value);
+    bool from_parent             = parent != NULL && (kind == TBOX_STYLE_KEYWORD_INHERIT || (kind == TBOX_STYLE_KEYWORD_UNSET && inherited));
+    const tbox_style *source     = from_parent ? parent : initial;
+    for (size_t f = 0; f < field_count; f++) {
+        if (tbox_style_field_overridden(computed, decl, fields[f]))
+            continue;
+        memcpy((char *)style + fields[f].offset, (const char *)source + fields[f].offset, fields[f].size);
+        if (fields[f].offset >= offsetof(tbox_style, border_widths) && fields[f].offset < offsetof(tbox_style, border_per_side))
+            *touched_borders = true;
+        if (fields[f].offset >= offsetof(tbox_style, border_radius_corners) && fields[f].offset < offsetof(tbox_style, border_radius_corners) + sizeof(style->border_radius_corners))
+            *touched_radius = true;
+    }
+}
+
 void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, const tbox_style *initial, const tbox_css_computed_style *computed) {
     if (style == NULL || initial == NULL || computed == NULL)
         return;
@@ -379,23 +409,18 @@ void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, cons
     bool touched_borders = false, touched_radius = false;
     for (size_t k = 0; k < count; k++) {
         const tbox_css_resolved_declaration *decl = order[k];
-        tbox_style_field fields[TBOX_STYLE_MAX_FIELDS];
-        bool inherited;
-        size_t field_count = tbox_style_property_lookup(decl->property, fields, &inherited);
-        if (field_count == 0)
+        if (!tbox_style_equal_ci(decl->property, "all")) {
+            tbox_style_keyword_apply_one(style, parent, initial, computed, decl, decl->property, &touched_borders, &touched_radius);
             continue;
-        tbox_style_keyword_kind kind = tbox_style_keyword_of(decl->value);
-        bool from_parent             = parent != NULL && (kind == TBOX_STYLE_KEYWORD_INHERIT || (kind == TBOX_STYLE_KEYWORD_UNSET && inherited));
-        const tbox_style *source     = from_parent ? parent : initial;
-        for (size_t f = 0; f < field_count; f++) {
-            if (tbox_style_field_overridden(computed, decl, fields[f]))
-                continue;
-            memcpy((char *)style + fields[f].offset, (const char *)source + fields[f].offset, fields[f].size);
-            if (fields[f].offset >= offsetof(tbox_style, border_widths) && fields[f].offset < offsetof(tbox_style, border_per_side))
-                touched_borders = true;
-            if (fields[f].offset >= offsetof(tbox_style, border_radius_corners) && fields[f].offset < offsetof(tbox_style, border_radius_corners) + sizeof(style->border_radius_corners))
-                touched_radius = true;
         }
+        /* `all`: every property tbox_style knows (custom properties are
+         * not part of it), each still losing to higher-priority
+         * declarations of its own. */
+        for (size_t i = 0; i < sizeof(tbox_style_properties) / sizeof(tbox_style_properties[0]); i++)
+            tbox_style_keyword_apply_one(style, parent, initial, computed, decl, tbox_string_view_from_cstr(tbox_style_properties[i].name), &touched_borders, &touched_radius);
+        static const char *const families[] = { "margin", "padding", "inset", "border", "scroll-margin", "scroll-padding" };
+        for (size_t i = 0; i < sizeof(families) / sizeof(families[0]); i++)
+            tbox_style_keyword_apply_one(style, parent, initial, computed, decl, tbox_string_view_from_cstr(families[i]), &touched_borders, &touched_radius);
     }
 
     /* Keep the derived uniform fields in step with the per-side arrays. */

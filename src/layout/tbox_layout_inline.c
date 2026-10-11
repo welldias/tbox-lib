@@ -347,10 +347,12 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
 
         tbox_string_builder_append_view(&run_builder, word->text);
         cursor_x += word->width;
-        /* A line broken at a soft hyphen shows the hyphen. */
+        /* A line broken at a soft hyphen shows the hyphen
+         * (hyphenate-character, "-" when auto). */
         if (word->soft_hyphen_after && i + 1 == line->end && word->face != NULL) {
-            tbox_string_builder_append_byte(&run_builder, '-');
-            cursor_x += tbox_font_measure_text_spaced(word->face, tbox_string_view_make("-", 1), word->style->letter_spacing);
+            tbox_string_view hyphen = word->style->hyphenate_character[0] != '\0' ? tbox_string_view_from_cstr(word->style->hyphenate_character) : tbox_string_view_make("-", 1);
+            tbox_string_builder_append_view(&run_builder, hyphen);
+            cursor_x += tbox_font_measure_text_spaced(word->face, hyphen, word->style->letter_spacing);
         }
         run_end_x = cursor_x;
     }
@@ -392,11 +394,12 @@ void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, dou
     for (size_t i = 0; i < words->length; i++) {
         const tbox_layout_word *word = &source[i];
         double first_limit           = i == 0 ? available_width - first_indent : available_width;
-        /* word-break: break-all -- every codepoint becomes its own word
-         * glued to the previous one (no space), so the greedy line breaker
-         * can break between any two characters and fill each line. Run
+        /* word-break: break-all and line-break: anywhere -- every codepoint
+         * becomes its own word glued to the previous one (no space), so the
+         * greedy line breaker can break between any two characters and
+         * fill each line. Run
          * building merges the pieces back into one run per line. */
-        if (word->style->word_break_all && !word->hard_break && word->image == NULL && word->atomic == NULL && word->text.size > 0) {
+        if ((word->style->word_break_all || word->style->line_break_anywhere) && !word->hard_break && word->image == NULL && word->atomic == NULL && word->text.size > 0) {
             size_t start = 0;
             while (start < word->text.size) {
                 size_t next = start + 1;

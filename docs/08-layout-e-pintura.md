@@ -50,7 +50,7 @@ Regras que explicam a maior parte do comportamento:
 |---|---|
 | **Fluxo de bloco** | Largura do pai, `width`/`height`, min/max, `box-sizing`, `aspect-ratio`, `min-content`/`max-content`/`fit-content`. |
 | **Margens** | Collapsing entre irmãos adjacentes (`max` das duas). Com margem negativa, o par soma. Sem collapsing pai/filho. |
-| **Texto em linha** | Quebra por palavra, `white-space` (normal, nowrap, pre, pre-wrap, pre-line, break-spaces), `overflow-wrap`, `word-break`, hifenização por soft hyphen, `text-align` (incl. justify), `text-align-last`, `text-indent` (hanging, each-line), `text-wrap: balance`, `line-height`, `letter-`/`word-spacing`, `text-overflow`, `line-clamp`, `tab-size`. |
+| **Texto em linha** | Quebra por palavra, `white-space` (normal, nowrap, pre, pre-wrap, pre-line, break-spaces), `overflow-wrap`, `word-break`, hifenização por soft hyphen (o traço mostrado vem de `hyphenate-character`), `line-break: anywhere`, `text-align` (incl. justify, desligável com `text-justify: none`), `text-align-last`, `text-indent` (hanging, each-line), `text-wrap: balance`, `line-height`, `letter-`/`word-spacing`, `text-overflow`, `line-clamp`, `tab-size`. |
 | **Posicionamento** | `relative`, `absolute` (contra o ancestral posicionado mais próximo), `fixed` (contra a janela), `sticky` (só eixo vertical), `z-index`, `inset`. |
 | **Listas** | Marcadores `outside`/`inside`, `list-style-type` (disc, circle, square, decimal, letras, romanos, grego, disclosure…), `list-style-image`, `::marker` (cor, fonte, `content`). |
 | **Tabelas** | `caption`, `colgroup`/`col`, `thead`/`tbody`/`tfoot`, `colspan`/`rowspan`, `border-collapse`, `border-spacing`, `table-layout: fixed`, `empty-cells`, `vertical-align` em células, blocos dentro de células. |
@@ -61,6 +61,16 @@ Regras que explicam a maior parte do comportamento:
 
 ## Simplificações que você pode notar
 
+- **`text-justify`** só distribui espaço entre palavras: `inter-character`
+  age como `auto`. **`line-break`** só tem efeito com `anywhere` (quebra como
+  `word-break: break-all` e reduz o min-content a um caractere); `loose`,
+  `normal` e `strict` só diferem em pontuação CJK.
+- **`hyphenate-character: ""`** equivale a `auto` (mostra `-`), e a largura
+  do caractere não entra na decisão de quebra de linha (o mesmo vale para o
+  `-` padrão).
+- **`clip`** só aceita `rect()` (com vírgulas ou espaços, lados `auto`) em
+  caixas `absolute`/`fixed`; perde para `clip-path` quando os dois existem e
+  não aceita `inherit`/`initial`/`unset`.
 - **`absolute`/`fixed` sem `left`/`right` (ou sem `top`/`bottom`)** vão para
   o canto do containing block, não para a posição estática "natural".
 - **Ancestral posicionado com `height: auto`**: descendentes `absolute`
@@ -94,7 +104,9 @@ do CSS e emite comandos (`tbox_paint_op`):
 | `WAVY_LINE` | `text-decoration-style: wavy` |
 
 Cada op carrega retângulo, cor, `clip` (recorte de overflow) e, se preciso,
-`rounded_clip` (cantos arredondados, `clip-path`) e matriz de cor
+`rounded_clip` (cantos arredondados, `clip-path`; o `clip: rect()` legado
+de caixas `absolute`/`fixed` vira um `clip-path: inset()` equivalente na
+Style) e matriz de cor
 (`filter`, `opacity`).
 
 ### Ordem de pintura
@@ -107,8 +119,8 @@ flowchart LR
     D --> E[z-index positivo<br/>em ordem crescente]
 ```
 
-Criam contexto de empilhamento: a raiz, caixas posicionadas com `z-index`
-e caixas com `opacity` < 1. Dentro de um contexto, empate é resolvido pela
+Criam contexto de empilhamento: a raiz, caixas posicionadas com `z-index`,
+caixas com `opacity` < 1 e caixas com `isolation: isolate`. Dentro de um contexto, empate é resolvido pela
 ordem da árvore. O hit-test usa a mesma ordem
 ([Eventos](06-eventos-e-interatividade.md#hit-test)).
 

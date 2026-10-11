@@ -1312,6 +1312,36 @@ static void tbox_style_resolve_border_sides(const tbox_css_computed_style *compu
         }
     }
 
+    /* `border-block/-inline-width/-style/-color`: one value for both sides
+     * of the axis, or two (start, end); all valid or ignored. */
+    for (size_t axis = 0; axis < 2; axis++) {
+        for (size_t part = 0; part < 3; part++) {
+            char name[40];
+            snprintf(name, sizeof(name), "%s-%s", axes[axis].name, parts[part]);
+            const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+            tbox_string_view tokens[4];
+            size_t count;
+            if (decl == NULL || !tbox_style_split_box_shorthand(decl->value, tokens, &count) || count > 2)
+                continue;
+            double parsed_widths[2];
+            tbox_style_border_style parsed_styles[2];
+            tbox_css_rgba parsed_colors[2];
+            bool valid = true;
+            for (size_t t = 0; t < count && valid; t++)
+                valid = part == 0 ? tbox_style_parse_border_width(tokens[t], units, &parsed_widths[t]) : part == 1 ? tbox_style_parse_border_style(tokens[t], true, &parsed_styles[t]) : tbox_style_parse_edge_color(tokens[t], current_color, &parsed_colors[t]);
+            if (!valid)
+                continue;
+            /* block: top, bottom; inline: left (start), right (end). */
+            size_t targets[2] = { axis == 0 ? 0 : 3, axis == 0 ? 2 : 1 };
+            for (size_t t = 0; t < 2; t++) {
+                size_t i = targets[t], from = count == 2 ? t : 0;
+                if (part == 0 && tbox_style_claim(decl, &width_winner[i])) widths[i] = parsed_widths[from];
+                if (part == 1 && tbox_style_claim(decl, &style_winner[i])) styles[i] = parsed_styles[from];
+                if (part == 2 && tbox_style_claim(decl, &color_winner[i])) colors[i] = parsed_colors[from];
+            }
+        }
+    }
+
     /* Logical sides map to physical sides in the engine's left-to-right
      * writing mode. Their shorthands reset omitted components, just like
      * border-top/right/bottom/left, and compete by normal cascade priority. */
@@ -3043,6 +3073,38 @@ static bool tbox_style_parse_filter(tbox_string_view raw, bool *out_has, double 
     return true;
 }
 
+/* ---- clip ---- */
+
+/* The legacy `clip: rect(top, right, bottom, left)` (commas or spaces),
+ * offsets from the border box's top-left corner, `auto` meaning that
+ * edge of the box, becomes the equivalent clip-path inset(): the right
+ * and bottom insets are `100% - offset`. `clip: auto` leaves it unset. */
+static void tbox_style_parse_clip_rect(tbox_string_view raw, const tbox_style_units *units, tbox_style_clip_path *out) {
+    tbox_string_view args, parts[4];
+    if (!tbox_style_function_args(tbox_style_trim(raw), "rect", &args))
+        return;
+    size_t count = memchr(args.data, ',', args.size) != NULL ? tbox_style_split_top_level(args, ',', parts, 4) : tbox_style_tokens(args, parts, 4);
+    if (count != 4)
+        return;
+    tbox_style_length inset[4];
+    for (size_t side = 0; side < 4; side++) {
+        tbox_style_length offset = { TBOX_STYLE_LENGTH_PX, 0.0, 0.0, 0, 0.0, 0.0 };
+        bool is_auto = tbox_style_is(parts[side], "auto");
+        if (!is_auto && (!tbox_style_parse_spacing_length(parts[side], units, &offset) || offset.kind != TBOX_STYLE_LENGTH_PX))
+            return;
+        if (side == 1 || side == 2) /* right, bottom: measured from the far edge */
+            inset[side] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, is_auto ? 0.0 : 100.0, is_auto ? 0.0 : -offset.value, 0, 0.0, 0.0 };
+        else
+            inset[side] = offset;
+    }
+    tbox_style_clip_path clip;
+    memset(&clip, 0, sizeof(clip));
+    clip.kind      = TBOX_STYLE_CLIP_PATH_INSET;
+    clip.center[0] = clip.center[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0, 0.0, 0, 0.0, 0.0 };
+    memcpy(clip.inset, inset, sizeof(inset));
+    *out = clip;
+}
+
 /* ---- clip-path ---- */
 
 /* `closest-side`/`farthest-side` or a length-percentage for a shape
@@ -3247,6 +3309,30 @@ static void tbox_style_resolve_extras(const tbox_css_computed_style *computed, c
     if (decl != NULL && tbox_style_is(decl->value, "stable"))
         style->scrollbar_gutter_stable = true;
 
+    /* overscroll-behavior: one or two of auto | contain | none (x, then y);
+     * -y and -block set the vertical axis alone. There is no horizontal
+     * scrolling, so the x/inline forms have nothing to change. */
+    static const tbox_style_keyword overscrolls[] = {
+        { "auto",    TBOX_STYLE_OVERSCROLL_AUTO    },
+        { "contain", TBOX_STYLE_OVERSCROLL_CONTAIN },
+        { "none",    TBOX_STYLE_OVERSCROLL_NONE    },
+    };
+    static const char *const overscroll_names[] = { "overscroll-behavior", "overscroll-behavior-y", "overscroll-behavior-block" };
+    const tbox_css_resolved_declaration *overscroll_winner = NULL;
+    style->overscroll_y = TBOX_STYLE_OVERSCROLL_AUTO;
+    for (size_t n = 0; n < TBOX_STYLE_COUNT(overscroll_names); n++) {
+        decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(overscroll_names[n]));
+        if (decl == NULL) continue;
+        tbox_string_view tokens[3];
+        size_t count = tbox_style_tokens(decl->value, tokens, 3);
+        int values[2];
+        if (count == 0 || count > (n == 0 ? 2u : 1u)) continue;
+        if (!tbox_style_lookup(tokens[0], overscrolls, TBOX_STYLE_COUNT(overscrolls), &values[0])) continue;
+        if (count == 2 && !tbox_style_lookup(tokens[1], overscrolls, TBOX_STYLE_COUNT(overscrolls), &values[1])) continue;
+        if (tbox_style_claim(decl, &overscroll_winner))
+            style->overscroll_y = (tbox_style_overscroll)values[count - 1];
+    }
+
     style->cursor = parent_style != NULL ? parent_style->cursor : TBOX_STYLE_CURSOR_AUTO;
     decl          = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("cursor"));
     if (decl != NULL)
@@ -3286,6 +3372,17 @@ static void tbox_style_resolve_extras(const tbox_css_computed_style *computed, c
     decl                   = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-align-last"));
     if (decl != NULL && tbox_style_lookup(decl->value, tbox_style_text_align_lasts, TBOX_STYLE_COUNT(tbox_style_text_align_lasts), &value))
         style->text_align_last = (tbox_style_text_align_last)value;
+
+    /* text-justify: none | auto | inter-word | inter-character; spacing
+     * goes between words only, so inter-character acts as auto. */
+    style->text_justify_none = parent_style != NULL && parent_style->text_justify_none;
+    decl                     = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("text-justify"));
+    if (decl != NULL) {
+        if (tbox_style_is(decl->value, "none"))
+            style->text_justify_none = true;
+        else if (tbox_style_is(decl->value, "auto") || tbox_style_is(decl->value, "inter-word") || tbox_style_is(decl->value, "inter-character"))
+            style->text_justify_none = false;
+    }
 
     style->empty_cells_hide = parent_style != NULL && parent_style->empty_cells_hide;
     decl                    = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("empty-cells"));
@@ -3367,8 +3464,10 @@ static tbox_style tbox_style_resolve_keywords(const tbox_html_node *node, const 
     tbox_css_computed_style empty    = { NULL, 0, NULL };
     tbox_style initial               = tbox_style_resolve_declared(NULL, NULL, &empty, viewport_width, viewport_height);
     /* CSS initial values the resolved "nothing declared" style doesn't
-     * carry: border widths are `medium` (stored as 0 while the style is
+     * carry: display is `inline` (an undeclared element defaults to block
+     * here), border widths are `medium` (stored as 0 while the style is
      * none), and border/outline/decoration colors are currentColor. */
+    initial.display = TBOX_STYLE_DISPLAY_INLINE;
     for (size_t i = 0; i < 4; i++) {
         initial.border_widths[i] = 3.0;
         initial.border_colors[i] = style.color;
@@ -3529,6 +3628,16 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
     }
     style.word_break_all                            = parent_style != NULL && parent_style->word_break_all;
     style.word_break_keep_all                       = parent_style != NULL && parent_style->word_break_keep_all;
+    /* line-break: anywhere breaks between any two characters; auto, loose,
+     * normal and strict only differ for CJK punctuation, so they act alike. */
+    style.line_break_anywhere                       = parent_style != NULL && parent_style->line_break_anywhere;
+    const tbox_css_resolved_declaration *line_break = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("line-break"));
+    if (line_break != NULL) {
+        if (tbox_style_is(line_break->value, "anywhere"))
+            style.line_break_anywhere = true;
+        else if (tbox_style_is(line_break->value, "auto") || tbox_style_is(line_break->value, "loose") || tbox_style_is(line_break->value, "normal") || tbox_style_is(line_break->value, "strict"))
+            style.line_break_anywhere = false;
+    }
     style.hyphens_none                              = parent_style != NULL && parent_style->hyphens_none;
     const tbox_css_resolved_declaration *hyphens    = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("hyphens"));
     if (hyphens == NULL)
@@ -3538,6 +3647,23 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
             style.hyphens_none = true;
         else if (tbox_style_is(hyphens->value, "manual") || tbox_style_is(hyphens->value, "auto"))
             style.hyphens_none = false;
+    }
+    /* hyphenate-character: auto | <string>; an empty string also means
+     * auto, since "" is how the field spells auto. */
+    if (parent_style != NULL)
+        memcpy(style.hyphenate_character, parent_style->hyphenate_character, sizeof(style.hyphenate_character));
+    else
+        style.hyphenate_character[0] = '\0';
+    const tbox_css_resolved_declaration *hyphenate = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("hyphenate-character"));
+    if (hyphenate != NULL) {
+        tbox_string_view value = tbox_style_trim(hyphenate->value);
+        if (tbox_style_is(value, "auto")) {
+            style.hyphenate_character[0] = '\0';
+        } else if (value.size >= 2 && (value.data[0] == '"' || value.data[0] == '\'') && value.data[value.size - 1] == value.data[0]) {
+            size_t n = value.size - 2 < sizeof(style.hyphenate_character) - 1 ? value.size - 2 : sizeof(style.hyphenate_character) - 1;
+            memcpy(style.hyphenate_character, value.data + 1, n);
+            style.hyphenate_character[n] = '\0';
+        }
     }
     const tbox_css_resolved_declaration *word_break = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("word-break"));
     if (word_break != NULL) {
@@ -3597,6 +3723,18 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
     double root_font_size          = parent_style != NULL ? parent_style->root_font_size : 16.0;
     tbox_style_units units         = { parent_font_size, root_font_size, viewport_width, viewport_height };
     style.font_size                = tbox_style_resolve_font_size(tbox_style_font_value(computed, &font, "font-size", &font_storage), parent_font_size, &units);
+    /* font-variant-position: normal | sub | super, synthesized -- the size
+     * shrinks only where the value changes, so nesting doesn't compound. */
+    style.font_variant_position = parent_style != NULL ? parent_style->font_variant_position : TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL;
+    const tbox_css_resolved_declaration *variant_position = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-variant-position"));
+    if (variant_position != NULL) {
+        if (tbox_style_is(variant_position->value, "sub")) style.font_variant_position = TBOX_STYLE_FONT_VARIANT_POSITION_SUB;
+        else if (tbox_style_is(variant_position->value, "super")) style.font_variant_position = TBOX_STYLE_FONT_VARIANT_POSITION_SUPER;
+        else if (tbox_style_is(variant_position->value, "normal")) style.font_variant_position = TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL;
+    }
+    if (style.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL &&
+        style.font_variant_position != (parent_style != NULL ? parent_style->font_variant_position : TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL))
+        style.font_size /= 1.2;
     style.root_font_size           = parent_style != NULL ? parent_style->root_font_size : style.font_size;
     units.font_size                = style.font_size;
     style.object_position[0] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0, 0.0, 0, 0.0, 0.0 };
@@ -3660,6 +3798,12 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
     static const char *const padding_sides[4] = { "padding-top", "padding-right", "padding-bottom", "padding-left" };
     tbox_style_resolve_box_edges(computed, "margin", margin_sides, &units, true, style.margin);
     tbox_style_resolve_box_edges(computed, "padding", padding_sides, &units, false, style.padding);
+    for (int i = 0; i < 4; i++)
+        style.scroll_margin[i] = style.scroll_padding[i] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 0.0, 0.0, 0, 0.0, 0.0 };
+    static const char *const scroll_margin_sides[4]  = { "scroll-margin-top", "scroll-margin-right", "scroll-margin-bottom", "scroll-margin-left" };
+    static const char *const scroll_padding_sides[4] = { "scroll-padding-top", "scroll-padding-right", "scroll-padding-bottom", "scroll-padding-left" };
+    tbox_style_resolve_box_edges(computed, "scroll-margin", scroll_margin_sides, &units, false, style.scroll_margin);
+    tbox_style_resolve_box_edges(computed, "scroll-padding", scroll_padding_sides, &units, true, style.scroll_padding);
     style.text_indent                                = parent_style != NULL ? parent_style->text_indent : (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 0.0, 0.0, 0, 0.0, 0.0 };
     /* text-indent: <length-percentage> && hanging? && each-line? */
     style.text_indent_hanging                        = parent_style != NULL && parent_style->text_indent_hanging;
@@ -3902,6 +4046,12 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
         else if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("auto"))) style.text_underline_position_under = false;
     }
     style.vertical_align                              = tbox_style_resolve_vertical_align(computed, &units, &style.vertical_align_length);
+    /* Synthesized font-variant-position moves glyphs only: atomic inlines
+     * (inline-block, inline-flex, images) keep their baseline. */
+    bool atomic_inline = style.display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || style.display == TBOX_STYLE_DISPLAY_INLINE_FLEX ||
+                         (node != NULL && node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("img")));
+    if (style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BASELINE && style.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL && !atomic_inline)
+        style.vertical_align = style.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUB ? TBOX_STYLE_VERTICAL_ALIGN_SUB : TBOX_STYLE_VERTICAL_ALIGN_SUPER;
     const tbox_css_resolved_declaration *caption_side = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("caption-side"));
     style.caption_side                                = parent_style != NULL ? parent_style->caption_side : TBOX_STYLE_CAPTION_TOP;
     if (caption_side != NULL) {
@@ -3977,6 +4127,8 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
         style.text_shadow_color    = style.text_shadows[0].color;
     }
 
+    const tbox_css_resolved_declaration *isolation = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("isolation"));
+    style.isolation_isolate                        = isolation != NULL && tbox_style_is(isolation->value, "isolate");
     style.opacity                                = 1.0;
     const tbox_css_resolved_declaration *opacity = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("opacity"));
     if (opacity != NULL) {
@@ -4004,6 +4156,11 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
     const tbox_css_resolved_declaration *clip_path = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("clip-path"));
     if (clip_path != NULL)
         tbox_style_parse_clip_path(clip_path->value, &units, &style.clip_path);
+    else if (style.position == TBOX_STYLE_POSITION_ABSOLUTE || style.position == TBOX_STYLE_POSITION_FIXED) {
+        const tbox_css_resolved_declaration *clip = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("clip"));
+        if (clip != NULL)
+            tbox_style_parse_clip_rect(clip->value, &units, &style.clip_path);
+    }
     return style;
 }
 

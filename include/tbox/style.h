@@ -384,6 +384,20 @@ typedef enum tbox_style_scrollbar_width {
     TBOX_STYLE_SCROLLBAR_WIDTH_NONE, /* still scrolls, no bar painted */
 } tbox_style_scrollbar_width;
 
+/* `overscroll-behavior` on the vertical axis (the only scrolling axis):
+ * whether a wheel scroll that hits this box's limit chains to an ancestor. */
+typedef enum tbox_style_font_variant_position {
+    TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL, /* initial */
+    TBOX_STYLE_FONT_VARIANT_POSITION_SUB,
+    TBOX_STYLE_FONT_VARIANT_POSITION_SUPER,
+} tbox_style_font_variant_position;
+
+typedef enum tbox_style_overscroll {
+    TBOX_STYLE_OVERSCROLL_AUTO, /* initial: chain to the ancestor */
+    TBOX_STYLE_OVERSCROLL_CONTAIN,
+    TBOX_STYLE_OVERSCROLL_NONE, /* same as contain: there is no bounce effect */
+} tbox_style_overscroll;
+
 typedef enum tbox_style_clip_path_kind {
     TBOX_STYLE_CLIP_PATH_NONE, /* initial */
     TBOX_STYLE_CLIP_PATH_INSET,
@@ -451,7 +465,9 @@ typedef struct tbox_style {
     bool overflow_wrap_anywhere;                  /* inheritable; emergency breaks count for min-content */
     bool word_break_all;                          /* inheritable; `word-break: break-all` */
     bool word_break_keep_all;                     /* inheritable; `keep-all`: no breaks inside CJK runs either */
+    bool line_break_anywhere;                     /* inheritable; `line-break: anywhere`, breaks like break-all */
     bool hyphens_none;                            /* inheritable; `hyphens: none` ignores soft hyphens (manual/auto use them) */
+    char hyphenate_character[16];                 /* inheritable; shown at a hyphenation break; "" is auto ("-") */
     double tab_size;                              /* inheritable; a number of spaces, or px when tab_size_length; initial 8 */
     bool tab_size_length;
     bool list_style_inside;                       /* inheritable; `list-style-position: inside` */
@@ -481,6 +497,10 @@ typedef struct tbox_style {
     tbox_style_length min_height, max_height;     /* also min/max-block-size; AUTO means no constraint */
     tbox_style_length margin[4];                  /* top right bottom left; initial: 0px each */
     tbox_style_length padding[4];                 /* top right bottom left; initial: 0px each */
+    /* scroll-margin (on the revealed element) and scroll-padding (on the
+     * scroll container), top right bottom left, not inheritable; used when
+     * focus scrolls an element into view. scroll-padding AUTO counts as 0. */
+    tbox_style_length scroll_margin[4], scroll_padding[4];
     tbox_style_length text_indent;                /* inheritable; first line, px or %; initial 0px */
     bool text_indent_hanging;                     /* inheritable; every line but the first is indented */
     bool text_indent_each_line;                   /* inheritable; also lines after a forced break */
@@ -531,6 +551,10 @@ typedef struct tbox_style {
     /* `font-variant: small-caps` (and `font-variant-caps`): lowercase
      * letters render as smaller capitals. Inheritable. */
     bool font_small_caps;
+    /* `font-variant-position`, inheritable. Without OpenType features it
+     * is synthesized: where it changes, font-size shrinks like `smaller`;
+     * text with vertical-align: baseline is moved as by sub/super. */
+    tbox_style_font_variant_position font_variant_position;
     /* `font-kerning`: auto/normal apply the font's kerning pairs (the
      * initial value auto does), none disables them. Inheritable. */
     bool font_kerning_none;
@@ -570,6 +594,7 @@ typedef struct tbox_style {
      * declarado/reconhecido; `LEFT` -- o valor inicial -- sem pai). */
     tbox_style_text_align text_align;
     tbox_style_text_align_last text_align_last; /* inheritable */
+    bool text_justify_none; /* inheritable; `text-justify: none` leaves justified lines at the start */
     /* `font-family`. Fixed buffer, NOT a tbox_string_view -- every
      * field of tbox_style is copied by value, pointing at no external memory;
      * a view would dangle for the synthetic `style=""` stylesheet (v9),
@@ -645,6 +670,7 @@ typedef struct tbox_style {
      * 1.0 -- a hand-built, zero-initialized tbox_style must set it, or the
      * element paints nothing. */
     double opacity;
+    bool isolation_isolate; /* `isolation: isolate`: a stacking context; not inheritable */
     /* transition: color, background-color, opacity; one timing per property. */
     double transition_duration[3], transition_delay[3];
     unsigned char transition_timing[3]; /* 0 ease, 1 linear, 2 ease-in, 3 ease-out, 4 ease-in-out */
@@ -676,6 +702,7 @@ typedef struct tbox_style {
     const tbox_style_custom_properties *custom_properties;
     tbox_style_scrollbar_width scrollbar_width; /* not inheritable */
     bool scrollbar_gutter_stable; /* reserve the vertical scrollbar's inline-end space */
+    tbox_style_overscroll overscroll_y; /* not inheritable */
     /* flexbox, none inheritable. Container properties: */
     tbox_style_flex_direction flex_direction;
     tbox_style_flex_wrap flex_wrap;

@@ -114,10 +114,18 @@ void tbox_context_reveal_focused(tbox_context *ctx) {
         if (max_scroll <= 0.0) continue;
         tbox_scroll_state *state = tbox_context_scroll_state(ctx, ancestor->node);
         if (state == NULL) continue;
-        double view_top = ancestor->padding_box.y;
-        double view_bottom = view_top + ancestor->padding_box.height;
-        double item_top = focused->border_box.y;
-        double item_bottom = item_top + focused->border_box.height;
+        /* scroll-padding shrinks the scrollport, scroll-margin grows the
+         * element's box; percentages of scroll-padding are of the port. */
+        double port = ancestor->padding_box.height;
+        const tbox_style_length *padding = ancestor->style->scroll_padding;
+        double view_top = ancestor->padding_box.y +
+            (padding[0].kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 : tbox_style_length_resolve(padding[0], port));
+        double view_bottom = ancestor->padding_box.y + port -
+            (padding[2].kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 : tbox_style_length_resolve(padding[2], port));
+        const tbox_style_length *margin = focused->style != NULL ? focused->style->scroll_margin : NULL;
+        double item_top = focused->border_box.y - (margin != NULL ? tbox_style_length_resolve(margin[0], port) : 0.0);
+        double item_bottom = focused->border_box.y + focused->border_box.height +
+            (margin != NULL ? tbox_style_length_resolve(margin[2], port) : 0.0);
         double delta = 0.0;
         if (item_top < view_top && item_bottom > view_bottom) {
             continue; /* taller than the viewport and already spans it */
@@ -271,6 +279,8 @@ bool tbox_context_scroll(tbox_context *ctx, double x, double y, double delta_y) 
                 field->reveal = false;
                 return true;
             }
+            /* At its limit: overscroll-behavior decides whether to chain. */
+            if (box->style != NULL && box->style->overscroll_y != TBOX_STYLE_OVERSCROLL_AUTO) return false;
         }
         if (box->style == NULL || box->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_AUTO || box->node == NULL) continue;
         double max_y = box->scroll_content_height - box->content_box.height;
@@ -280,7 +290,10 @@ bool tbox_context_scroll(tbox_context *ctx, double x, double y, double delta_y) 
         double next = state->y + delta_y;
         if (next < 0.0) next = 0.0;
         if (next > max_y) next = max_y;
-        if (next == state->y) continue;
+        if (next == state->y) {
+            if (box->style->overscroll_y != TBOX_STYLE_OVERSCROLL_AUTO) return false;
+            continue;
+        }
         state->y = next;
         return true;
     }

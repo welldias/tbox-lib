@@ -32,7 +32,7 @@ tbox_layout_intrinsic tbox_layout_measure_words(const tbox_layout_word *words, s
         }
         double space     = line_start ? 0.0 : word->space_width;
         double min_width = word->has_min_width ? word->min_width : word->width;
-        bool anywhere = !no_wrap && word->style != NULL && word->style->overflow_wrap_anywhere &&
+        bool anywhere = !no_wrap && word->style != NULL && (word->style->overflow_wrap_anywhere || word->style->line_break_anywhere) &&
                         !word->hard_break && word->image == NULL && word->atomic == NULL &&
                         word->face != NULL && word->text.size > 0;
         if (anywhere) {

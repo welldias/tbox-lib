@@ -258,3 +258,35 @@ tabelas, `@media`, `transition`, `@font-face`, `:active`, temas dos popups
 (`src/output/tbox_window_backend.h`, `tbox_input_event`).
 
 Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
+
+## 2026-10-11 — Propriedades CSS de baixo custo
+
+- **Style**: `border-block-width/-style/-color` e `border-inline-*` (um ou
+  dois valores); `hyphenate-character` (herdado, string até 15 bytes);
+  `clip: rect()` convertido em `clip-path: inset()`; `overscroll-behavior`
+  (eixo vertical); `scroll-margin-*` e `scroll-padding-*` (com formas
+  lógicas, via `tbox_style_resolve_box_edges`). `tbox_style` ganha
+  `overscroll_y`, `hyphenate_character`, `scroll_margin[4]`,
+  `scroll_padding[4]`.
+- **Layout Tree**: o traço da quebra em soft hyphen vem de
+  `hyphenate-character`.
+- **Orchestration**: `tbox_context_scroll` não passa a rolagem ao ancestral
+  com `overscroll-behavior` diferente de `auto`; `tbox_context_reveal_focused`
+  respeita `scroll-padding` e `scroll-margin`.
+- Fixture `115`.
+
+## 2026-10-11 — Mais propriedades CSS de baixo custo
+
+- **Style**: `isolation` (`isolation_isolate`), `text-justify`
+  (`text_justify_none`), `line-break` (`line_break_anywhere`),
+  `font-variant-position` sintetizado (`font_variant_position`; encolhe a
+  fonte onde o valor muda e mapeia para `vertical-align: sub/super`) e
+  `all` (expande a palavra-chave para todas as propriedades da tabela de
+  `tbox_style_keywords.c`). O `display` inicial usado por
+  `initial`/`unset`/`all` passou a ser `inline`, como no CSS.
+- **Layout Tree**: `text-justify: none` não distribui espaço;
+  `line-break: anywhere` quebra como `break-all` e entra no min-content.
+- **Render**: `isolation: isolate` cria contexto de empilhamento.
+- Referência: `@media` e `@font-face` estavam marcados como não suportados
+  por engano; agora `X*`.
+- Fixture `116`.

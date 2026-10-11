@@ -144,6 +144,15 @@ mostram barras de rolagem com polegar arrastável e clique na trilha
 horizontal de container ainda não existe. `position: sticky` (eixo vertical)
 segura a caixa contra a borda do scrollport.
 
+Quando uma rolagem pela roda chega ao limite de um bloco, ela passa para o
+ancestral rolável; `overscroll-behavior: contain` ou `none` (ou as formas
+`-y`/`-block`) interrompe essa passagem. Ao revelar o controle focado, o
+`scroll-padding` do bloco rolável encolhe a área visível e o
+`scroll-margin` do controle aumenta a caixa a manter visível; as formas
+lógicas e os lados de cada uma são aceitos, mas só o eixo vertical tem
+efeito. As formas `-x`/`-inline` de `overscroll-behavior` são aceitas sem
+efeito.
+
 ## Cursor
 
 `tbox_context_cursor_at(ctx, x, y)` devolve o `cursor` CSS do elemento sob o

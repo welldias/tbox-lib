@@ -1884,6 +1884,83 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Logical border axis longhands (one or two values), overscroll-behavior,
+     * hyphenate-character (inherited), scroll-margin/-padding and the legacy
+     * clip: rect() as a clip-path inset on absolutely positioned boxes. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { border-block-width: 2px 6px; border-block-style: solid; border-inline-style: dashed dotted;"
+            " border-inline-width: 3px; border-inline-color: red blue; border-left-width: 9px;"
+            " overscroll-behavior: auto contain; hyphenate-character: \"=\"; scroll-padding: 1px 2px;"
+            " scroll-margin-block-start: 4px; position: absolute; clip: rect(5px, 80px, auto, 10px); }"
+            "p { overscroll-behavior-y: none; overscroll-behavior: auto; position: absolute; clip: rect(1px 2px 3px 4px); clip-path: circle(5px); }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.border_widths[0] == 2.0 && parent.border_widths[2] == 6.0);
+        TBOX_TEST_ASSERT(parent.border_styles[0] == TBOX_STYLE_BORDER_STYLE_SOLID && parent.border_styles[2] == TBOX_STYLE_BORDER_STYLE_SOLID);
+        TBOX_TEST_ASSERT(parent.border_styles[3] == TBOX_STYLE_BORDER_STYLE_DASHED && parent.border_styles[1] == TBOX_STYLE_BORDER_STYLE_DOTTED);
+        TBOX_TEST_ASSERT(parent.border_widths[1] == 3.0 && parent.border_widths[3] == 9.0);
+        TBOX_TEST_ASSERT(rgba_eq(parent.border_colors[3], (tbox_css_rgba){ 255, 0, 0, 255 }) && rgba_eq(parent.border_colors[1], (tbox_css_rgba){ 0, 0, 255, 255 }));
+        TBOX_TEST_ASSERT(parent.overscroll_y == TBOX_STYLE_OVERSCROLL_CONTAIN && child.overscroll_y == TBOX_STYLE_OVERSCROLL_AUTO);
+        TBOX_TEST_ASSERT(strcmp(parent.hyphenate_character, "=") == 0 && strcmp(child.hyphenate_character, "=") == 0);
+        TBOX_TEST_ASSERT(parent.scroll_padding[0].value == 1.0 && parent.scroll_padding[3].value == 2.0);
+        TBOX_TEST_ASSERT(parent.scroll_margin[0].value == 4.0 && parent.scroll_margin[2].value == 0.0 && child.scroll_padding[0].value == 0.0);
+        TBOX_TEST_ASSERT(parent.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET && parent.clip_path.inset[0].value == 5.0 && parent.clip_path.inset[3].value == 10.0);
+        TBOX_TEST_ASSERT(parent.clip_path.inset[1].kind == TBOX_STYLE_LENGTH_PERCENT && parent.clip_path.inset[1].value == 100.0 && parent.clip_path.inset[1].px_offset == -80.0);
+        TBOX_TEST_ASSERT(parent.clip_path.inset[2].kind == TBOX_STYLE_LENGTH_PERCENT && parent.clip_path.inset[2].value == 0.0);
+        TBOX_TEST_ASSERT(child.clip_path.kind == TBOX_STYLE_CLIP_PATH_CIRCLE);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { clip: rect(1px, 2px, 3px, 4px); hyphenate-character: auto; }");
+        parent = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent.clip_path.kind == TBOX_STYLE_CLIP_PATH_NONE && parent.hyphenate_character[0] == '\0');
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* isolation, text-justify, line-break (inherited), font-variant-position
+     * (synthesized: shrinks once where it changes, moves as sub/super) and
+     * `all`, which loses to later declarations of single properties. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p><span>x</span><b>y</b></p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        const tbox_html_node *span = p->first_child;
+        const tbox_html_node *b    = span->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { isolation: isolate; text-justify: none; line-break: anywhere; font-size: 24px; width: 50px; color: red; }"
+            "p { font-variant-position: super; display: inline; margin-top: 7px; color: blue; all: initial; color: green; }"
+            "span { display: inline; text-justify: inter-word; line-break: strict; }"
+            "b { all: inherit; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style mid    = resolve_node(sheet, p, &parent);
+        tbox_style child  = resolve_node(sheet, span, &mid);
+        tbox_style bold   = resolve_node(sheet, b, &mid);
+        TBOX_TEST_ASSERT(parent.isolation_isolate && !mid.isolation_isolate);
+        TBOX_TEST_ASSERT(parent.text_justify_none && parent.line_break_anywhere);
+        /* all: initial on p resets the inherited and its own values, but
+         * the later color wins; font-variant-position is reset too. */
+        TBOX_TEST_ASSERT(!mid.text_justify_none && !mid.line_break_anywhere && mid.margin[0].value == 0.0);
+        TBOX_TEST_ASSERT(rgba_eq(mid.color, (tbox_css_rgba){ 0, 128, 0, 255 }));
+        TBOX_TEST_ASSERT(mid.display == TBOX_STYLE_DISPLAY_INLINE && mid.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL);
+        TBOX_TEST_ASSERT(!child.text_justify_none && !child.line_break_anywhere);
+        TBOX_TEST_ASSERT(bold.margin[0].value == mid.margin[0].value && rgba_eq(bold.color, mid.color));
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet = parse_css_cstr("div { font-size: 24px; } p { display: inline; font-variant-position: super; } span { display: inline; } b { display: inline-block; font-variant-position: sub; }");
+        parent = resolve_node(sheet, div, NULL);
+        mid    = resolve_node(sheet, p, &parent);
+        child  = resolve_node(sheet, span, &mid);
+        bold   = resolve_node(sheet, b, &mid);
+        TBOX_TEST_ASSERT(mid.font_size == 20.0 && mid.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_SUPER);
+        TBOX_TEST_ASSERT(child.font_size == 20.0 && child.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_SUPER); /* inherited, not compounded */
+        TBOX_TEST_ASSERT(bold.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUB && bold.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BASELINE);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* Length units: rem against the root's font size, absolute units at
      * 96px per inch, ex/ch as half an em, viewport units only with a
      * viewport. */

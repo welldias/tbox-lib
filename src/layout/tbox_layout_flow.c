@@ -262,6 +262,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.visibility_hidden        = container_style->visibility_hidden;
     anon.white_space              = container_style->white_space;
     anon.word_break_all           = container_style->word_break_all;
+    anon.line_break_anywhere      = container_style->line_break_anywhere;
     anon.text_transform           = container_style->text_transform;
     anon.list_style_type          = container_style->list_style_type;
     anon.word_spacing             = container_style->word_spacing;
@@ -284,14 +285,19 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.font_weight              = container_style->font_weight;
     anon.font_stretch             = container_style->font_stretch;
     anon.font_small_caps          = container_style->font_small_caps;
+    anon.font_variant_position    = container_style->font_variant_position;
+    if (anon.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL) /* synthesized, see tbox_style */
+        anon.vertical_align = anon.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUB ? TBOX_STYLE_VERTICAL_ALIGN_SUB : TBOX_STYLE_VERTICAL_ALIGN_SUPER;
     anon.font_kerning_none        = container_style->font_kerning_none;
     anon.word_break_keep_all      = container_style->word_break_keep_all;
     anon.hyphens_none             = container_style->hyphens_none;
+    memcpy(anon.hyphenate_character, container_style->hyphenate_character, sizeof(anon.hyphenate_character));
     anon.tab_size                 = container_style->tab_size;
     anon.tab_size_length          = container_style->tab_size_length;
     anon.list_style_inside        = container_style->list_style_inside;
     anon.cursor                   = container_style->cursor;
     anon.text_align_last          = container_style->text_align_last;
+    anon.text_justify_none        = container_style->text_justify_none;
     anon.visibility_collapse      = container_style->visibility_collapse;
     anon.empty_cells_hide         = container_style->empty_cells_hide;
     anon.image_rendering_pixelated     = container_style->image_rendering_pixelated;

@@ -117,6 +117,23 @@ formato atual do código. O texto integral original de cada versão está em
 - **Palavras-chave globais (`inherit`/`initial`/`unset`) e `var()`** são
   resolvidas por remoção das declarações antes da passada principal e cópia
   posterior dos campos (v18, v19).
+- **`clip: rect()` reaproveita `clip-path: inset()`**: os lados direito e
+  inferior viram `calc(100% - Npx)` em `tbox_style_length`, então render e
+  hit-test não mudaram. Alternativa descartada: um campo `clip` próprio com
+  seu caminho de recorte. `clip` fica fora da tabela de palavras-chave
+  globais porque divide o campo com `clip-path` (`clip: initial` apagaria um
+  `clip-path`) (2026-10-11).
+- **`font-variant-position` sintetizado na Style**, não no Layout: a fonte
+  encolhe só onde o valor muda (herdar não acumula) e o deslocamento reusa
+  `vertical-align: sub/super`, que não acumula entre aninhados. Sem shaping
+  não há como usar os glifos OpenType (2026-10-11).
+- **`all` reaproveita a tabela de campos das palavras-chave globais**: cada
+  propriedade da tabela recebe a palavra-chave, respeitando a prioridade de
+  declarações específicas (`tbox_style_field_overridden`). O que não está na
+  tabela não é afetado (2026-10-11).
+- **`hyphenate-character` num buffer fixo de 16 bytes, `""` = `auto`**,
+  como `text_overflow_string`; o custo é tratar a string vazia explícita
+  como `auto` (2026-10-11).
 
 ## Texto e fontes
 

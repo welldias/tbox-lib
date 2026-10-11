@@ -595,10 +595,11 @@ static bool tbox_render_is_z_box(const tbox_layout_box *box) {
     return box->style != NULL && box->style->position != TBOX_STYLE_POSITION_STATIC && !box->style->z_index_auto;
 }
 
-/* A stacking context root: a z-index box, or one with opacity below 1 --
- * opacity fades the whole subtree, z-indexed descendants included. */
+/* A stacking context root: a z-index box, one with opacity below 1 --
+ * opacity fades the whole subtree, z-indexed descendants included -- or
+ * one with `isolation: isolate`. */
 static bool tbox_render_is_context(const tbox_layout_box *box) {
-    return tbox_render_is_z_box(box) || (box->style != NULL && box->style->opacity < 1.0);
+    return tbox_render_is_z_box(box) || (box->style != NULL && (box->style->opacity < 1.0 || box->style->isolation_isolate));
 }
 
 /* A positioned box: painted by its stacking context after the in-flow

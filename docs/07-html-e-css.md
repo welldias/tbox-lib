@@ -116,7 +116,10 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
 - **Funções**: `calc()` (`+ - * /`, parênteses, aninhado), `min()`, `max()`,
   `clamp()`, `var()` com fallback (custom properties `--nome`, herdadas).
 - **Palavras-chave globais**: `inherit`, `initial`, `unset` (`revert` age
-  como `unset`).
+  como `unset`), também via `all`, que as aplica a toda propriedade que a
+  tbox resolve (custom properties ficam de fora); uma declaração de
+  prioridade maior de uma propriedade específica ainda vence. O `display`
+  inicial é `inline`, como no CSS.
 - **Cores**: nomes CSS, hexadecimal (`#rgb`, `#rrggbb`), `rgb()`/`hsl()` nas duas
   sintaxes, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color-mix()`,
   `transparent`, `currentColor`.

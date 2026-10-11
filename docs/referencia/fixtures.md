@@ -88,3 +88,5 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 112 | `<base href>` para CSS e imagens locais |
 | 113 | `<map>`/`<area>` com regiões retangulares, circulares e poligonais |
 | 114 | `<ruby>`, `<rt>` e `<rp>` com anotação simples e múltiplos trechos |
+| 115 | `border-block-*`/`border-inline-*` (longhands por eixo), `hyphenate-character`, `clip: rect()`, `overscroll-behavior`, `scroll-margin`, `scroll-padding` |
+| 116 | `isolation`, `text-justify`, `line-break: anywhere`, `font-variant-position`, `all` |

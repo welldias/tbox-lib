@@ -48,6 +48,11 @@ negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
   `oblique` usa itálico), `font-stretch`, `font-variant: small-caps`
   (sintetizado), shorthand `font`.
 - `font-kerning` (ligado por padrão; mesma regra na medição e no desenho).
+- `font-variant-position: sub`/`super`, sintetizado (sem recursos
+  OpenType): onde o valor muda, a fonte encolhe como `smaller` (÷1,2), e o
+  texto com `vertical-align: baseline` sobe/desce como `super`/`sub`.
+  Inline-blocks e imagens não se movem. Não é lido do shorthand
+  `font-variant`.
 - `@font-face` com arquivos locais.
 - Decorações (`underline`, `overline`, `line-through`, estilos sólido,
   tracejado, pontilhado, duplo e ondulado), `text-shadow`,

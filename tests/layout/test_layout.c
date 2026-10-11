@@ -1428,6 +1428,28 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* text-justify: none keeps justified lines at the start; line-break:
+     * anywhere breaks inside words like break-all. */
+    {
+        tbox_html_document *doc        = parse_html_cstr("<div><p id=\"j\">aa bb cc dd ee ff gg hh ii jj</p><p id=\"a\">ab cdefghijklmnopqrstuvwxyz</p></div>");
+        const tbox_html_node *root     = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet     = parse_css_cstr("p { width: 100px; } #j { text-align: justify; text-justify: none; } #a { line-break: anywhere; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *j       = find_box_for_node(layout, find_html_id(root, "j"));
+        const tbox_layout_box *a       = find_box_for_node(layout, find_html_id(root, "a"));
+        TBOX_TEST_ASSERT(j != NULL && j->text_run_count >= 2 && a != NULL && a->text_run_count >= 2);
+        if (j != NULL && j->text_run_count >= 2)
+            TBOX_TEST_ASSERT(j->text_runs[0].rect.x + j->text_runs[0].rect.width < j->content_box.x + j->content_box.width - 1.0);
+        if (a != NULL && a->text_run_count >= 2)
+            TBOX_TEST_ASSERT(a->text_runs[0].text.size > 3 && a->text_runs[0].rect.width <= 100.0);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* text-align: justify stretches every line but the last to the full
      * width; the last line stays left-aligned. */
     {
@@ -3951,6 +3973,7 @@ int tbox_test_layout_run(void) {
             "<div id=\"min\">aa bbbb c</div><div id=\"max\">aa bbbb c</div><div id=\"fit\">aa bbbb c</div>"
             "<p id=\"hang\">aa bb cc dd ee ff gg hh ii jj</p>"
             "<p id=\"shy\">xx extra&shy;ordinario</p>"
+            "<p id=\"shy2\">xx extra&shy;ordinario</p>"
             "<p id=\"bal\">aa bb cc dd ee ff gg hh</p>"
             "<p id=\"item\">texto</p>"
             "</div>");
@@ -3959,7 +3982,7 @@ int tbox_test_layout_run(void) {
             "#min { width: min-content; } #max { width: max-content; } #fit { width: fit-content; }"
             "p { font-size: 16px; }"
             "#hang { width: 120px; text-indent: 20px hanging; }"
-            "#shy { width: 90px; }"
+            "#shy, #shy2 { width: 90px; } #shy2 { hyphenate-character: \"~\"; }"
             "#bal { width: 120px; text-wrap: balance; }"
             "#item { display: list-item; list-style-type: square; }");
         tbox_arena arena               = tbox_arena_create(0);
@@ -3989,6 +4012,10 @@ int tbox_test_layout_run(void) {
             TBOX_TEST_ASSERT(string_view_equal_cstr(shy->text_runs[0].text, "xx extra-"));
             TBOX_TEST_ASSERT(string_view_equal_cstr(shy->text_runs[1].text, "ordinario"));
         }
+        const tbox_layout_box *shy2 = find_box_for_node(layout, find_html_id(root, "shy2"));
+        TBOX_TEST_ASSERT(shy2 != NULL && shy2->text_run_count == 2);
+        if (shy2 != NULL && shy2->text_run_count == 2)
+            TBOX_TEST_ASSERT(string_view_equal_cstr(shy2->text_runs[0].text, "xx extra~"));
 
         const tbox_layout_box *bal = find_box_for_node(layout, find_html_id(root, "bal"));
         TBOX_TEST_ASSERT(bal != NULL && bal->text_run_count == 2);

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .card {
+      width: 170px;
+      padding: 8px;
+      background: white;
+    }
+
+    /* isolation: sem ela, o filho com z-index: -1 pinta sob o fundo da
+   .scene (some); com isolation: isolate, pinta sobre o fundo do cartão. */
+    .scene {
+      background: #cbd5e1;
+      padding: 8px;
+    }
+
+    .stack {
+      position: relative;
+      width: 170px;
+      height: 70px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .stack .under {
+      position: absolute;
+      z-index: -1;
+      left: 40px;
+      top: 30px;
+      width: 100px;
+      height: 50px;
+      background: #f97316;
+    }
+
+    .isolated {
+      isolation: isolate;
+    }
+
+    .justify {
+      text-align: justify;
+    }
+
+    .no-justify {
+      text-align: justify;
+      text-justify: none;
+    }
+
+    .break-normal {
+      width: 120px;
+    }
+
+    .break-anywhere {
+      width: 120px;
+      line-break: anywhere;
+    }
+
+    .sup {
+      font-variant-position: super;
+    }
+
+    .sub {
+      font-variant-position: sub;
+    }
+
+    .reset {
+      color: #dc2626;
+      font-weight: bold;
+      text-decoration: underline;
+      padding: 4px;
+      background: #fee2e2;
+    }
+
+    .reset span {
+      all: initial;
+    }
+
+    .reset em {
+      all: unset;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>isolation, text-justify, line-break, font-variant-position e all</h1>
+
+  <h2>isolation (laranja: z-index: -1)</h2>
+  <div class="row scene">
+    <div class="stack">sem isolation<div class="under"></div>
+    </div>
+    <div class="stack isolated">isolation: isolate<div class="under"></div>
+    </div>
+  </div>
+
+  <h2>text-justify</h2>
+  <div class="row">
+    <p class="card justify">auto: o texto justificado distribui o espaço entre as palavras de cada linha.</p>
+    <p class="card no-justify">none: o texto justificado distribui o espaço entre as palavras de cada linha.</p>
+  </div>
+
+  <h2>line-break</h2>
+  <p class="card break-normal">auto: http://exemplo.com/caminho/muito/longo</p>
+  <p class="card break-anywhere">anywhere: http://exemplo.com/caminho/muito/longo</p>
+
+  <h2>font-variant-position</h2>
+  <p>H<span class="sub">2</span>O e E = mc<span class="sup">2</span>; nota<span class="sup">a, <b>b</b></span></p>
+
+  <h2>all</h2>
+  <p class="reset">Texto vermelho, <span>all: initial</span> e <em>all: unset (herda)</em>.</p>
+</body>
+
+</html>

@@ -1450,6 +1450,32 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* isolation: isolate makes an in-flow box a stacking context, so its
+     * z-index:-1 child paints over the box's background, not under it. */
+    for (int isolate = 0; isolate < 2; isolate++) {
+        tbox_style root_style = tbox_test_render_default_style();
+        tbox_style host_style = tbox_test_render_default_style();
+        tbox_style kid_style  = tbox_test_render_default_style();
+        host_style.background_color  = (tbox_css_rgba){ 50, 0, 0, 255 };
+        host_style.isolation_isolate = isolate != 0;
+        kid_style.position           = TBOX_STYLE_POSITION_ABSOLUTE;
+        kid_style.z_index            = -1;
+        kid_style.z_index_auto       = false;
+        kid_style.background_color   = (tbox_css_rgba){ 60, 0, 0, 255 };
+        tbox_layout_box root = tbox_test_render_default_box(&root_style);
+        tbox_layout_box host = tbox_test_render_default_box(&host_style);
+        tbox_layout_box kid  = tbox_test_render_default_box(&kid_style);
+        host.border_box = kid.border_box = (tbox_rect){ 0, 0, 10, 10 };
+        host.parent = &root, root.first_child = &host;
+        kid.parent = &host, host.first_child = &kid;
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &root);
+        TBOX_TEST_ASSERT(list.count == 2);
+        if (list.count == 2)
+            TBOX_TEST_ASSERT(list.items[0].color.r == (isolate ? 50 : 60) && list.items[1].color.r == (isolate ? 60 : 50));
+        tbox_arena_destroy(&arena);
+    }
+
     /* 3D borders shade by side; filter transforms solid colors and hands
      * images/gradients a matrix; clip-path sets a rounded clip on the
      * subtree's ops; a dashed rounded border becomes round stamps. */

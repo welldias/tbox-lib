@@ -168,6 +168,18 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   não está implementado.
 - **Quando revisitar:** um tooltip que precise "abraçar" o conteúdo.
 
+### Bloco dentro de conteúdo inline some
+
+- **O que é:** um filho `display: block` no meio do texto de um parágrafo
+  (ex.: `<p>um <span style="display:block">dois</span> três</p>`) não é
+  desenhado; o CSS 2.1 §9.2.1.1 o colocaria numa caixa de bloco própria
+  entre as linhas de antes e de depois.
+- **Por que importa:** apareceu com `all: initial` enquanto o `display`
+  inicial era `block`; também vale para qualquer `display: block`
+  declarado.
+- **Toca:** `tbox_layout_build_anonymous_box` e a separação de runs inline
+  em `tbox_layout_flow.c`.
+
 ### Containing block de ancestral posicionado com `height: auto`
 
 - **O que é:** o `padding_box` passado como containing block aos descendentes
