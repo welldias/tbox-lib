@@ -416,25 +416,29 @@ static bool tbox_css_cascade_ends_in_pseudo_element(const tbox_css_selector *sel
     return pseudo == NULL || tbox_string_view_equal_cstr(tbox_string_view_make(last->name.data + 2, last->name.size - 2), pseudo);
 }
 
-static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion);
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion, bool starting);
 
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0.0, 0.0, false);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0.0, 0.0, false, false);
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, 0.0, 0.0, false);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, 0.0, 0.0, false, false);
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, viewport_width, viewport_height, reduced_motion);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, viewport_width, viewport_height, reduced_motion, false);
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, viewport_width, viewport_height, reduced_motion);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, viewport_width, viewport_height, reduced_motion, false);
 }
 
-static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion) {
+tbox_css_computed_style tbox_css_cascade_resolve_starting_style_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, viewport_width, viewport_height, reduced_motion, true);
+}
+
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion, bool starting) {
     tbox_css_computed_style result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (node == NULL) {
         return result;
@@ -459,6 +463,7 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
         for (size_t r = 0; r < ruleset_count; r++) {
             const tbox_css_ruleset *ruleset = &rulesets[r];
             if (ruleset->media != NULL && !tbox_css_media_matches(ruleset->media, viewport_width, viewport_height, reduced_motion)) continue;
+            if (ruleset->starting_style && !starting) continue;
 
             const tbox_css_selector *best_selector = NULL;
             tbox_css_specificity best_specificity  = { 0, 0, 0 };

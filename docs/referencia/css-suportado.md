@@ -154,7 +154,7 @@ ignorados sem erro — o parser é tolerante.
 | | font-language-override | Controls the usage of language-specific glyphs in a typeface |
 | | @font-palette-values | Allows you to customize the default values of a font-palette |
 | X | font-size | Specifies the font size of text |
-| | font-size-adjust | Preserves the readability and size of text when fallback font occurs |
+| X* | font-size-adjust | Preserves the readability and size of text when fallback font occurs |
 | X | font-stretch | Selects a normal, condensed, or expanded face from a font family |
 | X | font-style | Specifies the font style for text |
 | X* | font-synthesis | Controls which missing typefaces (bold or italic) may be synthesized by the browser |
@@ -248,7 +248,7 @@ ignorados sem erro — o parser é tolerante.
 | X | min-inline-size | Sets the minimum size of an element in the inline direction |
 | X | min-width | Sets the minimum width of an element |
 | | mix-blend-mode | Specifies how an element's content should blend with its direct parent background |
-| | @namespace | Defines an XML namespace to be used in the style sheet |
+| X* | @namespace | Defines an XML namespace to be used in the style sheet |
 | X | object-fit | Specifies how the contents of a replaced element should be fitted to the box established by its used height and width |
 | X | object-position | Specifies the alignment of the replaced element inside its box |
 | | offset | A shorthand property for the offset-anchor, offset-distance, offset-path, offset-position, and the offset-rotate properties |
@@ -306,7 +306,7 @@ ignorados sem erro — o parser é tolerante.
 | X | row-gap | Specifies the gap between the grid rows |
 | | scale | Specifies the size of an element by scaling up or down |
 | | @scope | Allows you to select elements in specific DOM subtrees and target elements precisely without writing overly-specific selectors |
-| | scroll-behavior | Specifies whether to smoothly animate the scroll position in a scrollable box, instead of a straight jump |
+| X* | scroll-behavior | Specifies whether to smoothly animate the scroll position in a scrollable box, instead of a straight jump |
 | X* | scroll-margin | Specifies the margin between the snap position and the container |
 | X* | scroll-margin-block | Specifies the margin between the snap position and the container in the block direction |
 | X* | scroll-margin-block-end | Specifies the end margin between the snap position and the container in the block direction |
@@ -336,7 +336,7 @@ ignorados sem erro — o parser é tolerante.
 | X* | scrollbar-gutter | Reserves space for the scrollbar so content does not shift when it appears |
 | X | scrollbar-width | Specifies the thickness of the scrollbar (auto, thin or none) |
 | | shape-outside | Defines a shape for wrapping for the inline content |
-| | @starting-style | Defines an element's starting styles before the element gets its first style update |
+| X* | @starting-style | Defines an element's starting styles before the element gets its first style update |
 | | @supports | Used to test whether a browser supports a CSS feature |
 | X | tab-size | Specifies the width of a tab character |
 | X | table-layout | Defines the algorithm used to lay out table cells, rows, and columns |

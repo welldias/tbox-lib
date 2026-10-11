@@ -366,6 +366,33 @@ int tbox_test_css_parser_parser_run(void) {
         tbox_css_stylesheet_destroy(ss);
     }
 
+    /* 25c: @namespace (default or prefixed) is accepted and skipped; a
+     * rule with a namespaced selector (`svg|circle`) is dropped, while the
+     * rules around it survive. */
+    {
+        tbox_css_stylesheet *ss = parse_cstr(
+            "@namespace url(http://www.w3.org/1999/xhtml);"
+            "@namespace svg url(http://www.w3.org/2000/svg);"
+            "p{color:red;} svg|circle{fill:red;} a{color:blue;}");
+        const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 2);
+        if (tbox_css_stylesheet_ruleset_count(ss) == 2) {
+            TBOX_TEST_ASSERT(text_eq(r[0].selectors[0].simple_selectors[0].name, "p"));
+            TBOX_TEST_ASSERT(text_eq(r[1].selectors[0].simple_selectors[0].name, "a"));
+        }
+        tbox_css_stylesheet_destroy(ss);
+    }
+
+    /* 25d: @starting-style keeps its rules, flagged; inside @layer too. */
+    {
+        tbox_css_stylesheet *ss = parse_cstr("p{opacity:1;} @starting-style { p{opacity:0;} } @layer x { @starting-style { a{color:red;} } }");
+        const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 3);
+        if (tbox_css_stylesheet_ruleset_count(ss) == 3)
+            TBOX_TEST_ASSERT(!r[0].starting_style && r[1].starting_style && r[2].starting_style && r[2].layer != 0);
+        tbox_css_stylesheet_destroy(ss);
+    }
+
     /* 26: an unclosed block runs safely to EOF and still yields whatever was
      * captured before EOF. */
     {

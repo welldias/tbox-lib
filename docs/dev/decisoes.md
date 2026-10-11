@@ -63,6 +63,12 @@ formato atual do código. O texto integral original de cada versão está em
 
 ## API pública e interatividade
 
+- **`scroll-behavior: smooth` só anima rolagens feitas pela tbox** (foco,
+  clique na trilha); roda e arrasto do polegar são manipulação direta e
+  continuam imediatos, como esperado num app (2026-10-11).
+- **Screenshot headless mostra a página assentada**: com `@starting-style`
+  o primeiro frame inicia uma animação; capturar o estado inicial deixaria
+  elementos invisíveis (2026-10-11).
 - **`cursor: auto` mantém a seta sobre texto comum**, ao contrário dos
   navegadores: numa interface de aplicação o texto raramente é para
   selecionar, e o I-beam sugeriria o contrário. Campos editáveis e links

@@ -3331,6 +3331,9 @@ static void tbox_style_resolve_extras(const tbox_css_computed_style *computed, c
     if (decl != NULL && tbox_style_is(decl->value, "stable"))
         style->scrollbar_gutter_stable = true;
 
+    decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("scroll-behavior"));
+    style->scroll_behavior_smooth = decl != NULL && tbox_style_is(decl->value, "smooth");
+
     /* overscroll-behavior: one or two of auto | contain | none (x, then y);
      * -y and -block set the vertical axis alone. There is no horizontal
      * scrolling, so the x/inline forms have nothing to change. */
@@ -3947,6 +3950,20 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
             style.font_kerning_none = true;
         else if (tbox_style_is(kerning->value, "auto") || tbox_style_is(kerning->value, "normal"))
             style.font_kerning_none = false;
+    }
+    /* font-size-adjust: none | from-font | [ex-height]? <number>. Only the
+     * ex-height metric is supported; from-font keeps the used font's own
+     * aspect, i.e. no adjustment (an element has a single font here). */
+    style.font_size_adjust = parent_style != NULL ? parent_style->font_size_adjust : 0.0;
+    const tbox_css_resolved_declaration *size_adjust = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-size-adjust"));
+    if (size_adjust != NULL) {
+        tbox_string_view tokens[3];
+        size_t count = tbox_style_tokens(size_adjust->value, tokens, 3);
+        double number;
+        if (count == 1 && (tbox_style_is(tokens[0], "none") || tbox_style_is(tokens[0], "from-font")))
+            style.font_size_adjust = 0.0;
+        else if ((count == 1 || (count == 2 && tbox_style_is(tokens[0], "ex-height"))) && tbox_style_parse_number(tokens[count - 1], &number) && number >= 0.0)
+            style.font_size_adjust = number;
     }
     const tbox_css_resolved_declaration *variant_caps = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-variant-caps"));
     if (variant_caps != NULL) {

@@ -2,6 +2,7 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_TRUETYPE_TABLES_H
 
 #include <stdlib.h>
 #include <string.h>
@@ -124,6 +125,17 @@ double tbox_font_face_ascent(const tbox_font_face *face) {
      * 26.6 fixed-point -- same conversion as tbox_font_face_line_height
      * above. */
     return face->ft_face->size->metrics.ascender / 64.0;
+}
+
+double tbox_font_face_x_height(const tbox_font_face *face) {
+    if (face == NULL)
+        return 0.0;
+    const TT_OS2 *os2 = (const TT_OS2 *)FT_Get_Sfnt_Table(face->ft_face, FT_SFNT_OS2);
+    if (os2 != NULL && os2->version >= 2 && os2->sxHeight > 0)
+        return FT_MulFix(os2->sxHeight, face->ft_face->size->metrics.y_scale) / 64.0;
+    if (FT_Load_Char(face->ft_face, 'x', FT_LOAD_DEFAULT) != 0)
+        return 0.0;
+    return face->ft_face->glyph->metrics.horiBearingY / 64.0;
 }
 
 bool tbox_font_face_has_glyph(const tbox_font_face *face, uint32_t codepoint) {

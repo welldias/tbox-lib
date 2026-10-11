@@ -116,6 +116,10 @@ typedef struct tbox_css_ruleset {
      * layer after its own sublayers, comes later). See
      * tbox_css_cascade_priority_compare for how it weighs. */
     unsigned layer;
+    /* Inside `@starting-style`: ignored by the normal cascade, used only
+     * for the starting style a transition begins from when the element
+     * first appears (tbox_css_cascade_resolve_starting_style_in_viewport). */
+    bool starting_style;
 } tbox_css_ruleset;
 
 typedef struct tbox_css_font_face_rule {

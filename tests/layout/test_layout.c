@@ -1472,6 +1472,30 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* font-size-adjust: the face is rescaled so its x-height is
+     * adjust * font-size; `none` keeps the declared size. */
+    {
+        tbox_html_document *doc        = parse_html_cstr("<div><p id=\"a\">xxxx</p><p id=\"n\">xxxx</p></div>");
+        const tbox_html_node *root     = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet     = parse_css_cstr("p { font-size: 20px; } #a { font-size-adjust: ex-height 0.7; } #n { font-size-adjust: none; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *a       = find_box_for_node(layout, find_html_id(root, "a"));
+        const tbox_layout_box *n       = find_box_for_node(layout, find_html_id(root, "n"));
+        TBOX_TEST_ASSERT(a != NULL && a->text_run_count == 1 && n != NULL && n->text_run_count == 1);
+        if (a != NULL && a->text_run_count == 1 && n != NULL && n->text_run_count == 1) {
+            double adjusted = tbox_font_face_x_height(a->text_runs[0].font), plain = tbox_font_face_x_height(n->text_runs[0].font);
+            TBOX_TEST_ASSERT(plain > 0.0 && plain < 14.0);
+            TBOX_TEST_ASSERT(fabs(adjusted - 14.0) < 0.75);
+            TBOX_TEST_ASSERT(a->text_runs[0].rect.width > n->text_runs[0].rect.width);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* text-justify: none keeps justified lines at the start; line-break:
      * anywhere breaks inside words like break-all. */
     {

@@ -562,6 +562,10 @@ typedef struct tbox_style {
     /* `font-kerning`: auto/normal apply the font's kerning pairs (the
      * initial value auto does), none disables them. Inheritable. */
     bool font_kerning_none;
+    /* `font-size-adjust` (inheritable): the wanted x-height as a fraction
+     * of font-size; 0 is `none`. Layout scales the face's size so its
+     * x-height matches; `em` keeps using font_size. */
+    double font_size_adjust;
     /* `border` shorthand (width + style + color, order-free, each
      * optional -- only `solid` is ever painted). Not inheritable, same
      * treatment as `width`/`background-color`: always cascade-or-initial,
@@ -711,6 +715,7 @@ typedef struct tbox_style {
     tbox_style_scrollbar_width scrollbar_width; /* not inheritable */
     bool scrollbar_gutter_stable; /* reserve the vertical scrollbar's inline-end space */
     tbox_style_overscroll overscroll_y; /* not inheritable */
+    bool scroll_behavior_smooth; /* `scroll-behavior: smooth`; not inheritable */
     /* flexbox, none inheritable. Container properties: */
     tbox_style_flex_direction flex_direction;
     tbox_style_flex_wrap flex_wrap;

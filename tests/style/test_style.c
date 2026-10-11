@@ -1985,6 +1985,26 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* font-size-adjust: a number or `ex-height <number>`, inherited;
+     * none/from-font turn it off; other metrics are ignored. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p><span>x</span></p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        const tbox_html_node *span = p->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { font-size-adjust: 0.5; } p { font-size-adjust: cap-height 0.7; } span { font-size-adjust: from-font; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style mid    = resolve_node(sheet, p, &parent);
+        tbox_style child  = resolve_node(sheet, span, &mid);
+        TBOX_TEST_ASSERT(parent.font_size_adjust == 0.5 && mid.font_size_adjust == 0.5 && child.font_size_adjust == 0.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet  = parse_css_cstr("div { font-size-adjust: ex-height 0.6; }");
+        parent = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(parent.font_size_adjust == 0.6);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* font-synthesis: the shorthand lists what may be synthesized, the
      * longhands toggle one part; without position synthesis,
      * font-variant-position neither shrinks nor moves the text. */

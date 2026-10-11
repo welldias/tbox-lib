@@ -70,7 +70,7 @@ obtém por `tbox_app_context(app)`; sem janela, você o abre direto.
 | `tbox_context_open(html, len, css, len, fonts, images)` | Parseia e guarda. `fonts`/`images` são emprestados (`images` pode ser `NULL`). |
 | `tbox_context_open_with_config` / `_with_options` | Mesmas variantes de `tbox_app`. |
 | `tbox_context_run_frame(ctx, w, h, &list)` | Recalcula tudo e devolve a display list (válida até o próximo frame). |
-| `tbox_context_set_animation_time(ctx, s)` / `tbox_context_animations_active(ctx)` | Tempo para `transition`; quando há animação ativa, continue gerando frames. |
+| `tbox_context_set_animation_time(ctx, s)` / `tbox_context_animations_active(ctx)` | Tempo para `transition` e rolagem suave; quando há animação ativa, continue gerando frames. |
 | `tbox_context_close(ctx)` | Libera documento, folhas e arena de frame. Não toca `fonts`/`images`. |
 | `tbox_context_document(ctx)` | O `tbox_html_document`, necessário para mutar o DOM. |
 

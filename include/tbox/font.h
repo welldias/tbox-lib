@@ -133,6 +133,11 @@ double tbox_font_face_line_height(const tbox_font_face *face);
  * baseline-relative, not line-top-relative). */
 double tbox_font_face_ascent(const tbox_font_face *face);
 
+/* The x-height (height of a lowercase "x") at `face`'s loaded pixel size,
+ * from the font's OS/2 table, else measured from the "x" glyph; 0 when
+ * neither is available (or `face` is NULL). Used by font-size-adjust. */
+double tbox_font_face_x_height(const tbox_font_face *face);
+
 /* True when the face contains a drawable glyph for `codepoint` (not the
  * font's missing-glyph replacement). Useful before selecting a font for
  * symbols such as U+2713 CHECK MARK. */

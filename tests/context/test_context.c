@@ -1759,6 +1759,82 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* scroll-behavior: smooth -- revealing the focused control eases the
+     * list over 0.3s of animation time (positions unchanged on the frame
+     * that starts it, part-way in the middle, exact at the end) and keeps
+     * animations_active up meanwhile; `auto` scrolls at once. */
+    for (int smooth = 0; smooth < 2; smooth++) {
+        char css[320];
+        snprintf(css, sizeof(css),
+            "#list { width: 100px; height: 50px; overflow-y: auto; scroll-behavior: %s; } "
+            "button { display: block; width: 70px; height: 20px; margin: 0px; padding: 0px; border: 0px solid black; } "
+            "button:focus { border: 0px solid black; }", smooth ? "smooth" : "auto");
+        tbox_context *ctx = open_cstr("<div id='list'><button>A</button><button>B</button><button>C</button><button>D</button></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_set_animation_time(ctx, 1.0);
+            tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            for (int i = 0; i < 4; i++)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            const tbox_layout_box *list_box = NULL;
+            double tops[3];
+            const double times[3] = { 1.0, 1.15, 1.5 };
+            for (int f = 0; f < 3; f++) {
+                tbox_context_set_animation_time(ctx, times[f]);
+                tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+                const tbox_layout_box *root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
+                while (root_box != NULL && root_box->parent != NULL)
+                    root_box = root_box->parent;
+                list_box = find_layout_box(root_box, tbox_html_document_root(tbox_context_document(ctx))->first_child);
+                tops[f]  = list_box != NULL && list_box->first_child != NULL ? list_box->first_child->border_box.y - list_box->content_box.y : 0.0;
+                if (f == 1)
+                    TBOX_TEST_ASSERT(tbox_context_animations_active(ctx) == (smooth != 0));
+            }
+            if (smooth) {
+                TBOX_TEST_ASSERT(fabs(tops[0]) < 0.01);                        /* starts from where it was */
+                TBOX_TEST_ASSERT(tops[1] < -0.5 && tops[1] > -29.5);           /* part-way */
+                TBOX_TEST_ASSERT(fabs(tops[2] + 30.0) < 0.01);                 /* D's bottom at the list's */
+                TBOX_TEST_ASSERT(!tbox_context_animations_active(ctx));
+            } else {
+                TBOX_TEST_ASSERT(fabs(tops[0] + 30.0) < 0.01 && fabs(tops[1] + 30.0) < 0.01);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* @starting-style: an element fades in from its starting style when it
+     * first appears and again when it leaves display: none; the rule never
+     * applies on its own. */
+    {
+        tbox_context *ctx = open_cstr("<div><div id='box'>x</div></div>",
+            "#box { opacity: 1; transition: opacity 1s linear; } #box.hidden { display: none; }"
+            "@starting-style { #box { opacity: 0; } }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_html_node *box = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const double times[4] = { 1.0, 1.5, 2.1, 3.0 }, expected[4] = { 0.0, 0.5, 1.0, 1.0 };
+            for (int round = 0; round < 2; round++) {
+                if (round == 1) {
+                    /* hide, then show again */
+                    tbox_html_node_set_attribute(tbox_context_document(ctx), box, tbox_string_view_make("class", 5), tbox_string_view_make("hidden", 6));
+                    tbox_context_set_animation_time(ctx, 5.0);
+                    tbox_context_run_frame(ctx, 200.0, 100.0, &list);
+                    tbox_html_node_remove_attribute(box, tbox_string_view_make("class", 5));
+                }
+                for (int f = 0; f < 4; f++) {
+                    tbox_context_set_animation_time(ctx, times[f] + round * 10.0);
+                    tbox_context_run_frame(ctx, 200.0, 100.0, &list);
+                    const tbox_layout_box *layout_box = find_context_box(ctx, box);
+                    TBOX_TEST_ASSERT(layout_box != NULL && fabs(layout_box->style->opacity - expected[f]) < 0.02);
+                }
+                TBOX_TEST_ASSERT(!tbox_context_animations_active(ctx));
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
     /* overscroll-behavior: contain stops a wheel scroll at the inner
      * list's limit from chaining to the outer one; auto chains. */
     for (int contain = 0; contain < 2; contain++) {

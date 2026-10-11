@@ -48,6 +48,12 @@ negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
   `oblique` usa itálico), `font-stretch`, `font-variant: small-caps`
   (sintetizado), shorthand `font`.
 - `font-kerning` (ligado por padrão; mesma regra na medição e no desenho).
+- `font-size-adjust: <número>` / `ex-height <número>` (herdado): a face é
+  carregada num tamanho em que a altura do "x" (`tbox_font_face_x_height`:
+  métrica OS/2, ou o glifo "x") é número × `font-size`. Unidades `em`
+  continuam usando o `font-size` declarado. `from-font` equivale a `none`
+  (cada elemento usa uma única fonte); outras métricas (`cap-height`,
+  `ch-width`…) são ignoradas.
 - `font-variant-position: sub`/`super`, sintetizado (sem recursos
   OpenType): onde o valor muda, a fonte encolhe como `smaller` (÷1,2), e o
   texto com `vertical-align: baseline` sobe/desce como `super`/`sub`.

@@ -60,7 +60,28 @@ static void tbox_transition_current(const tbox_transition_track *track, double n
     for (int i = 0; i < 4; i++) out[i] = track->start[i] + (track->target[i] - track->start[i]) * fraction;
 }
 
-void tbox_context_apply_transitions(tbox_context *ctx) {
+/* The values `node` starts its transitions from when it first appears
+ * (or leaves display: none): its style with the @starting-style rules in
+ * the cascade, against the parent's current style. False when it has no
+ * transitions or no @starting-style rule could apply. */
+static bool tbox_transition_starting_values(tbox_context *ctx, const tbox_style_entry *entry, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, double out[3][4]) {
+    if (!ctx->has_starting_style)
+        return false;
+    bool any = false;
+    for (int p = 0; p < 3; p++)
+        if (entry->style.transition_duration[p] > 0.0) any = true;
+    if (!any)
+        return false;
+    const tbox_style *parent = entry->node->parent != NULL ? tbox_style_table_find(&ctx->styles, entry->node->parent) : NULL;
+    tbox_css_computed_style computed = tbox_css_cascade_resolve_starting_style_in_viewport(sources, source_count, entry->node, viewport_width, viewport_height, ctx->prefers_reduced_motion);
+    tbox_style starting = tbox_style_resolve_in_viewport(entry->node, parent, &computed, viewport_width, viewport_height);
+    tbox_css_computed_style_destroy(&computed);
+    for (int p = 0; p < 3; p++)
+        tbox_transition_read(&starting, p, out[p]);
+    return true;
+}
+
+void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height) {
     ctx->animations_active = false;
     tbox_transition_state **link = &ctx->transitions;
     while (*link != NULL) {
@@ -75,15 +96,28 @@ void tbox_context_apply_transitions(tbox_context *ctx) {
         tbox_style_entry *entry = &ctx->styles.items[i];
         tbox_transition_state *state = ctx->transitions;
         while (state != NULL && state->node != entry->node) state = state->next;
+        bool hidden = entry->style.display == TBOX_STYLE_DISPLAY_NONE;
+        bool appearing = state == NULL ? !hidden : state->hidden && !hidden;
         if (state == NULL) {
             state = calloc(1, sizeof(*state));
             if (state == NULL) continue;
             state->node = entry->node;
             state->next = ctx->transitions;
             ctx->transitions = state;
-            for (int p = 0; p < 3; p++)
+        }
+        state->hidden = hidden;
+        /* Appearing: the "previous" values are the @starting-style ones,
+         * so the change below starts a transition from them; without
+         * such rules the element just takes its values. */
+        double starting[3][4];
+        if (appearing) {
+            bool from_start = tbox_transition_starting_values(ctx, entry, sources, source_count, viewport_width, viewport_height, starting);
+            for (int p = 0; p < 3; p++) {
+                state->tracks[p].active = false;
                 tbox_transition_read(&entry->style, p, state->tracks[p].target);
-            continue;
+                if (from_start) memcpy(state->tracks[p].target, starting[p], sizeof(starting[p]));
+            }
+            if (!from_start) continue;
         }
         for (int p = 0; p < 3; p++) {
             tbox_transition_track *track = &state->tracks[p];

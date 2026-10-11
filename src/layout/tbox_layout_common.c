@@ -52,6 +52,17 @@ void tbox_layout_translate(tbox_layout_box *box, double dx, double dy) {
 }
 
 const tbox_font_face *tbox_layout_style_face(tbox_font_face_cache *fonts, const tbox_style *style) {
-    int weight = style->font_weight > 0 ? style->font_weight : style->font_weight_bold ? 700 : 400;
-    return tbox_font_face_cache_get_kerned(fonts, tbox_string_view_from_cstr(style->font_family), weight, style->font_stretch, style->font_italic, style->font_size, !style->font_kerning_none);
+    int weight                 = style->font_weight > 0 ? style->font_weight : style->font_weight_bold ? 700 : 400;
+    tbox_string_view family    = tbox_string_view_from_cstr(style->font_family);
+    const tbox_font_face *face = tbox_font_face_cache_get_kerned(fonts, family, weight, style->font_stretch, style->font_italic, style->font_size, !style->font_kerning_none);
+    /* font-size-adjust: rescale so the x-height is adjust * font-size. */
+    if (face != NULL && style->font_size_adjust > 0.0 && style->font_size > 0.0) {
+        double x_height = tbox_font_face_x_height(face);
+        if (x_height > 0.0) {
+            double size = style->font_size * style->font_size_adjust * style->font_size / x_height;
+            if (size > 0.0 && size != style->font_size)
+                face = tbox_font_face_cache_get_kerned(fonts, family, weight, style->font_stretch, style->font_italic, size, !style->font_kerning_none);
+        }
+    }
+    return face;
 }

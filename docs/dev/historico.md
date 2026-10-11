@@ -341,3 +341,21 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
 - **Orchestration**: com `cursor: auto`, `tbox_context_cursor_at` não
   devolve mais o cursor de texto sobre texto comum, só sobre campos
   editáveis; `cursor: text` explícito continua valendo.
+
+## 2026-10-11 — `font-size-adjust`, `scroll-behavior`, `@starting-style`, `@namespace`
+
+- **Font**: `tbox_font_face_x_height` (OS/2 `sxHeight`, ou o glifo "x").
+- **Style / Layout Tree**: `font-size-adjust` (`font_size_adjust`),
+  aplicado só na escolha da face (`tbox_layout_style_face`);
+  `scroll-behavior` (`scroll_behavior_smooth`).
+- **Orchestration**: rolagem suave em `tbox_scroll_state` (animação pelo
+  relógio das transições) para revelar o foco e clique na trilha;
+  transições de entrada com `@starting-style`, inclusive ao sair de
+  `display: none`.
+- **CSS Parser / Cascade**: `@starting-style` marcado em
+  `tbox_css_ruleset.starting_style`, fora da cascata normal;
+  `tbox_css_cascade_resolve_starting_style_in_viewport`.
+- **Application**: o screenshot headless avança animações de entrada até o
+  fim antes de capturar.
+- Referência: `@namespace` marcado (ignorado, o que para HTML é correto).
+  Fixture `120`; nenhum outro fixture mudou de pixels.

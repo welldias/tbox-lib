@@ -597,5 +597,21 @@ int tbox_test_css_cascade_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* @starting-style rules only take part in the starting-style cascade. */
+    {
+        tbox_html_document *doc        = parse_html_cstr("<p>t</p>");
+        const tbox_html_node *p        = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet     = parse_css_cstr("p { opacity: 1; } @starting-style { p { opacity: 0; } }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_css_computed_style normal   = tbox_css_cascade_resolve_in_viewport(&source, 1, p, 800.0, 600.0, false);
+        tbox_css_computed_style starting = tbox_css_cascade_resolve_starting_style_in_viewport(&source, 1, p, 800.0, 600.0, false);
+        TBOX_TEST_ASSERT(find_cstr(&normal, "opacity") != NULL && text_eq(find_cstr(&normal, "opacity")->value, "1"));
+        TBOX_TEST_ASSERT(find_cstr(&starting, "opacity") != NULL && text_eq(find_cstr(&starting, "opacity")->value, "0"));
+        tbox_css_computed_style_destroy(&normal);
+        tbox_css_computed_style_destroy(&starting);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

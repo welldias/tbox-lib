@@ -410,6 +410,12 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->animation_time                                     = 0.0;
     ctx->animations_active                                  = false;
     ctx->prefers_reduced_motion                              = options.prefers_reduced_motion;
+    ctx->has_starting_style                                  = false;
+    for (int s = 0; s < 2; s++) {
+        const tbox_css_stylesheet *sheet = s == 0 ? stylesheet : internal_stylesheet;
+        for (size_t r = 0; sheet != NULL && r < tbox_css_stylesheet_ruleset_count(sheet); r++)
+            if (tbox_css_stylesheet_rulesets(sheet)[r].starting_style) ctx->has_starting_style = true;
+    }
 
     tbox_context_sanitize_inputs(ctx, (tbox_html_node *)tbox_html_document_root(document));
     tbox_context_capture_form_defaults(ctx, tbox_html_document_root(document));
@@ -551,7 +557,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     };
     tbox_style_table styles = tbox_style_resolve_tree_in_viewport_with_preferences(&ctx->frame_arena, root, sources, 3, viewport_width, viewport_height, ctx->prefers_reduced_motion);
     ctx->styles             = styles;
-    tbox_context_apply_transitions(ctx);
+    tbox_context_apply_transitions(ctx, sources, 3, viewport_width, viewport_height);
 
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
      * so tbox_context_hit_test has something to search (or not) between

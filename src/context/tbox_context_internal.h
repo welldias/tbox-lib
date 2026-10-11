@@ -71,6 +71,7 @@ typedef struct tbox_transition_track {
 typedef struct tbox_transition_state {
     const tbox_html_node *node;
     tbox_transition_track tracks[3];
+    bool hidden; /* display: none last frame: showing it again uses @starting-style */
     struct tbox_transition_state *next;
 } tbox_transition_state;
 
@@ -89,6 +90,10 @@ typedef struct tbox_select_field {
 typedef struct tbox_scroll_state {
     const tbox_html_node *node;
     double y;
+    /* scroll-behavior: smooth -- y eases from `from_y` to `target_y`
+     * starting at `start_time` (ctx->animation_time) while `animating`. */
+    bool animating;
+    double from_y, target_y, start_time;
     struct tbox_scroll_state *next;
 } tbox_scroll_state;
 
@@ -176,9 +181,10 @@ struct tbox_context {
     double animation_time;
     bool animations_active;
     bool prefers_reduced_motion;
+    bool has_starting_style; /* some author rule is inside @starting-style */
 };
 
-void tbox_context_apply_transitions(tbox_context *ctx);
+void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height);
 void tbox_context_register_font_faces(tbox_font_face_cache *fonts, const tbox_css_stylesheet *sheet, const char *base_dir);
 
 double tbox_context_style_line_height(const tbox_style *style, const tbox_font_face *face);

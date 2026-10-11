@@ -1,3 +1,4 @@
+#include <math.h>
 #include "tbox_context_internal.h"
 
 typedef struct tbox_scrollbar_geometry {
@@ -26,6 +27,39 @@ static tbox_scroll_state *tbox_context_scroll_state(tbox_context *ctx, const tbo
     return state;
 }
 
+#define TBOX_SCROLL_SMOOTH_SECONDS 0.3
+
+/* Scrolls `state` (of a container styled `style`) to `target`: at once,
+ * or -- with scroll-behavior: smooth and no reduced-motion preference --
+ * by starting an ease-in-out animation from where it is now, which
+ * tbox_context_apply_scroll advances frame by frame. */
+static void tbox_context_scroll_to(tbox_context *ctx, tbox_scroll_state *state, const tbox_style *style, double target) {
+    if (style == NULL || !style->scroll_behavior_smooth || ctx->prefers_reduced_motion) {
+        state->animating = false;
+        state->y         = target;
+        return;
+    }
+    state->animating  = true;
+    state->from_y     = state->y;
+    state->target_y   = target;
+    state->start_time = ctx->animation_time;
+    ctx->animations_active = true;
+}
+
+/* Advances a smooth scroll to ctx->animation_time. */
+static void tbox_context_scroll_step(tbox_context *ctx, tbox_scroll_state *state) {
+    if (!state->animating) return;
+    double t = (ctx->animation_time - state->start_time) / TBOX_SCROLL_SMOOTH_SECONDS;
+    if (t >= 1.0 || t < 0.0) {
+        state->y         = state->target_y;
+        state->animating = false;
+        return;
+    }
+    double eased = t < 0.5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0;
+    state->y     = state->from_y + (state->target_y - state->from_y) * eased;
+    ctx->animations_active = true;
+}
+
 static void tbox_context_shift_subtree(tbox_layout_box *box, double dy) {
     for (; box != NULL; box = box->next_sibling) {
         box->margin_box.y += dy;
@@ -42,6 +76,7 @@ void tbox_context_apply_scroll(tbox_context *ctx, tbox_layout_box *box) {
         if (box->style != NULL && box->style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO && box->node != NULL) {
             tbox_scroll_state *state = tbox_context_scroll_state(ctx, box->node);
             if (state != NULL) {
+                tbox_context_scroll_step(ctx, state);
                 double max_y = box->scroll_content_height - box->content_box.height;
                 if (max_y < 0.0) max_y = 0.0;
                 if (state->y > max_y) state->y = max_y;
@@ -138,9 +173,9 @@ void tbox_context_reveal_focused(tbox_context *ctx) {
         if (next < 0.0) next = 0.0;
         if (next > max_scroll) next = max_scroll;
         if (next != state->y) {
-            double movement = next - state->y;
-            state->y = next;
-            tbox_context_shift_subtree(ancestor->first_child, -movement);
+            double before = state->y;
+            tbox_context_scroll_to(ctx, state, ancestor->style, next);
+            tbox_context_shift_subtree(ancestor->first_child, -(state->y - before)); /* 0 when smooth: it starts next frame */
         }
     }
 }
@@ -294,7 +329,8 @@ bool tbox_context_scroll(tbox_context *ctx, double x, double y, double delta_y) 
             if (box->style->overscroll_y != TBOX_STYLE_OVERSCROLL_AUTO) return false;
             continue;
         }
-        state->y = next;
+        state->y         = next; /* the wheel is direct manipulation: never smoothed */
+        state->animating = false;
         return true;
     }
     return false;
@@ -319,10 +355,14 @@ bool tbox_context_scrollbar_press(tbox_context *ctx, double x, double y) {
         ctx->scroll_drag_node = box->node;
         ctx->scroll_drag_grab_y = y - geometry.thumb.y;
     } else {
-        double page = box->content_box.height;
-        state->y += y < geometry.thumb.y ? -page : page;
-        if (state->y < 0.0) state->y = 0.0;
-        if (state->y > geometry.max_scroll) state->y = geometry.max_scroll;
+        /* A page per track click, from where a running smooth scroll is
+         * heading, so quick clicks add up. */
+        double page   = box->content_box.height;
+        double from   = state->animating ? state->target_y : state->y;
+        double target = from + (y < geometry.thumb.y ? -page : page);
+        if (target < 0.0) target = 0.0;
+        if (target > geometry.max_scroll) target = geometry.max_scroll;
+        tbox_context_scroll_to(ctx, state, box->style, target);
     }
     return true;
 }
@@ -343,7 +383,8 @@ bool tbox_context_scrollbar_drag(tbox_context *ctx, double x, double y) {
         double thumb_y = y - ctx->scroll_drag_grab_y - geometry.track.y;
         if (thumb_y < 0.0) thumb_y = 0.0;
         if (thumb_y > travel) thumb_y = travel;
-        state->y = thumb_y / travel * geometry.max_scroll;
+        state->y         = thumb_y / travel * geometry.max_scroll;
+        state->animating = false;
     }
     return true;
 }

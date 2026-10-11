@@ -494,6 +494,12 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
             if (ctx != NULL) {
                 tbox_display_list list;
                 tbox_context_run_frame(ctx, (double)width, (double)height, &list);
+                /* A screenshot shows the settled page: entry animations
+                 * (@starting-style) jump to their end. */
+                if (tbox_context_animations_active(ctx)) {
+                    tbox_context_set_animation_time(ctx, 1.0e6);
+                    tbox_context_run_frame(ctx, (double)width, (double)height, &list);
+                }
 
                 uint32_t *pixels = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)width * (size_t)height);
                 if (pixels != NULL) {

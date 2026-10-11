@@ -144,6 +144,13 @@ mostram barras de rolagem com polegar arrastável e clique na trilha
 horizontal de container ainda não existe. `position: sticky` (eixo vertical)
 segura a caixa contra a borda do scrollport.
 
+Com `scroll-behavior: smooth` no bloco rolável, as rolagens que a tbox
+faz por conta própria — revelar o controle focado e o clique na trilha da
+barra (uma página) — são animadas em 0,3 s (ease-in-out), pelo mesmo
+relógio das transições. A roda e o arrasto do polegar continuam imediatos
+(são manipulação direta) e interrompem uma animação em curso; com
+`prefers_reduced_motion` tudo é imediato.
+
 Quando uma rolagem pela roda chega ao limite de um bloco, ela passa para o
 ancestral rolável; `overscroll-behavior: contain` ou `none` (ou as formas
 `-y`/`-block`) interrompe essa passagem. Ao revelar o controle focado, o

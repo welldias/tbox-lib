@@ -38,8 +38,10 @@ tbox_app_screenshot_from_files("pagina.html", "pagina.css", 1024, 768, "saida.pn
 ```
 
 ou, com o demo, `build/example/tbox_app_demo --screenshot saida.png`.
-Não abre janela nem depende de compositor: é o mesmo frame que a janela
-mostraria primeiro, escrito num PNG. Útil em CI e para inspecionar uma
+Não abre janela nem depende de compositor: é o frame que a janela
+mostraria, escrito num PNG — já assentado: se o primeiro frame inicia uma
+animação de entrada (`@starting-style`), o relógio é avançado até o fim
+antes de capturar. Útil em CI e para inspecionar uma
 mudança visual sem risco de capturar outra coisa da tela.
 
 ## Comparação com referências — `tbox_cmp`

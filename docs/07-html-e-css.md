@@ -113,6 +113,18 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   importação; `layer()` é aceito (ver `@layer`). Vale em `<style>`,
   `<link>` e no CSS passado pela aplicação.
 - **`@charset`**: aceito e ignorado; todo CSS é lido como UTF-8.
+- **`@namespace`**: aceito e ignorado. Para HTML isso equivale ao
+  comportamento correto: o namespace padrão não muda nada, e uma regra com
+  seletor prefixado (`svg|circle`) é descartada — não casaria com nada, já
+  que não há SVG.
+- **`@starting-style { regras }`**: as regras ficam marcadas
+  (`tbox_css_ruleset.starting_style`) e não entram na cascata normal. Quando
+  um elemento aparece (primeiro frame ou saída de `display: none`) e tem
+  `transition`, o estilo resolvido com essas regras
+  (`tbox_css_cascade_resolve_starting_style_in_viewport`) é o ponto de
+  partida da transição. Só vale nas propriedades que já transicionam
+  (`color`, `background-color`, `opacity`); a forma aninhada dentro de uma
+  regra (CSS nesting) não é suportada.
 - **`@layer`**: `@layer a, b;`, `@layer a { … }`, nomes com ponto
   (`a.b`), camadas anônimas (`@layer { … }`), aninhamento com `@media` nos
   dois sentidos e `@import … layer(nome)`/`layer`. Um prelúdio inválido

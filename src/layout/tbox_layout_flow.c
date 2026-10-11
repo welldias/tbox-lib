@@ -295,6 +295,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     if (anon.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL && !anon.font_synthesis_no_position) /* synthesized, see tbox_style */
         anon.vertical_align = anon.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUB ? TBOX_STYLE_VERTICAL_ALIGN_SUB : TBOX_STYLE_VERTICAL_ALIGN_SUPER;
     anon.font_kerning_none        = container_style->font_kerning_none;
+    anon.font_size_adjust         = container_style->font_size_adjust;
     anon.word_break_keep_all      = container_style->word_break_keep_all;
     anon.hyphens_none             = container_style->hyphens_none;
     memcpy(anon.hyphenate_character, container_style->hyphenate_character, sizeof(anon.hyphenate_character));
