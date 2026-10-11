@@ -114,7 +114,7 @@ static bool tbox_layout_flex_definite(tbox_style_length length, double base, boo
  * margin-box origin (x, y). */
 static tbox_layout_box *tbox_layout_flex_build_item(tbox_arena *arena, const tbox_layout_flex_item *item, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double x, double y, double width, double height, double content_width, double content_height, bool height_definite, tbox_layout_positioned_context context) {
     if (item->anonymous) {
-        return tbox_layout_build_anonymous_box(arena, item->node, item->run_end, container_style, styles, fonts, images, x, y, width >= 0.0 ? width : content_width, &context);
+        return tbox_layout_build_anonymous_box(arena, item->node, item->run_end, container_style, styles, fonts, images, x, y, width >= 0.0 ? width : content_width, &context, NULL);
     }
     tbox_layout_forced_size forced         = { width >= 0.0, height >= 0.0, width, height };
     tbox_layout_containing_block container = { x, y, content_width, content_height, height_definite };

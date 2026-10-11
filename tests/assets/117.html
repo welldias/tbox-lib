@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    @charset "UTF-8";
+    @import url(117.css);
+
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .card {
+      width: 170px;
+      padding: 8px;
+      background: white;
+    }
+
+    /* Media features: só as que casam com o ambiente ficam verdes. */
+    .mq {
+      display: inline-block;
+      padding: 4px 8px;
+      margin: 0 6px 6px 0;
+      background: #fecaca;
+      color: #7f1d1d;
+    }
+
+    @media (prefers-color-scheme: light) {
+      .mq.light {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .mq.dark {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      .mq.hover {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (pointer: coarse) {
+      .mq.coarse {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (min-resolution: 1dppx) {
+      .mq.res {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (min-aspect-ratio: 1/1) {
+      .mq.ratio {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (scripting: none) {
+      .mq.script {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    .caps {
+      font-variant: small-caps;
+    }
+
+    .caps.off {
+      font-synthesis: none;
+    }
+
+    .pos {
+      font-variant-position: super;
+    }
+
+    .pos.off {
+      font-synthesis-position: none;
+    }
+
+    .scheme {
+      color: light-dark(#0f172a, #f8fafc);
+      background: light-dark(#f8fafc, #0f172a);
+      border: 2px solid light-dark(#2563eb, #facc15);
+    }
+
+    .scheme.light {
+      color-scheme: light dark;
+    }
+
+    .scheme.dark {
+      color-scheme: dark;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>@import, media features, font-synthesis e color-scheme</h1>
+
+  <h2>@import (117.css → 117-import/base.css → colors.css)</h2>
+  <p class="import-color import-base import-own">Estilo vindo de três folhas importadas; a de
+    media (min-width: 5000px) não se aplica.</p>
+
+  <h2>Media features (verde = casou)</h2>
+  <div>
+    <span class="mq light">prefers-color-scheme: light</span>
+    <span class="mq dark">prefers-color-scheme: dark</span>
+    <span class="mq hover">hover + pointer: fine</span>
+    <span class="mq coarse">pointer: coarse</span>
+    <span class="mq res">min-resolution: 1dppx</span>
+    <span class="mq ratio">min-aspect-ratio: 1/1 (janela larga)</span>
+    <span class="mq script">scripting: none</span>
+  </div>
+
+  <h2>font-synthesis</h2>
+  <div class="row">
+    <p class="card caps">Small caps sintetizado</p>
+    <p class="card caps off">Small caps com font-synthesis: none</p>
+  </div>
+  <p>nota<span class="pos">sup</span> e nota<span class="pos off">sem síntese</span></p>
+
+  <h2>color-scheme e light-dark()</h2>
+  <div class="row">
+    <p class="card scheme light">color-scheme: light dark (usa claro)</p>
+    <p class="card scheme dark">color-scheme: dark</p>
+  </div>
+</body>
+
+</html>

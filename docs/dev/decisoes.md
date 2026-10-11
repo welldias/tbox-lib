@@ -131,6 +131,21 @@ formato atual do código. O texto integral original de cada versão está em
   propriedade da tabela recebe a palavra-chave, respeitando a prioridade de
   declarações específicas (`tbox_style_field_overridden`). O que não está na
   tabela não é afetado (2026-10-11).
+- **Media features sem fonte real têm valores fixos** de um app desktop
+  (tema claro, mouse, 1dppx) em vez de novos campos em
+  `tbox_context_options`; uma opção como `prefers_reduced_motion` pode vir
+  quando houver um caso de uso (2026-10-11).
+- **`@layer` como um número por regra (`tbox_css_ruleset.layer`)**,
+  calculado no fim do parse pela ordem pós-ordem da árvore de camadas, e
+  comparado na cascata sem tabela extra. Consequência: a ordem vale por
+  folha; como `<style>`/`<link>` já são concatenados numa folha, só o CSS
+  da aplicação fica com camadas à parte (2026-10-11).
+- **`@import` expandido no texto, antes do parse**, como o `<link>`: o
+  parser e a cascata não mudaram e a ordem das regras sai certa. O custo:
+  as regras importadas não sabem de que arquivo vieram (2026-10-11).
+- **`light-dark()` substituído no texto, junto de `var()`**, em vez de no
+  parser de cor: o parser de cor não conhece o elemento, e a substituição
+  textual cobre toda propriedade que aceita cor (2026-10-11).
 - **`hyphenate-character` num buffer fixo de 16 bytes, `""` = `auto`**,
   como `text_overflow_string`; o custo é tratar a string vazia explícita
   como `auto` (2026-10-11).
@@ -151,6 +166,11 @@ formato atual do código. O texto integral original de cada versão está em
 
 ## Layout
 
+- **Text tag com filho de bloco vira container de bloco** (reaproveita as
+  caixas anônimas de `tbox_layout_build_children`) em vez de ensinar o
+  caminho de texto a abrir blocos no meio das linhas. A decisão olha o
+  `display` dos filhos, não nomes de tag, e vale igual na medição
+  intrínseca (2026-10-11).
 - **Texto inline como runs na caixa de texto**, sem `tbox_layout_box` por
   elemento inline (v2). `tbox_layout_text_run.style` aponta para o estilo do
   trecho, dando cor, destaque, decoração e `vertical-align` por run (v13).

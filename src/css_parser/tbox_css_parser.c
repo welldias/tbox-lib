@@ -38,7 +38,8 @@ static void tbox_css_parser_advance(tbox_css_parser *parser) {
 
 void tbox_css_parser_init(tbox_css_parser *parser, const char *input, size_t length, tbox_arena *arena) {
     tbox_css_tokenizer_init(&parser->tokenizer, input, length);
-    parser->arena = arena;
+    parser->arena  = arena;
+    parser->layers = NULL;
     tbox_css_parser_advance(parser);
 }
 
@@ -662,6 +663,114 @@ static bool tbox_css_parser_parse_ruleset(tbox_css_parser *parser, tbox_css_rule
     return true;
 }
 
+/* ---- @layer ----
+ * A layer is a node under its parent layer (0: the stylesheet itself),
+ * created at its first mention; ids are index + 1. A named layer is found
+ * again by (parent, name); each anonymous `@layer { }` is a new node. */
+typedef struct tbox_css_layer_node {
+    tbox_string_view name; /* empty: anonymous */
+    size_t parent;
+} tbox_css_layer_node;
+
+static size_t tbox_css_parser_layer_child(tbox_css_parser *parser, size_t parent, tbox_string_view name) {
+    size_t count = tbox_vector_length(parser->layers);
+    for (size_t i = 0; i < count && name.size > 0; i++) {
+        const tbox_css_layer_node *node = tbox_vector_at(parser->layers, i);
+        if (node->parent == parent && tbox_string_view_equal(node->name, name))
+            return i + 1;
+    }
+    tbox_css_layer_node *node = tbox_vector_push(parser->layers);
+    node->name                = tbox_css_parser_copy(parser, name);
+    node->parent              = parent;
+    return count + 1;
+}
+
+/* The node for dotted `name` ("a.b.c") under `parent`, creating it. */
+static size_t tbox_css_parser_layer_path(tbox_css_parser *parser, size_t parent, tbox_string_view name) {
+    size_t start = 0;
+    for (size_t i = 0; i <= name.size; i++)
+        if (i == name.size || name.data[i] == '.') {
+            parent = tbox_css_parser_layer_child(parser, parent, tbox_string_view_make(name.data + start, i - start));
+            start  = i + 1;
+        }
+    return parent;
+}
+
+/* One `IDENT ['.' IDENT]*` layer name at the current token, as the raw
+ * source text; false (nothing consumed beyond it) when malformed. */
+static bool tbox_css_parser_layer_name(tbox_css_parser *parser, tbox_string_view *out) {
+    tbox_css_parser_skip_s(parser);
+    if (parser->current.type != TBOX_CSS_TOKEN_IDENT)
+        return false;
+    size_t start = parser->current.offset;
+    size_t end   = start + parser->current.text.size;
+    tbox_css_parser_advance(parser);
+    while (parser->current.type == TBOX_CSS_TOKEN_DOT) {
+        tbox_css_parser_advance(parser);
+        if (parser->current.type != TBOX_CSS_TOKEN_IDENT || parser->current.offset != end + 1)
+            return false;
+        end = parser->current.offset + parser->current.text.size;
+        tbox_css_parser_advance(parser);
+    }
+    *out = tbox_string_view_make(parser->tokenizer.input + start, end - start);
+    return true;
+}
+
+/* Post-order ranks: a layer's sublayers come before the layer's own rules,
+ * siblings in order of first mention. */
+static void tbox_css_parser_rank_layers(tbox_vector *layers, size_t parent, unsigned *ranks, unsigned *counter) {
+    size_t count = tbox_vector_length(layers);
+    for (size_t i = 0; i < count; i++) {
+        const tbox_css_layer_node *node = tbox_vector_at(layers, i);
+        if (node->parent != parent)
+            continue;
+        tbox_css_parser_rank_layers(layers, i + 1, ranks, counter);
+        ranks[i + 1] = ++*counter;
+    }
+}
+
+static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *rulesets, tbox_vector *faces, const tbox_css_media_condition *media, bool nested, size_t layer);
+
+/* AT_KEYWORD `layer` already consumed: `@layer a, b.c;` declares layers in
+ * order, `@layer a { ... }` / `@layer { ... }` holds rules. A malformed
+ * prelude declares nothing and is skipped. */
+static void tbox_css_parser_parse_layer(tbox_css_parser *parser, tbox_vector *rulesets, tbox_vector *faces, const tbox_css_media_condition *media, size_t layer) {
+    tbox_css_parser_skip_s(parser);
+    if (parser->current.type == TBOX_CSS_TOKEN_LBRACE) {
+        size_t anonymous = tbox_css_parser_layer_child(parser, layer, tbox_string_view_make(NULL, 0));
+        tbox_css_parser_advance(parser);
+        tbox_css_parser_parse_rules(parser, rulesets, faces, media, true, anonymous);
+        return;
+    }
+    tbox_string_view names[32];
+    size_t count = 0;
+    bool valid   = true;
+    for (;;) {
+        if (count == sizeof(names) / sizeof(names[0]) || !tbox_css_parser_layer_name(parser, &names[count])) {
+            valid = false;
+            break;
+        }
+        count++;
+        tbox_css_parser_skip_s(parser);
+        if (parser->current.type != TBOX_CSS_TOKEN_COMMA)
+            break;
+        tbox_css_parser_advance(parser);
+    }
+    if (valid && count == 1 && parser->current.type == TBOX_CSS_TOKEN_LBRACE) {
+        size_t node = tbox_css_parser_layer_path(parser, layer, names[0]);
+        tbox_css_parser_advance(parser);
+        tbox_css_parser_parse_rules(parser, rulesets, faces, media, true, node);
+        return;
+    }
+    if (valid && parser->current.type == TBOX_CSS_TOKEN_SEMICOLON) {
+        for (size_t i = 0; i < count; i++)
+            tbox_css_parser_layer_path(parser, layer, names[i]);
+        tbox_css_parser_advance(parser);
+        return;
+    }
+    tbox_css_parser_skip_at_rule(parser);
+}
+
 /* stylesheet: [ CDO | CDC | S | statement ]*
  * Forward-progress invariant: every iteration either consumes at least one
  * S/CDO/CDC/AT_KEYWORD token, or calls parse_ruleset, which -- whether it
@@ -669,7 +778,7 @@ static bool tbox_css_parser_parse_ruleset(tbox_css_parser *parser, tbox_css_rule
  * past where it started (recovery always finds a block to discard or
  * reaches EOF). So the parser can never spin without making progress on
  * malformed input. */
-static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *rulesets, tbox_vector *faces, const tbox_css_media_condition *media, bool nested) {
+static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *rulesets, tbox_vector *faces, const tbox_css_media_condition *media, bool nested, size_t layer) {
     for (;;) {
         while (parser->current.type == TBOX_CSS_TOKEN_S || parser->current.type == TBOX_CSS_TOKEN_CDO || parser->current.type == TBOX_CSS_TOKEN_CDC) {
             tbox_css_parser_advance(parser);
@@ -684,7 +793,12 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
         if (parser->current.type == TBOX_CSS_TOKEN_AT_KEYWORD) {
             bool is_media = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("media"));
             bool is_font_face = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("font-face"));
+            bool is_layer = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("layer"));
             tbox_css_parser_advance(parser);
+            if (is_layer) {
+                tbox_css_parser_parse_layer(parser, rulesets, faces, media, layer);
+                continue;
+            }
             if (is_font_face) {
                 while (parser->current.type == TBOX_CSS_TOKEN_S) tbox_css_parser_advance(parser);
                 if (parser->current.type == TBOX_CSS_TOKEN_LBRACE) {
@@ -715,7 +829,7 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
                         condition->query = tbox_css_parser_copy(parser, tbox_string_view_make(parser->tokenizer.input + start, end - start));
                         condition->parent = media;
                         tbox_css_parser_advance(parser);
-                        tbox_css_parser_parse_rules(parser, rulesets, faces, condition, true);
+                        tbox_css_parser_parse_rules(parser, rulesets, faces, condition, true, layer);
                     } else {
                         tbox_css_parser_skip_block(parser);
                     }
@@ -729,6 +843,7 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
         tbox_css_ruleset ruleset = {0};
         if (tbox_css_parser_parse_ruleset(parser, &ruleset)) {
             ruleset.media = media;
+            ruleset.layer = (unsigned)layer; /* a node id until tbox_css_parser_run ranks it */
             *(tbox_css_ruleset *)tbox_vector_push(rulesets) = ruleset;
         }
     }
@@ -739,7 +854,22 @@ void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_ruleset
     tbox_vector_init(&rulesets, parser->arena, sizeof(tbox_css_ruleset), 0);
     tbox_vector faces;
     tbox_vector_init(&faces, parser->arena, sizeof(tbox_css_font_face_rule), 0);
-    tbox_css_parser_parse_rules(parser, &rulesets, &faces, NULL, false);
+    tbox_vector layers;
+    tbox_vector_init(&layers, parser->arena, sizeof(tbox_css_layer_node), 0);
+    parser->layers = &layers;
+    tbox_css_parser_parse_rules(parser, &rulesets, &faces, NULL, false, 0);
+    size_t layer_count = tbox_vector_length(&layers);
+    if (layer_count > 0) {
+        unsigned *ranks = tbox_arena_alloc_zero(parser->arena, (layer_count + 1) * sizeof(unsigned));
+        unsigned counter = 0;
+        if (ranks != NULL)
+            tbox_css_parser_rank_layers(&layers, 0, ranks, &counter);
+        for (size_t i = 0; i < tbox_vector_length(&rulesets); i++) {
+            tbox_css_ruleset *ruleset = tbox_vector_at(&rulesets, i);
+            ruleset->layer            = ruleset->layer != 0 && ranks != NULL ? ranks[ruleset->layer] : 0;
+        }
+    }
+    parser->layers = NULL;
 
     *out_rulesets      = rulesets.data;
     *out_ruleset_count = rulesets.length;

@@ -111,6 +111,11 @@ typedef struct tbox_css_ruleset {
     tbox_css_declaration *declarations;
     size_t declaration_count; /* may be 0, e.g. "p { }" */
     const tbox_css_media_condition *media; /* NULL for an unconditional rule */
+    /* Cascade layer (`@layer`) order within its stylesheet: 0 for a rule
+     * outside every layer, else 1..n in layer order (a later layer, and a
+     * layer after its own sublayers, comes later). See
+     * tbox_css_cascade_priority_compare for how it weighs. */
+    unsigned layer;
 } tbox_css_ruleset;
 
 typedef struct tbox_css_font_face_rule {

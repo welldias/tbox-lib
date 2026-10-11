@@ -26,6 +26,36 @@ static bool tbox_css_media_equals(tbox_string_view view, const char *text) {
     return tbox_string_view_equal_ascii_ci(view, tbox_string_view_from_cstr(text));
 }
 
+/* A non-negative number with an optional unit suffix into `out`/`unit`. */
+static bool tbox_css_media_number(tbox_string_view value, double *out, char unit[8]) {
+    char number[64];
+    if (value.size == 0 || value.size >= sizeof(number)) return false;
+    memcpy(number, value.data, value.size);
+    number[value.size] = '\0';
+    char *end = NULL;
+    *out = strtod(number, &end);
+    if (end == number || !isfinite(*out) || *out < 0.0 || strlen(end) >= 8) return false;
+    strcpy(unit, end);
+    return true;
+}
+
+/* `16/9`, `16 / 9` or a single number, as width / height. */
+static bool tbox_css_media_ratio(tbox_string_view value, double *out) {
+    size_t slash = 0;
+    while (slash < value.size && value.data[slash] != '/') slash++;
+    double a, b = 1.0;
+    char unit[8];
+    if (!tbox_css_media_number(tbox_css_media_trim(tbox_string_view_make(value.data, slash)), &a, unit) || unit[0] != '\0') return false;
+    if (slash < value.size &&
+        (!tbox_css_media_number(tbox_css_media_trim(tbox_string_view_make(value.data + slash + 1, value.size - slash - 1)), &b, unit) || unit[0] != '\0' || b == 0.0))
+        return false;
+    *out = a / b;
+    return true;
+}
+
+/* One `(feature)` or `(feature: value)`. The environment is a desktop
+ * window: light color scheme, a mouse that hovers, 1dppx, 8 bits per
+ * color channel, no scripting, no forced colors, no contrast preference. */
 static bool tbox_css_media_feature(tbox_string_view clause, double width, double height, bool reduced_motion) {
     clause = tbox_css_media_trim(clause);
     if (clause.size < 3 || clause.data[0] != '(' || clause.data[clause.size - 1] != ')') return false;
@@ -33,9 +63,34 @@ static bool tbox_css_media_feature(tbox_string_view clause, double width, double
     clause = tbox_css_media_trim(clause);
     size_t colon = 0;
     while (colon < clause.size && clause.data[colon] != ':') colon++;
-    if (colon == clause.size) return false;
     tbox_string_view name = tbox_css_media_trim(tbox_string_view_make(clause.data, colon));
+    if (colon == clause.size) {
+        /* Boolean context: true unless the feature's value would be none/0. */
+        if (tbox_css_media_equals(name, "prefers-reduced-motion")) return reduced_motion;
+        return tbox_css_media_equals(name, "width") || tbox_css_media_equals(name, "height") ||
+               tbox_css_media_equals(name, "color") || tbox_css_media_equals(name, "hover") ||
+               tbox_css_media_equals(name, "any-hover") || tbox_css_media_equals(name, "pointer") ||
+               tbox_css_media_equals(name, "any-pointer") || tbox_css_media_equals(name, "orientation") ||
+               tbox_css_media_equals(name, "aspect-ratio") || tbox_css_media_equals(name, "resolution") ||
+               tbox_css_media_equals(name, "prefers-color-scheme");
+    }
     tbox_string_view value = tbox_css_media_trim(tbox_string_view_make(clause.data + colon + 1, clause.size - colon - 1));
+    static const struct {
+        const char *name, *value;
+    } discrete[] = {
+        { "prefers-color-scheme", "light" },
+        { "prefers-contrast", "no-preference" },
+        { "forced-colors", "none" },
+        { "hover", "hover" },
+        { "any-hover", "hover" },
+        { "pointer", "fine" },
+        { "any-pointer", "fine" },
+        { "scripting", "none" },
+        { "update", "fast" },
+        { "inverted-colors", "none" },
+    };
+    for (size_t i = 0; i < sizeof(discrete) / sizeof(discrete[0]); i++)
+        if (tbox_css_media_equals(name, discrete[i].name)) return tbox_css_media_equals(value, discrete[i].value);
     if (tbox_css_media_equals(name, "prefers-reduced-motion")) {
         if (tbox_css_media_equals(value, "reduce")) return reduced_motion;
         if (tbox_css_media_equals(value, "no-preference")) return !reduced_motion;
@@ -52,21 +107,32 @@ static bool tbox_css_media_feature(tbox_string_view clause, double width, double
     } else if (name.size > 4 && tbox_css_media_equals(tbox_string_view_make(name.data, 4), "max-")) {
         name.data += 4, name.size -= 4, max = true;
     }
-    double actual;
-    if (tbox_css_media_equals(name, "width")) actual = width;
-    else if (tbox_css_media_equals(name, "height")) actual = height;
-    else return false;
-    char number[64];
-    if (value.size == 0 || value.size >= sizeof(number)) return false;
-    memcpy(number, value.data, value.size);
-    number[value.size] = '\0';
-    char *end = NULL;
-    double target = strtod(number, &end);
-    if (end == number || !isfinite(target) || target < 0.0) return false;
-    if (strcmp(end, "px") == 0 || *end == '\0') { /* CSS px */ }
-    else if (strcmp(end, "em") == 0 || strcmp(end, "rem") == 0) target *= 16.0;
-    else return false;
-    return min ? actual >= target : max ? actual <= target : actual == target;
+    double actual, target;
+    char unit[8];
+    if (tbox_css_media_equals(name, "aspect-ratio")) {
+        if (!tbox_css_media_ratio(value, &target)) return false;
+        actual = width / height;
+    } else if (tbox_css_media_equals(name, "resolution")) {
+        if (!tbox_css_media_number(value, &target, unit)) return false;
+        if (strcmp(unit, "dpi") == 0) target /= 96.0;
+        else if (strcmp(unit, "dpcm") == 0) target *= 2.54 / 96.0;
+        else if (strcmp(unit, "dppx") != 0 && strcmp(unit, "x") != 0) return false;
+        actual = 1.0;
+    } else if (tbox_css_media_equals(name, "color") || tbox_css_media_equals(name, "monochrome")) {
+        if (!tbox_css_media_number(value, &target, unit) || unit[0] != '\0') return false;
+        actual = tbox_css_media_equals(name, "color") ? 8.0 : 0.0;
+    } else if (tbox_css_media_equals(name, "width") || tbox_css_media_equals(name, "height")) {
+        actual = tbox_css_media_equals(name, "width") ? width : height;
+        if (!tbox_css_media_number(value, &target, unit)) return false;
+        if (strcmp(unit, "px") == 0 || unit[0] == '\0') { /* CSS px */ }
+        else if (strcmp(unit, "em") == 0 || strcmp(unit, "rem") == 0) target *= 16.0;
+        else return false;
+    } else {
+        return false;
+    }
+    /* Ratios and resolutions are compared with a little tolerance. */
+    double epsilon = 1e-6;
+    return min ? actual >= target - epsilon : max ? actual <= target + epsilon : fabs(actual - target) <= epsilon;
 }
 
 static bool tbox_css_media_one(tbox_string_view query, double width, double height, bool reduced_motion) {
@@ -266,6 +332,14 @@ int tbox_css_cascade_priority_compare(const tbox_css_resolved_declaration *a,
     int rank_a = tbox_css_cascade_rank(a->origin, a->important);
     int rank_b = tbox_css_cascade_rank(b->origin, b->important);
     if (rank_a != rank_b) return rank_a > rank_b ? 1 : -1;
+    /* Cascade layers: for normal declarations a rule outside every layer
+     * (0) beats any layer and a later layer beats an earlier one; for
+     * !important the order reverses. */
+    unsigned layer_a = a->ruleset != NULL ? a->ruleset->layer : 0, layer_b = b->ruleset != NULL ? b->ruleset->layer : 0;
+    if (layer_a != layer_b) {
+        int later = layer_a == 0 ? 1 : layer_b == 0 ? -1 : layer_a > layer_b ? 1 : -1;
+        return a->important ? -later : later;
+    }
     int specificity = tbox_css_cascade_specificity_compare(a->specificity, b->specificity);
     if (specificity != 0) return specificity;
     return (a->source_order > b->source_order) - (a->source_order < b->source_order);

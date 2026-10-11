@@ -111,12 +111,12 @@ ignorados sem erro — o parser é tolerante.
 | | break-inside | Specifies whether or not a page-, column-, or region-break should occur inside the specified element |
 | X | caption-side | Specifies the placement of a table caption |
 | X | caret-color | Specifies the color of the cursor (caret) in inputs, textareas, or any element that is editable |
-| | @charset | Specifies the character encoding used in the style sheet |
+| X* | @charset | Specifies the character encoding used in the style sheet |
 | | clear | Specifies what should happen with the element that is next to a floating element |
 | X* | clip | Deprecated in favor of clip-path. Clips an absolutely positioned element |
 | X* | clip-path | Clips an element to a basic shape or to an SVG source |
 | X | color | Sets the color of text |
-| | color-scheme | Indicates which operating system color scheme an element should render with |
+| X* | color-scheme | Indicates which operating system color scheme an element should render with |
 | | column-count | Specifies the number of columns an element should be divided into |
 | | column-fill | Specifies how to fill columns, balanced or not |
 | X | column-gap | Specifies the gap between the columns |
@@ -157,7 +157,7 @@ ignorados sem erro — o parser é tolerante.
 | | font-size-adjust | Preserves the readability and size of text when fallback font occurs |
 | X | font-stretch | Selects a normal, condensed, or expanded face from a font family |
 | X | font-style | Specifies the font style for text |
-| | font-synthesis | Controls which missing typefaces (bold or italic) may be synthesized by the browser |
+| X* | font-synthesis | Controls which missing typefaces (bold or italic) may be synthesized by the browser |
 | X* | font-variant | Specifies whether or not a text should be displayed in a small-caps font |
 | | font-variant-alternates | Controls the usage of alternate glyphs associated to alternative names defined in @font-feature-values |
 | X* | font-variant-caps | Controls the usage of alternate glyphs for capital letters |
@@ -187,7 +187,7 @@ ignorados sem erro — o parser é tolerante.
 | X* | hyphenate-character | Sets the character used at the end of line, before a hyphenation break |
 | X* | hyphens | Sets how to split words to improve the layout of text |
 | X | image-rendering | Specifies the type of algorithm to use for image scaling |
-| | @import | Allows you to import a style sheet into another style sheet |
+| X* | @import | Allows you to import a style sheet into another style sheet |
 | | initial-letter | Specifies the size of the initial-letter and optionally the number of lines the initial letter should sink (down in the text) |
 | X | inline-size | Specifies the size of an element in the inline direction |
 | X | inset | Specifies the distance between an element and the parent element |
@@ -202,7 +202,7 @@ ignorados sem erro — o parser é tolerante.
 | | justify-items | Is set on the grid container. Specifies the alignment of grid items in the inline direction |
 | | justify-self | Is set on the grid item. Specifies the alignment of the grid item in the inline direction |
 | | @keyframes | Controls the steps in an animation by defining styles for points along the animation sequence |
-| | @layer | Controls how the CSS cascade layers evaluates the order of styles |
+| X* | @layer | Controls how the CSS cascade layers evaluates the order of styles |
 | X | left | Specifies the left position of a positioned element |
 | X | letter-spacing | Increases or decreases the space between characters in a text |
 | X* | line-break | Specifies how/if to break lines |

@@ -339,6 +339,33 @@ int tbox_test_css_parser_parser_run(void) {
         tbox_css_stylesheet_destroy(ss3);
     }
 
+    /* 25b: @layer -- order of first mention (statement first), sublayers
+     * before their parent's own rules, dotted names, anonymous layers,
+     * @media inside a layer; unlayered rules are 0; a malformed prelude
+     * is skipped with its block. */
+    {
+        tbox_css_stylesheet *ss = parse_cstr(
+            "@layer base, theme;"
+            "@layer theme { a{color:red;} }"
+            "@layer base { b{color:red;} @layer reset { i{color:red;} } }"
+            "@layer base.reset { u{color:red;} }"
+            "@layer { s{color:red;} }"
+            "@layer theme { @media screen { q{color:red;} } }"
+            "p{color:red;}"
+            "@layer 1bad { em{color:red;} }"
+            "@layer x, { strong{color:red;} }");
+        const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 7);
+        if (tbox_css_stylesheet_ruleset_count(ss) == 7) {
+            unsigned theme = r[0].layer, base = r[1].layer, reset = r[2].layer, anonymous = r[4].layer;
+            TBOX_TEST_ASSERT(reset != 0 && reset < base && base < theme && theme < anonymous);
+            TBOX_TEST_ASSERT(r[3].layer == reset); /* base.reset is the same layer */
+            TBOX_TEST_ASSERT(r[5].layer == theme && r[5].media != NULL);
+            TBOX_TEST_ASSERT(r[6].layer == 0 && text_eq(r[6].selectors[0].simple_selectors[0].name, "p"));
+        }
+        tbox_css_stylesheet_destroy(ss);
+    }
+
     /* 26: an unclosed block runs safely to EOF and still yields whatever was
      * captured before EOF. */
     {

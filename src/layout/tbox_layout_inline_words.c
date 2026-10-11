@@ -464,7 +464,7 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
             tbox_string_view text      = child->text.text;
             tbox_layout_push_text_words(arena, words, text, face, style);
             tbox_layout_apply_soft_hyphens(arena, words, first, style);
-            if (style->font_small_caps)
+            if (style->font_small_caps && !style->font_synthesis_no_small_caps)
                 tbox_layout_apply_small_caps(arena, words, first, style, fonts);
             if (text.size == 0)
                 continue;

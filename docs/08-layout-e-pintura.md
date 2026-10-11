@@ -28,6 +28,15 @@ Regras que explicam a maior parte do comportamento:
 - **Conteúdo inline solto** num container de bloco (texto direto em
   `<body>`, um `<span>` entre dois `<div>`) ganha uma **caixa anônima**
   (`node == NULL`) com só as propriedades herdáveis do pai.
+- **`<p>`, `<h1>`–`<h6>`, `<li>`, `<td>`/`<th>`, `<caption>` e `<summary>`**
+  são um único contexto inline, a menos que tenham um filho direto de bloco
+  em fluxo (`display: block`/`flex`, não `absolute`/`fixed`): aí viram
+  container de bloco, com o texto antes e depois do bloco em caixas
+  anônimas (`tbox_layout_is_inline_box`). Num `<li>` assim, o marcador vai
+  para a primeira caixa anônima; se o item começa com um bloco, o marcador
+  fica ao lado do topo desse bloco. Um bloco dentro de um elemento
+  **inline** (`<span><div>…</div></span>`) ainda é achatado em linha, e
+  `<button>`/`<pre>` ignoram filhos de bloco.
 - **`inline-block`/`inline-flex`** viram uma "palavra atômica" na linha:
   a caixa é medida (largura declarada ou shrink-to-fit), entra na quebra de
   linha e se alinha pela baseline da sua última linha.

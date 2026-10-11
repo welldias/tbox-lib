@@ -90,3 +90,6 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 114 | `<ruby>`, `<rt>` e `<rp>` com anotação simples e múltiplos trechos |
 | 115 | `border-block-*`/`border-inline-*` (longhands por eixo), `hyphenate-character`, `clip: rect()`, `overscroll-behavior`, `scroll-margin`, `scroll-padding` |
 | 116 | `isolation`, `text-justify`, `line-break: anywhere`, `font-variant-position`, `all` |
+| 117 | `@import` aninhado (`117.css`, `117-import/`), media features, `font-synthesis`, `color-scheme` e `light-dark()` |
+| 118 | bloco dentro de `<p>`/`<h3>`/`<li>`/`<td>`, listas aninhadas |
+| 119 | `@layer` (ordem, subcamadas, anônima, dentro de `@media`, `!important`) e `@import … layer()` (`119-reset.css`) |

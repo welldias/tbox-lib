@@ -70,6 +70,170 @@ static bool tbox_context_rel_has_stylesheet(tbox_string_view value) {
     return false;
 }
 
+/* A whole local file, malloc'ed (caller frees); NULL on any failure. */
+static char *tbox_context_read_file(const char *path, size_t *out_size) {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) return NULL;
+    if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return NULL; }
+    long size = ftell(file);
+    if (size < 0 || fseek(file, 0, SEEK_SET) != 0) { fclose(file); return NULL; }
+    char *buffer = malloc((size_t)size + 1);
+    if (buffer == NULL) { fclose(file); return NULL; }
+    bool read_ok = fread(buffer, 1, (size_t)size, file) == (size_t)size;
+    fclose(file);
+    if (!read_ok) { free(buffer); return NULL; }
+    *out_size = (size_t)size;
+    return buffer;
+}
+
+/* Where relative URLs of one stylesheet resolve: the directory of the file
+ * it came from (`sheet_dir`), or the document's base when it has no file. */
+typedef struct tbox_context_css_base {
+    const char *sheet_dir; /* NULL: embedded in the document */
+    const char *asset_base;
+    tbox_string_view document_base;
+} tbox_context_css_base;
+
+#define TBOX_CONTEXT_IMPORT_DEPTH 8
+
+/* Skips white space and comments from `at`. */
+static size_t tbox_context_css_skip_space(tbox_string_view css, size_t at) {
+    for (;;) {
+        while (at < css.size && isspace((unsigned char)css.data[at])) at++;
+        if (at + 1 < css.size && css.data[at] == '/' && css.data[at + 1] == '*') {
+            const char *end = NULL;
+            for (size_t i = at + 2; i + 1 < css.size; i++)
+                if (css.data[i] == '*' && css.data[i + 1] == '/') { end = css.data + i + 2; break; }
+            at = end != NULL ? (size_t)(end - css.data) : css.size;
+            continue;
+        }
+        return at;
+    }
+}
+
+static bool tbox_context_css_keyword_at(tbox_string_view css, size_t at, const char *keyword) {
+    size_t length = strlen(keyword);
+    return at + length <= css.size && tbox_string_view_equal_ascii_ci(tbox_string_view_make(css.data + at, length), tbox_string_view_from_cstr(keyword));
+}
+
+static void tbox_context_append_css(tbox_string_builder *builder, tbox_string_view css, tbox_context_css_base base, int depth);
+
+/* One `@import` prelude (between `@import` and `;`): `url(x)`, `url("x")`
+ * or `"x"`, then optional `layer` / `layer(name)` (the imported text goes
+ * into that cascade layer, anonymous for bare `layer`) and an optional
+ * media query list. A `supports()` condition is not supported: such an
+ * import is dropped. */
+static void tbox_context_append_import(tbox_string_builder *builder, tbox_string_view prelude, tbox_context_css_base base, int depth) {
+    size_t at = tbox_context_css_skip_space(prelude, 0);
+    bool is_url = tbox_context_css_keyword_at(prelude, at, "url(");
+    if (is_url) at = tbox_context_css_skip_space(prelude, at + 4);
+    if (at >= prelude.size) return;
+    size_t start = at, end;
+    if (prelude.data[at] == '"' || prelude.data[at] == '\'') {
+        char quote = prelude.data[at];
+        start = ++at;
+        while (at < prelude.size && prelude.data[at] != quote) at++;
+        end = at;
+        if (at < prelude.size) at++;
+    } else if (is_url) {
+        while (at < prelude.size && prelude.data[at] != ')' && !isspace((unsigned char)prelude.data[at])) at++;
+        end = at;
+    } else {
+        return;
+    }
+    if (is_url) {
+        at = tbox_context_css_skip_space(prelude, at);
+        if (at >= prelude.size || prelude.data[at] != ')') return;
+        at++;
+    }
+    tbox_string_view url   = tbox_string_view_make(prelude.data + start, end - start);
+    size_t media_start     = tbox_context_css_skip_space(prelude, at);
+    tbox_string_view media = tbox_string_view_make(prelude.data + media_start, prelude.size - media_start);
+    while (media.size > 0 && isspace((unsigned char)media.data[media.size - 1])) media.size--;
+    tbox_string_view layer = tbox_string_view_make(NULL, 0);
+    bool layered           = false;
+    if (tbox_context_css_keyword_at(media, 0, "layer(")) {
+        const char *close = memchr(media.data, ')', media.size);
+        if (close == NULL) return;
+        layer   = tbox_string_view_make(media.data + 6, (size_t)(close - media.data) - 6);
+        layered = true;
+        media   = tbox_string_view_make(close + 1, media.size - (size_t)(close + 1 - media.data));
+    } else if (tbox_context_css_keyword_at(media, 0, "layer") && (media.size == 5 || isspace((unsigned char)media.data[5]))) {
+        layered = true;
+        media   = tbox_string_view_make(media.data + 5, media.size - 5);
+    }
+    while (media.size > 0 && isspace((unsigned char)media.data[0])) media = tbox_string_view_make(media.data + 1, media.size - 1);
+    if (tbox_context_css_keyword_at(media, 0, "supports(")) return;
+
+    char path[4096];
+    if (base.sheet_dir != NULL) {
+        if (url.size == 0 || memchr(url.data, ':', url.size) != NULL) return;
+        int length = url.data[0] == '/' ? snprintf(path, sizeof(path), "%.*s", (int)url.size, url.data)
+                                        : snprintf(path, sizeof(path), "%s/%.*s", base.sheet_dir, (int)url.size, url.data);
+        if (length < 0 || (size_t)length >= sizeof(path)) return;
+    } else if (!tbox_context_resource_path(path, sizeof(path), base.asset_base, base.document_base, url)) {
+        return;
+    }
+    size_t size;
+    char *text = tbox_context_read_file(path, &size);
+    if (text == NULL) return;
+    char dir[4096];
+    const char *slash = strrchr(path, '/');
+    snprintf(dir, sizeof(dir), "%.*s", slash != NULL ? (int)(slash - path) : 1, slash != NULL ? path : ".");
+    tbox_context_css_base imported = { dir, base.asset_base, base.document_base };
+    if (media.size > 0) {
+        tbox_string_builder_append_view(builder, tbox_string_view_from_cstr("@media "));
+        tbox_string_builder_append_view(builder, media);
+        tbox_string_builder_append_view(builder, tbox_string_view_from_cstr(" {\n"));
+    }
+    if (layered) {
+        tbox_string_builder_append_view(builder, tbox_string_view_from_cstr("@layer "));
+        tbox_string_builder_append_view(builder, layer);
+        tbox_string_builder_append_view(builder, tbox_string_view_from_cstr(" {\n"));
+    }
+    tbox_context_append_css(builder, tbox_string_view_make(text, size), imported, depth + 1);
+    if (layered) tbox_string_builder_append_view(builder, tbox_string_view_from_cstr("\n}"));
+    if (media.size > 0) tbox_string_builder_append_view(builder, tbox_string_view_from_cstr("\n}"));
+    free(text);
+}
+
+/* Appends `css`, first replacing its leading `@import` rules (after an
+ * optional `@charset`, mixed with `@layer a, b;` statements, which are
+ * kept in place to fix the layer order) by the imported files' text, so
+ * imported rules come before the importing sheet's, as the cascade expects. Imports nest up
+ * to TBOX_CONTEXT_IMPORT_DEPTH levels, which also stops cycles. An
+ * `@import` after other rules is left for the parser, which ignores it. */
+static void tbox_context_append_css(tbox_string_builder *builder, tbox_string_view css, tbox_context_css_base base, int depth) {
+    size_t at = tbox_context_css_skip_space(css, 0);
+    for (bool first = true;; first = false) {
+        bool charset = first && tbox_context_css_keyword_at(css, at, "@charset");
+        bool layer   = tbox_context_css_keyword_at(css, at, "@layer");
+        if (!charset && !layer && !tbox_context_css_keyword_at(css, at, "@import")) break;
+        size_t prelude = at + (charset ? 8 : layer ? 6 : 7), end = prelude;
+        char quote = 0;
+        int parens = 0;
+        for (; end < css.size; end++) {
+            char c = css.data[end];
+            if (quote != 0) { if (c == quote) quote = 0; continue; }
+            if (c == '"' || c == '\'') quote = c;
+            else if (c == '(') parens++;
+            else if (c == ')' && parens > 0) parens--;
+            else if (c == ';' && parens == 0) break;
+            else if (c == '{' && layer) break;
+        }
+        if (layer) {
+            if (end >= css.size || css.data[end] != ';') break; /* `@layer x { }`: a block, not a statement */
+            tbox_string_builder_append_view(builder, tbox_string_view_make(css.data + at, end + 1 - at));
+            tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
+        } else if (!charset && depth < TBOX_CONTEXT_IMPORT_DEPTH)
+            tbox_context_append_import(builder, tbox_string_view_make(css.data + prelude, end - prelude), base, depth);
+        at = tbox_context_css_skip_space(css, end < css.size ? end + 1 : end);
+    }
+    tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
+    tbox_string_builder_append_view(builder, tbox_string_view_make(css.data + at, css.size - at));
+    tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
+}
+
 static void tbox_context_append_link_css(const tbox_html_node *node, tbox_string_builder *builder,
     const char *asset_base, tbox_string_view document_base) {
     const tbox_html_attribute *rel = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("rel"));
@@ -77,20 +241,13 @@ static void tbox_context_append_link_css(const tbox_html_node *node, tbox_string
     if (rel == NULL || href == NULL || !tbox_context_rel_has_stylesheet(rel->value)) return;
     char path[4096];
     if (!tbox_context_resource_path(path, sizeof(path), asset_base, document_base, href->value)) return;
-    FILE *file = fopen(path, "rb");
-    if (file == NULL) return;
-    if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return; }
-    long size = ftell(file);
-    if (size < 0 || fseek(file, 0, SEEK_SET) != 0) { fclose(file); return; }
-    char *buffer = malloc((size_t)size + 1);
-    if (buffer == NULL) { fclose(file); return; }
-    bool read_ok = fread(buffer, 1, (size_t)size, file) == (size_t)size;
-    fclose(file);
-    if (read_ok) {
-        tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
-        tbox_string_builder_append_view(builder, tbox_string_view_make(buffer, (size_t)size));
-        tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
-    }
+    size_t size;
+    char *buffer = tbox_context_read_file(path, &size);
+    if (buffer == NULL) return;
+    char dir[4096];
+    const char *slash = strrchr(path, '/');
+    snprintf(dir, sizeof(dir), "%.*s", slash != NULL ? (int)(slash - path) : 1, slash != NULL ? path : ".");
+    tbox_context_append_css(builder, tbox_string_view_make(buffer, size), (tbox_context_css_base){ dir, asset_base, document_base }, 0);
     free(buffer);
 }
 
@@ -102,9 +259,7 @@ static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_ht
 
     if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "style")) {
         tbox_string_view text = tbox_html_node_text_content(arena, node);
-        tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
-        tbox_string_builder_append_view(builder, text);
-        tbox_string_builder_append_view(builder, tbox_string_view_make("\n", 1));
+        tbox_context_append_css(builder, text, (tbox_context_css_base){ NULL, asset_base, document_base }, 0);
     }
     if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "link"))
         tbox_context_append_link_css(node, builder, asset_base, document_base);
@@ -148,9 +303,19 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
             return NULL;
         }
     }
-    tbox_arena_destroy(&scratch);
 
-    tbox_css_stylesheet *stylesheet = tbox_css_parse(css, css_length);
+    /* The caller's CSS resolves its @import against css_base_dir (the
+     * directory of its file), like its @font-face URLs. */
+    tbox_string_view external_css = tbox_string_view_make(css, css_length);
+    if (css != NULL && css_length > 0) {
+        tbox_string_builder external_builder;
+        tbox_string_builder_init(&external_builder, &scratch, 0);
+        const char *css_dir = options.css_base_dir != NULL ? options.css_base_dir : options.asset_base_dir;
+        tbox_context_append_css(&external_builder, external_css, (tbox_context_css_base){ css_dir != NULL ? css_dir : ".", options.asset_base_dir, tbox_string_view_make(NULL, 0) }, 0);
+        external_css = tbox_string_builder_finish(&external_builder);
+    }
+    tbox_css_stylesheet *stylesheet = tbox_css_parse(external_css.data, external_css.size);
+    tbox_arena_destroy(&scratch);
     if (stylesheet == NULL) {
         tbox_css_stylesheet_destroy(internal_stylesheet);
         tbox_html_document_destroy(document);

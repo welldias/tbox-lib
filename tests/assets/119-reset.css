@@ -1,0 +1,9 @@
+/* Importado em layer(reset): perde para qualquer regra fora de camada,
+   mesmo sendo mais específico. */
+p.layer-demo {
+    color: #dc2626;
+    margin: 0;
+    padding: 12px;
+    background: #fee2e2;
+    border: 2px solid #dc2626;
+}

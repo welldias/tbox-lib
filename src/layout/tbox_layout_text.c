@@ -37,6 +37,36 @@ bool tbox_layout_is_text_box(const tbox_html_node *node, const tbox_style *style
     return true;
 }
 
+/* An in-flow block-level child: a box of its own in a block container. */
+static bool tbox_layout_is_block_child(const tbox_html_node *child, const tbox_style_table *styles) {
+    if (child->type != TBOX_HTML_NODE_ELEMENT || tbox_layout_is_hidden_input(child) || tbox_layout_tag(child, "br"))
+        return false;
+    const tbox_style *style = tbox_layout_style_or_default(styles, child);
+    return (style->display == TBOX_STYLE_DISPLAY_BLOCK || style->display == TBOX_STYLE_DISPLAY_FLEX) &&
+           style->position != TBOX_STYLE_POSITION_ABSOLUTE && style->position != TBOX_STYLE_POSITION_FIXED;
+}
+
+/* A text box laid out as one inline formatting context. A paragraph-like
+ * text tag (p, h1-h6, li, td, th, caption, summary) with an in-flow block
+ * child -- a <div> in a <p>, a nested list in an <li> -- is a block
+ * container instead: its loose inline content goes into anonymous boxes
+ * around the block (CSS 2.1 section 9.2.1.1). Form controls, <pre>, <ruby>
+ * and gauges always stay text boxes. */
+bool tbox_layout_is_inline_box(const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles) {
+    if (!tbox_layout_is_text_box(node, style))
+        return false;
+    static const char *const splittable[] = { "p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "td", "th", "caption", "summary" };
+    bool can_split = false;
+    for (size_t i = 0; i < sizeof(splittable) / sizeof(splittable[0]) && !can_split; i++)
+        can_split = tbox_layout_tag(node, splittable[i]);
+    if (!can_split)
+        return true;
+    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling)
+        if (tbox_layout_is_block_child(child, styles))
+            return false;
+    return true;
+}
+
 /* `<pre>`'s own word-collection function, called by
  * tbox_layout_build_text_runs INSTEAD of tbox_layout_collect_words (never
  * both -- <pre> has no list marker and no normal word-splitting; see
@@ -137,7 +167,7 @@ void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_n
  * passes (node, node->first_child, NULL, ...), behavior identical to
  * before. */
 
-double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box, const tbox_layout_positioned_context *context) {
+double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node, const tbox_style *marker_style) {
     /* <pre> keeps its own verbatim path (whole-subtree text in the <pre>'s
      * face) for AUTO/`pre`; any other white-space mode on a <pre> goes
      * through the general per-node collection like every other element. */
@@ -155,8 +185,8 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
     } else if (is_preformatted) {
         tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
     } else {
-        if (node != NULL) {
-            tbox_layout_push_list_marker(arena, node, style, fonts, images, &words);
+        if (marker_node != NULL) {
+            tbox_layout_push_list_marker(arena, marker_node, marker_style, fonts, images, &words);
         }
         tbox_layout_collect_words(arena, first_sibling, end_exclusive, style, styles, fonts, images, available_width, &words);
     }
@@ -166,7 +196,7 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         tbox_vector marker_runs;
         tbox_vector_init(&marker_runs, arena, sizeof(tbox_layout_text_run), 0);
         if (!is_preformatted && !is_input && !is_select)
-            tbox_layout_append_outside_marker(arena, node, style, fonts, images, content_x, content_y, NULL, &marker_runs);
+            tbox_layout_append_outside_marker(arena, marker_node, marker_style, fonts, images, content_x, content_y, NULL, &marker_runs);
         box->text_runs      = marker_runs.length > 0 ? (tbox_layout_text_run *)marker_runs.data : NULL;
         box->text_run_count = marker_runs.length;
 
@@ -305,7 +335,7 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
     }
 
     if (!is_preformatted && !is_input && !is_select)
-        tbox_layout_append_outside_marker(arena, node, style, fonts, images, content_x, content_y, line_count > 0 ? &line_items[0] : NULL, &runs);
+        tbox_layout_append_outside_marker(arena, marker_node, marker_style, fonts, images, content_x, content_y, line_count > 0 ? &line_items[0] : NULL, &runs);
     box->text_runs      = (tbox_layout_text_run *)runs.data;
     box->text_run_count = runs.length;
 

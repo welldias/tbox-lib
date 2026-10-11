@@ -14,7 +14,10 @@
   desconhecidas viram elementos genéricos; comentários e DOCTYPE são aceitos;
   aninhamento muito profundo não estoura a pilha (a construção é iterativa).
 - **Fechamento implícito** só para `<p>` (fechado por um novo bloco como
-  `<div>`, `<ul>`, `<h1>`, outro `<p>`…) e `<li>` (fechado por outro `<li>`).
+  `<div>`, `<ul>`, `<h1>`, outro `<p>`…) e `<li>` (fechado por outro `<li>`
+  da mesma lista: a busca para em `<ul>`/`<ol>`/`<menu>` e em fronteiras
+  como `<table>`/`<td>`/`<button>`, então o primeiro `<li>` de uma lista
+  aninhada não fecha o item de fora).
   Feche explicitamente `<tr>`, `<td>`, `<th>` e `<option>`; o parser também
   não insere `<tbody>`.
 - **Entidades**: numéricas (`&#233;`, `&#xE9;`) e todas as nomeadas do HTML5
@@ -48,6 +51,15 @@ user-agent < user < autor < autor-inline
   especificidade, o `<style>` interno vence o externo.
 - `style=""` vence qualquer seletor de autor, e `!important` dentro dele
   vence qualquer `!important` de seletor.
+- **Camadas (`@layer`)**: dentro de uma origem e importância, antes da
+  especificidade. Nas declarações normais, uma regra fora de camada vence
+  todas as camadas, e uma camada posterior vence uma anterior; nas
+  `!important` a ordem se inverte (camada anterior vence, e qualquer camada
+  vence a regra fora de camada). A ordem é a da primeira menção; as
+  subcamadas de `a` vêm antes das regras diretas de `a`. Cada folha tem a
+  própria ordem: o CSS da aplicação e o CSS do documento não compartilham
+  nomes de camada. `tbox_css_ruleset.layer` guarda a posição (0 = fora de
+  camada).
 - `<style>` é procurado no documento inteiro, inclusive num `<head>`.
 - `<link rel="stylesheet" href="...">` lê CSS de arquivo local na abertura do
   contexto. `<link>` e `<style>` obedecem à ordem do documento; a folha CSS
@@ -83,14 +95,33 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
 
 - **`@media`**: `screen`/`all`, listas com vírgula, `and`/`not`,
   `min-`/`max-width`, `min-`/`max-height`, `orientation`
-  (`px`, `em`, `rem`), e `prefers-reduced-motion` (definido por
-  `tbox_context_options.prefers_reduced_motion`). Reavaliado a cada frame,
+  (`px`, `em`, `rem`), `aspect-ratio` (com `min-`/`max-`) e
+  `prefers-reduced-motion` (definido por
+  `tbox_context_options.prefers_reduced_motion`). As demais features têm
+  valores fixos de um app desktop: `prefers-color-scheme: light`,
+  `prefers-contrast: no-preference`, `forced-colors: none`,
+  `inverted-colors: none`, `hover`/`any-hover: hover`,
+  `pointer`/`any-pointer: fine`, `resolution` 1dppx (`dppx`, `x`, `dpi`,
+  `dpcm`), `color` 8, `monochrome` 0, `scripting: none`, `update: fast`.
+  A forma booleana (`(hover)`) também vale. Reavaliado a cada frame,
   inclusive no resize. Sem `print`, sem sintaxe de intervalo.
+- **`@import`**: só no início da folha (depois de um `@charset` opcional),
+  com `url()` ou string e uma lista de media opcional (vira `@media`).
+  Arquivos locais, relativos à folha que importa (ou ao documento, numa
+  `<style>`), aninhados até 8 níveis; o texto importado entra antes das
+  regras da folha. `supports()` no `@import` descarta a
+  importação; `layer()` é aceito (ver `@layer`). Vale em `<style>`,
+  `<link>` e no CSS passado pela aplicação.
+- **`@charset`**: aceito e ignorado; todo CSS é lido como UTF-8.
+- **`@layer`**: `@layer a, b;`, `@layer a { … }`, nomes com ponto
+  (`a.b`), camadas anônimas (`@layer { … }`), aninhamento com `@media` nos
+  dois sentidos e `@import … layer(nome)`/`layer`. Um prelúdio inválido
+  descarta a regra inteira.
 - **`@font-face`**: arquivos locais via `url()` relativos ao documento (ou ao
   diretório do CSS externo), com `font-family`, um `font-weight` e
   `font-style`. Sem URLs remotas nem faixas de peso.
-- **Ignorados sem quebrar o resto**: `@keyframes`, `@supports`, `@import` e
-  qualquer at-rule desconhecida; propriedades e valores desconhecidos.
+- **Ignorados sem quebrar o resto**: `@keyframes`, `@supports`, um
+  `@import` fora do início da folha e qualquer at-rule desconhecida; propriedades e valores desconhecidos.
 
 ## Seletores
 
@@ -122,7 +153,10 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   inicial é `inline`, como no CSS.
 - **Cores**: nomes CSS, hexadecimal (`#rgb`, `#rrggbb`), `rgb()`/`hsl()` nas duas
   sintaxes, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color-mix()`,
-  `transparent`, `currentColor`.
+  `transparent`, `currentColor`, `light-dark()` (escolhe pelo
+  `color-scheme` herdado: escuro só com `dark` sem `light`, já que o
+  ambiente prefere claro; vale em qualquer propriedade, inclusive vindo de
+  `var()`). `color-scheme` não muda as cores da UA (controles, barras).
 - **Herança e valores iniciais** seguem o CSS: `color`, fonte, `text-align`
   etc. herdam; `background`, `border`, `margin` não.
 

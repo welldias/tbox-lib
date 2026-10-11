@@ -5,6 +5,7 @@
 
 #include "tbox_css_stylesheet.h"
 #include "tbox_css_tokenizer.h"
+#include "base/tbox_vector.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,6 +15,9 @@ typedef struct tbox_css_parser {
     tbox_css_tokenizer tokenizer;
     tbox_css_token current;
     tbox_arena *arena; /* everything copied/allocated by the parser lands here */
+    /* Cascade layers seen so far (tbox_css_layer_node, in order of first
+     * mention); NULL outside tbox_css_parser_run. */
+    tbox_vector *layers;
 } tbox_css_parser;
 
 void tbox_css_parser_init(tbox_css_parser *parser, const char *input, size_t length, tbox_arena *arena);

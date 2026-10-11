@@ -45,4 +45,12 @@ bool tbox_style_vars_present(const tbox_css_computed_style *computed);
  * declarations chained to `inherited`) when `keep_own`, else `inherited`. */
 tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, tbox_arena *arena, const tbox_style_custom_properties **out_own, bool keep_own);
 
+/* True when some declaration in `computed` uses light-dark(). */
+bool tbox_style_light_dark_present(const tbox_css_computed_style *computed);
+
+/* `computed` with every light-dark(<light>, <dark>) replaced by one of its
+ * arguments (`dark` picks the second); a malformed one makes its
+ * declaration `unset`. Everything lives in `arena`. */
+tbox_css_computed_style tbox_style_light_dark_substitute(const tbox_css_computed_style *computed, bool dark, tbox_arena *arena);
+
 #endif /* TBOX_STYLE_INTERNAL_H */

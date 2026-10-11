@@ -158,7 +158,7 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
         return result;
     }
 
-    if (tbox_layout_is_text_box(node, style)) {
+    if (tbox_layout_is_inline_box(node, style, styles)) {
         tbox_vector words;
         tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
         bool is_pre = tbox_layout_tag(node, "pre") && (style->white_space == TBOX_STYLE_WHITE_SPACE_AUTO || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE);

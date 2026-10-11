@@ -290,3 +290,48 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
 - Referência: `@media` e `@font-face` estavam marcados como não suportados
   por engano; agora `X*`.
 - Fixture `116`.
+
+## 2026-10-11 — Media features, `@import`, `font-synthesis`, `light-dark()`
+
+- **CSS Cascade**: `tbox_css_media_feature` ganha `aspect-ratio`,
+  `resolution`, `color`/`monochrome`, a forma booleana e features de valor
+  fixo (`prefers-color-scheme: light`, `hover`, `pointer: fine`,
+  `scripting: none`…).
+- **Orchestration**: `@import` no início de `<style>`, `<link>` e do CSS
+  da aplicação é expandido no texto antes do parse
+  (`tbox_context_append_css`), relativo à folha que importa.
+- **Style**: `font-synthesis` (`font_synthesis_no_small_caps`,
+  `font_synthesis_no_position`); `color-scheme` (`color_scheme_dark`) e
+  `light-dark()`, substituído no texto depois de `var()`
+  (`tbox_style_light_dark_substitute`).
+- Referência: `@charset` marcado como suportado (já era ignorado sem
+  quebrar nada). Fixture `117`.
+
+## 2026-10-11 — Bloco dentro de parágrafo e listas aninhadas
+
+- **Layout Tree**: `tbox_layout_is_inline_box` (classificação e medição
+  intrínseca) faz de `<p>`, `<h1>`–`<h6>`, `<li>`, `<td>`/`<th>`,
+  `<caption>`, `<summary>` com filho de bloco em fluxo um container de
+  bloco; substitui o desvio por nome de tag que só o `<td>` tinha. O
+  marcador do `<li>` passa à primeira caixa anônima
+  (`tbox_layout_build_anonymous_box`/`tbox_layout_build_text_runs` ganham
+  `marker_node`), ou fica ao lado do primeiro bloco.
+- **HTML Parser**: o fechamento implícito de `<li>` para na fronteira da
+  lista (`tbox_html_tree_builder_find_open_li`); listas aninhadas sem
+  `</li>` explícito do item de fora deixaram de virar irmãs.
+- Débito "Bloco dentro de conteúdo inline some" resolvido; ficaram "Bloco
+  dentro de um elemento inline" e "Margem de listas aninhadas". Fixture
+  `118`. Nenhum fixture de 001–116 mudou de pixels.
+
+## 2026-10-11 — `@layer`
+
+- **CSS Parser**: `@layer` (declaração, bloco, nomes com ponto, anônima,
+  aninhada com `@media`). Cada regra recebe `tbox_css_ruleset.layer` (0 =
+  fora de camada; senão a posição pós-ordem da camada na folha). Antes, o
+  conteúdo de um `@layer` era descartado.
+- **CSS Cascade**: `tbox_css_cascade_priority_compare` compara a camada
+  entre origem/importância e especificidade (invertida para `!important`).
+- **Orchestration**: `@import … layer(nome)`/`layer` embrulha o texto
+  importado em `@layer`; declarações `@layer a, b;` antes dos `@import`
+  são mantidas no lugar.
+- Fixture `119`. Nenhum fixture de 001–116 mudou de pixels.

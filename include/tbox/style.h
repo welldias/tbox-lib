@@ -555,6 +555,10 @@ typedef struct tbox_style {
      * is synthesized: where it changes, font-size shrinks like `smaller`;
      * text with vertical-align: baseline is moved as by sub/super. */
     tbox_style_font_variant_position font_variant_position;
+    /* `font-synthesis` (inheritable): true turns off one of the two
+     * syntheses tbox does (small-caps, sub/super). Weight and style are
+     * never synthesized. */
+    bool font_synthesis_no_small_caps, font_synthesis_no_position;
     /* `font-kerning`: auto/normal apply the font's kerning pairs (the
      * initial value auto does), none disables them. Inheritable. */
     bool font_kerning_none;
@@ -694,6 +698,10 @@ typedef struct tbox_style {
     tbox_css_rgba caret_color;  /* text insertion caret */
     /* `scrollbar-color: <thumb> <track>`, inheritable; alpha 0 is auto. */
     tbox_css_rgba scrollbar_thumb_color, scrollbar_track_color;
+    /* `color-scheme` (inheritable): true when the used scheme is dark --
+     * the list has `dark` but not `light` (the environment prefers light).
+     * Only chooses light-dark() arguments; UA colors don't change. */
+    bool color_scheme_dark;
     /* Custom properties in scope (own and inherited), which var() in any
      * declaration resolves against. Allocated in the arena given to
      * tbox_style_resolve_tree(_in_viewport), so valid as long as the style

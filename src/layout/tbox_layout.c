@@ -1,18 +1,8 @@
 #include "tbox_layout_internal.h"
 
-tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, const tbox_style *style, const double *row_column_widths, size_t row_column_count) {
+tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, const double *row_column_widths, size_t row_column_count) {
     tbox_layout_classification kind = { 0 };
-    kind.text                       = tbox_layout_is_text_box(node, style);
-    if (tbox_layout_table_cell_node(node)) {
-        for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
-            if (child->type != TBOX_HTML_NODE_ELEMENT)
-                continue;
-            if (tbox_layout_tag(child, "div") || tbox_layout_tag(child, "p") || tbox_layout_tag(child, "table") || tbox_layout_tag(child, "ul") || tbox_layout_tag(child, "ol") || tbox_layout_tag(child, "section")) {
-                kind.text = false;
-                break;
-            }
-        }
-    }
+    kind.text                       = tbox_layout_is_inline_box(node, style, styles);
     kind.image     = tbox_layout_is_replaced_image(node);
     kind.table     = node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "table");
     kind.table_row = row_column_widths != NULL && row_column_count > 0 && tbox_layout_tag(node, "tr");

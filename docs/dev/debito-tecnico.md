@@ -71,7 +71,8 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 
 - **O que é:** `<link rel=stylesheet>` concatena CSS local às folhas do
   documento. Isso preserva a ordem das regras, mas `url()` de `@font-face`
-  ainda é resolvido contra `asset_base_dir`, não contra o diretório da folha.
+  ainda é resolvido contra `asset_base_dir`, não contra o diretório da folha
+  (o `@import` já resolve contra a folha que importa).
 - **Quando revisitar:** quando um exemplo precisar de fontes em folhas CSS
   armazenadas em subdiretórios.
 - **Toca:** `src/context/tbox_context.c`, registro de fontes e cascata.
@@ -168,17 +169,34 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   não está implementado.
 - **Quando revisitar:** um tooltip que precise "abraçar" o conteúdo.
 
-### Bloco dentro de conteúdo inline some
+### Bloco dentro de um elemento inline
 
-- **O que é:** um filho `display: block` no meio do texto de um parágrafo
-  (ex.: `<p>um <span style="display:block">dois</span> três</p>`) não é
-  desenhado; o CSS 2.1 §9.2.1.1 o colocaria numa caixa de bloco própria
-  entre as linhas de antes e de depois.
-- **Por que importa:** apareceu com `all: initial` enquanto o `display`
-  inicial era `block`; também vale para qualquer `display: block`
-  declarado.
-- **Toca:** `tbox_layout_build_anonymous_box` e a separação de runs inline
-  em `tbox_layout_flow.c`.
+- **O que é:** um `display: block` dentro de um elemento inline
+  (`<p>x <span><div>y</div></span> z</p>`) é achatado em linha, em vez de
+  dividir o inline em volta (CSS 2.1 §9.2.1.1). Um bloco filho direto de
+  `<p>`/`<li>`/`<td>`… já funciona; `<button>` e `<pre>` ainda ignoram
+  filhos de bloco.
+- **Toca:** `tbox_layout_collect_words_in` (`inside_inline`) e
+  `tbox_layout_inline_run_end`.
+
+### Camadas entre folhas diferentes
+
+- **O que é:** a ordem das camadas (`@layer`) é calculada por folha. O CSS
+  passado pela aplicação e o CSS do documento (`<style>`/`<link>`, que são
+  concatenados) não compartilham nomes: `@layer base` em cada um são duas
+  camadas, comparadas pela posição numérica dentro de cada folha.
+- **Quando revisitar:** quando a aplicação e o documento precisarem
+  combinar camadas de mesmo nome.
+- **Toca:** `tbox_css_parser_run` (ranqueamento) e a montagem das folhas
+  em `tbox_context_open_with_options`.
+
+### Margem de listas aninhadas
+
+- **O que é:** a folha UA só tem seletores de uma tag, sem a regra
+  `ul ul, ol ul… { margin: 0 }` dos navegadores; uma lista dentro de um
+  `<li>` ganha a margem vertical de lista. Contorno no autor:
+  `li > ul, li > ol { margin: 0 }`.
+- **Toca:** `src/context/tbox_ua_style.c` (`tbox_ua_build_selector`).
 
 ### Containing block de ancestral posicionado com `height: auto`
 

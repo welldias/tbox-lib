@@ -53,6 +53,10 @@ negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
   texto com `vertical-align: baseline` sobe/desce como `super`/`sub`.
   Inline-blocks e imagens não se movem. Não é lido do shorthand
   `font-variant`.
+- `font-synthesis` (e `-small-caps`, `-position`): desliga as sínteses de
+  small-caps e de sub/super; sem síntese o texto sai normal, já que não há
+  glifos OpenType. `-weight`/`-style` não têm efeito: a tbox nunca
+  sintetiza negrito nem itálico.
 - `@font-face` com arquivos locais.
 - Decorações (`underline`, `overline`, `line-through`, estilos sólido,
   tracejado, pontilhado, duplo e ondulado), `text-shadow`,

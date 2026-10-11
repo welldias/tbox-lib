@@ -1,0 +1,4 @@
+/* Relativo a 117-import/, não ao documento. */
+@import url(colors.css);
+
+.import-base { padding: 8px; background: #ccfbf1; }

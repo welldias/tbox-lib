@@ -1428,6 +1428,50 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* A block child inside a paragraph-like text tag splits it: anonymous
+     * boxes around the block (CSS 2.1 9.2.1.1). A list item with a nested
+     * list keeps its marker in the first anonymous box; one that starts
+     * with a block hangs the marker in its own runs. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><p id=\"p\">antes <span id=\"b\" class=\"b\">bloco</span> depois</p>"
+            "<ul><li id=\"li\">Item<ul><li>sub</li></ul></li><li id=\"li2\"><p id=\"inner\">par</p></li></ul>"
+            "<p id=\"plain\">so <span>texto</span></p></div>");
+        const tbox_html_node *root     = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet     = parse_css_cstr("span { display: inline; } .b { display: block; } p { width: 300px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+
+        const tbox_layout_box *p = find_box_for_node(layout, find_html_id(root, "p"));
+        TBOX_TEST_ASSERT(p != NULL && p->text_run_count == 0 && p->first_child != NULL);
+        if (p != NULL && p->first_child != NULL) {
+            const tbox_layout_box *before = p->first_child, *block = before->next_sibling;
+            const tbox_layout_box *after  = block != NULL ? block->next_sibling : NULL;
+            TBOX_TEST_ASSERT(before->node == NULL && before->text_run_count == 1 && string_view_equal_cstr(before->text_runs[0].text, "antes"));
+            TBOX_TEST_ASSERT(block != NULL && block->node == find_html_id(root, "b") && block->border_box.y >= before->border_box.y + before->border_box.height);
+            TBOX_TEST_ASSERT(after != NULL && after->node == NULL && after->text_run_count == 1 && string_view_equal_cstr(after->text_runs[0].text, "depois"));
+            TBOX_TEST_ASSERT(after != NULL && after->border_box.y >= block->border_box.y + block->border_box.height);
+        }
+
+        const tbox_layout_box *li = find_box_for_node(layout, find_html_id(root, "li"));
+        TBOX_TEST_ASSERT(li != NULL && li->first_child != NULL && li->first_child->node == NULL);
+        if (li != NULL && li->first_child != NULL) {
+            const tbox_layout_box *anon = li->first_child;
+            TBOX_TEST_ASSERT(anon->text_run_count == 2 && string_view_equal_cstr(anon->text_runs[0].text, "Item") && anon->text_runs[1].rect.x < anon->content_box.x); /* "Item", hanging marker */
+            TBOX_TEST_ASSERT(anon->next_sibling != NULL && anon->next_sibling->node != NULL); /* the nested <ul> */
+        }
+        const tbox_layout_box *li2 = find_box_for_node(layout, find_html_id(root, "li2"));
+        TBOX_TEST_ASSERT(li2 != NULL && li2->text_run_count == 1 && li2->first_child != NULL && li2->first_child->node == find_html_id(root, "inner"));
+
+        const tbox_layout_box *plain = find_box_for_node(layout, find_html_id(root, "plain"));
+        TBOX_TEST_ASSERT(plain != NULL && plain->first_child == NULL && plain->text_run_count >= 1); /* still one inline context */
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* text-justify: none keeps justified lines at the start; line-break:
      * anywhere breaks inside words like break-all. */
     {

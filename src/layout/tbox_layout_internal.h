@@ -148,14 +148,14 @@ void tbox_layout_image_append_run(tbox_arena *arena, const tbox_layout_replaced_
 double tbox_layout_textarea_auto_width(const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, double fallback_width);
 double tbox_layout_textarea_height(const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_layout_containing_block container, double vertical_edges, double text_height);
 
-tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, const tbox_style *style, const double *row_column_widths, size_t row_column_count);
+tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, const double *row_column_widths, size_t row_column_count);
 
 #define TBOX_LAYOUT_FLEX_INFINITE 1e300
 
 extern const tbox_style tbox_layout_default_style;
 
 void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, double first_line_indent, bool no_wrap, bool indent_each_line, const tbox_font_face *block_face, tbox_vector *lines);
-tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double cursor_y, double available_width, const tbox_layout_positioned_context *context);
+tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double cursor_y, double available_width, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node);
 void tbox_layout_build_checkbox_checkmark(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_layout_box *box);
 double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block children_container, double start_y, tbox_layout_box *parent_box, tbox_layout_positioned_context positioned_context, const tbox_style *container_style);
 tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count);
@@ -165,7 +165,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
 double tbox_layout_build_table_children(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double *content_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context);
 double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node *table, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double x, double y, double *table_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context);
 double tbox_layout_build_table_row_children(tbox_arena *arena, const tbox_html_node *row_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, const double *column_widths, size_t column_count, tbox_layout_box *row_box, tbox_layout_positioned_context positioned_context);
-double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box, const tbox_layout_positioned_context *context);
+double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node, const tbox_style *marker_style);
 void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words);
 void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, tbox_vector *words);
 void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, bool inside_inline, bool measure_only, tbox_layout_inline_state *state, tbox_vector *words);
@@ -184,6 +184,7 @@ bool tbox_layout_is_inline_run_trigger(tbox_arena *arena, const tbox_html_node *
 bool tbox_layout_is_select(const tbox_html_node *node);
 bool tbox_layout_is_text_tag(const tbox_html_node *node);
 bool tbox_layout_is_text_box(const tbox_html_node *node, const tbox_style *style);
+bool tbox_layout_is_inline_box(const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles);
 bool tbox_layout_is_textarea(const tbox_html_node *node);
 tbox_layout_intrinsic tbox_layout_measure_words(const tbox_layout_word *words, size_t count, bool no_wrap);
 tbox_layout_word *tbox_layout_new_word(tbox_vector *words);

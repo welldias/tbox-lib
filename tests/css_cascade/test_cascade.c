@@ -543,5 +543,59 @@ int tbox_test_css_cascade_run(void) {
         tbox_css_stylesheet_destroy(sheet);
     }
 
+    /* Media features of the fixed desktop environment: light scheme, a
+     * hovering fine pointer, 1dppx, 8-bit color, no scripting; ratios. */
+    {
+        static const struct {
+            const char *query;
+            bool expected;
+        } cases[] = {
+            { "(prefers-color-scheme: light)", true },  { "(prefers-color-scheme: dark)", false },
+            { "(hover: hover)", true },                 { "(any-pointer: coarse)", false },
+            { "(pointer: fine)", true },                { "(hover)", true },
+            { "(min-resolution: 2dppx)", false },       { "(resolution: 96dpi)", true },
+            { "(min-aspect-ratio: 16/9)", false },      { "(max-aspect-ratio: 4 / 3)", true },
+            { "(aspect-ratio: 4/3)", true },            { "(min-color: 8)", true },
+            { "(monochrome)", false },                  { "(scripting: none)", true },
+            { "(forced-colors: active)", false },       { "(prefers-contrast: no-preference)", true },
+            { "(min-width: 600px) and (pointer: fine)", true },
+        };
+        tbox_html_document *doc = parse_html_cstr("<p>x</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[160];
+            snprintf(css, sizeof(css), "@media %s { p { color: red; } }", cases[i].query);
+            tbox_css_stylesheet *sheet     = parse_css_cstr(css);
+            tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+            tbox_css_computed_style style  = tbox_css_cascade_resolve_in_viewport(&source, 1, p, 800.0, 600.0, false);
+            TBOX_TEST_ASSERT_MSG((find_cstr(&style, "color") != NULL) == cases[i].expected, cases[i].query);
+            tbox_css_computed_style_destroy(&style);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Cascade layers: an unlayered rule beats a more specific layered one,
+     * a later layer beats an earlier one; !important reverses the layer
+     * order, and a layered !important beats an unlayered one. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<p id=\"x\" class=\"c\">t</p>");
+        const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "@layer low, high;"
+            "@layer high { p { color: blue; margin: 1px !important; } }"
+            "@layer low { #x.c { color: green; background: red; margin: 2px !important; padding: 3px !important; } }"
+            "p { color: red; padding: 4px; }"
+            "@layer high { p { background: lime; } }");
+        tbox_css_computed_style style = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        TBOX_TEST_ASSERT(find_cstr(&style, "color") != NULL && text_eq(find_cstr(&style, "color")->value, "red"));
+        TBOX_TEST_ASSERT(find_cstr(&style, "background") != NULL && text_eq(find_cstr(&style, "background")->value, "lime"));
+        TBOX_TEST_ASSERT(find_cstr(&style, "margin") != NULL && text_eq(find_cstr(&style, "margin")->value, "2px"));
+        TBOX_TEST_ASSERT(find_cstr(&style, "padding") != NULL && text_eq(find_cstr(&style, "padding")->value, "3px"));
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

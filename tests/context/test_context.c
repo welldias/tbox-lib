@@ -4079,6 +4079,51 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* @import: nested, relative to the importing sheet, with a media list
+     * that doesn't match; imports come before the sheet's own rules, and
+     * an @import after a rule is ignored. */
+    {
+        tbox_context_options options = tbox_context_options_default();
+        options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
+        const char *html = "<div><style>@import url(117.css); .import-base { padding-left: 3px; } @import url(110.css);</style>"
+                           "<p class='import-color import-base'>Importado</p></div>";
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 120.0, &list);
+            const tbox_layout_box *p = find_box_by_tag(find_context_box(ctx,
+                tbox_html_document_root(tbox_context_document(ctx))->first_child), "p");
+            TBOX_TEST_ASSERT(p != NULL && p->style->color.r == 15 && p->style->color.g == 118 && p->style->color.b == 110);
+            TBOX_TEST_ASSERT(p != NULL && p->style->padding[0].value == 8.0 && p->style->padding[3].value == 3.0);
+            TBOX_TEST_ASSERT(p != NULL && p->style->border_widths[0] == 0.0); /* 110.css not imported */
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* @import ... layer(name): the imported rules join that cascade layer,
+     * placed by a leading @layer statement; an unlayered rule wins over a
+     * more specific layered one. */
+    {
+        tbox_context_options options = tbox_context_options_default();
+        options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
+        const char *html = "<div><style>@layer reset, theme; @import url(119-reset.css) layer(reset);"
+                           "@layer theme { p { background: #dbeafe; } } p { color: #1d4ed8; }</style>"
+                           "<p class='layer-demo'>camadas</p></div>";
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 120.0, &list);
+            const tbox_layout_box *p = find_box_by_tag(find_context_box(ctx,
+                tbox_html_document_root(tbox_context_document(ctx))->first_child), "p");
+            TBOX_TEST_ASSERT(p != NULL && p->style->color.r == 0x1d && p->style->color.b == 0xd8); /* unlayered wins */
+            TBOX_TEST_ASSERT(p != NULL && p->style->background_color.r == 0xdb); /* theme after reset */
+            TBOX_TEST_ASSERT(p != NULL && p->style->padding[0].value == 12.0); /* reset still applies */
+            tbox_context_close(ctx);
+        }
+    }
+
     /* A first supported <source> replaces the <img> fallback; media sources
      * that this version cannot evaluate leave the fallback in place. */
     {

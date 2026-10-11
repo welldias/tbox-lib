@@ -685,6 +685,23 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 45b: a nested list's first <li> does not close the outer item (the
+     * implicit close stops at the inner <ul>); an unclosed inner item is
+     * still closed by its sibling. */
+    {
+        tbox_html_document *doc  = parse_cstr("<ul><li>A<ul><li>a1<li>a2</ul></li><li>B</ul>");
+        const tbox_html_node *ul = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *a  = ul->first_child;
+        TBOX_TEST_ASSERT(a != NULL && text_eq(a->element.tag_name, "li"));
+        const tbox_html_node *inner = a->first_child->next_sibling;
+        TBOX_TEST_ASSERT(inner != NULL && text_eq(inner->element.tag_name, "ul"));
+        TBOX_TEST_ASSERT(inner->first_child != NULL && inner->first_child->next_sibling == inner->last_child);
+        const tbox_html_node *b = a->next_sibling;
+        TBOX_TEST_ASSERT(b != NULL && text_eq(b->element.tag_name, "li") && b == ul->last_child);
+        TBOX_TEST_ASSERT(text_eq(b->first_child->text.text, "B"));
+        tbox_html_document_destroy(doc);
+    }
+
     /* 46: <li> also closes an open <p> (not just another <li>). */
     {
         tbox_html_document *doc    = parse_cstr("<p>x<li>y</p>");

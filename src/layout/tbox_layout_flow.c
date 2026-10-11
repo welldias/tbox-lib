@@ -112,6 +112,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
                 break;
             }
 
+    bool in_flow_seen = false;
     for (const tbox_html_node *child = node->first_child; child != NULL;) {
         if (closed_details && child != details_summary) {
             child = child->next_sibling;
@@ -128,7 +129,9 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
             const tbox_html_node *run_end   = closed_details ? child->next_sibling : tbox_layout_inline_run_end(run_start, styles);
 
             double cursor_y            = border_bottom + pending_margin_bottom;
-            tbox_layout_box *child_box = tbox_layout_build_anonymous_box(arena, run_start, run_end, container_style, styles, fonts, images, children_container.x, cursor_y, children_container.width, &positioned_context);
+            /* The first in-flow box of a list item carries its marker. */
+            tbox_layout_box *child_box = tbox_layout_build_anonymous_box(arena, run_start, run_end, container_style, styles, fonts, images, children_container.x, cursor_y, children_container.width, &positioned_context, in_flow_seen ? NULL : node);
+            in_flow_seen               = true;
             child_box->parent          = parent_box;
             if (previous == NULL) {
                 parent_box->first_child = child_box;
@@ -196,6 +199,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
         }
 
         tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, images, children_container, cursor_y, positioned_context, NULL, 0);
+        in_flow_seen               = true;
         child_box->parent          = parent_box;
         if (previous == NULL) {
             parent_box->first_child = child_box;
@@ -248,7 +252,7 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
  * box) are all identical: `{content_x, cursor_y, available_width, height}`,
  * `height` coming straight out of tbox_layout_build_text_runs. */
 
-tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double cursor_y, double available_width, const tbox_layout_positioned_context *context) {
+tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double cursor_y, double available_width, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node) {
     tbox_style anon = tbox_layout_default_style;
     anon.color      = container_style->color;
     memcpy(anon.font_family, container_style->font_family, sizeof(anon.font_family));
@@ -286,7 +290,9 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.font_stretch             = container_style->font_stretch;
     anon.font_small_caps          = container_style->font_small_caps;
     anon.font_variant_position    = container_style->font_variant_position;
-    if (anon.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL) /* synthesized, see tbox_style */
+    anon.font_synthesis_no_small_caps = container_style->font_synthesis_no_small_caps;
+    anon.font_synthesis_no_position   = container_style->font_synthesis_no_position;
+    if (anon.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL && !anon.font_synthesis_no_position) /* synthesized, see tbox_style */
         anon.vertical_align = anon.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUB ? TBOX_STYLE_VERTICAL_ALIGN_SUB : TBOX_STYLE_VERTICAL_ALIGN_SUPER;
     anon.font_kerning_none        = container_style->font_kerning_none;
     anon.word_break_keep_all      = container_style->word_break_keep_all;
@@ -329,7 +335,9 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     box->node            = NULL;
     box->style           = anon_style;
 
-    double height = tbox_layout_build_text_runs(arena, NULL, run_start, run_end, anon_style, styles, fonts, images, content_x, cursor_y, available_width, box, context);
+    /* `marker_node`: the list item whose marker opens this box's first
+     * line (the box starts the item's content), else NULL. */
+    double height = tbox_layout_build_text_runs(arena, NULL, run_start, run_end, anon_style, styles, fonts, images, content_x, cursor_y, available_width, box, context, marker_node, container_style);
 
     tbox_rect rect   = { content_x, cursor_y, available_width, height };
     box->content_box = rect;

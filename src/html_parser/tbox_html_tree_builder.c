@@ -41,6 +41,28 @@ static bool tbox_html_tree_builder_find_matching(tbox_html_tree_builder *builder
     return false;
 }
 
+/* An open <li> that a new <li> implicitly closes: the nearest one, but
+ * only within its own list -- the search stops at a list or another
+ * scope boundary (HTML5 "list item scope"), so a nested list's first <li>
+ * doesn't close the outer item. */
+static bool tbox_html_tree_builder_find_open_li(tbox_html_tree_builder *builder, size_t *out_index) {
+    static const char *const boundaries[] = { "ul", "ol", "menu", "table", "td", "th", "caption", "button", "template" };
+    size_t length = tbox_vector_length(&builder->open_elements);
+    for (size_t i = length; i-- > 0;) {
+        tbox_html_node *node = *(tbox_html_node **)tbox_vector_at(&builder->open_elements, i);
+        if (node->type != TBOX_HTML_NODE_ELEMENT)
+            continue;
+        if (tbox_string_view_equal_cstr(node->element.tag_name, "li")) {
+            *out_index = i;
+            return true;
+        }
+        for (size_t b = 0; b < sizeof(boundaries) / sizeof(boundaries[0]); b++)
+            if (tbox_string_view_equal_cstr(node->element.tag_name, boundaries[b]))
+                return false;
+    }
+    return false;
+}
+
 static tbox_string_view tbox_html_tree_builder_copy(tbox_html_document *document, tbox_string_view view) {
     tbox_string_builder builder;
     tbox_string_builder_init(&builder, &document->arena, view.size);
@@ -91,7 +113,7 @@ static void tbox_html_tree_builder_handle_start_tag(tbox_html_tree_builder *buil
     }
 
     size_t li_index;
-    if (tbox_string_view_equal_cstr(tag_name, "li") && tbox_html_tree_builder_find_matching(builder, tbox_string_view_from_cstr("li"), &li_index)) {
+    if (tbox_string_view_equal_cstr(tag_name, "li") && tbox_html_tree_builder_find_open_li(builder, &li_index)) {
         builder->open_elements.length = li_index;
     }
 

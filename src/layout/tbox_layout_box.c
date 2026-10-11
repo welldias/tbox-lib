@@ -28,7 +28,7 @@ tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_no
 
 tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count, const tbox_layout_forced_size *forced) {
     const tbox_style *style                  = tbox_layout_style_or_default(styles, node);
-    tbox_layout_classification kind          = tbox_layout_classify(node, style, row_column_widths, row_column_count);
+    tbox_layout_classification kind          = tbox_layout_classify(node, style, styles, row_column_widths, row_column_count);
     bool is_text_tag                         = kind.text;
     bool is_image_input                      = kind.image;
     bool is_table                            = kind.table;
@@ -301,7 +301,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         const tbox_html_node *text_children = (tbox_layout_tag(node, "progress") || tbox_layout_tag(node, "meter")) ? NULL : node->first_child;
         content_height = tbox_layout_tag(node, "ruby") ?
             tbox_layout_build_ruby_runs(arena, node, styles, fonts, content_x, content_y, box) :
-            tbox_layout_build_text_runs(arena, node, text_children, NULL, style, styles, fonts, images, content_x, content_y, content_width, box, &context_for_children);
+            tbox_layout_build_text_runs(arena, node, text_children, NULL, style, styles, fonts, images, content_x, content_y, content_width, box, &context_for_children, node, style);
         if (tbox_layout_tag(node, "summary") && node->parent != NULL &&
             tbox_layout_tag(node->parent, "details")) {
             bool first_summary = true;
@@ -428,6 +428,22 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         };
         double children_total_height = tbox_layout_build_children(arena, node, styles, fonts, images, children_container, content_y, box, context_for_children, style);
         box->scroll_content_height   = children_total_height;
+        /* A list item whose content starts with a block (<li><p>..</p>):
+         * no anonymous box took the marker, so it hangs beside that block's
+         * top, in the item's own runs. */
+        const tbox_layout_box *first_in_flow = box->first_child;
+        while (first_in_flow != NULL && first_in_flow->style != NULL &&
+               (first_in_flow->style->position == TBOX_STYLE_POSITION_ABSOLUTE || first_in_flow->style->position == TBOX_STYLE_POSITION_FIXED))
+            first_in_flow = first_in_flow->next_sibling;
+        if (first_in_flow != NULL && first_in_flow->node != NULL && box->text_run_count == 0) {
+            tbox_vector marker_runs;
+            tbox_vector_init(&marker_runs, arena, sizeof(tbox_layout_text_run), 0);
+            tbox_layout_append_outside_marker(arena, node, style, fonts, images, content_x, first_in_flow->content_box.y, NULL, &marker_runs);
+            if (marker_runs.length > 0) {
+                box->text_runs      = (tbox_layout_text_run *)marker_runs.data;
+                box->text_run_count = marker_runs.length;
+            }
+        }
         if (!height_definite || (ratio_grows && children_total_height > content_height)) {
             content_height = children_total_height;
         }

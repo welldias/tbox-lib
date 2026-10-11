@@ -3206,6 +3206,27 @@ static const tbox_style_keyword tbox_style_text_align_lasts[] = {
     { "justify", TBOX_STYLE_TEXT_ALIGN_LAST_JUSTIFY },
 };
 
+/* color-scheme: normal | [light | dark]+ only?. The environment prefers
+ * light, so the used scheme is dark only when `dark` is listed without
+ * `light`; an invalid value or a CSS-wide keyword keeps the parent's. */
+static bool tbox_style_resolve_color_scheme(const tbox_css_computed_style *computed, const tbox_style *parent_style) {
+    bool dark = parent_style != NULL && parent_style->color_scheme_dark;
+    const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("color-scheme"));
+    if (decl == NULL)
+        return dark;
+    tbox_string_view tokens[4];
+    size_t count = tbox_style_tokens(decl->value, tokens, 4);
+    if (count == 1 && tbox_style_is(tokens[0], "normal"))
+        return false;
+    bool light = false, has_dark = false;
+    for (size_t i = 0; i < count; i++) {
+        if (tbox_style_is(tokens[i], "light")) light = true;
+        else if (tbox_style_is(tokens[i], "dark")) has_dark = true;
+        else if (!tbox_style_is(tokens[i], "only")) return dark;
+    }
+    return count > 0 && (light || has_dark) ? has_dark && !light : dark;
+}
+
 static const tbox_style_keyword tbox_style_user_selects[] = {
     { "auto", TBOX_STYLE_USER_SELECT_AUTO },
     { "none", TBOX_STYLE_USER_SELECT_NONE },
@@ -3298,6 +3319,7 @@ static void tbox_style_resolve_extras(const tbox_css_computed_style *computed, c
             style->scrollbar_track_color = track;
         }
     }
+    style->color_scheme_dark = tbox_style_resolve_color_scheme(computed, parent_style);
     style->scrollbar_width = TBOX_STYLE_SCROLLBAR_WIDTH_AUTO;
     decl                   = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("scrollbar-width"));
     if (decl != NULL) {
@@ -3429,10 +3451,12 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
 static tbox_style tbox_style_resolve_keywords(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed, double viewport_width, double viewport_height);
 
 /* var() substitution first (custom properties come from the cascade like
- * any declaration), then CSS-wide keywords, then the declared values. */
+ * any declaration), then light-dark() by the element's color scheme, then
+ * CSS-wide keywords, then the declared values. */
 static tbox_style tbox_style_resolve_full(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed, double viewport_width, double viewport_height, tbox_arena *arena) {
     const tbox_style_custom_properties *inherited = parent_style != NULL ? parent_style->custom_properties : NULL;
-    if (!tbox_style_vars_present(computed)) {
+    bool vars = tbox_style_vars_present(computed), light_dark = tbox_style_light_dark_present(computed);
+    if (!vars && !light_dark) {
         tbox_style style        = tbox_style_resolve_keywords(node, parent_style, computed, viewport_width, viewport_height);
         style.custom_properties = inherited;
         return style;
@@ -3443,8 +3467,13 @@ static tbox_style tbox_style_resolve_full(const tbox_html_node *node, const tbox
         local = tbox_arena_create(0);
         arena = &local;
     }
-    const tbox_style_custom_properties *own;
-    tbox_css_computed_style substituted = tbox_style_vars_substitute(computed, inherited, arena, &own, !own_arena);
+    const tbox_style_custom_properties *own = inherited;
+    tbox_css_computed_style substituted     = *computed;
+    if (vars)
+        substituted = tbox_style_vars_substitute(computed, inherited, arena, &own, !own_arena);
+    /* var() may have brought a light-dark() in. */
+    if (light_dark || tbox_style_light_dark_present(&substituted))
+        substituted = tbox_style_light_dark_substitute(&substituted, tbox_style_resolve_color_scheme(&substituted, parent_style), arena);
     tbox_style style                    = tbox_style_resolve_keywords(node, parent_style, &substituted, viewport_width, viewport_height);
     style.custom_properties             = own_arena ? inherited : own;
     if (own_arena)
@@ -3723,6 +3752,35 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
     double root_font_size          = parent_style != NULL ? parent_style->root_font_size : 16.0;
     tbox_style_units units         = { parent_font_size, root_font_size, viewport_width, viewport_height };
     style.font_size                = tbox_style_resolve_font_size(tbox_style_font_value(computed, &font, "font-size", &font_storage), parent_font_size, &units);
+    /* font-synthesis: none | [weight || style || small-caps || position],
+     * and its auto | none longhands. Only small-caps and position matter:
+     * weight and style are never synthesized. */
+    style.font_synthesis_no_small_caps = parent_style != NULL && parent_style->font_synthesis_no_small_caps;
+    style.font_synthesis_no_position   = parent_style != NULL && parent_style->font_synthesis_no_position;
+    const tbox_css_resolved_declaration *synthesis_winners[2] = { NULL, NULL };
+    const tbox_css_resolved_declaration *synthesis = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-synthesis"));
+    if (synthesis != NULL) {
+        tbox_string_view tokens[5];
+        size_t count = tbox_style_tokens(synthesis->value, tokens, 5);
+        bool listed[2] = { false, false }, valid = count >= 1 && count <= 4;
+        for (size_t t = 0; t < count && valid; t++) {
+            if (tbox_style_is(tokens[t], "small-caps")) listed[0] = true;
+            else if (tbox_style_is(tokens[t], "position")) listed[1] = true;
+            else valid = (count == 1 && tbox_style_is(tokens[t], "none")) || tbox_style_is(tokens[t], "weight") || tbox_style_is(tokens[t], "style");
+        }
+        if (valid && tbox_style_claim(synthesis, &synthesis_winners[0])) style.font_synthesis_no_small_caps = !listed[0];
+        if (valid && tbox_style_claim(synthesis, &synthesis_winners[1])) style.font_synthesis_no_position = !listed[1];
+    }
+    static const char *const synthesis_longhands[2] = { "font-synthesis-small-caps", "font-synthesis-position" };
+    for (size_t i = 0; i < 2; i++) {
+        synthesis = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(synthesis_longhands[i]));
+        if (synthesis == NULL || !(tbox_style_is(synthesis->value, "auto") || tbox_style_is(synthesis->value, "none")) || !tbox_style_claim(synthesis, &synthesis_winners[i]))
+            continue;
+        bool off = tbox_style_is(synthesis->value, "none");
+        if (i == 0) style.font_synthesis_no_small_caps = off;
+        else style.font_synthesis_no_position = off;
+    }
+
     /* font-variant-position: normal | sub | super, synthesized -- the size
      * shrinks only where the value changes, so nesting doesn't compound. */
     style.font_variant_position = parent_style != NULL ? parent_style->font_variant_position : TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL;
@@ -3732,7 +3790,7 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
         else if (tbox_style_is(variant_position->value, "super")) style.font_variant_position = TBOX_STYLE_FONT_VARIANT_POSITION_SUPER;
         else if (tbox_style_is(variant_position->value, "normal")) style.font_variant_position = TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL;
     }
-    if (style.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL &&
+    if (style.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL && !style.font_synthesis_no_position &&
         style.font_variant_position != (parent_style != NULL ? parent_style->font_variant_position : TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL))
         style.font_size /= 1.2;
     style.root_font_size           = parent_style != NULL ? parent_style->root_font_size : style.font_size;
@@ -4050,7 +4108,7 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
      * (inline-block, inline-flex, images) keep their baseline. */
     bool atomic_inline = style.display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || style.display == TBOX_STYLE_DISPLAY_INLINE_FLEX ||
                          (node != NULL && node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_ascii_ci(node->element.tag_name, tbox_string_view_from_cstr("img")));
-    if (style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BASELINE && style.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL && !atomic_inline)
+    if (style.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BASELINE && style.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL && !style.font_synthesis_no_position && !atomic_inline)
         style.vertical_align = style.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUB ? TBOX_STYLE_VERTICAL_ALIGN_SUB : TBOX_STYLE_VERTICAL_ALIGN_SUPER;
     const tbox_css_resolved_declaration *caption_side = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("caption-side"));
     style.caption_side                                = parent_style != NULL ? parent_style->caption_side : TBOX_STYLE_CAPTION_TOP;

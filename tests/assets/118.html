@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .card {
+      width: 420px;
+      padding: 8px 12px;
+      background: white;
+      margin: 8px 0;
+    }
+
+    .note {
+      display: block;
+      margin: 4px 0;
+      padding: 4px 8px;
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+    }
+
+    li>ul,
+    li>ol {
+      margin: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Blocos dentro de parágrafos e listas aninhadas</h1>
+
+  <h2>Bloco no meio de um &lt;p&gt;</h2>
+  <p class="card">Texto antes do bloco, <span class="note">um span com display: block</span> e texto depois.</p>
+
+  <h2>&lt;div&gt; dentro de um título</h2>
+  <h3 class="card">Título <div class="note">div dentro do h3</div> continuação</h3>
+
+  <h2>Listas aninhadas</h2>
+  <ul class="card">
+    <li>Frutas
+      <ul>
+        <li>Maçã</li>
+        <li>Banana
+          <ol>
+            <li>prata</li>
+            <li>nanica</li>
+          </ol>
+        </li>
+      </ul>
+    </li>
+    <li>
+      <p style="margin: 0">Item que começa com um parágrafo</p>
+    </li>
+    <li>Item com <div class="note">um bloco</div> no meio</li>
+  </ul>
+
+  <h2>Célula de tabela</h2>
+  <table class="card">
+    <tr>
+      <td>Antes <div class="note">bloco na célula</div> depois</td>
+      <td>célula simples</td>
+    </tr>
+  </table>
+</body>
+
+</html>

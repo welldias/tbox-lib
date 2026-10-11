@@ -1961,6 +1961,55 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* color-scheme picks light-dark()'s argument: light by default and with
+     * `light dark`, dark with `dark` alone (inherited); nested and var()
+     * forms; a malformed light-dark() makes the declaration unset. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p><span>x</span></p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        const tbox_html_node *span = p->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { color-scheme: light dark; --fg: light-dark(rgb(1, 2, 3), rgb(4, 5, 6)); color: var(--fg); background-color: light-dark(white, black); }"
+            "p { color-scheme: only dark; --fg: light-dark(rgb(1, 2, 3), rgb(4, 5, 6)); color: var(--fg); border-top: 1px solid light-dark(red, light-dark(lime, blue)); }"
+            "span { color: light-dark(red); background-color: LIGHT-DARK(white, black); }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style mid    = resolve_node(sheet, p, &parent);
+        tbox_style child  = resolve_node(sheet, span, &mid);
+        TBOX_TEST_ASSERT(!parent.color_scheme_dark && mid.color_scheme_dark && child.color_scheme_dark);
+        TBOX_TEST_ASSERT(rgba_eq(parent.color, (tbox_css_rgba){ 1, 2, 3, 255 }) && rgba_eq(parent.background_color, (tbox_css_rgba){ 255, 255, 255, 255 }));
+        TBOX_TEST_ASSERT(rgba_eq(mid.color, (tbox_css_rgba){ 4, 5, 6, 255 }) && rgba_eq(mid.border_colors[0], (tbox_css_rgba){ 0, 0, 255, 255 }));
+        TBOX_TEST_ASSERT(rgba_eq(child.color, mid.color)); /* invalid: unset, inherits */
+        TBOX_TEST_ASSERT(rgba_eq(child.background_color, (tbox_css_rgba){ 0, 0, 0, 255 }));
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* font-synthesis: the shorthand lists what may be synthesized, the
+     * longhands toggle one part; without position synthesis,
+     * font-variant-position neither shrinks nor moves the text. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { font-size: 24px; font-synthesis: weight small-caps; }"
+            "p { display: inline; font-variant-position: super; font-synthesis-small-caps: none; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(!parent.font_synthesis_no_small_caps && parent.font_synthesis_no_position);
+        TBOX_TEST_ASSERT(child.font_synthesis_no_small_caps && child.font_synthesis_no_position);
+        TBOX_TEST_ASSERT(child.font_size == 24.0 && child.vertical_align == TBOX_STYLE_VERTICAL_ALIGN_BASELINE);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet  = parse_css_cstr("div { font-synthesis: none; } p { font-synthesis: bogus; }");
+        parent = resolve_node(sheet, div, NULL);
+        child  = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(parent.font_synthesis_no_small_caps && parent.font_synthesis_no_position);
+        TBOX_TEST_ASSERT(child.font_synthesis_no_small_caps && child.font_synthesis_no_position); /* invalid: inherited */
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* Length units: rem against the root's font size, absolute units at
      * 96px per inch, ex/ch as half an em, viewport units only with a
      * viewport. */
