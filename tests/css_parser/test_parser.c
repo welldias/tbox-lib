@@ -208,7 +208,7 @@ int tbox_test_css_parser_parser_run(void) {
         tbox_css_stylesheet *ss2   = parse_cstr("p:before{}");
         const tbox_css_ruleset *r2 = tbox_css_stylesheet_rulesets(ss2);
         TBOX_TEST_ASSERT(r2[0].selectors[0].simple_selector_count == 2);
-        TBOX_TEST_ASSERT(text_eq(r2[0].selectors[0].simple_selectors[1].name, "before"));
+        TBOX_TEST_ASSERT(text_eq(r2[0].selectors[0].simple_selectors[1].name, "::before")); /* CSS2 form, normalized */
         tbox_css_stylesheet_destroy(ss2);
 
         tbox_css_stylesheet *ss3   = parse_cstr(":lang(en){}");

@@ -1835,6 +1835,33 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* A click or hover on a ::after box lands on its element's box, never
+     * on the synthetic node (it lives only for one frame), across frames. */
+    {
+        tbox_context *ctx = open_cstr("<div id='host'><p id='badge'>x</p></div>",
+            "#badge::after { content: \"novo\"; display: inline-block; width: 60px; height: 20px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            const tbox_html_node *p = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            const tbox_layout_box *box   = find_context_box(ctx, p);
+            const tbox_layout_box *after = box != NULL ? box->first_child : NULL;
+            TBOX_TEST_ASSERT(after != NULL && after->style != NULL && after->style->generated == 2);
+            if (after != NULL) {
+                double x = after->border_box.x + 5.0, y = after->border_box.y + 5.0;
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, x, y);
+                TBOX_TEST_ASSERT(hit != NULL && hit->node == p);
+                tbox_context_update_hover(ctx, true, x, y);
+                tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+                tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+                hit = tbox_context_hit_test(ctx, x, y);
+                TBOX_TEST_ASSERT(hit != NULL && hit->node == p);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
     /* overscroll-behavior: contain stops a wheel scroll at the inner
      * list's limit from chaining to the outer one; auto chains. */
     for (int contain = 0; contain < 2; contain++) {

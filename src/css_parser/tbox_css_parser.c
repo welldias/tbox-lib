@@ -319,6 +319,19 @@ static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox
     if (parser->current.type == TBOX_CSS_TOKEN_IDENT) {
         tbox_string_view name = tbox_css_parser_copy_lower(parser, parser->current.text);
         tbox_css_parser_advance(parser);
+        /* CSS2's one-colon :before/:after/:first-line/:first-letter are the
+         * same pseudo-elements as their "::" forms. */
+        static const char *const legacy[] = { "before", "after", "first-line", "first-letter" };
+        for (size_t i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++)
+            if (tbox_string_view_equal_cstr(name, legacy[i])) {
+                char *buffer = (char *)tbox_arena_alloc(parser->arena, name.size + 2);
+                if (buffer == NULL)
+                    return false;
+                buffer[0] = buffer[1] = ':';
+                memcpy(buffer + 2, name.data, name.size);
+                name = tbox_string_view_make(buffer, name.size + 2);
+                break;
+            }
         tbox_css_parser_push_simple_selector(out, TBOX_CSS_SIMPLE_SELECTOR_PSEUDO, combinator, name);
         return true;
     }

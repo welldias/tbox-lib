@@ -68,7 +68,7 @@ O tbox é **experimental**. Hoje ele não serve se você precisa de:
 - acessibilidade (leitores de tela);
 - texto em escritas que exigem shaping (árabe, hebraico, línguas índicas)
   ou IME;
-- `float`, `grid`, `::before`/`::after`, animações por `@keyframes`;
+- `float`, `grid`, animações por `@keyframes`;
 - uso a partir de várias threads;
 - API estável.
 

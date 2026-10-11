@@ -212,7 +212,12 @@ static tbox_string_view tbox_css_cascade_copy_view(tbox_arena *arena, tbox_strin
     return tbox_string_view_make(copy, view.size);
 }
 
+/* Pseudo-elements are kept with their "::" (the parser also turns CSS2's
+ * :before/:after/:first-line/:first-letter into that form); they weigh
+ * like a type selector. */
 static bool tbox_css_cascade_is_known_pseudo_element(tbox_string_view name) {
+    if (name.size > 2 && name.data[0] == ':' && name.data[1] == ':')
+        return true;
     static const char *const pseudo_elements[] = { "before", "after", "first-line", "first-letter" };
     for (size_t i = 0; i < sizeof(pseudo_elements) / sizeof(pseudo_elements[0]); i++) {
         if (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr(pseudo_elements[i]))) {

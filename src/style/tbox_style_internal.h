@@ -53,4 +53,43 @@ bool tbox_style_light_dark_present(const tbox_css_computed_style *computed);
  * declaration `unset`. Everything lives in `arena`. */
 tbox_css_computed_style tbox_style_light_dark_substitute(const tbox_css_computed_style *computed, bool dark, tbox_arena *arena);
 
+/* Generated content -- ::before/::after, counters, quotes
+ * (tbox_style_generated.c). One state per tbox_style_resolve_tree walk,
+ * fed in document order. */
+typedef struct tbox_style_generated tbox_style_generated;
+
+/* NULL (nothing to do) when no rule in `sources` targets ::before or
+ * ::after; else a state in `arena`. */
+tbox_style_generated *tbox_style_generated_create(tbox_arena *arena, const tbox_css_cascade_source *sources, size_t source_count);
+
+/* Whether a rule ends in ::before (`which` 0) or ::after (1). */
+bool tbox_style_generated_wants(const tbox_style_generated *generated, int which);
+
+/* Whether `element` can have ::before/::after boxes (not a replaced or
+ * void element, nor a form control drawn by tbox). */
+bool tbox_style_generated_allowed(const tbox_html_node *element);
+
+/* Applies counter-reset, counter-increment and counter-set (in that order)
+ * declared in `computed`; counters a reset creates are scoped to the
+ * children of `scope_parent` from here on. */
+void tbox_style_generated_counters(tbox_style_generated *generated, const tbox_html_node *scope_parent, const tbox_css_computed_style *computed);
+
+/* `quotes` declared in `computed` becomes the current list; the previous
+ * one is returned for tbox_style_generated_restore_quotes. */
+const void *tbox_style_generated_quotes(tbox_style_generated *generated, const tbox_css_computed_style *computed);
+void tbox_style_generated_restore_quotes(tbox_style_generated *generated, const void *previous);
+
+/* The text of `content` in `computed` (strings, attr(), counter(),
+ * counters(), quotes). False when it generates no box (none, normal,
+ * missing, or nothing usable such as a lone url()). */
+bool tbox_style_generated_content(tbox_style_generated *generated, const tbox_html_node *element, const tbox_css_computed_style *computed, tbox_string_view *out);
+
+/* A detached synthetic element `::before`/`::after` (`which` 0/1) whose
+ * parent pointer is `element`, with one TEXT child holding `text` (none
+ * when empty). tbox_layout_build links it in while it lays out. */
+tbox_html_node *tbox_style_generated_node(tbox_style_generated *generated, const tbox_html_node *element, int which, tbox_string_view text);
+
+/* Leaving `element`: drops the counters its children created. */
+void tbox_style_generated_leave(tbox_style_generated *generated, const tbox_html_node *element);
+
 #endif /* TBOX_STYLE_INTERNAL_H */

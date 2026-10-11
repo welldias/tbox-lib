@@ -94,6 +94,8 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
     }
     for (size_t i = 0; i < ctx->styles.count; i++) {
         tbox_style_entry *entry = &ctx->styles.items[i];
+        if (entry->style.generated != 0)
+            continue; /* ::before/::after nodes are rebuilt every frame: no transitions */
         tbox_transition_state *state = ctx->transitions;
         while (state != NULL && state->node != entry->node) state = state->next;
         bool hidden = entry->style.display == TBOX_STYLE_DISPLAY_NONE;

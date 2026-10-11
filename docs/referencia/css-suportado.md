@@ -129,9 +129,9 @@ ignorados sem erro — o parser é tolerante.
 | | columns | A shorthand property for column-width and column-count |
 | | @container | Define styles for elements in container, depending on the container's size or style |
 | X* | content | Used with the :before and :after pseudo-elements, to insert generated content |
-| | counter-increment | Increases or decreases the value of one or more CSS counters |
-| | counter-reset | Creates or resets one or more CSS counters |
-| | counter-set | Creates or sets one or more CSS counters |
+| X* | counter-increment | Increases or decreases the value of one or more CSS counters |
+| X* | counter-reset | Creates or resets one or more CSS counters |
+| X* | counter-set | Creates or sets one or more CSS counters |
 | | @counter-style | Lets you define your own counter styles |
 | X* | cursor | Specifies the mouse cursor to be displayed when pointing over an element |
 | | direction | Specifies the text direction/writing direction |
@@ -299,7 +299,7 @@ ignorados sem erro — o parser é tolerante.
 | X | pointer-events | Defines whether or not an element reacts to pointer events |
 | X | position | Specifies the type of positioning method used for an element (static, relative, absolute or fixed) |
 | | @property | Defines custom CSS properties directly in the stylesheet without having to run any JavaScript |
-| | quotes | Sets the type of quotation marks for embedded quotations |
+| X* | quotes | Sets the type of quotation marks for embedded quotations |
 | | resize | Defines if (and how) an element is resizable by the user |
 | X | right | Specifies the right position of a positioned element |
 | | rotate | Specifies the rotation of an element |

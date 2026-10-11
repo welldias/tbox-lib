@@ -451,6 +451,11 @@ typedef struct tbox_style {
      * block until `display` is taught to read a per-tag table. See
      * docs/dev/historico.md's Style section. */
     tbox_style_display display;
+    /* 0 for a real element; 1 for a ::before box, 2 for ::after -- its
+     * style table entry's node is a synthetic element (tag "::before" /
+     * "::after", one TEXT child with the generated text) that only
+     * tbox_layout_build links into the tree, while it lays out. */
+    unsigned char generated;
     tbox_style_overflow_y overflow_y;             /* initial: visible; auto scrolls, auto/hidden clip */
     tbox_style_overflow overflow_x;               /* initial: visible; auto/hidden clip horizontally, auto scrolls */
     tbox_style_box_sizing box_sizing;             /* initial: content-box */

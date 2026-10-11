@@ -359,3 +359,21 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   fim antes de capturar.
 - Referência: `@namespace` marcado (ignorado, o que para HTML é correto).
   Fixture `120`; nenhum outro fixture mudou de pixels.
+
+## 2026-10-11 — `::before`/`::after`, contadores e `quotes`
+
+- **CSS Parser**: `:before`/`:after`/`:first-line`/`:first-letter` (CSS2)
+  normalizados para `::`; `@starting-style` à parte (ver acima).
+- **CSS Cascade**: pseudo-elementos pesam como seletor de tipo (antes
+  `::marker` pesava como classe).
+- **Style**: `tbox_style_generated.c` — durante `tbox_style_resolve_tree`
+  (ordem de documento) resolve `::before`/`::after` só quando alguma regra
+  os usa, mantém contadores com escopo e a profundidade de `quotes`, e
+  monta o texto de `content`. Cada pseudo vira um nó sintético no arena da
+  tabela de estilos, com entrada própria (`tbox_style.generated` = 1/2).
+- **Layout Tree**: `tbox_layout_build` encaixa os nós sintéticos durante a
+  montagem e os retira no fim.
+- **Orchestration**: `tbox_context_hit_test` devolve a caixa do elemento
+  dono quando o ponto cai em conteúdo gerado (os nós sintéticos duram um
+  frame); transições ignoram os pseudos.
+- Fixture `121`; nenhum outro fixture mudou; suíte limpa com ASan/UBSan.

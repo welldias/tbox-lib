@@ -94,3 +94,4 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 118 | bloco dentro de `<p>`/`<h3>`/`<li>`/`<td>`, listas aninhadas |
 | 119 | `@layer` (ordem, subcamadas, anônima, dentro de `@media`, `!important`) e `@import … layer()` (`119-reset.css`) |
 | 120 | `font-size-adjust`, `scroll-behavior: smooth` (com Tab), `@starting-style`, `@namespace` |
+| 121 | `::before`/`::after` (obrigatório, badge com `attr()`, status, breadcrumb, bloco vazio), `counter()`, `counters()`, `quotes` |

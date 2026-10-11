@@ -178,6 +178,15 @@ formato atual do código. O texto integral original de cada versão está em
 
 ## Layout
 
+- **`::before`/`::after` como nós sintéticos encaixados só durante o
+  layout**, em vez de ensinar cada caminho do layout (palavras, caixas
+  anônimas, flex, medição) a visitar filhos virtuais. A Style cria os nós
+  (ela já percorre a árvore em ordem de documento, o que contadores e
+  `quotes` precisam) e `tbox_layout_build` os liga e desliga. O
+  documento nunca fica alterado fora dessa chamada, e seletores
+  (`:first-child`…) são avaliados antes, sem enxergá-los. Como os nós
+  vivem um frame, o hit-test devolve a caixa do elemento dono
+  (2026-10-11).
 - **Text tag com filho de bloco vira container de bloco** (reaproveita as
   caixas anônimas de `tbox_layout_build_children`) em vez de ensinar o
   caminho de texto a abrir blocos no meio das linhas. A decisão olha o

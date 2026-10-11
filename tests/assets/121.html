@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .card {
+      width: 460px;
+      padding: 8px 12px;
+      margin: 8px 0;
+      background: white;
+    }
+
+    /* Campo obrigatório */
+    label.required::after {
+      content: " *";
+      color: #dc2626;
+    }
+
+    /* Badge e status */
+    .badge::after {
+      content: attr(data-count);
+      display: inline-block;
+      margin-left: 6px;
+      padding: 0 7px;
+      background: #dc2626;
+      color: white;
+      font-size: 12px;
+    }
+
+    .status::before {
+      content: "\25CF  ";
+      color: #16a34a;
+    }
+
+    .status.off::before {
+      color: #94a3b8;
+    }
+
+    /* Breadcrumb: separador entre itens */
+    .crumbs span+span::before {
+      content: " \203A  ";
+      color: #94a3b8;
+    }
+
+    /* Etapas numeradas com counter() */
+    .steps {
+      counter-reset: step;
+    }
+
+    .steps p {
+      counter-increment: step;
+      margin: 4px 0;
+    }
+
+    .steps p::before {
+      content: "Etapa " counter(step) ": ";
+      font-weight: bold;
+      color: #2563eb;
+    }
+
+    /* Numeração aninhada com counters() */
+    ol.toc,
+    ol.toc ol {
+      counter-reset: sec;
+      list-style: none;
+      margin: 0;
+    }
+
+    ol.toc li {
+      counter-increment: sec;
+    }
+
+    ol.toc li::before {
+      content: counters(sec, ".") "  ";
+      color: #16a34a;
+    }
+
+    /* Citações com quotes aninhadas */
+    q {
+      quotes: "\201C" "\201D" "\2018" "\2019";
+    }
+
+    q::before {
+      content: open-quote;
+    }
+
+    q::after {
+      content: close-quote;
+    }
+
+    /* Bloco decorativo vazio */
+    .alert::before {
+      content: "";
+      display: block;
+      height: 4px;
+      margin: -8px -12px 8px;
+      background: #f59e0b;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>::before, ::after, contadores e quotes</h1>
+
+  <h2>Formulário e status</h2>
+  <div class="card">
+    <label class="required">Nome</label><br>
+    <span class="badge" data-count="3">Mensagens</span><br>
+    <span class="status">Conectado</span> &nbsp; <span class="status off">Offline</span>
+  </div>
+
+  <h2>Breadcrumb</h2>
+  <div class="card crumbs"><span>Início</span><span>Configurações</span><span>Conta</span></div>
+
+  <h2>counter()</h2>
+  <div class="card steps">
+    <p>Escolha o arquivo</p>
+    <p>Revise os dados</p>
+    <p>Confirme</p>
+  </div>
+
+  <h2>counters()</h2>
+  <ol class="card toc">
+    <li>Introdução
+      <ol>
+        <li>Objetivo</li>
+        <li>Escopo</li>
+      </ol>
+    </li>
+    <li>Instalação</li>
+  </ol>
+
+  <h2>quotes</h2>
+  <p class="card">Ela disse <q>leia <q>o manual</q> primeiro</q>.</p>
+
+  <h2>Bloco gerado vazio</h2>
+  <div class="card alert">Aviso com faixa decorativa gerada por ::before.</div>
+</body>
+
+</html>

@@ -1985,6 +1985,60 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* ::before/::after: synthetic entries (tag ::before/::after, parent the
+     * element, one TEXT child) with the generated text -- strings with
+     * escapes, attr(), counter()/counters() with scopes, quotes -- inline
+     * by default; content none/normal and display: none subtrees generate
+     * nothing; CSS2 :after works too; replaced elements get no boxes. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><p class=\"a\" data-k=\"v\">x</p>"
+            "<ol><li>1<ol><li>a</li><li>b</li></ol></li><li>2</li></ol>"
+            "<q>o<q>i</q></q><p class=\"n\">n</p><div style=\"display:none\"><span class=\"c\">h</span></div>"
+            "<input class=\"a\"><span class=\"c\">z</span></div>");
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            ".a::before { content: \"\\2192 \" attr(data-k) \"!\"; color: red; }"
+            ".a:after { content: \"\\\"\"; display: block; }"
+            "ol { counter-reset: n; } li { counter-increment: n; } li::before { content: counters(n, \".\") \" \" counter(n, lower-roman); }"
+            "q { quotes: \"<\" \">\" \"(\" \")\"; } q::before { content: open-quote; } q::after { content: close-quote; }"
+            ".n::before { content: none; } .n::after { content: normal; }"
+            ".c { counter-increment: hidden; } .c::after { content: counter(hidden); }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const char *texts[16];
+        int which[16];
+        const tbox_style *styles[16];
+        size_t generated = 0;
+        for (size_t i = 0; i < table.count && generated < 16; i++) {
+            if (table.items[i].style.generated == 0)
+                continue;
+            const tbox_html_node *node = table.items[i].node;
+            static char buffers[16][32];
+            const tbox_html_node *text = node->first_child;
+            size_t n = text != NULL ? (text->text.text.size < 31 ? text->text.text.size : 31) : 0;
+            if (n > 0) memcpy(buffers[generated], text->text.text.data, n);
+            buffers[generated][n] = '\0';
+            texts[generated]  = buffers[generated];
+            which[generated]  = table.items[i].style.generated;
+            styles[generated] = &table.items[i].style;
+            TBOX_TEST_ASSERT(node->parent != NULL && node->parent->type == TBOX_HTML_NODE_ELEMENT && node->prev_sibling == NULL && node->next_sibling == NULL);
+            generated++;
+        }
+        static const char *const expected[] = { "\xE2\x86\x92v!", "\"", "1 i", "1.1 i", "1.2 ii", "2 ii", "<", "(", ")", ">", "1" };
+        TBOX_TEST_ASSERT(generated == sizeof(expected) / sizeof(expected[0]));
+        for (size_t i = 0; i < generated && i < sizeof(expected) / sizeof(expected[0]); i++)
+            TBOX_TEST_ASSERT_MSG(strcmp(texts[i], expected[i]) == 0, expected[i]);
+        if (generated >= 2) {
+            TBOX_TEST_ASSERT(which[0] == 1 && which[1] == 2);
+            TBOX_TEST_ASSERT(styles[0]->display == TBOX_STYLE_DISPLAY_INLINE && rgba_eq(styles[0]->color, (tbox_css_rgba){ 255, 0, 0, 255 }));
+            TBOX_TEST_ASSERT(styles[1]->display == TBOX_STYLE_DISPLAY_BLOCK);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* font-size-adjust: a number or `ex-height <number>`, inherited;
      * none/from-font turn it off; other metrics are ignored. */
     {

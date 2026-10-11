@@ -4275,17 +4275,60 @@ static void tbox_style_resolve_marker(const tbox_html_node *node, tbox_style *st
  * DOCUMENT nodes have no style of their own -- they're walked through
  * (so ELEMENT descendants are still reached) but contribute no entry and
  * pass `parent_style` through unchanged. */
-static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena, tbox_vector *items) {
+/* ::before (`which` 0) or ::after (1) of `node`: when its `content`
+ * generates a box and it isn't display: none, its counters and quotes
+ * advance, and a synthetic node with the pseudo-element's style joins the
+ * table. Its display defaults to inline (an undeclared element here would
+ * be a block). */
+static void tbox_style_resolve_generated(const tbox_html_node *node, const tbox_style *style, int which, tbox_style_generated *generated, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena, tbox_vector *items) {
+    if (!tbox_style_generated_wants(generated, which))
+        return;
+    tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, which == 0 ? "before" : "after", viewport_width, viewport_height, reduced_motion);
+    const tbox_css_resolved_declaration *content = tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("content"));
+    if (content != NULL && !tbox_style_is(content->value, "none") && !tbox_style_is(content->value, "normal")) {
+        tbox_style pseudo = tbox_style_resolve_full(NULL, style, &computed, viewport_width, viewport_height, arena);
+        if (tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("display")) == NULL)
+            pseudo.display = TBOX_STYLE_DISPLAY_INLINE;
+        if (pseudo.display != TBOX_STYLE_DISPLAY_NONE) {
+            tbox_style_generated_counters(generated, node, &computed);
+            const void *quotes = tbox_style_generated_quotes(generated, &computed);
+            tbox_string_view text;
+            bool has_box = tbox_style_generated_content(generated, node, &computed, &text);
+            tbox_style_generated_restore_quotes(generated, quotes);
+            tbox_html_node *box_node = has_box ? tbox_style_generated_node(generated, node, which, text) : NULL;
+            if (box_node != NULL) {
+                pseudo.generated        = (unsigned char)(which + 1);
+                tbox_style_entry *entry = (tbox_style_entry *)tbox_vector_push(items);
+                entry->node             = box_node;
+                entry->style            = pseudo;
+            }
+        }
+    }
+    tbox_css_computed_style_destroy(&computed);
+}
+
+/* `generated` (NULL when the stylesheets have no ::before/::after) follows
+ * the walk in document order for counters and quotes, skipping
+ * display: none subtrees (`hidden`), which take no part in them. */
+static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena, tbox_vector *items, tbox_style_generated *generated, bool hidden) {
     if (node == NULL) {
         return;
     }
 
     const tbox_style *effective_parent = parent_style;
     tbox_style node_style;
+    bool generating     = false;
+    const void *quotes  = NULL;
 
     if (node->type == TBOX_HTML_NODE_ELEMENT) {
         tbox_css_computed_style computed = tbox_css_cascade_resolve_in_viewport(sources, source_count, node, viewport_width, viewport_height, reduced_motion);
         node_style                       = tbox_style_resolve_full(node, parent_style, &computed, viewport_width, viewport_height, arena);
+        hidden                           = hidden || node_style.display == TBOX_STYLE_DISPLAY_NONE;
+        generating                       = generated != NULL && !hidden;
+        if (generating) {
+            tbox_style_generated_counters(generated, node->parent, &computed);
+            quotes = tbox_style_generated_quotes(generated, &computed);
+        }
         tbox_css_computed_style_destroy(&computed);
         if (tbox_string_view_equal_cstr(node->element.tag_name, "li") || node_style.display_list_item)
             tbox_style_resolve_marker(node, &node_style, sources, source_count, viewport_width, viewport_height, reduced_motion, arena);
@@ -4295,10 +4338,20 @@ static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_
         entry->style            = node_style;
 
         effective_parent = &node_style;
+        generating       = generating && tbox_style_generated_allowed(node);
+        if (generating)
+            tbox_style_resolve_generated(node, &node_style, 0, generated, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, items);
     }
 
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
-        tbox_style_resolve_tree_walk(child, effective_parent, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, items);
+        tbox_style_resolve_tree_walk(child, effective_parent, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, items, generated, hidden);
+    }
+
+    if (node->type == TBOX_HTML_NODE_ELEMENT && generated != NULL && !hidden) {
+        if (generating)
+            tbox_style_resolve_generated(node, &node_style, 1, generated, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, items);
+        tbox_style_generated_leave(generated, node);
+        tbox_style_generated_restore_quotes(generated, quotes);
     }
 }
 
@@ -4314,7 +4367,8 @@ tbox_style_table tbox_style_resolve_tree_in_viewport_with_preferences(tbox_arena
     tbox_vector items;
     tbox_vector_init(&items, arena, sizeof(tbox_style_entry), 0);
 
-    tbox_style_resolve_tree_walk(root, NULL, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, &items);
+    tbox_style_generated *generated = tbox_style_generated_create(arena, sources, source_count);
+    tbox_style_resolve_tree_walk(root, NULL, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, &items, generated, false);
 
     tbox_style_table table;
     table.items = (tbox_style_entry *)items.data;

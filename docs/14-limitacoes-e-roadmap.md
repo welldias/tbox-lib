@@ -20,7 +20,7 @@ ainda muda.
 | Acessibilidade | Sem árvore de acessibilidade (leitores de tela não enxergam a UI). |
 | Texto | Sem shaping (ligaduras, árabe, hebraico, línguas índicas), sem bidi, sem fallback por glifo, sem IME. |
 | Layout | Sem `float`, `grid`, colunas, `writing-mode` vertical, rolagem horizontal de containers. |
-| CSS | Sem `::before`/`::after`, `@keyframes`/`animation`, `@import`, transformações além de translação, `blur`. |
+| CSS | Sem `@keyframes`/`animation`, `@supports`, transformações além de translação, `blur`. `@import` só de arquivos locais. |
 | Eventos | Elementos inline (`<a>`, `<span>`) não são alvo próprio de clique/hover; use `inline-block`. |
 | Formulários | Sem `<select multiple>` ou arquivo múltiplo. |
 | Recursos | Sem rede: imagens, fontes e CSS vêm de arquivos locais ou strings. |

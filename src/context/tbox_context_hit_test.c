@@ -126,5 +126,17 @@ const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, 
     if (ctx == NULL) {
         return NULL;
     }
-    return tbox_context_hit_test_box(ctx->root, x, y);
+    const tbox_layout_box *box = tbox_context_hit_test_box(ctx->root, x, y);
+    /* A ::before/::after box belongs to its element: report the element's
+     * box. Its synthetic node lives in the frame arena, so nothing kept
+     * across frames (hover, active, focus, drag) may point at it. */
+    const tbox_layout_box *generated = box;
+    while (generated != NULL && (generated->style == NULL || generated->style->generated == 0))
+        generated = generated->parent;
+    if (generated != NULL && generated->node != NULL) {
+        const tbox_html_node *owner = generated->node->parent;
+        for (box = generated; box != NULL && box->node != owner;)
+            box = box->parent;
+    }
+    return box;
 }

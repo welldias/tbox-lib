@@ -148,7 +148,36 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   `:disabled`, `:enabled`, `:required`, `:optional`, `:link`/`:any-link`
   (todo link é não visitado), `:lang()`.
 - `:not()` com um seletor simples.
-- Pseudo-elementos: só `::marker`. Sem `::before`/`::after`.
+- Pseudo-elementos: `::marker`, `::before` e `::after` (também na forma
+  CSS2 `:before`/`:after`); pesam como seletor de tipo na especificidade.
+
+### Conteúdo gerado (`::before`/`::after`)
+
+- **`content`**: strings (com escapes CSS, `"\201C"`), `attr(nome)` (com
+  fallback em string), `counter(nome[, estilo])`,
+  `counters(nome, "sep"[, estilo])`, `open-quote`/`close-quote`/
+  `no-open-quote`/`no-close-quote`; `none`/`normal` não geram caixa;
+  `url()` é ignorado (sem imagem gerada); o texto alternativo depois de `/`
+  é ignorado. `content: ""` gera uma caixa vazia (barras decorativas).
+- **`display`** padrão do pseudo é `inline`; `block`, `inline-block` etc.
+  funcionam como num elemento real.
+- **Contadores**: `counter-reset`, `counter-increment`, `counter-set` em
+  elementos e nos próprios pseudos, com escopos aninhados (o padrão
+  `ol { counter-reset } li { counter-increment }` com `counters()`
+  funciona); elementos em `display: none` não contam. Estilos de contador:
+  os de `list-style-type` (decimal, decimal-leading-zero, romanos, letras,
+  grego, disc/circle/square, none). O contador implícito `list-item`
+  não está ligado à numeração das listas.
+- **`quotes`** (herdado): `auto` (aspas curvas “ ” ‘ ’), `none` ou pares de
+  strings; a profundidade de aninhamento corre pelo documento.
+- **Onde não há pseudo**: elementos substituídos e vazios (`img`, `input`,
+  `select`, `textarea`, `br`, `hr`, `progress`, `meter`…).
+- **Interação**: um clique ou hover sobre o conteúdo gerado conta como sobre
+  o elemento (`tbox_context_hit_test` devolve a caixa do elemento).
+- **Limitações**: pseudos não têm `transition` nem `@starting-style`; um
+  pseudo `position: absolute` dentro de `<p>`/`<li>`/`<button>` (contexto
+  inline) não aparece, como qualquer filho absoluto nesses elementos;
+  `::first-line`/`::first-letter` são reconhecidos mas não estilizam nada.
 - Um seletor não suportado invalida só a própria regra, como no CSS.
 
 ## Valores

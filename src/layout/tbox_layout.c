@@ -32,7 +32,52 @@ static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images) {
     }
 }
 
+/* ::before/::after: the style table's synthetic nodes (tbox_style
+ * `generated`) become the first/last child of their element while the
+ * tree is laid out, so every layout path sees them as ordinary children;
+ * tbox_layout_build unlinks them before returning, leaving the caller's
+ * document as it was. Boxes keep pointing at the synthetic nodes, which
+ * live as long as the style table. */
+static void tbox_layout_link_generated(const tbox_style_table *styles, bool link) {
+    for (size_t i = 0; styles != NULL && i < styles->count; i++) {
+        unsigned char generated = styles->items[i].style.generated;
+        if (generated == 0)
+            continue;
+        tbox_html_node *node   = (tbox_html_node *)styles->items[i].node;
+        tbox_html_node *parent = node->parent;
+        if (link) {
+            node->prev_sibling = node->next_sibling = NULL;
+            if (generated == 1) {
+                node->next_sibling = parent->first_child;
+                if (parent->first_child != NULL) parent->first_child->prev_sibling = node;
+                else parent->last_child = node;
+                parent->first_child = node;
+            } else {
+                node->prev_sibling = parent->last_child;
+                if (parent->last_child != NULL) parent->last_child->next_sibling = node;
+                else parent->first_child = node;
+                parent->last_child = node;
+            }
+        } else {
+            if (node->prev_sibling != NULL) node->prev_sibling->next_sibling = node->next_sibling;
+            else parent->first_child = node->next_sibling;
+            if (node->next_sibling != NULL) node->next_sibling->prev_sibling = node->prev_sibling;
+            else parent->last_child = node->prev_sibling;
+            node->prev_sibling = node->next_sibling = NULL;
+        }
+    }
+}
+
+static tbox_layout_box *tbox_layout_build_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double viewport_width, double viewport_height);
+
 tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double viewport_width, double viewport_height) {
+    tbox_layout_link_generated(styles, true);
+    tbox_layout_box *box = tbox_layout_build_tree(arena, root, styles, fonts, images, viewport_width, viewport_height);
+    tbox_layout_link_generated(styles, false);
+    return box;
+}
+
+static tbox_layout_box *tbox_layout_build_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double viewport_width, double viewport_height) {
     if (root == NULL) {
         return NULL;
     }

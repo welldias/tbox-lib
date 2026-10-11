@@ -188,6 +188,8 @@ int tbox_test_css_cascade_run(void) {
             {":first-child",  0, 1, 0},
             {":hover",        0, 1, 0}, /* unknown pseudo -- classified as pseudo-class */
             {":before",       0, 0, 1}, /* known pseudo-element name */
+            {"p::after",      0, 0, 2},
+            {"li::marker",    0, 0, 2},
             {"*",             0, 0, 0},
         };
 

@@ -37,6 +37,11 @@ Regras que explicam a maior parte do comportamento:
   fica ao lado do topo desse bloco. Um bloco dentro de um elemento
   **inline** (`<span><div>…</div></span>`) ainda é achatado em linha, e
   `<button>`/`<pre>` ignoram filhos de bloco.
+- **`::before`/`::after`** são nós sintéticos (tag `::before`/`::after`,
+  um filho de texto) que a Style cria; `tbox_layout_build` os encaixa como
+  primeiro/último filho do elemento enquanto monta a árvore e os retira no
+  fim — o documento do chamador não muda. A partir daí seguem as mesmas
+  regras de qualquer filho (inline, bloco, inline-block…).
 - **`inline-block`/`inline-flex`** viram uma "palavra atômica" na linha:
   a caixa é medida (largura declarada ou shrink-to-fit), entra na quebra de
   linha e se alinha pela baseline da sua última linha.

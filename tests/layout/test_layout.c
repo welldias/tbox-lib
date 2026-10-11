@@ -1472,6 +1472,40 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* ::before/::after in layout: inline generated text joins the line
+     * (with its own style), a block one splits a paragraph, and the
+     * caller's DOM is left exactly as it was. */
+    {
+        tbox_html_document *doc        = parse_html_cstr("<div><p id=\"i\">meio</p><p id=\"b\">texto</p></div>");
+        const tbox_html_node *root     = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet     = parse_css_cstr("p { width: 300px; } #i::before { content: \"[\"; color: red; } #i::after { content: \"]\"; }"
+                                                        "#b::before { content: \"\"; display: block; height: 10px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_html_node *pi       = find_html_id(root, "i");
+        const tbox_html_node *pb       = find_html_id(root, "b");
+        const tbox_html_node *first_i  = pi->first_child, *last_i = pi->last_child;
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        TBOX_TEST_ASSERT(pi->first_child == first_i && pi->last_child == last_i && first_i->next_sibling == NULL && first_i->prev_sibling == NULL);
+        const tbox_layout_box *bi = find_box_for_node(layout, pi);
+        TBOX_TEST_ASSERT(bi != NULL && bi->text_run_count == 3);
+        if (bi != NULL && bi->text_run_count == 3) {
+            TBOX_TEST_ASSERT(string_view_equal_cstr(bi->text_runs[0].text, "[") && bi->text_runs[0].style->color.r == 255);
+            TBOX_TEST_ASSERT(string_view_equal_cstr(bi->text_runs[1].text, "meio") && string_view_equal_cstr(bi->text_runs[2].text, "]"));
+            TBOX_TEST_ASSERT(bi->text_runs[1].rect.x > bi->text_runs[0].rect.x); /* no space: glued */
+        }
+        const tbox_layout_box *bb = find_box_for_node(layout, pb);
+        TBOX_TEST_ASSERT(bb != NULL && bb->first_child != NULL && bb->first_child->style->generated == 1);
+        if (bb != NULL && bb->first_child != NULL) {
+            TBOX_TEST_ASSERT(bb->first_child->border_box.height == 10.0);
+            TBOX_TEST_ASSERT(bb->first_child->next_sibling != NULL && bb->first_child->next_sibling->node == NULL); /* anonymous "texto" */
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* font-size-adjust: the face is rescaled so its x-height is
      * adjust * font-size; `none` keeps the declared size. */
     {
