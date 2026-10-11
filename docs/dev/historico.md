@@ -335,3 +335,9 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   importado em `@layer`; declarações `@layer a, b;` antes dos `@import`
   são mantidas no lugar.
 - Fixture `119`. Nenhum fixture de 001–116 mudou de pixels.
+
+## 2026-10-11 — Cursor padrão sobre texto
+
+- **Orchestration**: com `cursor: auto`, `tbox_context_cursor_at` não
+  devolve mais o cursor de texto sobre texto comum, só sobre campos
+  editáveis; `cursor: text` explícito continua valendo.

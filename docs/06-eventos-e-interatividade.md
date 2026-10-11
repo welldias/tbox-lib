@@ -156,8 +156,10 @@ efeito.
 ## Cursor
 
 `tbox_context_cursor_at(ctx, x, y)` devolve o `cursor` CSS do elemento sob o
-ponteiro; com `auto`, é texto sobre campos editáveis e texto, mão sobre
-`<a href>` e seta no resto. O `tbox_app` repassa ao backend (Wayland usa
+ponteiro; com `auto`, é texto (I-beam) sobre campos editáveis, mão sobre
+`<a href>` e seta no resto — inclusive sobre texto comum, já que a tbox
+desenha interfaces de aplicação, não documentos. Para o I-beam sobre um
+texto, declare `cursor: text`. O `tbox_app` repassa ao backend (Wayland usa
 `wayland-cursor` quando disponível).
 
 ## Sem `tbox_app`

@@ -83,8 +83,10 @@ const tbox_layout_box *tbox_context_hit_test_box(const tbox_layout_box *box, dou
     return hit;
 }
 
-/* `cursor: auto` picks text over editable fields and text, a pointing
- * hand over links, and the arrow elsewhere. */
+/* `cursor: auto` picks text over editable fields, a pointing hand over
+ * links, and the arrow elsewhere -- static text included: this is an
+ * application UI, not a document, so plain text doesn't invite selecting
+ * (`cursor: text` asks for it). */
 tbox_style_cursor tbox_context_cursor_at(const tbox_context *ctx, double x, double y) {
     const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);
     if (box == NULL)
@@ -95,12 +97,10 @@ tbox_style_cursor tbox_context_cursor_at(const tbox_context *ctx, double x, doub
      * carries their style, which leads back to their node. */
     const tbox_style *style    = box->style;
     const tbox_html_node *node = box->node;
-    bool over_text             = false;
     for (size_t i = 0; i < box->text_run_count; i++) {
         const tbox_layout_text_run *run = &box->text_runs[i];
         if (run->text.size == 0 || !tbox_context_point_in_rect(run->rect, x, y))
             continue;
-        over_text = run->image == NULL;
         for (size_t e = 0; e < ctx->styles.count; e++) {
             if (&ctx->styles.items[e].style == run->style) {
                 style = run->style;
@@ -119,7 +119,7 @@ tbox_style_cursor tbox_context_cursor_at(const tbox_context *ctx, double x, doub
             return TBOX_STYLE_CURSOR_POINTER;
     if (box->node != NULL && (tbox_context_is_text_input(box->node) || tbox_context_is_textarea(box->node)))
         return TBOX_STYLE_CURSOR_TEXT;
-    return over_text ? TBOX_STYLE_CURSOR_TEXT : TBOX_STYLE_CURSOR_DEFAULT;
+    return TBOX_STYLE_CURSOR_DEFAULT;
 }
 
 const tbox_layout_box *tbox_context_hit_test(const tbox_context *ctx, double x, double y) {

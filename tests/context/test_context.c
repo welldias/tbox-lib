@@ -3744,13 +3744,15 @@ int tbox_test_context_run(void) {
     }
 
     /* Hit testing follows z-index paint order; cursor_at reports the CSS
-     * cursor, or text/pointer/default for `auto`. */
+     * cursor, or pointer/default for `auto` -- plain text keeps the arrow
+     * unless `cursor: text` asks for the I-beam. */
     {
-        const char *html  = "<div id=\"stage\"><div id=\"top\">a</div><div id=\"under\">b</div><p id=\"para\">ver <a href=\"#\">link</a></p><div id=\"busy\">x</div></div>";
+        const char *html  = "<div id=\"stage\"><div id=\"top\">a</div><div id=\"under\">b</div><p id=\"para\">ver <a href=\"#\">link</a></p><div id=\"busy\">x</div><div id=\"sel\">abc</div></div>";
         const char *css   = "#stage { position: relative; height: 200px; }"
                             "#top, #under { position: absolute; left: 0; top: 0; width: 100px; height: 50px; }"
                             "#top { z-index: 2; cursor: move; } #under { z-index: 1; }"
-                            "#para { position: absolute; left: 0; top: 100px; margin: 0; width: 300px; font-size: 16px; } #busy { position: absolute; left: 200px; top: 0; width: 50px; height: 50px; cursor: wait; }";
+                            "#para { position: absolute; left: 0; top: 100px; margin: 0; width: 300px; font-size: 16px; } #busy { position: absolute; left: 200px; top: 0; width: 50px; height: 50px; cursor: wait; }"
+                            "#sel { position: absolute; left: 300px; top: 0; width: 50px; height: 50px; cursor: text; }";
         tbox_context *ctx = open_cstr(html, css, fonts);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
@@ -3761,7 +3763,8 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(id != NULL && string_view_equal_cstr(id->value, "top")); /* z-index 2 wins although first in the DOM */
             TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 50.0, 25.0) == TBOX_STYLE_CURSOR_MOVE);
             TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 220.0, 20.0) == TBOX_STYLE_CURSOR_WAIT);
-            TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 5.0, 108.0) == TBOX_STYLE_CURSOR_TEXT);     /* "ver" */
+            TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 5.0, 108.0) == TBOX_STYLE_CURSOR_DEFAULT);  /* "ver": plain text */
+            TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 305.0, 8.0) == TBOX_STYLE_CURSOR_TEXT);     /* explicit cursor: text */
             TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 45.0, 108.0) == TBOX_STYLE_CURSOR_POINTER); /* the link */
             TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, 390.0, 290.0) == TBOX_STYLE_CURSOR_DEFAULT);
             tbox_context_close(ctx);

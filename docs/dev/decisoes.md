@@ -63,6 +63,12 @@ formato atual do código. O texto integral original de cada versão está em
 
 ## API pública e interatividade
 
+- **`cursor: auto` mantém a seta sobre texto comum**, ao contrário dos
+  navegadores: numa interface de aplicação o texto raramente é para
+  selecionar, e o I-beam sugeriria o contrário. Campos editáveis e links
+  seguem como nos navegadores; quem quiser o I-beam declara
+  `cursor: text` (2026-10-11).
+
 - **A árvore pública é o próprio `tbox_html_node` (Opção C).** Sem
   `tbox_widget` e sem sincronização entre duas árvores. Handlers e estado de
   interação ficam fora do nó, em tabelas do `tbox_context`. O custo de
