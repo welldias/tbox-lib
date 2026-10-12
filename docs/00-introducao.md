@@ -51,8 +51,9 @@ ser recalculado e repintado.
 - **Eventos por seletor CSS.** `on_click(".item button", …)` vale para
   elementos existentes e futuros, como delegação de eventos na web.
 - **CSS amplo para o tamanho.** Flexbox, tabelas, posicionamento,
-  `z-index`, `calc()`, `var()`, `@media`, `@font-face`, transições de cor e
-  opacidade, gradientes, sombras, bordas arredondadas, cores CSS 4/5.
+  `z-index`, `calc()`, `var()`, `@media`, `@supports`, `@font-face`,
+  `transition` e `animation`/`@keyframes`, gradientes, sombras, bordas
+  arredondadas, cores CSS 4/5.
 - **Controles de formulário prontos**: campos de texto, data, hora, cor,
   arquivo, range, select, textarea, checkbox, radio, com foco por teclado,
   seleção e clipboard.

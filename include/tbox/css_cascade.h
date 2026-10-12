@@ -200,6 +200,9 @@ typedef struct tbox_css_computed_style {
  * source_count == 0, or node == NULL, yields an empty computed_style (count
  * == 0, still safe to pass to tbox_css_computed_style_destroy). */
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node);
+/* True when every condition in the `media` chain holds for this viewport
+ * (NULL: unconditional) -- the test the cascade applies to each ruleset. */
+bool tbox_css_cascade_media_matches(const tbox_css_media_condition *media, double viewport_width, double viewport_height, bool reduced_motion);
 /* Resolves @media rules against the current viewport. */
 tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion);
 tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion);

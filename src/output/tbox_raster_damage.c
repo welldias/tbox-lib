@@ -168,6 +168,7 @@ static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
     hash = tbox_damage_mix_int(hash, op->color_filter != NULL);
     if (op->color_filter != NULL)
         hash = tbox_damage_mix_doubles(hash, op->color_filter, 20);
+    hash = tbox_damage_mix_int(hash, (long long)op->blend_mode);
     hash = tbox_damage_mix_int(hash, op->has_clip);
     if (op->has_clip)
         hash = tbox_damage_mix_rect(hash, op->clip);

@@ -127,6 +127,23 @@ typedef struct tbox_css_font_face_rule {
     size_t declaration_count;
 } tbox_css_font_face_rule;
 
+/* One keyframe of an `@keyframes` rule: `from`/`to`/<percentage> as a
+ * fraction 0..1 (a selector list like `0%, 50%` becomes one keyframe per
+ * offset sharing the declarations). Declarations ending in !important
+ * stay in the list, verbatim like any other; consumers drop them. */
+typedef struct tbox_css_keyframe {
+    double offset;
+    tbox_css_declaration *declarations;
+    size_t declaration_count;
+} tbox_css_keyframe;
+
+typedef struct tbox_css_keyframes_rule {
+    tbox_string_view name; /* case-sensitive, as written (quotes stripped) */
+    tbox_css_keyframe *frames; /* sorted by offset; equal offsets keep source order */
+    size_t frame_count;
+    const tbox_css_media_condition *media; /* NULL for an unconditional rule */
+} tbox_css_keyframes_rule;
+
 /* Opaque: owns the arena backing every ruleset/selector/declaration/string
  * reachable from it. */
 typedef struct tbox_css_stylesheet tbox_css_stylesheet;
@@ -162,8 +179,20 @@ const tbox_css_ruleset *tbox_css_stylesheet_rulesets(const tbox_css_stylesheet *
 size_t tbox_css_stylesheet_font_face_count(const tbox_css_stylesheet *stylesheet);
 const tbox_css_font_face_rule *tbox_css_stylesheet_font_faces(const tbox_css_stylesheet *stylesheet);
 
+/* `@keyframes` (and `@-webkit-keyframes`) rules in source order, also from
+ * inside @media/@supports/@layer. An empty or malformed one is dropped. */
+size_t tbox_css_stylesheet_keyframes_count(const tbox_css_stylesheet *stylesheet);
+const tbox_css_keyframes_rule *tbox_css_stylesheet_keyframes(const tbox_css_stylesheet *stylesheet);
+
 /* Frees the stylesheet's arena and everything allocated from it. */
 void tbox_css_stylesheet_destroy(tbox_css_stylesheet *stylesheet);
+
+/* An `@supports` condition (the prelude, or the inside of an `@import`'s
+ * `supports()`): `not`/`and`/`or`, `(property: value)` and `selector()`.
+ * A declaration is true when tbox resolves the property; a few values it
+ * can't honor (`display: grid`, `transform: rotate()`, `filter: blur()`)
+ * are false. Any other function is false; malformed text is false. */
+bool tbox_css_supports(tbox_string_view condition);
 
 #ifdef __cplusplus
 }

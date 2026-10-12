@@ -121,8 +121,8 @@ static void tbox_context_append_css(tbox_string_builder *builder, tbox_string_vi
 /* One `@import` prelude (between `@import` and `;`): `url(x)`, `url("x")`
  * or `"x"`, then optional `layer` / `layer(name)` (the imported text goes
  * into that cascade layer, anonymous for bare `layer`) and an optional
- * media query list. A `supports()` condition is not supported: such an
- * import is dropped. */
+ * media query list. A `supports()` condition that tbox_css_supports finds
+ * false drops the import. */
 static void tbox_context_append_import(tbox_string_builder *builder, tbox_string_view prelude, tbox_context_css_base base, int depth) {
     size_t at = tbox_context_css_skip_space(prelude, 0);
     bool is_url = tbox_context_css_keyword_at(prelude, at, "url(");
@@ -163,7 +163,23 @@ static void tbox_context_append_import(tbox_string_builder *builder, tbox_string
         media   = tbox_string_view_make(media.data + 5, media.size - 5);
     }
     while (media.size > 0 && isspace((unsigned char)media.data[0])) media = tbox_string_view_make(media.data + 1, media.size - 1);
-    if (tbox_context_css_keyword_at(media, 0, "supports(")) return;
+    if (tbox_context_css_keyword_at(media, 0, "supports(")) {
+        size_t close = 9;
+        for (int depth = 1; close < media.size; close++) {
+            if (media.data[close] == '(') depth++;
+            else if (media.data[close] == ')' && --depth == 0) break;
+        }
+        if (close >= media.size) return;
+        /* supports(<condition>) or supports(<declaration>) */
+        tbox_string_view inner = tbox_string_view_make(media.data + 9, close - 9);
+        char wrapped[512];
+        int length = snprintf(wrapped, sizeof(wrapped), "(%.*s)", (int)inner.size, inner.data);
+        if (length < 0 || (size_t)length >= sizeof(wrapped)) return;
+        tbox_string_view condition = tbox_string_view_make(wrapped, (size_t)length);
+        if (!tbox_css_supports(tbox_string_view_make(inner.data, inner.size)) && !tbox_css_supports(condition)) return;
+        media = tbox_string_view_make(media.data + close + 1, media.size - close - 1);
+        while (media.size > 0 && isspace((unsigned char)media.data[0])) media = tbox_string_view_make(media.data + 1, media.size - 1);
+    }
 
     char path[4096];
     if (base.sheet_dir != NULL) {
@@ -407,6 +423,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->submit_userdata                                    = NULL;
     ctx->styles                                             = (tbox_style_table){ 0 };
     ctx->transitions                                        = NULL;
+    ctx->animations                                         = NULL;
     ctx->animation_time                                     = 0.0;
     ctx->animations_active                                  = false;
     ctx->prefers_reduced_motion                              = options.prefers_reduced_motion;
@@ -438,11 +455,8 @@ void tbox_context_close(tbox_context *ctx) {
         return;
     }
 
-    for (tbox_transition_state *state = ctx->transitions; state != NULL;) {
-        tbox_transition_state *next = state->next;
-        free(state);
-        state = next;
-    }
+    tbox_context_free_transitions(ctx);
+    tbox_context_free_animations(ctx);
 
     for (tbox_text_field *field = ctx->text_fields; field != NULL;) {
         tbox_text_field *next = field->next;
@@ -558,6 +572,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     tbox_style_table styles = tbox_style_resolve_tree_in_viewport_with_preferences(&ctx->frame_arena, root, sources, 3, viewport_width, viewport_height, ctx->prefers_reduced_motion);
     ctx->styles             = styles;
     tbox_context_apply_transitions(ctx, sources, 3, viewport_width, viewport_height);
+    tbox_context_apply_animations(ctx, sources, 3, viewport_width, viewport_height);
 
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
      * so tbox_context_hit_test has something to search (or not) between

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .card {
+      width: 460px;
+      padding: 16px;
+      margin: 8px 0;
+      background: white;
+    }
+
+    /* Caixa com fundo: a sombra segue a borda arredondada */
+    .tile {
+      display: inline-block;
+      width: 120px;
+      padding: 14px;
+      margin-right: 16px;
+      background: #2563eb;
+      color: white;
+      border-radius: 12px;
+      filter: drop-shadow(4px 6px 6px rgba(15, 23, 42, 0.45));
+    }
+
+    /* Com uma função de cor na mesma lista */
+    .tile.gray {
+      background: #16a34a;
+      filter: grayscale(1) drop-shadow(0 4px 4px rgba(0, 0, 0, 0.5));
+    }
+
+    /* Sem fundo: a sombra fica no texto (e nos descendentes) */
+    .title {
+      font-size: 28px;
+      font-weight: bold;
+      color: #f59e0b;
+      filter: drop-shadow(2px 2px 0 #92400e);
+    }
+
+    /* Duas sombras encadeadas */
+    .double {
+      display: inline-block;
+      padding: 10px 14px;
+      background: white;
+      border: 2px solid #1e293b;
+      filter: drop-shadow(4px 4px 0 #f472b6) drop-shadow(8px 8px 0 #38bdf8);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>filter: drop-shadow()</h1>
+
+  <h2>Caixas com fundo</h2>
+  <div class="card">
+    <span class="tile">Azul</span><span class="tile gray">grayscale + sombra</span>
+  </div>
+
+  <h2>Texto sem fundo</h2>
+  <div class="card">
+    <div class="title">Título com <em>sombra</em></div>
+  </div>
+
+  <h2>Duas sombras</h2>
+  <div class="card">
+    <span class="double">Encadeadas</span>
+  </div>
+</body>
+
+</html>

@@ -4001,7 +4001,208 @@ int tbox_test_context_run(void) {
             tbox_context_run_frame(ctx, 300.0, 100.0, &list);
             const tbox_layout_box *box = tbox_context_hit_test(ctx, 5.0, 5.0);
             while (box != NULL && box->parent != NULL) box = box->parent;
-            TBOX_TEST_ASSERT(box != NULL && box->style->color.g == 128 && box->style->transition_duration[0] == 0.0);
+            TBOX_TEST_ASSERT(box != NULL && box->style->color.g == 128 && tbox_style_transition_find(box->style, TBOX_STYLE_ANIM_COLOR) == NULL);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Transitions on layout and paint properties: width re-lays out every
+     * frame, border colors follow steps(), translate follows the
+     * cubic-bezier, and a later class change retargets mid-flight. */
+    {
+        const char *css = "#box { width: 100px; height: 20px; border: 2px solid rgb(255, 0, 0);"
+                          " transition: width .5s linear, border-color 1s steps(2), transform 1s linear; }"
+                          "#box.on { width: 200px; border-color: rgb(0, 0, 255); transform: translateX(40px); }";
+        tbox_context *ctx = open_cstr("<div><div id='box'>x</div></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_html_node *node = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            tbox_context_set_animation_time(ctx, 0.0);
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            tbox_html_node_set_attribute(tbox_context_document(ctx), node, tbox_string_view_make("class", 5), tbox_string_view_make("on", 2));
+            tbox_context_set_animation_time(ctx, 1.0);
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            const tbox_layout_box *box = find_context_box(ctx, node);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->content_box.width - 100.0) < 0.01 && tbox_context_animations_active(ctx));
+            tbox_context_set_animation_time(ctx, 1.25);
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            box = find_context_box(ctx, node);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->content_box.width - 150.0) < 0.01);
+            TBOX_TEST_ASSERT(box != NULL && tbox_style_border_side_color(box->style, 3).r == 255 && tbox_style_border_side_color(box->style, 3).b == 0);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->style->translate_x.value - 10.0) < 0.01);
+            tbox_context_set_animation_time(ctx, 1.5);
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            box = find_context_box(ctx, node);
+            tbox_css_rgba mid = box != NULL ? tbox_style_border_side_color(box->style, 0) : (tbox_css_rgba){ 0, 0, 0, 0 };
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->content_box.width - 200.0) < 0.01 && mid.r >= 126 && mid.r <= 129 && mid.b >= 126 && mid.b <= 129);
+            /* back mid-flight: translate reverses from where it is */
+            tbox_html_node_remove_attribute(node, tbox_string_view_make("class", 5));
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            box = find_context_box(ctx, node);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->style->translate_x.value - 20.0) < 0.01);
+            tbox_context_set_animation_time(ctx, 3.0);
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            box = find_context_box(ctx, node);
+            TBOX_TEST_ASSERT(box != NULL && box->style->translate_x.value == 0.0 && fabs(box->content_box.width - 100.0) < 0.01);
+            TBOX_TEST_ASSERT(!tbox_context_animations_active(ctx));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* backdrop-filter: one op over the border box, after what is behind
+     * it and before the element's own translucent background. */
+    {
+        const char *css = "body { margin: 0; background: rgb(255, 0, 0); }"
+                          "#glass { width: 50px; height: 20px; border-radius: 4px; background: rgba(255, 255, 255, 0.25); backdrop-filter: grayscale(1); }";
+        tbox_context *ctx = open_cstr("<body><div id='glass'></div></body>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 200.0, 100.0, &list);
+            size_t backdrop = list.count, glass_fill = list.count;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind == TBOX_PAINT_BACKDROP_FILTER && backdrop == list.count) backdrop = i;
+                if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].color.a == 64 && glass_fill == list.count) glass_fill = i;
+            }
+            TBOX_TEST_ASSERT(backdrop < list.count && glass_fill < list.count && backdrop < glass_fill);
+            TBOX_TEST_ASSERT(backdrop < list.count && list.items[backdrop].rect.width == 50.0 && list.items[backdrop].corner_radii[0] == 4.0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* @keyframes: implicit 0% from the element's own value, a per-keyframe
+     * timing function, alternate iterations, fill-mode forwards, pause,
+     * and removal restoring the base style. */
+    {
+        const char *css = "#box { width: 100px; height: 10px; opacity: 1; background: rgb(255, 0, 0); }"
+                          "#box.go { animation: grow 1s linear 2 alternate forwards; }"
+                          "#box.hold { animation: grow 1s linear 2 alternate forwards paused; }"
+                          "@keyframes grow { 50% { width: 150px; animation-timing-function: steps(1, end); } to { width: 200px; opacity: 0.5; } }"
+                          "#dot { width: 10px; height: 10px; animation: blink 2s steps(2) infinite 1s backwards; }"
+                          "@keyframes blink { from { background-color: rgb(0, 0, 255); } to { background-color: rgb(0, 255, 0); } }";
+        tbox_context *ctx = open_cstr("<div><div id='box'>x</div><div id='dot'></div></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_html_node *node = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            tbox_html_node *dot = node->next_sibling;
+            tbox_context_set_animation_time(ctx, 10.0);
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            const tbox_layout_box *d = find_context_box(ctx, dot);
+            /* before its delay: backwards fill shows the from keyframe */
+            TBOX_TEST_ASSERT(d != NULL && d->style->background_color.b == 255 && tbox_context_animations_active(ctx));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), node, tbox_string_view_make("class", 5), tbox_string_view_make("go", 2));
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            const double times[6] = { 10.25, 10.75, 11.25, 11.75, 12.5, 13.0 };
+            const double widths[6] = { 125.0, 150.0, 150.0, 125.0, 100.0, 100.0 };
+            for (int f = 0; f < 6; f++) {
+                tbox_context_set_animation_time(ctx, times[f]);
+                tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+                const tbox_layout_box *box = find_context_box(ctx, node);
+                TBOX_TEST_ASSERT(box != NULL && fabs(box->content_box.width - widths[f]) < 0.01);
+            }
+            d = find_context_box(ctx, dot);
+            /* 13s: 2s into the 2s-long steps(2) cycle that started at 11s */
+            TBOX_TEST_ASSERT(d != NULL && d->style->background_color.b == 255);
+            tbox_context_set_animation_time(ctx, 14.0);
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            d = find_context_box(ctx, dot);
+            TBOX_TEST_ASSERT(d != NULL && d->style->background_color.g >= 127 && d->style->background_color.g <= 128 && d->style->background_color.b >= 127);
+            /* pause freezes the progress; the forwards fill then holds */
+            tbox_html_node_set_attribute(tbox_context_document(ctx), node, tbox_string_view_make("class", 5), tbox_string_view_make("hold", 4));
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            const tbox_layout_box *box = find_context_box(ctx, node);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->content_box.width - 100.0) < 0.01);
+            tbox_html_node_remove_attribute(node, tbox_string_view_make("class", 5));
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            box = find_context_box(ctx, node);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->content_box.width - 100.0) < 0.01 && box->style->opacity == 1.0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* scroll-snap: a wheel gesture snaps once idle, gliding to the nearest
+     * snap point (mandatory); proximity leaves far points alone; an
+     * `always` stop between the start and the end catches the gesture. */
+    {
+        const char *modes[3] = { "y mandatory", "y proximity", "y mandatory" };
+        const double deltas[3] = { 130.0, 40.0, 250.0 }, expected[3] = { 100.0, 40.0, 100.0 };
+        for (int m = 0; m < 3; m++) {
+            char css[512];
+            snprintf(css, sizeof(css), "body { margin: 0; } #list { height: 100px; overflow-y: auto; scroll-snap-type: %s; }"
+                     " #list div { height: 100px; scroll-snap-align: start; %s }", modes[m], m == 2 ? "scroll-snap-stop: always;" : "");
+            tbox_context *ctx = open_cstr("<body><div id='list'><div>a</div><div>b</div><div>c</div><div>d</div></div></body>", css, fonts);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx == NULL) continue;
+            tbox_display_list list;
+            tbox_html_node *first = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child->first_child;
+            tbox_context_set_animation_time(ctx, 0.0);
+            tbox_context_run_frame(ctx, 200.0, 300.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 10.0, 50.0, deltas[m]));
+            tbox_context_set_animation_time(ctx, 0.05);
+            tbox_context_run_frame(ctx, 200.0, 300.0, &list);
+            const tbox_layout_box *box = find_context_box(ctx, first);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->border_box.y + deltas[m]) < 0.01 && tbox_context_animations_active(ctx));
+            tbox_context_set_animation_time(ctx, 0.25);
+            tbox_context_run_frame(ctx, 200.0, 300.0, &list);
+            tbox_context_set_animation_time(ctx, 0.6);
+            tbox_context_run_frame(ctx, 200.0, 300.0, &list);
+            box = find_context_box(ctx, first);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->border_box.y + expected[m]) < 0.01);
+            TBOX_TEST_ASSERT(!tbox_context_animations_active(ctx));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* direction: rtl -- a flex row starts at the right edge (and
+     * row-reverse at the left); justify-content: start is the right. */
+    {
+        const char *css = "body { margin: 0; } .row { display: flex; width: 300px; direction: rtl; }"
+                          ".row div { width: 50px; height: 10px; } .rev { flex-direction: row-reverse; }";
+        tbox_context *ctx = open_cstr("<body><div class='row'><div>a</div><div>b</div></div><div class='row rev'><div>c</div><div>d</div></div></body>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            tbox_html_node *row = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_layout_box *a = find_context_box(ctx, row->first_child), *b = find_context_box(ctx, row->first_child->next_sibling);
+            const tbox_layout_box *c = find_context_box(ctx, row->next_sibling->first_child), *d = find_context_box(ctx, row->next_sibling->first_child->next_sibling);
+            TBOX_TEST_ASSERT(a != NULL && b != NULL && a->border_box.x == 250.0 && b->border_box.x == 200.0);
+            TBOX_TEST_ASSERT(c != NULL && d != NULL && c->border_box.x == 0.0 && d->border_box.x == 50.0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* text-emphasis: one mark per letter (not spaces or punctuation),
+     * above the text, centered on its glyph; strings use a half-size face. */
+    {
+        const char *css = "body { margin: 20px; font-size: 20px; } p { margin: 0; text-emphasis: filled dot rgb(1, 2, 3); }"
+                          "p.s { text-emphasis: '*' rgb(1, 2, 3); }";
+        tbox_context *ctx = open_cstr("<body><p>ab, c</p><p class='s'>xy</p></body>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 200.0, &list);
+            size_t dots = 0, strings = 0;
+            double first_x = -1.0, text_y = -1.0, mark_y = -1.0;
+            for (size_t k = 0; k < list.count; k++) {
+                const tbox_paint_op *op = &list.items[k];
+                if (op->color.r != 1 || op->color.g != 2 || op->color.b != 3) {
+                    if (op->kind == TBOX_PAINT_TEXT_RUN && text_y < 0.0) text_y = op->rect.y;
+                    continue;
+                }
+                if (op->kind == TBOX_PAINT_TEXT_RUN) {
+                    strings++;
+                    TBOX_TEST_ASSERT(op->face != NULL && tbox_font_face_line_height(op->face) < 15.0);
+                } else {
+                    if (dots == 0) first_x = op->rect.x + op->rect.width / 2.0, mark_y = op->rect.y + op->rect.height / 2.0;
+                    dots++;
+                }
+            }
+            TBOX_TEST_ASSERT(dots == 3 && strings == 2);
+            /* 'a' is about 11px wide at 20px: its mark sits near x = 20 + 5.5 */
+            TBOX_TEST_ASSERT(first_x > 23.0 && first_x < 28.0 && mark_y < text_y);
             tbox_context_close(ctx);
         }
     }

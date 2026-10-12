@@ -57,6 +57,10 @@ typedef struct tbox_layout_text_run {
      * line's full height the way a text run's `rect.height` does. NULL for
      * an ordinary text run. */
     const tbox_image *image;
+
+    /* `text-emphasis-style: "<string>"`: `font` at half the size, for the
+     * marks; NULL otherwise (the other marks are drawn as shapes). */
+    const tbox_font_face *emphasis_font;
 } tbox_layout_text_run;
 
 typedef struct tbox_layout_box {

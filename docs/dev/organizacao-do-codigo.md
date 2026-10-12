@@ -27,10 +27,10 @@ Este arquivo é o mapa físico, para quem vai editar o código.
 | `base/` | (interno) | `tbox_arena`, `tbox_vector`, `tbox_list`, `tbox_string` (string builder, colapso de espaços), `tbox_debug` |
 | `html_parser/` | `html_parser.h` | tokenizer, tree builder (fechamento implícito), `tbox_html_entities.c` (tabela WHATWG gerada) |
 | `html_xpath/` | `html_xpath.h` | lexer, parser, avaliador de XPath sobre `tbox_html_node` |
-| `css_parser/` | `css_parser.h` | tokenizer, parser, stylesheet (incl. `@media`, `@font-face`) |
+| `css_parser/` | `css_parser.h` | tokenizer, parser, stylesheet (incl. `@media`, `@font-face`, `@keyframes`), `tbox_css_supports.c` (condições de `@supports`) |
 | `css_selector/` | `css_selector.h` | parse e match de seletores; contextos de `:hover`/`:focus`/`:active` |
 | `css_cascade/` | `css_cascade.h` | cascata por origem/especificidade, parsing e conversão de cores |
-| `style/` | `style.h` | `tbox_style.c` (valores tipados), `tbox_style_keywords.c` (`inherit`/`initial`/`unset`), `tbox_style_vars.c` (`var()`) |
+| `style/` | `style.h` | `tbox_style.c` (valores tipados), `tbox_style_keywords.c` (`inherit`/`initial`/`unset`), `tbox_style_vars.c` (`var()`), `tbox_style_generated.c` (`::before`/`::after`), `tbox_style_animate.c` (propriedades animáveis, funções de tempo) |
 | `font/` | `font.h` | `tbox_font_source*` (fontconfig/embedded), `tbox_font_face`, `tbox_font_face_cache` |
 | `image/` | `image.h` | `tbox_image_cache` (decodificação via `stb_image`) |
 | `layout/` | `layout.h` | ver abaixo |
@@ -65,7 +65,8 @@ compartilhado e declarações entre arquivos: `tbox_context_internal.h`.
 | `tbox_context_select.c`, `tbox_context_color.c`, `tbox_context_calendar.c`, `tbox_context_file.c` | controles com popup próprio |
 | `tbox_context_forms.c` | valores iniciais, submit e reset de formulários |
 | `tbox_context_control_theme.c` | CSS dos popups (`tbox-popup`/`tbox-part`) |
-| `tbox_context_transition.c` | `transition` (cor, fundo, opacidade) |
+| `tbox_context_transition.c` | `transition` (toda propriedade animável, `@starting-style`) |
+| `tbox_context_animation.c` | `animation` + `@keyframes` |
 | `tbox_context_font.c` | `@font-face` |
 | `tbox_ua_style.c` | folha user-agent gerada a partir de regras tipadas + `tbox_ua_style_config` |
 

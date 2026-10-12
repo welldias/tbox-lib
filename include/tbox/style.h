@@ -363,6 +363,115 @@ typedef struct tbox_style_gradient {
     size_t stop_count;
 } tbox_style_gradient;
 
+/* Properties `transition` and `animation` can interpolate. Each is one
+ * value of up to 4 doubles (tbox_style_animatable_read/_write); shorthands
+ * such as `border-color` or `padding` stand for several of them. */
+typedef enum tbox_style_animatable {
+    TBOX_STYLE_ANIM_COLOR,
+    TBOX_STYLE_ANIM_BACKGROUND_COLOR,
+    TBOX_STYLE_ANIM_OPACITY,
+    TBOX_STYLE_ANIM_BORDER_TOP_COLOR, /* right, bottom, left follow */
+    TBOX_STYLE_ANIM_BORDER_RIGHT_COLOR,
+    TBOX_STYLE_ANIM_BORDER_BOTTOM_COLOR,
+    TBOX_STYLE_ANIM_BORDER_LEFT_COLOR,
+    TBOX_STYLE_ANIM_OUTLINE_COLOR,
+    TBOX_STYLE_ANIM_TEXT_DECORATION_COLOR,
+    TBOX_STYLE_ANIM_ACCENT_COLOR,
+    TBOX_STYLE_ANIM_CARET_COLOR,
+    TBOX_STYLE_ANIM_TRANSLATE_X,
+    TBOX_STYLE_ANIM_TRANSLATE_Y,
+    TBOX_STYLE_ANIM_WIDTH,
+    TBOX_STYLE_ANIM_HEIGHT,
+    TBOX_STYLE_ANIM_PADDING_TOP, /* right, bottom, left follow */
+    TBOX_STYLE_ANIM_PADDING_RIGHT,
+    TBOX_STYLE_ANIM_PADDING_BOTTOM,
+    TBOX_STYLE_ANIM_PADDING_LEFT,
+    TBOX_STYLE_ANIM_MARGIN_TOP,
+    TBOX_STYLE_ANIM_MARGIN_RIGHT,
+    TBOX_STYLE_ANIM_MARGIN_BOTTOM,
+    TBOX_STYLE_ANIM_MARGIN_LEFT,
+    TBOX_STYLE_ANIM_TOP, /* right, bottom, left follow */
+    TBOX_STYLE_ANIM_RIGHT,
+    TBOX_STYLE_ANIM_BOTTOM,
+    TBOX_STYLE_ANIM_LEFT,
+    TBOX_STYLE_ANIM_BORDER_TOP_WIDTH,
+    TBOX_STYLE_ANIM_BORDER_RIGHT_WIDTH,
+    TBOX_STYLE_ANIM_BORDER_BOTTOM_WIDTH,
+    TBOX_STYLE_ANIM_BORDER_LEFT_WIDTH,
+    TBOX_STYLE_ANIM_BORDER_TOP_LEFT_RADIUS, /* clockwise */
+    TBOX_STYLE_ANIM_BORDER_TOP_RIGHT_RADIUS,
+    TBOX_STYLE_ANIM_BORDER_BOTTOM_RIGHT_RADIUS,
+    TBOX_STYLE_ANIM_BORDER_BOTTOM_LEFT_RADIUS,
+    TBOX_STYLE_ANIM_OUTLINE_WIDTH,
+    TBOX_STYLE_ANIM_OUTLINE_OFFSET,
+    TBOX_STYLE_ANIM_LETTER_SPACING,
+    TBOX_STYLE_ANIM_WORD_SPACING,
+    TBOX_STYLE_ANIM_COUNT
+} tbox_style_animatable;
+
+/* A timing function: cubic-bezier (the keywords are presets of it) or
+ * steps(). */
+typedef struct tbox_style_easing {
+    bool steps;
+    double x1, y1, x2, y2;       /* cubic-bezier control points */
+    unsigned step_count;         /* steps(n, ...), n >= 1 */
+    unsigned char step_position; /* 0 jump-end, 1 jump-start, 2 jump-none, 3 jump-both */
+} tbox_style_easing;
+
+#define TBOX_STYLE_MAX_TRANSITIONS 8
+
+/* One `transition` entry: the properties it covers (bit n is
+ * tbox_style_animatable n) and its timing. */
+typedef struct tbox_style_transition {
+    unsigned long long properties;
+    double duration, delay; /* seconds; duration 0 means no transition */
+    tbox_style_easing easing;
+} tbox_style_transition;
+
+typedef enum tbox_style_scroll_snap_type {
+    TBOX_STYLE_SCROLL_SNAP_NONE,      /* initial; also the x/inline-only forms */
+    TBOX_STYLE_SCROLL_SNAP_PROXIMITY, /* y/block/both, proximity (the default strictness) */
+    TBOX_STYLE_SCROLL_SNAP_MANDATORY,
+} tbox_style_scroll_snap_type;
+
+typedef enum tbox_style_scroll_snap_align {
+    TBOX_STYLE_SCROLL_SNAP_ALIGN_NONE,
+    TBOX_STYLE_SCROLL_SNAP_ALIGN_START,
+    TBOX_STYLE_SCROLL_SNAP_ALIGN_CENTER,
+    TBOX_STYLE_SCROLL_SNAP_ALIGN_END,
+} tbox_style_scroll_snap_align;
+
+typedef enum tbox_style_emphasis_mark {
+    TBOX_STYLE_EMPHASIS_NONE, /* initial */
+    TBOX_STYLE_EMPHASIS_DOT,
+    TBOX_STYLE_EMPHASIS_CIRCLE,
+    TBOX_STYLE_EMPHASIS_DOUBLE_CIRCLE,
+    TBOX_STYLE_EMPHASIS_TRIANGLE,
+    TBOX_STYLE_EMPHASIS_SESAME,
+    TBOX_STYLE_EMPHASIS_STRING, /* text_emphasis_string */
+} tbox_style_emphasis_mark;
+
+#define TBOX_STYLE_MAX_ANIMATIONS 4
+
+typedef enum tbox_style_animation_direction {
+    TBOX_STYLE_ANIMATION_NORMAL,
+    TBOX_STYLE_ANIMATION_REVERSE,
+    TBOX_STYLE_ANIMATION_ALTERNATE,
+    TBOX_STYLE_ANIMATION_ALTERNATE_REVERSE,
+} tbox_style_animation_direction;
+
+/* One `animation` entry; `name` "" is `none`. The Orchestration layer
+ * runs it against the matching @keyframes rule. */
+typedef struct tbox_style_animation {
+    char name[64];
+    double duration, delay; /* seconds */
+    tbox_style_easing easing;
+    double iterations; /* INFINITY for `infinite` */
+    tbox_style_animation_direction direction;
+    bool fill_forwards, fill_backwards;
+    bool paused;
+} tbox_style_animation;
+
 #define TBOX_STYLE_MAX_SHADOWS 4
 
 /* One `box-shadow`/`text-shadow` entry; color alpha 0 paints nothing. */
@@ -425,6 +534,26 @@ typedef enum tbox_style_background_repeat {
 
 /* One background image layer beyond the first (see
  * tbox_style.background_layers). */
+/* Compositing and Blending 1's blend modes (`background-blend-mode`). */
+typedef enum tbox_style_blend_mode {
+    TBOX_STYLE_BLEND_NORMAL, /* initial */
+    TBOX_STYLE_BLEND_MULTIPLY,
+    TBOX_STYLE_BLEND_SCREEN,
+    TBOX_STYLE_BLEND_OVERLAY,
+    TBOX_STYLE_BLEND_DARKEN,
+    TBOX_STYLE_BLEND_LIGHTEN,
+    TBOX_STYLE_BLEND_COLOR_DODGE,
+    TBOX_STYLE_BLEND_COLOR_BURN,
+    TBOX_STYLE_BLEND_HARD_LIGHT,
+    TBOX_STYLE_BLEND_SOFT_LIGHT,
+    TBOX_STYLE_BLEND_DIFFERENCE,
+    TBOX_STYLE_BLEND_EXCLUSION,
+    TBOX_STYLE_BLEND_HUE,
+    TBOX_STYLE_BLEND_SATURATION,
+    TBOX_STYLE_BLEND_COLOR,
+    TBOX_STYLE_BLEND_LUMINOSITY,
+} tbox_style_blend_mode;
+
 typedef struct tbox_style_background_layer {
     char image[256];
     tbox_style_gradient gradient;
@@ -434,6 +563,7 @@ typedef struct tbox_style_background_layer {
     bool repeat_x, repeat_y;
     tbox_style_background_repeat repeat_mode_x, repeat_mode_y;
     bool attachment_fixed;
+    tbox_style_blend_mode blend_mode;
 } tbox_style_background_layer;
 
 #define TBOX_STYLE_MAX_BACKGROUND_LAYERS 4
@@ -528,6 +658,9 @@ typedef struct tbox_style {
     tbox_style_background_repeat background_repeat_mode_x, background_repeat_mode_y;
     bool background_attachment_fixed;
     tbox_style_background_origin background_origin; /* the area background-position/size refer to */
+    /* `background-blend-mode` of the first layer (the others' are in
+     * background_layers); not inheritable. */
+    tbox_style_blend_mode background_blend_mode;
     /* Comma-separated layers: the fields above are the first (topmost)
      * one, background_layers[i] the (i + 2)-th; background_layer_count
      * counts them all (0 or 1 for a single layer). */
@@ -606,6 +739,14 @@ typedef struct tbox_style {
      * `font_weight_bold` above (herda do pai já resolvido se não
      * declarado/reconhecido; `LEFT` -- o valor inicial -- sem pai). */
     tbox_style_text_align text_align;
+    /* text_align came from `start` (1) or `end` (2), the initial value
+     * being `start`; 0 for a physical value. Inherited with it, so a
+     * descendant with another direction resolves it again. */
+    unsigned char text_align_logical;
+    /* `direction: rtl` (inheritable; initial ltr). Flips the inline-start/
+     * -end mapping of logical properties, `text-align: start/end` and the
+     * main axis of `flex-direction: row`; text is not reordered (no bidi). */
+    bool direction_rtl;
     tbox_style_text_align_last text_align_last; /* inheritable */
     bool text_justify_none; /* inheritable; `text-justify: none` leaves justified lines at the start */
     /* `font-family`. Fixed buffer, NOT a tbox_string_view -- every
@@ -630,6 +771,14 @@ typedef struct tbox_style {
      * distance from the baseline to the underline's top edge. */
     tbox_style_length text_underline_offset;
     bool text_underline_position_under; /* inherited; auto is false */
+    /* `text-emphasis` (style, color, position), all inheritable: a mark
+     * over (or under) every character except spaces and punctuation.
+     * text_emphasis_color alpha 0 means currentColor (the initial value). */
+    tbox_style_emphasis_mark text_emphasis_mark;
+    bool text_emphasis_open; /* `open` shapes: outlines instead of filled */
+    char text_emphasis_string[16];
+    tbox_css_rgba text_emphasis_color;
+    bool text_emphasis_under;
     /* `vertical-align`. NOT inheritable; initial value BASELINE. */
     tbox_style_vertical_align vertical_align;
     /* Only meaningful for VERTICAL_ALIGN_LENGTH: PX, or PERCENT of the
@@ -684,15 +833,26 @@ typedef struct tbox_style {
      * element paints nothing. */
     double opacity;
     bool isolation_isolate; /* `isolation: isolate`: a stacking context; not inheritable */
-    /* transition: color, background-color, opacity; one timing per property. */
-    double transition_duration[3], transition_delay[3];
-    unsigned char transition_timing[3]; /* 0 ease, 1 linear, 2 ease-in, 3 ease-out, 4 ease-in-out */
+    /* `transition` (shorthand and longhands), in declaration order; when
+     * several entries name a property the last one wins (see
+     * tbox_style_transition_find). Not inheritable. */
+    tbox_style_transition transitions[TBOX_STYLE_MAX_TRANSITIONS];
+    size_t transition_count;
+    /* `animation` (shorthand and longhands), paired by index like the
+     * transition lists. Not inheritable. */
+    tbox_style_animation animations[TBOX_STYLE_MAX_ANIMATIONS];
+    size_t animation_count;
     /* `filter` color functions (grayscale, sepia, saturate, hue-rotate,
      * invert, opacity, brightness, contrast) folded into one 4x5 color
      * matrix over 0..1 RGBA, rows R G B A, columns r g b a + offset;
      * has_filter false means none. blur()/drop-shadow() are ignored. */
     bool has_filter;
     double filter_matrix[20];
+    /* `backdrop-filter`: the same color functions, applied by Render to
+     * what is painted behind the element's border box. blur(),
+     * drop-shadow() and url() are ignored. Not inheritable. */
+    bool has_backdrop_filter;
+    double backdrop_filter_matrix[20];
     tbox_style_clip_path clip_path;
     /* Replaced images: fit and position pixels inside their CSS content box.
      * Positions are percentages of the free space, or px offsets from the
@@ -721,6 +881,12 @@ typedef struct tbox_style {
     bool scrollbar_gutter_stable; /* reserve the vertical scrollbar's inline-end space */
     tbox_style_overscroll overscroll_y; /* not inheritable */
     bool scroll_behavior_smooth; /* `scroll-behavior: smooth`; not inheritable */
+    /* Scroll snapping, vertical axis only (there is no horizontal
+     * scrolling); none inheritable. On the container: */
+    tbox_style_scroll_snap_type scroll_snap_type;
+    /* On a snap target: its block-axis alignment, and `always`. */
+    tbox_style_scroll_snap_align scroll_snap_align;
+    bool scroll_snap_stop_always;
     /* flexbox, none inheritable. Container properties: */
     tbox_style_flex_direction flex_direction;
     tbox_style_flex_wrap flex_wrap;
@@ -868,6 +1034,41 @@ tbox_style_border_style tbox_style_border_side_style(const tbox_style *style, si
 
 /* The border color of `side`, same side numbering. */
 tbox_css_rgba tbox_style_border_side_color(const tbox_style *style, size_t side);
+
+/* Animatable properties (tbox_style_animate.c), used by the Orchestration
+ * layer to run `transition` and `animation`. */
+
+/* The properties a `transition-property` name stands for, as a bit mask
+ * over tbox_style_animatable (`all` sets every bit); 0 when tbox can't
+ * interpolate it. */
+unsigned long long tbox_style_animatable_mask(tbox_string_view name);
+
+/* `property`'s value in `style` as 4 doubles: colors premultiplied
+ * (r·a, g·a, b·a, a), lengths (value, px_offset, kind, 0), numbers
+ * (value, 0, 0, 0), radii (horizontal, vertical, horizontal %, vertical %). */
+void tbox_style_animatable_read(const tbox_style *style, tbox_style_animatable property, double out[4]);
+void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable property, const double value[4]);
+
+/* False when the two values can't be blended (a length switching between
+ * px, % and auto; `auto` accent/caret colors): the change happens at once. */
+bool tbox_style_animatable_interpolable(tbox_style_animatable property, const double from[4], const double to[4]);
+
+/* `from` + (`to` - `from`) · `t`, componentwise. */
+void tbox_style_animatable_mix(const double from[4], const double to[4], double t, double out[4]);
+
+/* The eased progress for a linear `progress` in [0, 1]. */
+double tbox_style_easing_apply(const tbox_style_easing *easing, double progress);
+
+/* Parses an <easing-function> (keywords, cubic-bezier(), steps()); false,
+ * leaving `out` alone, when `text` isn't one. */
+bool tbox_style_parse_easing_function(tbox_string_view text, tbox_style_easing *out);
+
+/* The `ease` preset, the initial timing function. */
+tbox_style_easing tbox_style_easing_default(void);
+
+/* The transition entry that applies to `property` (the last that names
+ * it), NULL when none does or its duration is 0. */
+const tbox_style_transition *tbox_style_transition_find(const tbox_style *style, tbox_style_animatable property);
 
 typedef struct tbox_style_entry {
     const tbox_html_node *node;

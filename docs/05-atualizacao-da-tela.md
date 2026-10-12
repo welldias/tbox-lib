@@ -47,7 +47,7 @@ flowchart TD
 | Texto digitado / colado | se o campo focado mudou |
 | Ponteiro | se o elemento sob o ponteiro mudou (`:hover`) |
 | Janela | se o tamanho mudou |
-| Animação | enquanto houver `transition` ativa (inclusive a de entrada, por `@starting-style`) ou rolagem suave (`scroll-behavior: smooth`) em curso |
+| Animação | enquanto houver `transition` ou `animation` ativa (inclusive a de entrada, por `@starting-style`, e uma `animation` no atraso inicial; uma pausada não conta), rolagem suave (`scroll-behavior: smooth`) em curso ou um scroll snap esperando a roda parar |
 
 O cursor do mouse (`cursor`) é atualizado a cada passo, mas não suja o frame.
 

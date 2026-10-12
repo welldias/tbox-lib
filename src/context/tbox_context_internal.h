@@ -61,19 +61,48 @@ typedef struct tbox_text_field {
     struct tbox_text_field *next;
 } tbox_text_field;
 
+/* A running transition of one property: from `start` to the state's
+ * value, over [start_time, start_time + duration]. */
 typedef struct tbox_transition_track {
-    double start[4], target[4];
+    double start[4];
     double start_time, duration;
-    unsigned char timing;
+    tbox_style_easing easing;
     bool active;
 } tbox_transition_track;
 
 typedef struct tbox_transition_state {
     const tbox_html_node *node;
-    tbox_transition_track tracks[3];
+    /* Last frame's target of every animatable property, to detect changes. */
+    double values[TBOX_STYLE_ANIM_COUNT][4];
+    /* NULL until the element first starts a transition. */
+    tbox_transition_track *tracks;
     bool hidden; /* display: none last frame: showing it again uses @starting-style */
     struct tbox_transition_state *next;
 } tbox_transition_state;
+
+/* One resolved keyframe: the animatable properties it names (bit mask
+ * over tbox_style_animatable) and their values. */
+typedef struct tbox_animation_frame {
+    double offset;
+    unsigned long long mask;
+    double values[TBOX_STYLE_ANIM_COUNT][4];
+    bool has_easing; /* animation-timing-function inside the keyframe */
+    tbox_style_easing easing;
+} tbox_animation_frame;
+
+/* A running `animation` of one element, matched across frames by name. */
+typedef struct tbox_animation_state {
+    const tbox_html_node *node;
+    char name[64];
+    double start_time;
+    bool paused;
+    double paused_at;
+    const tbox_css_keyframes_rule *rule; /* the frames below were resolved from it */
+    tbox_animation_frame *frames;
+    size_t frame_count;
+    bool seen; /* still named by the element's style this frame */
+    struct tbox_animation_state *next;
+} tbox_animation_state;
 
 typedef struct tbox_text_line {
     size_t start, end;
@@ -94,6 +123,12 @@ typedef struct tbox_scroll_state {
      * starting at `start_time` (ctx->animation_time) while `animating`. */
     bool animating;
     double from_y, target_y, start_time;
+    /* scroll-snap-type: a wheel/drag gesture left the container unsnapped;
+     * tbox_context_apply_scroll snaps it once the gesture has been idle
+     * for a moment after `snap_time`. `snap_origin_y` is where the gesture
+     * began (for scroll-snap-stop: always). */
+    bool snap_pending;
+    double snap_time, snap_origin_y;
     struct tbox_scroll_state *next;
 } tbox_scroll_state;
 
@@ -178,12 +213,16 @@ struct tbox_context {
     void *submit_userdata;
     tbox_style_table styles; /* last frame's styles, for focus visibility checks */
     tbox_transition_state *transitions;
+    tbox_animation_state *animations;
     double animation_time;
     bool animations_active;
     bool prefers_reduced_motion;
     bool has_starting_style; /* some author rule is inside @starting-style */
 };
 
+void tbox_context_free_transitions(tbox_context *ctx);
+void tbox_context_free_animations(tbox_context *ctx);
+void tbox_context_apply_animations(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height);
 void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height);
 void tbox_context_register_font_faces(tbox_font_face_cache *fonts, const tbox_css_stylesheet *sheet, const char *base_dir);
 

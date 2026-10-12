@@ -95,3 +95,13 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 119 | `@layer` (ordem, subcamadas, anônima, dentro de `@media`, `!important`) e `@import … layer()` (`119-reset.css`) |
 | 120 | `font-size-adjust`, `scroll-behavior: smooth` (com Tab), `@starting-style`, `@namespace` |
 | 121 | `::before`/`::after` (obrigatório, badge com `attr()`, status, breadcrumb, bloco vazio), `counter()`, `counters()`, `quotes` |
+| 122 | `transition` em propriedades de layout e pintura (`width`, `padding`, bordas, `outline`, `translate`), `cubic-bezier()`, `steps()`, listas de longhands (passe o mouse) |
+| 123 | `@supports` (`not`/`and`/`or`, `selector()`, custom property, dentro de `@media`) |
+| 124 | `filter: drop-shadow()` em caixas com fundo, em texto e encadeado |
+| 125 | `backdrop-filter` (funções de cor; `blur()` ignorado) |
+| 126 | propriedades aceitas sem efeito (impressão, 3D, `clear`, `overflow-anchor`) e `@supports` delas |
+| 127 | `animation` e `@keyframes` (`infinite alternate`, keyframe intermediário, `steps()` com atraso, `forwards`, `paused`) |
+| 128 | `scroll-snap-type` (`mandatory`, `proximity`), `scroll-snap-align`, `scroll-snap-stop` (role a lista) |
+| 129 | `background-blend-mode` (16 modos, lista sobre várias camadas) |
+| 130 | `direction: rtl` e atributo `dir` (propriedades lógicas, flex, `text-align: start/end`) |
+| 131 | `text-emphasis` (formas cheias/abertas, `<string>`, `under`, herança) |

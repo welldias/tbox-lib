@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .card {
+      width: 460px;
+      padding: 8px 12px;
+      margin: 8px 0;
+      background: white;
+    }
+
+    .yes,
+    .no {
+      display: none;
+      padding: 4px 8px;
+      margin: 4px 0;
+    }
+
+    .yes {
+      background: #dcfce7;
+    }
+
+    .no {
+      background: #fee2e2;
+    }
+
+    /* Cada linha só aparece se a condição for verdadeira */
+    @supports (display: flex) {
+      .flex {
+        display: block;
+      }
+    }
+
+    @supports not (display: grid) {
+      .nogrid {
+        display: block;
+      }
+    }
+
+    @supports (display: grid) {
+      .grid {
+        display: block;
+      }
+    }
+
+    @supports (gap: 8px) and (transform: translateX(4px)) {
+      .and {
+        display: block;
+      }
+    }
+
+    @supports (transform: rotate(10deg)) or (float: left) {
+      .or {
+        display: block;
+      }
+    }
+
+    @supports selector(:nth-last-child(2)) {
+      .selector {
+        display: block;
+      }
+    }
+
+    @supports selector(::-webkit-scrollbar) {
+      .webkit {
+        display: block;
+      }
+    }
+
+    @supports (--brand: #2563eb) {
+      .custom {
+        display: block;
+      }
+    }
+
+    /* Aninhado com @media */
+    @media (min-width: 400px) {
+      @supports (backdrop-filter: grayscale(1)) {
+        .nested {
+          display: block;
+        }
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>@supports</h1>
+
+  <h2>Verdes devem aparecer, vermelhos não</h2>
+  <div class="card">
+    <div class="yes flex">(display: flex)</div>
+    <div class="yes nogrid">not (display: grid)</div>
+    <div class="no grid">(display: grid)</div>
+    <div class="yes and">(gap) and (transform: translateX())</div>
+    <div class="no or">(transform: rotate()) or (float: left)</div>
+    <div class="yes selector">selector(:nth-last-child(2))</div>
+    <div class="no webkit">selector(::-webkit-scrollbar)</div>
+    <div class="yes custom">(--brand: #2563eb)</div>
+    <div class="yes nested">@media + @supports (backdrop-filter)</div>
+  </div>
+</body>
+
+</html>

@@ -69,6 +69,7 @@ Regras que explicam a maior parte do comportamento:
 | **Listas** | Marcadores `outside`/`inside`, `list-style-type` (disc, circle, square, decimal, letras, romanos, grego, disclosure…), `list-style-image`, `::marker` (cor, fonte, `content`). |
 | **Tabelas** | `caption`, `colgroup`/`col`, `thead`/`tbody`/`tfoot`, `colspan`/`rowspan`, `border-collapse`, `border-spacing`, `table-layout: fixed`, `empty-cells`, `vertical-align` em células, blocos dentro de células. |
 | **Flexbox** | CSS Flexbox Level 1 §9: direção (incl. reversa), wrap, `justify-content`, `align-*`, `place-*`, `gap`, `flex-grow/shrink/basis`, `order`, margens auto, mínimo automático, min/max. |
+| **`direction`** | `ltr`/`rtl` (CSS ou atributo HTML `dir`, que perde para qualquer CSS), herdado: troca o lado de `*-inline-start`/`-end` (margens, paddings, `inset`, bordas e cantos lógicos), resolve `text-align: start`/`end` (e o `start` inicial) e faz uma linha flex (`row`) começar na direita. |
 | **Imagens** | `<img>` inline ou como caixa (block/flex item), proporção preservada, `object-fit`, `object-position`, `image-rendering`. PNG/JPEG etc. via `stb_image`. |
 | **Overflow** | `overflow-y: auto/scroll/hidden/clip`, `overflow-x` com recorte; rolagem vertical com barras. |
 | **Unidades de viewport e `@media`** | Resolvidas contra o tamanho atual da janela. |
@@ -91,8 +92,24 @@ Regras que explicam a maior parte do comportamento:
   ancorados por `bottom` veem um containing block mais baixo que o real.
 - **Margens negativas** entre irmãos somam em vez de colapsar pelo algoritmo
   completo.
-- **Sombras e `blur`** são aproximados em degraus; `filter: blur()` e
-  `drop-shadow()` são ignorados.
+- **Sombras e `blur`** são aproximados em degraus; `filter: blur()` é
+  ignorado.
+- **`filter: drop-shadow()`** não segue a forma alfa do conteúdo: num
+  elemento que pinta fundo ou borda, vira uma sombra de caixa (que segue o
+  `border-radius`) abaixo das próprias; senão, vira sombra do texto, que os
+  descendentes herdam como `text-shadow` (e que um `text-shadow` próprio
+  substitui).
+- **`backdrop-filter`** aplica só as funções de cor (`grayscale`, `sepia`,
+  `invert`, `brightness`…) ao que já está pintado atrás da border box (com
+  os cantos arredondados); `blur()`, `drop-shadow()` e `url()` são
+  ignorados.
+- **`background-blend-mode`** mistura cada camada de imagem/gradiente com
+  o que já está pintado sob ela — a cor de fundo e as camadas de baixo, mas
+  também o que está atrás do elemento quando o fundo é transparente (não há
+  grupo isolado). Os 16 modos de Compositing and Blending 1.
+- **`direction: rtl`** não reordena texto (não há bidi) nem move o
+  marcador de lista, a barra de rolagem ou o eixo cruzado de um flex em
+  coluna; `text-align-last: start`/`end` continuam físicos.
 - **`transform`** só translação (`translate()`, `translateX/Y`, `translate`).
 
 Detalhes e o motivo de cada um: [Débito técnico](dev/debito-tecnico.md#layout).
@@ -116,12 +133,14 @@ do CSS e emite comandos (`tbox_paint_op`):
 | `GRADIENT` | Gradientes lineares/radiais (e `repeating-`) |
 | `FILL_RING` | Retângulo arredondado menos outro (bordas e contornos arredondados, sombras `inset`) |
 | `WAVY_LINE` | `text-decoration-style: wavy` |
+| `BACKDROP_FILTER` | `backdrop-filter`: aplica `color_filter` aos pixels já pintados na forma |
 
 Cada op carrega retângulo, cor, `clip` (recorte de overflow) e, se preciso,
 `rounded_clip` (cantos arredondados, `clip-path`; o `clip: rect()` legado
 de caixas `absolute`/`fixed` vira um `clip-path: inset()` equivalente na
 Style) e matriz de cor
-(`filter`, `opacity`).
+(`filter`, `opacity`); `IMAGE`/`GRADIENT` levam também o
+`background-blend-mode` da camada.
 
 ### Ordem de pintura
 
@@ -138,9 +157,10 @@ caixas com `opacity` < 1 e caixas com `isolation: isolate`. Dentro de um context
 ordem da árvore. O hit-test usa a mesma ordem
 ([Eventos](06-eventos-e-interatividade.md#hit-test)).
 
-Num fundo, a ordem é: cor → camadas de imagem/gradiente (da última para a
-primeira, posicionadas na área de `background-origin`, recortadas por
-`background-clip`) → sombras `inset` → borda.
+Num fundo, a ordem é: `backdrop-filter` → cor → camadas de
+imagem/gradiente (da última para a primeira, posicionadas na área de
+`background-origin`, recortadas por `background-clip`, misturadas pelo
+`background-blend-mode`) → sombras `inset` → borda.
 
 ### Rasterização
 

@@ -210,6 +210,38 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   fluxo depois).
 - **Toca:** `tbox_layout_build_element` (`context_for_children.nearest_ancestor`).
 
+### Tabela de propriedades do `@supports`
+
+- **O que é:** `tbox_css_supports.c` tem a própria lista de propriedades
+  suportadas, uma cópia da [referência](../referencia/css-suportado.md); a
+  Style não tem um registro que o parser (camada de baixo) possa consultar.
+  Uma propriedade nova que não entrar nessa lista responde falso.
+- **Quando revisitar:** se as duas listas divergirem na prática, ou quando
+  a Style ganhar um registro de propriedades.
+- **Toca:** `src/css_parser/tbox_css_supports.c`.
+
+### Keyframes resolvidos uma vez
+
+- **O que é:** os valores de cada keyframe são resolvidos quando a animação
+  começa; uma mudança depois disso em `font-size` (para `em`), no containing
+  block (para `%`) ou em `color` (para `currentColor`) não chega à animação
+  em curso.
+- **Quando revisitar:** quando uma animação longa precisar acompanhar o
+  layout (ex.: redimensionar a janela no meio).
+- **Toca:** `tbox_animation_resolve_frames` em
+  `src/context/tbox_context_animation.c`.
+
+### Efeitos sem buffer separado
+
+- **O que é:** sem pintar um elemento num buffer próprio, `drop-shadow()`
+  não segue a forma alfa do conteúdo e `background-blend-mode` mistura
+  também com o que está atrás do elemento quando o fundo é transparente (o
+  CSS isola o fundo num grupo). O mesmo limite já valia para `opacity` em
+  subárvores sobrepostas.
+- **Quando revisitar:** junto com `blur()`, `mix-blend-mode` e máscaras,
+  que pedem a mesma composição em camadas.
+- **Toca:** `src/render/tbox_render.c`, `src/output/tbox_raster.c`.
+
 ## HTML Parser
 
 ### Fechamento implícito de `<tr>`/`<td>`/`<th>`/`<option>`

@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <string.h>
 #include "tbox_css_parser.h"
 
@@ -9,7 +10,8 @@
  *   stylesheet      : [ CDO | CDC | S | statement ]*
  *   statement       : ruleset | at_rule
  *   at_rule         : AT_KEYWORD <anything> [ block | ';' ]
- *                     -- @media rules and top-level @font-face retained;
+ *                     -- @media, @layer, @starting-style and true @supports
+ *                        rules and top-level @font-face retained;
  *                        other contents discarded
  *   ruleset         : selector_group '{' declaration_list '}'
  *   selector_group  : selector [ ',' S* selector ]*
@@ -40,6 +42,9 @@ void tbox_css_parser_init(tbox_css_parser *parser, const char *input, size_t len
     tbox_css_tokenizer_init(&parser->tokenizer, input, length);
     parser->arena  = arena;
     parser->layers = NULL;
+    parser->keyframes           = NULL;
+    parser->keyframes_out       = NULL;
+    parser->keyframes_out_count = 0;
     tbox_css_parser_advance(parser);
 }
 
@@ -784,6 +789,104 @@ static void tbox_css_parser_parse_layer(tbox_css_parser *parser, tbox_vector *ru
     tbox_css_parser_skip_at_rule(parser);
 }
 
+/* AT_KEYWORD `keyframes` already consumed: `<name> { <keyframe>* }`, each
+ * `<from|to|percentage>#  { declarations }`. A keyframe with a bad
+ * selector is dropped alone; a bad name drops the rule. */
+static void tbox_css_parser_parse_keyframes(tbox_css_parser *parser, const tbox_css_media_condition *media) {
+    tbox_css_parser_skip_s(parser);
+    if (parser->current.type != TBOX_CSS_TOKEN_IDENT && parser->current.type != TBOX_CSS_TOKEN_STRING) {
+        tbox_css_parser_skip_at_rule(parser);
+        return;
+    }
+    tbox_string_view name = tbox_css_parser_copy(parser, parser->current.text);
+    bool reserved = parser->current.type == TBOX_CSS_TOKEN_IDENT &&
+                    (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("none")) || tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("initial")) ||
+                     tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("inherit")) || tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("unset")));
+    tbox_css_parser_advance(parser);
+    tbox_css_parser_skip_s(parser);
+    if (reserved || parser->current.type != TBOX_CSS_TOKEN_LBRACE) {
+        tbox_css_parser_skip_at_rule(parser);
+        return;
+    }
+    tbox_css_parser_advance(parser);
+    tbox_vector frames;
+    tbox_vector_init(&frames, parser->arena, sizeof(tbox_css_keyframe), 0);
+    for (;;) {
+        while (parser->current.type == TBOX_CSS_TOKEN_S || parser->current.type == TBOX_CSS_TOKEN_SEMICOLON)
+            tbox_css_parser_advance(parser);
+        if (parser->current.type == TBOX_CSS_TOKEN_EOF)
+            break;
+        if (parser->current.type == TBOX_CSS_TOKEN_RBRACE) {
+            tbox_css_parser_advance(parser);
+            break;
+        }
+        double offsets[16];
+        size_t offset_count = 0;
+        bool valid = true;
+        for (;;) {
+            tbox_css_parser_skip_s(parser);
+            double offset = -1.0;
+            if (parser->current.type == TBOX_CSS_TOKEN_IDENT) {
+                if (tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("from"))) offset = 0.0;
+                else if (tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("to"))) offset = 1.0;
+                tbox_css_parser_advance(parser);
+            } else if (parser->current.type == TBOX_CSS_TOKEN_NUMBER) {
+                char digits[32];
+                size_t length = parser->current.text.size < sizeof(digits) - 1 ? parser->current.text.size : sizeof(digits) - 1;
+                memcpy(digits, parser->current.text.data, length);
+                digits[length] = '\0';
+                double percent = strtod(digits, NULL);
+                tbox_css_parser_advance(parser);
+                if (parser->current.type == TBOX_CSS_TOKEN_DELIM && parser->current.text.size == 1 && parser->current.text.data[0] == '%') {
+                    tbox_css_parser_advance(parser);
+                    if (percent >= 0.0 && percent <= 100.0) offset = percent / 100.0;
+                }
+            }
+            if (offset < 0.0 || offset_count == sizeof(offsets) / sizeof(offsets[0])) valid = false;
+            else offsets[offset_count++] = offset;
+            tbox_css_parser_skip_s(parser);
+            if (!valid || parser->current.type != TBOX_CSS_TOKEN_COMMA) break;
+            tbox_css_parser_advance(parser);
+        }
+        if (!valid || parser->current.type != TBOX_CSS_TOKEN_LBRACE) {
+            /* drop this keyframe: up to its block, or to the rule's '}' */
+            int depth = 0;
+            while (parser->current.type != TBOX_CSS_TOKEN_EOF && !(depth == 0 && (parser->current.type == TBOX_CSS_TOKEN_LBRACE || parser->current.type == TBOX_CSS_TOKEN_RBRACE))) {
+                if (tbox_css_token_opens_nested(parser->current.type)) depth++;
+                else if (tbox_css_token_closes_nested(parser->current.type) && depth > 0) depth--;
+                tbox_css_parser_advance(parser);
+            }
+            if (parser->current.type == TBOX_CSS_TOKEN_LBRACE) tbox_css_parser_skip_block(parser);
+            continue;
+        }
+        tbox_css_ruleset block = {0};
+        tbox_css_parser_parse_declaration_list(parser, &block);
+        for (size_t i = 0; i < offset_count; i++) {
+            tbox_css_keyframe *frame = tbox_vector_push(&frames);
+            if (frame == NULL) break;
+            frame->offset            = offsets[i];
+            frame->declarations      = block.declarations;
+            frame->declaration_count = block.declaration_count;
+        }
+    }
+    size_t count = tbox_vector_length(&frames);
+    if (count == 0 || parser->keyframes == NULL)
+        return;
+    tbox_css_keyframe *items = frames.data;
+    for (size_t i = 1; i < count; i++) /* stable insertion sort by offset */
+        for (size_t j = i; j > 0 && items[j - 1].offset > items[j].offset; j--) {
+            tbox_css_keyframe swap = items[j - 1];
+            items[j - 1] = items[j];
+            items[j] = swap;
+        }
+    tbox_css_keyframes_rule *rule = tbox_vector_push(parser->keyframes);
+    if (rule == NULL) return;
+    rule->name        = name;
+    rule->frames      = items;
+    rule->frame_count = count;
+    rule->media       = media;
+}
+
 /* stylesheet: [ CDO | CDC | S | statement ]*
  * Forward-progress invariant: every iteration either consumes at least one
  * S/CDO/CDC/AT_KEYWORD token, or calls parse_ruleset, which -- whether it
@@ -808,7 +911,14 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
             bool is_font_face = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("font-face"));
             bool is_layer = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("layer"));
             bool is_starting = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("starting-style"));
+            bool is_supports = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("supports"));
+            bool is_keyframes = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("keyframes")) ||
+                                tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("-webkit-keyframes"));
             tbox_css_parser_advance(parser);
+            if (is_keyframes) {
+                tbox_css_parser_parse_keyframes(parser, media);
+                continue;
+            }
             if (is_starting) {
                 /* @starting-style { rules }: kept, flagged for the starting
                  * style only (see tbox_css_ruleset.starting_style). */
@@ -834,6 +944,27 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
                         face->declaration_count = block.declaration_count;
                     }
                 } else tbox_css_parser_skip_at_rule(parser);
+                continue;
+            }
+            if (is_supports) {
+                /* @supports <condition> { rules }: decided here, once --
+                 * what tbox supports never changes (tbox_css_supports). */
+                size_t start = parser->current.offset;
+                int depth = 0;
+                while (parser->current.type != TBOX_CSS_TOKEN_EOF) {
+                    tbox_css_token_type type = parser->current.type;
+                    if (depth == 0 && (type == TBOX_CSS_TOKEN_LBRACE || type == TBOX_CSS_TOKEN_SEMICOLON)) break;
+                    if (tbox_css_token_opens_nested(type)) depth++;
+                    else if (tbox_css_token_closes_nested(type) && depth > 0) depth--;
+                    tbox_css_parser_advance(parser);
+                }
+                if (parser->current.type == TBOX_CSS_TOKEN_LBRACE) {
+                    tbox_string_view condition = tbox_string_view_make(parser->tokenizer.input + start, parser->current.offset - start);
+                    if (tbox_css_supports(condition)) {
+                        tbox_css_parser_advance(parser);
+                        tbox_css_parser_parse_rules(parser, rulesets, faces, media, true, layer, starting);
+                    } else tbox_css_parser_skip_block(parser);
+                } else if (parser->current.type == TBOX_CSS_TOKEN_SEMICOLON) tbox_css_parser_advance(parser);
                 continue;
             }
             if (is_media) {
@@ -882,7 +1013,13 @@ void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_ruleset
     tbox_vector layers;
     tbox_vector_init(&layers, parser->arena, sizeof(tbox_css_layer_node), 0);
     parser->layers = &layers;
+    tbox_vector keyframes;
+    tbox_vector_init(&keyframes, parser->arena, sizeof(tbox_css_keyframes_rule), 0);
+    parser->keyframes = &keyframes;
     tbox_css_parser_parse_rules(parser, &rulesets, &faces, NULL, false, 0, false);
+    parser->keyframes           = NULL;
+    parser->keyframes_out       = keyframes.length > 0 ? keyframes.data : NULL;
+    parser->keyframes_out_count = keyframes.length;
     size_t layer_count = tbox_vector_length(&layers);
     if (layer_count > 0) {
         unsigned *ranks = tbox_arena_alloc_zero(parser->arena, (layer_count + 1) * sizeof(unsigned));

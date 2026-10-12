@@ -15,21 +15,21 @@ ignorados sem erro — o parser é tolerante.
 | X | align-items | Specifies the alignment for items inside a flexible container |
 | X | align-self | Specifies the alignment for selected items inside a flexible container |
 | X* | all | Resets all properties (except unicode-bidi and direction) |
-| | animation | A shorthand property for all the animation-* properties |
-| | animation-delay | Specifies a delay for the start of an animation |
-| | animation-direction | Specifies whether an animation should be played forward, backward or in alternate cycles |
-| | animation-duration | Specifies how long an animation should take to complete one cycle |
-| | animation-fill-mode | Specifies a style for the element when the animation is not playing (before it starts, after it ends, or both) |
-| | animation-iteration-count | Specifies the number of times an animation should be played |
-| | animation-name | Specifies a name for the @keyframes animation |
-| | animation-play-state | Specifies whether the animation is running or paused |
-| | animation-timing-function | Specifies the speed curve of an animation |
+| X* | animation | A shorthand property for all the animation-* properties |
+| X* | animation-delay | Specifies a delay for the start of an animation |
+| X* | animation-direction | Specifies whether an animation should be played forward, backward or in alternate cycles |
+| X* | animation-duration | Specifies how long an animation should take to complete one cycle |
+| X* | animation-fill-mode | Specifies a style for the element when the animation is not playing (before it starts, after it ends, or both) |
+| X* | animation-iteration-count | Specifies the number of times an animation should be played |
+| X* | animation-name | Specifies a name for the @keyframes animation |
+| X* | animation-play-state | Specifies whether the animation is running or paused |
+| X* | animation-timing-function | Specifies the speed curve of an animation |
 | X | aspect-ratio | Specifies preferred aspect ratio of an element |
-| | backdrop-filter | Defines a graphical effect to the area behind an element |
-| | backface-visibility | Defines whether or not the back face of an element should be visible when facing the user |
+| X* | backdrop-filter | Defines a graphical effect to the area behind an element |
+| X* | backface-visibility | Defines whether or not the back face of an element should be visible when facing the user |
 | X* | background | A shorthand property for all the background-* properties |
 | X | background-attachment | Sets whether a background image scrolls with the rest of the page, or is fixed |
-| | background-blend-mode | Specifies the blending mode of each background layer (color/image) |
+| X* | background-blend-mode | Specifies the blending mode of each background layer (color/image) |
 | X* | background-clip | Defines how far the background (color or image) should extend within an element |
 | X | background-color | Specifies the background color of an element |
 | X* | background-image | Specifies one or more background images for an element |
@@ -106,13 +106,13 @@ ignorados sem erro — o parser é tolerante.
 | | box-reflect | The box-reflect property is used to create a reflection of an element. |
 | X | box-shadow | Attaches one or more shadows to an element |
 | X | box-sizing | Defines how the width and height of an element are calculated: should they include padding and borders, or not |
-| | break-after | Specifies whether or not a page-, column-, or region-break should occur after the specified element |
-| | break-before | Specifies whether or not a page-, column-, or region-break should occur before the specified element |
-| | break-inside | Specifies whether or not a page-, column-, or region-break should occur inside the specified element |
+| X* | break-after | Specifies whether or not a page-, column-, or region-break should occur after the specified element |
+| X* | break-before | Specifies whether or not a page-, column-, or region-break should occur before the specified element |
+| X* | break-inside | Specifies whether or not a page-, column-, or region-break should occur inside the specified element |
 | X | caption-side | Specifies the placement of a table caption |
 | X | caret-color | Specifies the color of the cursor (caret) in inputs, textareas, or any element that is editable |
 | X* | @charset | Specifies the character encoding used in the style sheet |
-| | clear | Specifies what should happen with the element that is next to a floating element |
+| X* | clear | Specifies what should happen with the element that is next to a floating element |
 | X* | clip | Deprecated in favor of clip-path. Clips an absolutely positioned element |
 | X* | clip-path | Clips an element to a basic shape or to an SVG source |
 | X | color | Sets the color of text |
@@ -134,7 +134,7 @@ ignorados sem erro — o parser é tolerante.
 | X* | counter-set | Creates or sets one or more CSS counters |
 | | @counter-style | Lets you define your own counter styles |
 | X* | cursor | Specifies the mouse cursor to be displayed when pointing over an element |
-| | direction | Specifies the text direction/writing direction |
+| X* | direction | Specifies the text direction/writing direction |
 | X* | display | Specifies how a certain HTML element should be displayed |
 | X | empty-cells | Specifies whether or not to display borders and background on empty cells in a table |
 | X* | filter | Defines effects (e.g. blurring or color shifting) on an element before the element is displayed |
@@ -201,7 +201,7 @@ ignorados sem erro — o parser é tolerante.
 | X | justify-content | Specifies the alignment between the items inside a flexible container when the items do not use all available space |
 | | justify-items | Is set on the grid container. Specifies the alignment of grid items in the inline direction |
 | | justify-self | Is set on the grid item. Specifies the alignment of the grid item in the inline direction |
-| | @keyframes | Controls the steps in an animation by defining styles for points along the animation sequence |
+| X* | @keyframes | Controls the steps in an animation by defining styles for points along the animation sequence |
 | X* | @layer | Controls how the CSS cascade layers evaluates the order of styles |
 | X | left | Specifies the left position of a positioned element |
 | X | letter-spacing | Increases or decreases the space between characters in a text |
@@ -259,14 +259,14 @@ ignorados sem erro — o parser é tolerante.
 | | offset-rotate | Specifies rotation of an element as it is animated along a path |
 | X | opacity | Sets the opacity level for an element |
 | X | order | Sets the order of the flexible item, relative to the rest |
-| | orphans | Sets the minimum number of lines that must be left at the bottom of a page or column |
+| X* | orphans | Sets the minimum number of lines that must be left at the bottom of a page or column |
 | X | outline | A shorthand property for the outline-width, outline-style, and the outline-color properties |
 | X | outline-color | Sets the color of an outline |
 | X | outline-offset | Offsets an outline, and draws it beyond the border edge |
 | X | outline-style | Sets the style of an outline |
 | X | outline-width | Sets the width of an outline |
 | X* | overflow | Specifies what happens if content overflows an element's box |
-| | overflow-anchor | Specifies whether or not content in viewable area in a scrollable contianer should be pushed down when new content is loaded above |
+| X* | overflow-anchor | Specifies whether or not content in viewable area in a scrollable contianer should be pushed down when new content is loaded above |
 | X | overflow-wrap | Specifies whether or not the browser can break lines with long words, if they overflow the container |
 | X* | overflow-x | Specifies whether or not to clip the left/right edges of the content, if it overflows the element's content area |
 | X* | overflow-y | Specifies whether or not to clip the top/bottom edges of the content, if it overflows the element's content area |
@@ -287,12 +287,12 @@ ignorados sem erro — o parser é tolerante.
 | X | padding-right | Sets the right padding of an element |
 | X | padding-top | Sets the top padding of an element |
 | | @page | Customizes the dimension, orientation, and margins of printed pages |
-| | page-break-after | Sets the page-break behavior after an element. Replaced by break-after property |
-| | page-break-before | Sets the page-break behavior before an element. Replaced by break-before property |
-| | page-break-inside | Sets the page-break behavior inside an element. Replaced by break-inside property |
+| X* | page-break-after | Sets the page-break behavior after an element. Replaced by break-after property |
+| X* | page-break-before | Sets the page-break behavior before an element. Replaced by break-before property |
+| X* | page-break-inside | Sets the page-break behavior inside an element. Replaced by break-inside property |
 | | paint-order | Sets the order of how an SVG element or text is painted. |
-| | perspective | Gives a 3D-positioned element some perspective |
-| | perspective-origin | Defines at which position the user is looking at the 3D-positioned element |
+| X* | perspective | Gives a 3D-positioned element some perspective |
+| X* | perspective-origin | Defines at which position the user is looking at the 3D-positioned element |
 | X | place-content | Specifies align-content and justify-content property values for flexbox and grid layouts |
 | X | place-items | Specifies align-items and justify-items property values for grid layouts |
 | X | place-self | Specifies align-self and justify-self property values for grid layouts |
@@ -329,15 +329,15 @@ ignorados sem erro — o parser é tolerante.
 | X* | scroll-padding-left | Specifies the distance from the left side of the container to the snap position on the child elements |
 | X* | scroll-padding-right | Specifies the distance from the right side of the container to the snap position on the child elements |
 | X* | scroll-padding-top | Specifies the distance from the top of the container to the snap position on the child elements |
-| | scroll-snap-align | Specifies where to position elements when the user stops scrolling |
-| | scroll-snap-stop | Specifies scroll behaviour after fast swipe on trackpad or touch screen |
-| | scroll-snap-type | Specifies how snap behaviour should be when scrolling |
+| X* | scroll-snap-align | Specifies where to position elements when the user stops scrolling |
+| X* | scroll-snap-stop | Specifies scroll behaviour after fast swipe on trackpad or touch screen |
+| X* | scroll-snap-type | Specifies how snap behaviour should be when scrolling |
 | X | scrollbar-color | Specifies the color of the scrollbar of an element |
 | X* | scrollbar-gutter | Reserves space for the scrollbar so content does not shift when it appears |
 | X | scrollbar-width | Specifies the thickness of the scrollbar (auto, thin or none) |
 | | shape-outside | Defines a shape for wrapping for the inline content |
 | X* | @starting-style | Defines an element's starting styles before the element gets its first style update |
-| | @supports | Used to test whether a browser supports a CSS feature |
+| X* | @supports | Used to test whether a browser supports a CSS feature |
 | X | tab-size | Specifies the width of a tab character |
 | X | table-layout | Defines the algorithm used to lay out table cells, rows, and columns |
 | X | text-align | Specifies the horizontal alignment of text |
@@ -348,10 +348,10 @@ ignorados sem erro — o parser é tolerante.
 | X | text-decoration-line | Specifies the type of line in a text-decoration |
 | X | text-decoration-style | Specifies the style of the line in a text decoration |
 | X | text-decoration-thickness | Specifies the thickness of the decoration line |
-| | text-emphasis | A shorthand property for the text-emphasis-style and text-emphasis-color properties |
-| | text-emphasis-color | Specifies the color of emphasis marks |
-| | text-emphasis-position | Specifies the position of emphasis marks |
-| | text-emphasis-style | Specifies the style of emphasis marks |
+| X* | text-emphasis | A shorthand property for the text-emphasis-style and text-emphasis-color properties |
+| X* | text-emphasis-color | Specifies the color of emphasis marks |
+| X* | text-emphasis-position | Specifies the position of emphasis marks |
+| X* | text-emphasis-style | Specifies the style of emphasis marks |
 | X | text-indent | Specifies the indentation of the first line in a text-block |
 | X* | text-justify | Specifies the justification method used when text-align is "justify" |
 | | text-orientation | Defines the orientation of characters in a line |
@@ -366,7 +366,7 @@ ignorados sem erro — o parser é tolerante.
 | X | top | Specifies the top position of a positioned element |
 | X* | transform | Applies a 2D or 3D transformation to an element |
 | | transform-origin | Allows you to change the position on transformed elements |
-| | transform-style | Specifies how nested elements are rendered in 3D space |
+| X* | transform-style | Specifies how nested elements are rendered in 3D space |
 | X* | transition | A shorthand property for all the transition-* properties |
 | X* | transition-delay | Specifies when the transition effect will start |
 | X* | transition-duration | Specifies how many seconds or milliseconds a transition effect takes to complete |
@@ -379,7 +379,7 @@ ignorados sem erro — o parser é tolerante.
 | X | visibility | Specifies whether or not an element is visible |
 | X | white-space | Specifies how white-space inside an element is handled |
 | X | white-space-collapse | Specifies how white space inside an element is collapsed |
-| | widows | Sets the minimum number of lines that must be left at the top of a page or column |
+| X* | widows | Sets the minimum number of lines that must be left at the top of a page or column |
 | X | width | Sets the width of an element |
 | X | word-break | Specifies how words should break when reaching the end of a line |
 | X | word-spacing | Increases or decreases the space between words in a text |

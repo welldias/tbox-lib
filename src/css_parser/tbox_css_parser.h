@@ -18,6 +18,12 @@ typedef struct tbox_css_parser {
     /* Cascade layers seen so far (tbox_css_layer_node, in order of first
      * mention); NULL outside tbox_css_parser_run. */
     tbox_vector *layers;
+    /* `@keyframes` rules (tbox_css_keyframes_rule) collected while parsing;
+     * NULL outside tbox_css_parser_run, which leaves the result in
+     * keyframes_out (arena-allocated, NULL when there is none). */
+    tbox_vector *keyframes;
+    tbox_css_keyframes_rule *keyframes_out;
+    size_t keyframes_out_count;
 } tbox_css_parser;
 
 void tbox_css_parser_init(tbox_css_parser *parser, const char *input, size_t length, tbox_arena *arena);

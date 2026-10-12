@@ -11,6 +11,8 @@ struct tbox_css_stylesheet {
     size_t ruleset_count;
     tbox_css_font_face_rule *font_faces;
     size_t font_face_count;
+    tbox_css_keyframes_rule *keyframes;
+    size_t keyframes_count;
 };
 
 /* Internal constructor for stylesheets assembled without parsing CSS text. */

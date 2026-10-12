@@ -70,10 +70,29 @@ static void tbox_layout_link_generated(const tbox_style_table *styles, bool link
 
 static tbox_layout_box *tbox_layout_build_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double viewport_width, double viewport_height);
 
+/* Half-size faces for string emphasis marks, on every text run whose
+ * style asks for them (NULL on the others). */
+static void tbox_layout_emphasis_fonts(tbox_layout_box *box, tbox_font_face_cache *fonts) {
+    for (; box != NULL; box = box->next_sibling) {
+        for (size_t i = 0; i < box->text_run_count; i++) {
+            tbox_layout_text_run *run = &box->text_runs[i];
+            run->emphasis_font        = NULL; /* runs are pushed unzeroed */
+            if (run->image != NULL || run->style == NULL || run->style->text_emphasis_mark != TBOX_STYLE_EMPHASIS_STRING)
+                continue;
+            tbox_style half = *run->style;
+            half.font_size *= 0.5;
+            half.font_size_adjust = 0.0;
+            run->emphasis_font = tbox_layout_style_face(fonts, &half);
+        }
+        tbox_layout_emphasis_fonts(box->first_child, fonts);
+    }
+}
+
 tbox_layout_box *tbox_layout_build(tbox_arena *arena, const tbox_html_node *root, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double viewport_width, double viewport_height) {
     tbox_layout_link_generated(styles, true);
     tbox_layout_box *box = tbox_layout_build_tree(arena, root, styles, fonts, images, viewport_width, viewport_height);
     tbox_layout_link_generated(styles, false);
+    tbox_layout_emphasis_fonts(box, fonts);
     return box;
 }
 

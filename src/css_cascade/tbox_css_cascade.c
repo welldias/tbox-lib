@@ -192,6 +192,10 @@ static bool tbox_css_media_matches(const tbox_css_media_condition *media, double
     return true;
 }
 
+bool tbox_css_cascade_media_matches(const tbox_css_media_condition *media, double viewport_width, double viewport_height, bool reduced_motion) {
+    return tbox_css_media_matches(media, viewport_width, viewport_height, reduced_motion);
+}
+
 /* Copies `view`'s bytes into `arena`, returning a NEW tbox_string_view that
  * owns memory of its own instead of aliasing whatever `view.data` pointed
  * at -- needed by tbox_css_cascade_resolve below, whose `property`/`value`

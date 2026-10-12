@@ -1281,10 +1281,79 @@ static void tbox_test_raster_damage_pixel_equivalence(int *failures_ptr, const v
     *failures_ptr = failures;
 }
 
+/* BACKDROP_FILTER recolors only what is already inside its shape: an
+ * invert matrix turns red into cyan, corners outside the radius and pixels
+ * outside the rect keep their color, and color.a halves the effect. */
+static void tbox_test_raster_backdrop_filter(int *failures_ptr) {
+    int failures = *failures_ptr;
+    uint32_t pixels[20 * 10];
+    for (size_t i = 0; i < 20u * 10u; i++) pixels[i] = 0xFFFF0000u;
+    double invert[20] = { -1, 0, 0, 0, 1, 0, -1, 0, 0, 1, 0, 0, -1, 0, 1, 0, 0, 0, 1, 0 };
+    tbox_paint_op op = { 0 };
+    op.kind          = TBOX_PAINT_BACKDROP_FILTER;
+    op.rect          = (tbox_rect){ 0, 0, 10, 10 };
+    op.color         = (tbox_css_rgba){ 0, 0, 0, 255 };
+    op.color_filter  = invert;
+    op.elliptical    = true;
+    op.corner_radii[0] = op.corner_radii_y[0] = 5.0;
+    tbox_display_list list = { &op, 1 };
+    tbox_raster_display_list(pixels, 20, 10, &list);
+    TBOX_TEST_ASSERT(pixels[5 * 20 + 5] == 0xFF00FFFFu);
+    TBOX_TEST_ASSERT(pixels[0] == 0xFFFF0000u && pixels[5 * 20 + 15] == 0xFFFF0000u);
+    for (size_t i = 0; i < 20u * 10u; i++) pixels[i] = 0xFFFF0000u;
+    op.color.a = 128;
+    tbox_raster_display_list(pixels, 20, 10, &list);
+    uint32_t half = pixels[5 * 20 + 5];
+    TBOX_TEST_ASSERT(((half >> 16) & 0xFFu) > 115 && ((half >> 16) & 0xFFu) < 140 && (half & 0xFFu) > 115 && (half & 0xFFu) < 140);
+    *failures_ptr = failures;
+}
+
+/* Blend modes on a GRADIENT op over an opaque backdrop: multiply and
+ * screen per channel, difference, and luminosity keeping the backdrop's
+ * hue; NORMAL is plain compositing. */
+static void tbox_test_raster_blend_modes(int *failures_ptr) {
+    int failures = *failures_ptr;
+    tbox_style_gradient gradient = { 0 };
+    gradient.kind       = TBOX_STYLE_GRADIENT_LINEAR;
+    gradient.stop_count = 2;
+    gradient.stops[0]   = (tbox_style_gradient_stop){ { 128, 255, 0, 255 }, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+    gradient.stops[1]   = gradient.stops[0];
+    const tbox_style_blend_mode modes[5] = { TBOX_STYLE_BLEND_NORMAL, TBOX_STYLE_BLEND_MULTIPLY, TBOX_STYLE_BLEND_SCREEN, TBOX_STYLE_BLEND_DIFFERENCE, TBOX_STYLE_BLEND_LUMINOSITY };
+    const uint32_t expected[4] = { 0xFF80FF00u, 0xFF80FF00u, 0xFFFFFFFFu, 0xFF7F00FFu };
+    for (int m = 0; m < 5; m++) {
+        uint32_t pixels[4 * 4];
+        /* white backdrop, except luminosity: pure blue */
+        for (size_t i = 0; i < 16; i++) pixels[i] = m == 4 ? 0xFF0000FFu : 0xFFFFFFFFu;
+        if (m == 2) for (size_t i = 0; i < 16; i++) pixels[i] = 0xFF000000u;
+        tbox_paint_op op = { 0 };
+        op.kind          = TBOX_PAINT_GRADIENT;
+        op.rect          = (tbox_rect){ 0, 0, 4, 4 };
+        op.color         = (tbox_css_rgba){ 0, 0, 0, 255 };
+        op.gradient      = &gradient;
+        op.blend_mode    = modes[m];
+        tbox_display_list list = { &op, 1 };
+        tbox_raster_display_list(pixels, 4, 4, &list);
+        uint32_t p = pixels[5];
+        if (m == 0) TBOX_TEST_ASSERT(p == 0xFF80FF00u);
+        else if (m == 1) TBOX_TEST_ASSERT(p == expected[1]); /* white * c = c */
+        else if (m == 2) TBOX_TEST_ASSERT(p == 0xFF80FF00u); /* screen over black = c */
+        else if (m == 3) TBOX_TEST_ASSERT(p == expected[3]); /* |white - c| */
+        else {
+            /* luminosity of (128,255,0) on blue: still bluest, brighter */
+            unsigned r = (p >> 16) & 0xFFu, g = (p >> 8) & 0xFFu, b = p & 0xFFu;
+            TBOX_TEST_ASSERT(b == 255 && r < b && g < b && r == g && r > 100);
+        }
+    }
+    (void)expected[0], (void)expected[2];
+    *failures_ptr = failures;
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
     tbox_test_raster_fill_rect_basic(&failures);
+    tbox_test_raster_backdrop_filter(&failures);
+    tbox_test_raster_blend_modes(&failures);
     tbox_test_raster_fill_rect_out_of_bounds(&failures);
     tbox_test_raster_fill_rect_paint_order(&failures);
     tbox_test_raster_fill_rect_alpha_blend(&failures);

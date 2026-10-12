@@ -1,5 +1,6 @@
 #include <tbox/style.h>
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -2477,6 +2478,128 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(parent.background_attachment_fixed && !child.background_attachment_fixed);
         TBOX_TEST_ASSERT(parent.scrollbar_gutter_stable && !child.scrollbar_gutter_stable);
         tbox_css_computed_style_destroy(&computed);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* transition lists: shorthand entries keep their order and timing;
+     * longhands pair by index and repeat when shorter; easing functions. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div><p>y</p>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { transition: width .5s linear, border-color 1s steps(2, jump-start) 200ms, transform 2s cubic-bezier(0.1, 0.7, 1, 0.1); }"
+            "p { transition-property: opacity, padding, bogus; transition-duration: 1s; transition-delay: 0s, 1s; transition-timing-function: step-end; }");
+        tbox_style a = resolve_node(sheet, div, NULL);
+        tbox_style b = resolve_node(sheet, p, NULL);
+        TBOX_TEST_ASSERT(a.transition_count == 3);
+        const tbox_style_transition *width = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_WIDTH);
+        const tbox_style_transition *border = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_BORDER_LEFT_COLOR);
+        const tbox_style_transition *move = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_TRANSLATE_X);
+        TBOX_TEST_ASSERT(width != NULL && width->duration == 0.5 && tbox_style_easing_apply(&width->easing, 0.3) == 0.3);
+        TBOX_TEST_ASSERT(border != NULL && border->delay == 0.2 && border->easing.steps && tbox_style_easing_apply(&border->easing, 0.0) == 0.5);
+        TBOX_TEST_ASSERT(move != NULL && move->duration == 2.0 && move->easing.x2 == 1.0 && move->easing.y1 == 0.7);
+        TBOX_TEST_ASSERT(tbox_style_transition_find(&a, TBOX_STYLE_ANIM_COLOR) == NULL);
+        TBOX_TEST_ASSERT(b.transition_count == 3);
+        const tbox_style_transition *opacity = tbox_style_transition_find(&b, TBOX_STYLE_ANIM_OPACITY);
+        const tbox_style_transition *padding = tbox_style_transition_find(&b, TBOX_STYLE_ANIM_PADDING_RIGHT);
+        TBOX_TEST_ASSERT(opacity != NULL && opacity->delay == 0.0 && padding != NULL && padding->delay == 1.0 && padding->duration == 1.0);
+        TBOX_TEST_ASSERT(b.transitions[2].properties == 0 && b.transitions[2].delay == 0.0);
+        TBOX_TEST_ASSERT(tbox_style_easing_apply(&opacity->easing, 0.99) == 0.0 && tbox_style_easing_apply(&opacity->easing, 1.0) == 1.0);
+        tbox_style_easing ease = tbox_style_easing_default();
+        TBOX_TEST_ASSERT(fabs(tbox_style_easing_apply(&ease, 0.5) - 0.8024) < 0.002);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* filter: drop-shadow() becomes a box shadow under the element's own
+     * ones when it paints a background/border, a text shadow otherwise;
+     * color functions in the same list still fold into the matrix. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div><p>y</p>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { background: url(a.png), linear-gradient(red, blue), white; background-blend-mode: multiply, screen; box-shadow: 1px 1px red; filter: grayscale(1) drop-shadow(2px 3px 4px rgb(0, 0, 255)); }"
+            "p { color: rgb(0, 128, 0); filter: drop-shadow(1px 2px); backdrop-filter: blur(4px) grayscale(1); }");
+        tbox_style a = resolve_node(sheet, div, NULL);
+        tbox_style b = resolve_node(sheet, p, NULL);
+        TBOX_TEST_ASSERT(a.box_shadow_count == 2 && a.box_shadows[1].offset_x == 2.0 && a.box_shadows[1].offset_y == 3.0 && a.box_shadows[1].blur == 4.0 && a.box_shadows[1].color.b == 255);
+        TBOX_TEST_ASSERT(a.has_filter && a.text_shadow_count == 0);
+        /* three layers (the last is the color one): the list repeats */
+        TBOX_TEST_ASSERT(a.background_layer_count == 3 && a.background_blend_mode == TBOX_STYLE_BLEND_MULTIPLY && a.background_layers[0].blend_mode == TBOX_STYLE_BLEND_SCREEN && a.background_layers[1].blend_mode == TBOX_STYLE_BLEND_MULTIPLY);
+        TBOX_TEST_ASSERT(b.has_backdrop_filter && fabs(b.backdrop_filter_matrix[0] - 0.2126) < 1e-6 && !a.has_backdrop_filter);
+        TBOX_TEST_ASSERT(b.box_shadow_count == 0 && b.text_shadow_count == 1 && b.text_shadows[0].offset_y == 2.0 && b.text_shadows[0].color.g == 128 && !b.has_filter);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* animation: shorthand keywords in any order; longhands pair with
+     * animation-name and repeat; `none` entries are dropped. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div><p>y</p>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { animation: 2s infinite alternate-reverse spin ease-in 500ms both paused, none, fade 1s; }"
+            "p { animation-name: a, b, c; animation-duration: 1s, 2s; animation-iteration-count: 3; animation-fill-mode: forwards; animation-direction: reverse, alternate; }");
+        tbox_style a = resolve_node(sheet, div, NULL);
+        tbox_style b = resolve_node(sheet, p, NULL);
+        TBOX_TEST_ASSERT(a.animation_count == 2);
+        const tbox_style_animation *spin = &a.animations[0];
+        TBOX_TEST_ASSERT(strcmp(spin->name, "spin") == 0 && spin->duration == 2.0 && spin->delay == 0.5 && isinf(spin->iterations));
+        TBOX_TEST_ASSERT(spin->direction == TBOX_STYLE_ANIMATION_ALTERNATE_REVERSE && spin->fill_forwards && spin->fill_backwards && spin->paused && spin->easing.x1 == 0.42);
+        TBOX_TEST_ASSERT(strcmp(a.animations[1].name, "fade") == 0 && a.animations[1].iterations == 1.0 && !a.animations[1].paused);
+        TBOX_TEST_ASSERT(b.animation_count == 3 && b.animations[2].duration == 1.0 && b.animations[1].duration == 2.0 && b.animations[2].iterations == 3.0);
+        TBOX_TEST_ASSERT(b.animations[0].fill_forwards && !b.animations[0].fill_backwards && b.animations[2].direction == TBOX_STYLE_ANIMATION_REVERSE);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* direction: rtl maps inline-start to the right side (edges, borders,
+     * corners), makes the initial text-align right, and a child's `dir`
+     * attribute or another direction resolves start/end again. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p dir='ltr'>x</p><span>y</span></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child, *span = p->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { direction: rtl; margin-inline-start: 5px; padding-inline: 1px 2px; border-inline-start: 3px solid red; border-start-start-radius: 7px; inset-inline-end: 4px; }"
+            "span { text-align: end; }");
+        tbox_style a = resolve_node(sheet, div, NULL);
+        tbox_style b = resolve_node(sheet, p, &a);
+        tbox_style c = resolve_node(sheet, span, &a);
+        TBOX_TEST_ASSERT(a.direction_rtl && a.margin[1].value == 5.0 && a.margin[3].value == 0.0);
+        TBOX_TEST_ASSERT(a.padding[1].value == 1.0 && a.padding[3].value == 2.0 && a.offset[3].value == 4.0);
+        TBOX_TEST_ASSERT(tbox_style_border_side_width(&a, 1) == 3.0 && tbox_style_border_side_width(&a, 3) == 0.0);
+        TBOX_TEST_ASSERT(a.border_radius_corners[1] == 7.0 && a.border_radius_corners[0] == 0.0);
+        TBOX_TEST_ASSERT(a.text_align == TBOX_STYLE_TEXT_ALIGN_RIGHT);
+        TBOX_TEST_ASSERT(!b.direction_rtl && b.text_align == TBOX_STYLE_TEXT_ALIGN_LEFT);
+        TBOX_TEST_ASSERT(c.direction_rtl && c.text_align == TBOX_STYLE_TEXT_ALIGN_LEFT);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* text-emphasis: the shorthand in either order, a lone open/filled is
+     * a dot, strings, the position, inheritance and `none`. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p><i>y</i><b>z</b></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child, *i = p->next_sibling, *b = i->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { text-emphasis: rgb(0, 0, 255) open triangle; text-emphasis-position: under right; }"
+            "p { text-emphasis-style: open; }"
+            "i { text-emphasis: '*' ; text-emphasis-color: currentColor; }"
+            "b { text-emphasis-style: none; }");
+        tbox_style a = resolve_node(sheet, div, NULL);
+        tbox_style pp = resolve_node(sheet, p, &a);
+        tbox_style ii = resolve_node(sheet, i, &a);
+        tbox_style bb = resolve_node(sheet, b, &a);
+        TBOX_TEST_ASSERT(a.text_emphasis_mark == TBOX_STYLE_EMPHASIS_TRIANGLE && a.text_emphasis_open && a.text_emphasis_color.b == 255 && a.text_emphasis_under);
+        TBOX_TEST_ASSERT(pp.text_emphasis_mark == TBOX_STYLE_EMPHASIS_DOT && pp.text_emphasis_open && pp.text_emphasis_color.b == 255 && pp.text_emphasis_under);
+        TBOX_TEST_ASSERT(ii.text_emphasis_mark == TBOX_STYLE_EMPHASIS_STRING && strcmp(ii.text_emphasis_string, "*") == 0 && ii.text_emphasis_color.a == 0);
+        TBOX_TEST_ASSERT(bb.text_emphasis_mark == TBOX_STYLE_EMPHASIS_NONE);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }

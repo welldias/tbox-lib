@@ -8,77 +8,48 @@ bool tbox_context_animations_active(const tbox_context *ctx) {
     return ctx != NULL && ctx->animations_active;
 }
 
-static void tbox_transition_read(const tbox_style *style, int property, double out[4]) {
-    if (property == 2) {
-        out[0] = style->opacity;
-        out[1] = out[2] = out[3] = 0.0;
-    } else {
-        tbox_css_rgba color = property == 0 ? style->color : style->background_color;
-        out[0] = color.r, out[1] = color.g, out[2] = color.b, out[3] = color.a;
-    }
-}
-
-static void tbox_transition_write(tbox_style *style, int property, const double value[4]) {
-    if (property == 2) {
-        style->opacity = value[0];
-    } else {
-        tbox_css_rgba color = {0};
-        color.r = (unsigned char)lround(value[0]);
-        color.g = (unsigned char)lround(value[1]);
-        color.b = (unsigned char)lround(value[2]);
-        color.a = (unsigned char)lround(value[3]);
-        if (property == 0) style->color = color;
-        else style->background_color = color;
-    }
-}
-
-static double tbox_transition_bezier(double t, double a, double b) {
-    double inv = 1.0 - t;
-    return 3.0 * inv * inv * t * a + 3.0 * inv * t * t * b + t * t * t;
-}
-
-static double tbox_transition_progress(double progress, unsigned char timing) {
-    if (timing == 1 || progress <= 0.0 || progress >= 1.0) return progress;
-    double x1 = 0.25, y1 = 0.1, x2 = 0.25, y2 = 1.0;
-    if (timing == 2) x1 = 0.42, y1 = 0.0, x2 = 1.0, y2 = 1.0;
-    else if (timing == 3) x1 = 0.0, y1 = 0.0, x2 = 0.58, y2 = 1.0;
-    else if (timing == 4) x1 = 0.42, y1 = 0.0, x2 = 0.58, y2 = 1.0;
-    double low = 0.0, high = 1.0;
-    for (int i = 0; i < 16; i++) {
-        double mid = (low + high) * 0.5;
-        if (tbox_transition_bezier(mid, x1, x2) < progress) low = mid;
-        else high = mid;
-    }
-    return tbox_transition_bezier((low + high) * 0.5, y1, y2);
-}
-
-static void tbox_transition_current(const tbox_transition_track *track, double now, double out[4]) {
+/* The value `track` shows at `now`, heading for `target`. */
+static void tbox_transition_current(const tbox_transition_track *track, const double target[4], double now, double out[4]) {
     double fraction = track->duration > 0.0 ? (now - track->start_time) / track->duration : 1.0;
     if (fraction < 0.0) fraction = 0.0;
     if (fraction > 1.0) fraction = 1.0;
-    fraction = tbox_transition_progress(fraction, track->timing);
-    for (int i = 0; i < 4; i++) out[i] = track->start[i] + (track->target[i] - track->start[i]) * fraction;
+    tbox_style_animatable_mix(track->start, target, tbox_style_easing_apply(&track->easing, fraction), out);
+}
+
+static bool tbox_transition_any(const tbox_style *style) {
+    for (size_t i = 0; i < style->transition_count; i++)
+        if (style->transitions[i].duration > 0.0 && style->transitions[i].properties != 0) return true;
+    return false;
 }
 
 /* The values `node` starts its transitions from when it first appears
  * (or leaves display: none): its style with the @starting-style rules in
  * the cascade, against the parent's current style. False when it has no
  * transitions or no @starting-style rule could apply. */
-static bool tbox_transition_starting_values(tbox_context *ctx, const tbox_style_entry *entry, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, double out[3][4]) {
-    if (!ctx->has_starting_style)
-        return false;
-    bool any = false;
-    for (int p = 0; p < 3; p++)
-        if (entry->style.transition_duration[p] > 0.0) any = true;
-    if (!any)
+static bool tbox_transition_starting_values(tbox_context *ctx, const tbox_style_entry *entry, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, double out[TBOX_STYLE_ANIM_COUNT][4]) {
+    if (!ctx->has_starting_style || !tbox_transition_any(&entry->style))
         return false;
     const tbox_style *parent = entry->node->parent != NULL ? tbox_style_table_find(&ctx->styles, entry->node->parent) : NULL;
     tbox_css_computed_style computed = tbox_css_cascade_resolve_starting_style_in_viewport(sources, source_count, entry->node, viewport_width, viewport_height, ctx->prefers_reduced_motion);
     tbox_style starting = tbox_style_resolve_in_viewport(entry->node, parent, &computed, viewport_width, viewport_height);
     tbox_css_computed_style_destroy(&computed);
-    for (int p = 0; p < 3; p++)
-        tbox_transition_read(&starting, p, out[p]);
+    for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
+        tbox_style_animatable_read(&starting, (tbox_style_animatable)p, out[p]);
     return true;
+}
+
+static void tbox_transition_free(tbox_transition_state *state) {
+    free(state->tracks);
+    free(state);
+}
+
+void tbox_context_free_transitions(tbox_context *ctx) {
+    for (tbox_transition_state *state = ctx->transitions; state != NULL;) {
+        tbox_transition_state *next = state->next;
+        tbox_transition_free(state);
+        state = next;
+    }
+    ctx->transitions = NULL;
 }
 
 void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height) {
@@ -89,9 +60,10 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
         else {
             tbox_transition_state *removed = *link;
             *link = removed->next;
-            free(removed);
+            tbox_transition_free(removed);
         }
     }
+    double now = ctx->animation_time;
     for (size_t i = 0; i < ctx->styles.count; i++) {
         tbox_style_entry *entry = &ctx->styles.items[i];
         if (entry->style.generated != 0)
@@ -111,34 +83,44 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
         /* Appearing: the "previous" values are the @starting-style ones,
          * so the change below starts a transition from them; without
          * such rules the element just takes its values. */
-        double starting[3][4];
         if (appearing) {
-            bool from_start = tbox_transition_starting_values(ctx, entry, sources, source_count, viewport_width, viewport_height, starting);
-            for (int p = 0; p < 3; p++) {
-                state->tracks[p].active = false;
-                tbox_transition_read(&entry->style, p, state->tracks[p].target);
-                if (from_start) memcpy(state->tracks[p].target, starting[p], sizeof(starting[p]));
+            if (state->tracks != NULL)
+                for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++) state->tracks[p].active = false;
+            if (!tbox_transition_starting_values(ctx, entry, sources, source_count, viewport_width, viewport_height, state->values)) {
+                for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
+                    tbox_style_animatable_read(&entry->style, (tbox_style_animatable)p, state->values[p]);
+                continue;
             }
-            if (!from_start) continue;
         }
-        for (int p = 0; p < 3; p++) {
-            tbox_transition_track *track = &state->tracks[p];
-            double target[4], current[4];
-            tbox_transition_read(&entry->style, p, target);
-            tbox_transition_current(track, ctx->animation_time, current);
-            bool changed = false;
-            for (int c = 0; c < 4; c++) if (target[c] != track->target[c]) changed = true;
-            if (changed) {
-                memcpy(track->start, current, sizeof(current));
-                memcpy(track->target, target, sizeof(target));
-                track->duration = entry->style.transition_duration[p];
-                track->start_time = ctx->animation_time + entry->style.transition_delay[p];
-                track->timing = entry->style.transition_timing[p];
-                track->active = track->duration > 0.0;
+        for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++) {
+            tbox_style_animatable property = (tbox_style_animatable)p;
+            double target[4];
+            tbox_style_animatable_read(&entry->style, property, target);
+            if (memcmp(target, state->values[p], sizeof(target)) != 0) {
+                double current[4];
+                memcpy(current, state->values[p], sizeof(current));
+                if (state->tracks != NULL && state->tracks[p].active)
+                    tbox_transition_current(&state->tracks[p], state->values[p], now, current);
+                const tbox_style_transition *transition = tbox_style_transition_find(&entry->style, property);
+                if (transition != NULL && tbox_style_animatable_interpolable(property, current, target)) {
+                    if (state->tracks == NULL) state->tracks = calloc(TBOX_STYLE_ANIM_COUNT, sizeof(*state->tracks));
+                    if (state->tracks != NULL) {
+                        tbox_transition_track *track = &state->tracks[p];
+                        memcpy(track->start, current, sizeof(current));
+                        track->start_time = now + transition->delay;
+                        track->duration   = transition->duration;
+                        track->easing     = transition->easing;
+                        track->active     = true;
+                    }
+                } else if (state->tracks != NULL) state->tracks[p].active = false;
+                memcpy(state->values[p], target, sizeof(target));
             }
-            if (track->active && ctx->animation_time < track->start_time + track->duration) {
-                tbox_transition_current(track, ctx->animation_time, current);
-                tbox_transition_write(&entry->style, p, current);
+            if (state->tracks == NULL || !state->tracks[p].active) continue;
+            tbox_transition_track *track = &state->tracks[p];
+            if (now < track->start_time + track->duration) {
+                double current[4];
+                tbox_transition_current(track, target, now, current);
+                tbox_style_animatable_write(&entry->style, property, current);
                 ctx->animations_active = true;
             } else track->active = false;
         }

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .card {
+      width: 460px;
+      padding: 8px 12px;
+      margin: 8px 0;
+      background: white;
+    }
+
+    /* Largura e padding: refazem o layout a cada frame */
+    .grow {
+      width: 160px;
+      padding: 6px 10px;
+      background: #2563eb;
+      color: white;
+      transition: width 400ms ease-out, padding 400ms ease-out;
+    }
+
+    .grow:hover {
+      width: 300px;
+      padding-left: 30px;
+    }
+
+    /* Cor da borda, raio e contorno */
+    .frame {
+      display: inline-block;
+      padding: 10px 16px;
+      border: 3px solid #cbd5e1;
+      border-radius: 4px;
+      outline: 0 solid #f59e0b;
+      outline-offset: 2px;
+      transition: border-color 300ms, border-radius 300ms, outline-width 300ms;
+    }
+
+    .frame:hover {
+      border-color: #16a34a;
+      border-radius: 18px;
+      outline-width: 3px;
+    }
+
+    /* translate com cubic-bezier (passa do alvo e volta) */
+    .move {
+      display: inline-block;
+      padding: 6px 12px;
+      background: #f1f5f9;
+      transition: transform 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .move:hover {
+      transform: translateX(80px);
+    }
+
+    /* steps(): a cor muda em degraus */
+    .steps {
+      padding: 6px 12px;
+      background: #fee2e2;
+      transition: background-color 1s steps(4, jump-end);
+    }
+
+    .steps:hover {
+      background-color: #dc2626;
+    }
+
+    /* Longhands em lista, pareadas por índice */
+    .lists {
+      padding: 6px 12px;
+      letter-spacing: 0;
+      color: #64748b;
+      transition-property: letter-spacing, color;
+      transition-duration: 300ms, 1s;
+      transition-delay: 0s, 300ms;
+    }
+
+    .lists:hover {
+      letter-spacing: 4px;
+      color: #0f172a;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>transition em mais propriedades</h1>
+
+  <h2>width e padding (passe o mouse)</h2>
+  <div class="card">
+    <div class="grow">Cresce com ease-out</div>
+  </div>
+
+  <h2>border-color, border-radius e outline-width</h2>
+  <div class="card">
+    <span class="frame">Moldura</span>
+  </div>
+
+  <h2>translate com cubic-bezier()</h2>
+  <div class="card">
+    <span class="move">Desliza e quica</span>
+  </div>
+
+  <h2>steps(4, jump-end)</h2>
+  <div class="card">
+    <div class="steps">Escurece em quatro degraus</div>
+  </div>
+
+  <h2>Listas de longhands</h2>
+  <div class="card">
+    <div class="lists">letter-spacing em 300ms; a cor espera 300ms e leva 1s</div>
+  </div>
+</body>
+
+</html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 18px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+      line-height: 2;
+    }
+
+    h2 {
+      font-size: 16px;
+      line-height: 1.2;
+      margin: 18px 0 8px;
+    }
+
+    .card {
+      width: 520px;
+      padding: 8px 12px;
+      margin: 8px 0;
+      background: white;
+    }
+
+    .dot { text-emphasis: filled dot; }
+    .open-dot { text-emphasis: open dot; }
+    .circle { text-emphasis: circle #dc2626; }
+    .open-circle { text-emphasis: open circle #dc2626; }
+    .double { text-emphasis: double-circle #2563eb; }
+    .open-double { text-emphasis: open double-circle #2563eb; }
+    .triangle { text-emphasis: triangle #16a34a; }
+    .open-triangle { text-emphasis: open triangle #16a34a; }
+    .sesame { text-emphasis: sesame #7c3aed; }
+    .open-sesame { text-emphasis: open sesame #7c3aed; }
+    .string { text-emphasis: "*" #ea580c; }
+
+    .under {
+      text-emphasis: filled circle #0891b2;
+      text-emphasis-position: under right;
+    }
+
+    /* Herdado: o filho também ganha marcas */
+    .inherit { text-emphasis-style: dot; text-emphasis-color: #be185d; }
+    .inherit b { color: #0f172a; }
+  </style>
+</head>
+
+<body>
+  <h1>text-emphasis</h1>
+
+  <h2>Formas cheias e abertas (sem marca em espaços e pontuação)</h2>
+  <div class="card">
+    <span class="dot">dot,</span> <span class="open-dot">open dot;</span>
+    <span class="circle">circle</span> <span class="open-circle">open</span><br>
+    <span class="double">double</span> <span class="open-double">open</span>
+    <span class="triangle">triangle</span> <span class="open-triangle">open</span><br>
+    <span class="sesame">sesame</span> <span class="open-sesame">open</span>
+    <span class="string">string "*"</span>
+  </div>
+
+  <h2>text-emphasis-position: under</h2>
+  <div class="card"><span class="under">Marcas embaixo do texto.</span></div>
+
+  <h2>Herança</h2>
+  <div class="card inherit">Texto com <b>filho em negrito</b> e pontuação!</div>
+</body>
+
+</html>

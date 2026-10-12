@@ -28,6 +28,10 @@ typedef enum tbox_paint_op_kind {
     TBOX_PAINT_FILL_RING, /* outer rounded rect minus inner rounded rect */
     TBOX_PAINT_WAVY_LINE, /* text-decoration-style: wavy */
     TBOX_PAINT_GRADIENT,  /* background gradient: one tile, see `gradient` */
+    /* `backdrop-filter`: `color_filter` applied to the pixels already
+     * painted inside `rect` (with corner_radii/corner_radii_y as a
+     * FILL_RECT's); color.a is the strength (an `opacity` ancestor). */
+    TBOX_PAINT_BACKDROP_FILTER,
 } tbox_paint_op_kind;
 
 typedef struct tbox_paint_op {
@@ -84,6 +88,10 @@ typedef struct tbox_paint_op {
      * applied to each pixel; NULL for none. Solid-color ops have their
      * color transformed by Render instead. */
     const double *color_filter;
+
+    /* IMAGE/GRADIENT: `background-blend-mode`, blending each pixel with
+     * what is already painted under it; NORMAL for plain compositing. */
+    tbox_style_blend_mode blend_mode;
 
     /* Optional paint clip, applied to every op kind. Input text and the
      * descendants of overflow-y:auto blocks use it. */

@@ -161,6 +161,37 @@ formato atual do código. O texto integral original de cada versão está em
 - **`hyphenate-character` num buffer fixo de 16 bytes, `""` = `auto`**,
   como `text_overflow_string`; o custo é tratar a string vazia explícita
   como `auto` (2026-10-11).
+- **Propriedades animáveis como uma tabela única** (`tbox_style_animatable`,
+  `tbox_style_animate.c`) lida/escrita como 4 doubles, usada por
+  `transition` e por `animation`. A orquestração interpola sem conhecer o
+  layout de `tbox_style`. Transições e animações rodam antes do layout, então
+  `width`/`padding` animam refazendo o layout, que já é refeito a cada frame
+  (2026-10-12).
+- **Estado de transição: alvos sempre, trilhas sob demanda.** Cada elemento
+  guarda o último alvo de toda propriedade animável (é o que detecta uma
+  mudança que chega junto com o `transition`, como num `:hover`), mas as
+  trilhas em andamento só são alocadas quando a primeira transição começa
+  (2026-10-12).
+- **`@supports` decidido no parse**, por uma tabela de propriedades no
+  módulo do parser (`tbox_css_supports.c`), em vez de levar a condição até a
+  Style: o parser fica abaixo da Style e o que a tbox suporta não muda em
+  execução. O valor não é validado, exceto os poucos casos que enganariam a
+  detecção (`display: grid`, rotação, `blur()`); as propriedades 3D aceitas
+  sem efeito ficam de fora para não ativar caminhos 3D (2026-10-12).
+- **Keyframes resolvidos pela Style normal**, montando uma cascata com as
+  declarações do keyframe acima das normais (e abaixo das `!important`), uma
+  vez quando a animação começa. Alternativa descartada: interpretar os
+  valores do keyframe à parte, que duplicaria o parser de cada propriedade
+  (2026-10-12).
+- **`filter: drop-shadow()` sem buffer separado**: vira `box-shadow` em
+  quem pinta fundo/borda e `text-shadow` nos demais. Uma sombra fiel à forma
+  alfa precisaria pintar o elemento num buffer próprio, que o raster não tem
+  (2026-10-12).
+- **`direction` pelo `tbox_style_units`**: a flag `rtl` passa por todas as
+  funções que já recebiam as unidades, e só os pontos de mapeamento lógico
+  olham para ela. O atributo `dir` é lido na própria Style (como um
+  presentational hint, abaixo de qualquer CSS), porque a folha UA tipada não
+  tem seletores de atributo (2026-10-12).
 
 ## Texto e fontes
 
@@ -237,6 +268,15 @@ formato atual do código. O texto integral original de cada versão está em
   bound de texto usa métrica de fonte (v20).
 - **`tbox_app_set_debug_damage` em vez de ler variável de ambiente** — a lib
   não lê o ambiente; os exemplos mapeiam `TBOX_DEBUG_DAMAGE=1` (v20).
+- **`backdrop-filter` como um op que reprocessa os pixels já pintados**
+  (`TBOX_PAINT_BACKDROP_FILTER`): num raster em software, aplicar a matriz
+  de cor ao buffer é barato e compatível com a repintura parcial, que sempre
+  repinta a região inteira em ordem (2026-10-12).
+- **Marcas de `text-emphasis` como formas, não glifos**: não dependem de a
+  fonte ter `●`/`◎`/`﹅` (não há fallback por glifo) e são alinhadas à
+  grade de pixels, porque o raster testa cobertura no centro do pixel e uma
+  marca de poucos pixels sairia torta. Só a `<string>` usa texto, numa face
+  de meio tamanho que o Layout escolhe (2026-10-12).
 
 ## Ferramentas
 

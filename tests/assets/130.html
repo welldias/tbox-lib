@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .card {
+      width: 460px;
+      padding: 8px 12px;
+      margin: 8px 0;
+      background: white;
+    }
+
+    /* Propriedades lógicas: o lado "start" troca de lado */
+    .note {
+      padding-inline-start: 12px;
+      border-inline-start: 4px solid #2563eb;
+      border-start-end-radius: 10px;
+      border-end-end-radius: 10px;
+      margin-inline-end: 40px;
+      background: #eff6ff;
+    }
+
+    /* Flex row começa na direita em rtl */
+    .toolbar {
+      display: flex;
+      gap: 8px;
+    }
+
+    .toolbar span {
+      padding: 4px 10px;
+      background: #e2e8f0;
+    }
+
+    .toolbar .primary {
+      background: #2563eb;
+      color: white;
+    }
+
+    .end {
+      text-align: end;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>direction</h1>
+
+  <h2>ltr (padrão)</h2>
+  <div class="card">
+    <div class="note">Nota com borda no início da linha.</div>
+    <div class="toolbar"><span class="primary">1 Salvar</span><span>2 Copiar</span><span>3 Apagar</span></div>
+    <p class="end">text-align: end</p>
+  </div>
+
+  <h2>dir="rtl" (atributo HTML)</h2>
+  <div class="card" dir="rtl">
+    <div class="note">Nota com borda no início da linha.</div>
+    <div class="toolbar"><span class="primary">1 Salvar</span><span>2 Copiar</span><span>3 Apagar</span></div>
+    <p class="end">text-align: end</p>
+    <p>Alinhado à direita por padrão (start).</p>
+  </div>
+
+  <h2>direction: rtl com um filho dir="ltr"</h2>
+  <div class="card" style="direction: rtl">
+    <p>Este parágrafo herda rtl.</p>
+    <p dir="ltr">Este volta a ltr e se alinha à esquerda.</p>
+  </div>
+</body>
+
+</html>

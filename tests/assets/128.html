@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+    }
+
+    .list {
+      width: 220px;
+      height: 160px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #cbd5e1;
+    }
+
+    .list div {
+      height: 160px;
+      box-sizing: border-box;
+      padding: 12px;
+      border-bottom: 1px solid #e2e8f0;
+      scroll-snap-align: start;
+    }
+
+    .list div:nth-child(odd) {
+      background: #f1f5f9;
+    }
+
+    /* Páginas: sempre para numa página inteira */
+    .mandatory {
+      scroll-snap-type: y mandatory;
+    }
+
+    /* Proximity com itens menores, centralizados, e scroll-padding */
+    .proximity {
+      scroll-snap-type: y proximity;
+      scroll-padding: 10px 0;
+    }
+
+    .proximity div {
+      height: 70px;
+      scroll-snap-align: center;
+    }
+
+    /* scroll-snap-stop: always -- um gesto longo para no primeiro */
+    .stop {
+      scroll-snap-type: y mandatory;
+    }
+
+    .stop div {
+      scroll-snap-stop: always;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>scroll-snap</h1>
+  <p>Role com a roda ou arraste a barra: ao parar, a lista se encaixa.</p>
+
+  <div class="row">
+    <div>
+      <h2>y mandatory</h2>
+      <div class="list mandatory">
+        <div>Página 1</div><div>Página 2</div><div>Página 3</div><div>Página 4</div>
+      </div>
+    </div>
+    <div>
+      <h2>y proximity, center</h2>
+      <div class="list proximity">
+        <div>Item A</div><div>Item B</div><div>Item C</div><div>Item D</div><div>Item E</div><div>Item F</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>scroll-snap-stop: always</h2>
+  <div class="list stop">
+    <div>Etapa 1</div><div>Etapa 2</div><div>Etapa 3</div><div>Etapa 4</div>
+  </div>
+</body>
+
+</html>

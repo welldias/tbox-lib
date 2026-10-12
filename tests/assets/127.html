@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .card {
+      width: 460px;
+      padding: 12px;
+      margin: 8px 0;
+      background: white;
+    }
+
+    /* Pulso infinito, alternado */
+    @keyframes pulse {
+      from { opacity: 1; }
+      to { opacity: 0.25; }
+    }
+
+    .dot {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #16a34a;
+      vertical-align: middle;
+      animation: pulse 800ms ease-in-out infinite alternate;
+    }
+
+    /* Barra de progresso indeterminada: translate com keyframe do meio */
+    @keyframes slide {
+      0% { transform: translateX(0); }
+      50% { transform: translateX(300px); background-color: #7c3aed; }
+      100% { transform: translateX(0); }
+    }
+
+    .track {
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 4px;
+    }
+
+    .bar {
+      width: 100px;
+      height: 8px;
+      border-radius: 4px;
+      background: #2563eb;
+      animation: slide 2s linear infinite;
+    }
+
+    /* steps() para um cursor piscando; atraso com fill-mode backwards */
+    @keyframes blink {
+      50% { background-color: transparent; }
+    }
+
+    .caret {
+      display: inline-block;
+      width: 2px;
+      height: 18px;
+      background: #0f172a;
+      vertical-align: middle;
+      animation: blink 1s steps(1) 500ms infinite backwards;
+    }
+
+    /* Entra uma vez e fica (forwards), com timing por keyframe */
+    @keyframes enter {
+      from { padding-left: 0; color: #94a3b8; animation-timing-function: ease-out; }
+      to { padding-left: 24px; color: #0f172a; }
+    }
+
+    .enter {
+      animation: enter 600ms 1 forwards;
+    }
+
+    /* Pausada: fica parada no início */
+    .paused {
+      animation-name: pulse;
+      animation-duration: 1s;
+      animation-play-state: paused;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .dot, .bar, .caret, .enter { animation: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>animation e @keyframes</h1>
+
+  <h2>Indicador pulsando (infinite alternate)</h2>
+  <div class="card"><span class="dot"></span> Conectado</div>
+
+  <h2>Progresso indeterminado (translate, keyframe 50%)</h2>
+  <div class="card">
+    <div class="track"><div class="bar"></div></div>
+  </div>
+
+  <h2>Cursor (steps, delay, fill backwards)</h2>
+  <div class="card">Digite aqui<span class="caret"></span></div>
+
+  <h2>Entrada única (forwards, timing por keyframe)</h2>
+  <div class="card"><div class="enter">Mensagem enviada</div></div>
+
+  <h2>animation-play-state: paused</h2>
+  <div class="card"><div class="paused">Parada no primeiro keyframe</div></div>
+</body>
+
+</html>

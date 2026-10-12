@@ -243,6 +243,118 @@ static void tbox_raster_fill_shape(uint32_t *pixels, int32_t width, int32_t heig
     }
 }
 
+/* ---- blend modes (Compositing and Blending 1 §10) ---- */
+
+static double tbox_raster_hard_light(double b, double s) {
+    return s <= 0.5 ? b * 2.0 * s : b + (2.0 * s - 1.0) - b * (2.0 * s - 1.0);
+}
+
+static double tbox_raster_blend_separable(tbox_style_blend_mode mode, double b, double s) {
+    switch (mode) {
+    case TBOX_STYLE_BLEND_MULTIPLY: return b * s;
+    case TBOX_STYLE_BLEND_SCREEN: return b + s - b * s;
+    case TBOX_STYLE_BLEND_OVERLAY: return tbox_raster_hard_light(s, b);
+    case TBOX_STYLE_BLEND_DARKEN: return b < s ? b : s;
+    case TBOX_STYLE_BLEND_LIGHTEN: return b > s ? b : s;
+    case TBOX_STYLE_BLEND_COLOR_DODGE: return b <= 0.0 ? 0.0 : s >= 1.0 ? 1.0 : fmin(1.0, b / (1.0 - s));
+    case TBOX_STYLE_BLEND_COLOR_BURN: return b >= 1.0 ? 1.0 : s <= 0.0 ? 0.0 : 1.0 - fmin(1.0, (1.0 - b) / s);
+    case TBOX_STYLE_BLEND_HARD_LIGHT: return tbox_raster_hard_light(b, s);
+    case TBOX_STYLE_BLEND_SOFT_LIGHT: {
+        if (s <= 0.5) return b - (1.0 - 2.0 * s) * b * (1.0 - b);
+        double d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
+        return b + (2.0 * s - 1.0) * (d - b);
+    }
+    case TBOX_STYLE_BLEND_DIFFERENCE: return fabs(b - s);
+    case TBOX_STYLE_BLEND_EXCLUSION: return b + s - 2.0 * b * s;
+    default: return s;
+    }
+}
+
+static double tbox_raster_lum(const double c[3]) {
+    return 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+}
+
+static void tbox_raster_set_lum(const double c[3], double l, double out[3]) {
+    double d = l - tbox_raster_lum(c);
+    for (int i = 0; i < 3; i++) out[i] = c[i] + d;
+    double lum = tbox_raster_lum(out), n = fmin(out[0], fmin(out[1], out[2])), x = fmax(out[0], fmax(out[1], out[2]));
+    for (int i = 0; i < 3; i++) {
+        if (n < 0.0 && lum - n > 1e-12) out[i] = lum + (out[i] - lum) * lum / (lum - n);
+        if (x > 1.0 && x - lum > 1e-12) out[i] = lum + (out[i] - lum) * (1.0 - lum) / (x - lum);
+    }
+}
+
+static void tbox_raster_set_sat(const double c[3], double sat, double out[3]) {
+    int max = 0, min = 0;
+    for (int i = 1; i < 3; i++) {
+        if (c[i] > c[max]) max = i;
+        if (c[i] < c[min]) min = i;
+    }
+    if (max == min) {
+        out[0] = out[1] = out[2] = 0.0;
+        return;
+    }
+    int mid = 3 - max - min;
+    out[mid] = (c[mid] - c[min]) * sat / (c[max] - c[min]);
+    out[max] = sat;
+    out[min] = 0.0;
+}
+
+/* `src` blended into the opaque `dst_pixel` with `mode`, then composited
+ * with coverage `alpha` (the backdrop is opaque, so the general formula
+ * reduces to a mix of the backdrop and B(backdrop, source)). */
+static uint32_t tbox_raster_blend_mode_pixel(uint32_t dst_pixel, tbox_css_rgba src, double alpha, tbox_style_blend_mode mode) {
+    if (mode == TBOX_STYLE_BLEND_NORMAL)
+        return tbox_raster_blend_pixel(dst_pixel, src, alpha);
+    double b[3] = { ((dst_pixel >> 16) & 0xFFu) / 255.0, ((dst_pixel >> 8) & 0xFFu) / 255.0, (dst_pixel & 0xFFu) / 255.0 };
+    double s[3] = { src.r / 255.0, src.g / 255.0, src.b / 255.0 }, out[3];
+    if (mode >= TBOX_STYLE_BLEND_HUE) {
+        double tmp[3];
+        double sat_b = fmax(b[0], fmax(b[1], b[2])) - fmin(b[0], fmin(b[1], b[2]));
+        double sat_s = fmax(s[0], fmax(s[1], s[2])) - fmin(s[0], fmin(s[1], s[2]));
+        if (mode == TBOX_STYLE_BLEND_HUE) {
+            tbox_raster_set_sat(s, sat_b, tmp);
+            tbox_raster_set_lum(tmp, tbox_raster_lum(b), out);
+        } else if (mode == TBOX_STYLE_BLEND_SATURATION) {
+            tbox_raster_set_sat(b, sat_s, tmp);
+            tbox_raster_set_lum(tmp, tbox_raster_lum(b), out);
+        } else if (mode == TBOX_STYLE_BLEND_COLOR) {
+            tbox_raster_set_lum(s, tbox_raster_lum(b), out);
+        } else {
+            tbox_raster_set_lum(b, tbox_raster_lum(s), out);
+        }
+    } else {
+        for (int i = 0; i < 3; i++) out[i] = tbox_raster_blend_separable(mode, b[i], s[i]);
+    }
+    tbox_css_rgba blended;
+    blended.r = (unsigned char)(fmin(1.0, fmax(0.0, out[0])) * 255.0 + 0.5);
+    blended.g = (unsigned char)(fmin(1.0, fmax(0.0, out[1])) * 255.0 + 0.5);
+    blended.b = (unsigned char)(fmin(1.0, fmax(0.0, out[2])) * 255.0 + 0.5);
+    blended.a = 255;
+    return tbox_raster_blend_pixel(dst_pixel, blended, alpha);
+}
+
+/* BACKDROP_FILTER: `color_filter` over the pixels inside the op's shape,
+ * mixed with the original by color.a. */
+static void tbox_raster_backdrop_filter(uint32_t *pixels, int32_t width, int32_t height, const tbox_paint_op *op) {
+    if (op->color_filter == NULL || op->color.a == 0 || op->rect.width <= 0.0 || op->rect.height <= 0.0) return;
+    int32_t x0, y0, x1, y1;
+    if (!tbox_raster_op_bounds(op, op->rect, width, height, &x0, &y0, &x1, &y1)) return;
+    double strength = op->color.a / 255.0;
+    for (int32_t y = y0; y < y1; y++) {
+        uint32_t *row = pixels + (size_t)y * (size_t)width;
+        for (int32_t x = x0; x < x1; x++) {
+            double px = (double)x + 0.5, py = (double)y + 0.5;
+            if (!tbox_raster_point_in_shape(px, py, op->rect, op->corner_radii, op->corner_radii_y) || !tbox_raster_in_rounded_clip(op, px, py))
+                continue;
+            uint32_t pixel = row[x];
+            tbox_css_rgba filtered = tbox_raster_filter(op->color_filter, (tbox_css_rgba){ (unsigned char)((pixel >> 16) & 0xFFu), (unsigned char)((pixel >> 8) & 0xFFu), (unsigned char)(pixel & 0xFFu), 255 });
+            /* the buffer is opaque: a filtered alpha blends over the old pixel */
+            row[x] = tbox_raster_blend_pixel(pixel, filtered, strength * filtered.a / 255.0);
+        }
+    }
+}
+
 /* A gradient stop resolved to a fraction of the gradient line. */
 typedef struct tbox_raster_stop {
     double position;
@@ -373,7 +485,7 @@ static void tbox_raster_gradient(uint32_t *pixels, int32_t width, int32_t height
                 t = sqrt(ex * ex + ey * ey);
             }
             tbox_css_rgba color = tbox_raster_filter(op->color_filter, tbox_raster_gradient_color(stops, count, gradient->repeating, t));
-            if (color.a != 0) row[x] = tbox_raster_blend_pixel(row[x], color, color.a / 255.0 * opacity);
+            if (color.a != 0) row[x] = tbox_raster_blend_mode_pixel(row[x], color, color.a / 255.0 * opacity, op->blend_mode);
         }
     }
 }
@@ -506,7 +618,7 @@ void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer
  * non-positive buffer_width/buffer_height, a non-positive
  * dest_rect.width/height, or a resize failure (allocation failure, treated
  * as a no-op rather than a crash), skips painting entirely. */
-static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image, double opacity, bool has_clip, tbox_rect clip, bool pixelated, const tbox_paint_op *rounded, const double *filter) {
+static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image, double opacity, bool has_clip, tbox_rect clip, bool pixelated, const tbox_paint_op *rounded, const double *filter, tbox_style_blend_mode blend_mode) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || image == NULL || image->pixels == NULL || dest_rect.width <= 0.0 || dest_rect.height <= 0.0) {
         return;
     }
@@ -582,7 +694,7 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
             tbox_css_rgba color = { source_pixel[0], source_pixel[1], source_pixel[2], source_alpha };
             if (filter != NULL)
                 color = tbox_raster_filter(filter, color);
-            dest_row[x] = tbox_raster_blend_pixel(dest_row[x], color, color.a / 255.0 * opacity);
+            dest_row[x] = tbox_raster_blend_mode_pixel(dest_row[x], color, color.a / 255.0 * opacity, blend_mode);
         }
     }
 
@@ -590,7 +702,7 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
 }
 
 void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image) {
-    tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, 1.0, false, (tbox_rect){0}, false, NULL, NULL);
+    tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, 1.0, false, (tbox_rect){0}, false, NULL, NULL, TBOX_STYLE_BLEND_NORMAL);
 }
 
 /* Rasterizes one op -- the dispatch tbox_raster_display_list and
@@ -634,13 +746,16 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
                 double cx1 = fmin(clip.x + clip.width, op->clip.x + op->clip.width), cy1 = fmin(clip.y + clip.height, op->clip.y + op->clip.height);
                 clip       = (tbox_rect){ cx0, cy0, cx1 > cx0 ? cx1 - cx0 : 0.0, cy1 > cy0 ? cy1 - cy0 : 0.0 };
             }
-            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, true, clip, op->image_pixelated, op, op->color_filter);
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, true, clip, op->image_pixelated, op, op->color_filter, op->blend_mode);
         } else {
-            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated, NULL, op->color_filter);
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated, NULL, op->color_filter, op->blend_mode);
         }
         break;
     case TBOX_PAINT_FILL_RING:
         tbox_raster_fill_ring_clipped(pixels, buffer_width, buffer_height, op);
+        break;
+    case TBOX_PAINT_BACKDROP_FILTER:
+        tbox_raster_backdrop_filter(pixels, buffer_width, buffer_height, op);
         break;
     case TBOX_PAINT_WAVY_LINE: {
         double thickness = op->rect.height;

@@ -124,6 +124,10 @@ static tbox_layout_box *tbox_layout_flex_build_item(tbox_arena *arena, const tbo
 double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double content_width, double content_height, bool height_definite, double min_height, double max_height, tbox_layout_box *box, tbox_layout_positioned_context context) {
     bool row            = style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW || style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE;
     bool reverse        = style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE || style->flex_direction == TBOX_STYLE_FLEX_DIRECTION_COLUMN_REVERSE;
+    /* direction: rtl -- a row's main-start is the right edge, so `row`
+     * places items like row-reverse does and vice versa. */
+    if (row && style->direction_rtl)
+        reverse = !reverse;
     bool main_definite  = row || height_definite;
     double main_size    = row ? content_width : (height_definite ? content_height : TBOX_LAYOUT_FLEX_INFINITE);
     bool cross_definite = row ? height_definite : true;

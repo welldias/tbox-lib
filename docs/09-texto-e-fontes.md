@@ -67,6 +67,16 @@ negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
 - Decorações (`underline`, `overline`, `line-through`, estilos sólido,
   tracejado, pontilhado, duplo e ondulado), `text-shadow`,
   `text-transform`, `letter-spacing`, `word-spacing`.
+- `text-emphasis` (shorthand, `-style`, `-color`, `-position`, herdados):
+  uma marca centrada sobre (ou, com `under`, sob) cada caractere, menos
+  espaços, controles e pontuação (blocos ASCII, geral e CJK). As formas
+  `dot`, `circle`, `double-circle`, `triangle` e `sesame`, cheias ou
+  `open`, são desenhadas como formas alinhadas aos pixels (não dependem da
+  fonte ter os glifos); uma `<string>` usa a fonte do texto com metade do
+  tamanho. `left`/`right` em `-position` são aceitos sem efeito (não há
+  texto vertical). As marcas não reservam espaço na linha: com
+  `line-height` apertado, encostam na linha de cima. Veja
+  `tests/assets/131.html`.
 - UTF-8 em todo o pipeline; glifos ausentes na fonte não quebram nada.
 - `<ruby>` desenha cada trecho de texto-base com seu `<rt>` centralizado
   acima. O `<rt>` usa metade do tamanho da fonte por padrão e `<rp>` fica

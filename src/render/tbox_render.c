@@ -580,6 +580,7 @@ static void tbox_render_push_background_image(tbox_vector *items, const tbox_lay
             op->image         = gradient ? NULL : image;
             op->gradient      = gradient ? &layer->gradient : NULL;
             op->image_pixelated = style->image_rendering_pixelated;
+            op->blend_mode    = layer->blend_mode;
             op->has_clip      = true;
             op->clip          = clip_box;
             if (rounded)
@@ -878,6 +879,151 @@ static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, const 
     }
 }
 
+/* ---- text-emphasis ---- */
+
+/* The next UTF-8 codepoint of `text` at `*at` (a bad byte reads as itself). */
+static uint32_t tbox_render_next_codepoint(tbox_string_view text, size_t *at) {
+    const unsigned char *p = (const unsigned char *)text.data + *at;
+    size_t left = text.size - *at;
+    uint32_t c = p[0];
+    size_t length = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 : (c >> 3) == 30 ? 4 : 1;
+    if (length > left) length = 1;
+    if (length == 2) c = ((c & 0x1Fu) << 6) | (p[1] & 0x3Fu);
+    else if (length == 3) c = ((c & 0x0Fu) << 12) | ((p[1] & 0x3Fu) << 6) | (p[2] & 0x3Fu);
+    else if (length == 4) c = ((c & 0x07u) << 18) | ((p[1] & 0x3Fu) << 12) | ((p[2] & 0x3Fu) << 6) | (p[3] & 0x3Fu);
+    *at += length;
+    return c;
+}
+
+/* No emphasis mark: separators, controls and punctuation (CSS Text
+ * Decoration 3 §3.1), approximated by the ASCII, general and CJK
+ * punctuation blocks. */
+static bool tbox_render_emphasis_skips(uint32_t c) {
+    if (c <= 0x20 || c == 0x7F || c == 0xA0 || c == 0xAD || c == 0x3000) return true;
+    if (c < 0x80) return !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
+    return (c >= 0x2000 && c <= 0x206F) || (c >= 0x3001 && c <= 0x303F) || (c >= 0xFF01 && c <= 0xFF0F) ||
+           (c >= 0xFF1A && c <= 0xFF20) || (c >= 0xFF3B && c <= 0xFF40) || (c >= 0xFF5B && c <= 0xFF65) ||
+           c == 0xA1 || c == 0xA7 || c == 0xAB || c == 0xB6 || c == 0xB7 || c == 0xBB || c == 0xBF;
+}
+
+static void tbox_render_push_ellipse(tbox_vector *items, tbox_rect rect, tbox_css_rgba color, bool ring, double thickness) {
+    double h[4] = { rect.width / 2.0, rect.width / 2.0, rect.width / 2.0, rect.width / 2.0 };
+    double v[4] = { rect.height / 2.0, rect.height / 2.0, rect.height / 2.0, rect.height / 2.0 };
+    bool elliptical = rect.width != rect.height;
+    if (!ring) {
+        tbox_render_push_shape(items, rect, h, v, elliptical, color);
+        return;
+    }
+    tbox_rect inner = { rect.x + thickness, rect.y + thickness, rect.width - 2.0 * thickness, rect.height - 2.0 * thickness };
+    if (inner.width <= 0.0 || inner.height <= 0.0) {
+        tbox_render_push_shape(items, rect, h, v, elliptical, color);
+        return;
+    }
+    double ih[4] = { inner.width / 2.0, inner.width / 2.0, inner.width / 2.0, inner.width / 2.0 };
+    double iv[4] = { inner.height / 2.0, inner.height / 2.0, inner.height / 2.0, inner.height / 2.0 };
+    tbox_render_push_fill_ring(items, rect, h, inner, ih, color);
+    tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, items->length - 1);
+    op->elliptical = true;
+    for (size_t i = 0; i < 4; i++) {
+        op->corner_radii[i] = h[i], op->corner_radii_y[i] = v[i];
+        op->inner_corner_radii[i] = ih[i], op->inner_corner_radii_y[i] = iv[i];
+    }
+}
+
+/* A `width` x `height` rect centered on (cx, cy), snapped to whole pixels:
+ * the raster tests coverage at pixel centers, so a mark only a few pixels
+ * wide comes out lopsided at a fractional position. */
+static tbox_rect tbox_render_mark_rect(double cx, double cy, double width, double height) {
+    width = fmax(1.0, round(width)), height = fmax(1.0, round(height));
+    return (tbox_rect){ floor(cx - width / 2.0 + 0.5), floor(cy - height / 2.0 + 0.5), width, height };
+}
+
+/* One mark centered at (cx, cy), `size` the em of the text. */
+static void tbox_render_push_emphasis_mark(tbox_vector *items, const tbox_layout_text_run *run, double cx, double cy, double size, tbox_css_rgba color) {
+    const tbox_style *style = run->style;
+    bool open = style->text_emphasis_open;
+    double thickness = fmax(1.0, round(size * 0.05));
+    switch (style->text_emphasis_mark) {
+    case TBOX_STYLE_EMPHASIS_DOT: {
+        double d = fmax(open ? 5.0 : 3.0, size * (open ? 0.3 : 0.24));
+        tbox_render_push_ellipse(items, tbox_render_mark_rect(cx, cy, d, d), color, open, thickness);
+        break;
+    }
+    case TBOX_STYLE_EMPHASIS_CIRCLE: {
+        double d = fmax(5.0, size * 0.36);
+        tbox_render_push_ellipse(items, tbox_render_mark_rect(cx, cy, d, d), color, open, thickness);
+        break;
+    }
+    case TBOX_STYLE_EMPHASIS_DOUBLE_CIRCLE: {
+        double d = fmax(7.0, size * 0.42);
+        tbox_rect outer = tbox_render_mark_rect(cx, cy, d, d);
+        double inner = fmax(1.0, outer.width - 4.0 * thickness);
+        tbox_render_push_ellipse(items, outer, color, true, thickness);
+        tbox_render_push_ellipse(items, tbox_render_mark_rect(outer.x + outer.width / 2.0, outer.y + outer.height / 2.0, inner, inner), color, open, thickness);
+        break;
+    }
+    case TBOX_STYLE_EMPHASIS_TRIANGLE: {
+        /* scanlines: a 1px row per step, the apex on top */
+        tbox_rect box = tbox_render_mark_rect(cx, cy, fmax(5.0, size * 0.38), fmax(4.0, size * 0.33));
+        int rows = (int)box.height;
+        double mid = box.x + box.width / 2.0;
+        for (int r = 0; r < rows; r++) {
+            double width = fmax(1.0, round(box.width * (r + 1.0) / rows));
+            double x = floor(mid - width / 2.0 + 0.5);
+            if (!open || r == rows - 1 || width <= 2.0 * thickness) {
+                tbox_render_push_fill_rect(items, (tbox_rect){ x, box.y + r, width, 1.0 }, color);
+            } else {
+                tbox_render_push_fill_rect(items, (tbox_rect){ x, box.y + r, thickness, 1.0 }, color);
+                tbox_render_push_fill_rect(items, (tbox_rect){ x + width - thickness, box.y + r, thickness, 1.0 }, color);
+            }
+        }
+        break;
+    }
+    case TBOX_STYLE_EMPHASIS_SESAME: {
+        tbox_render_push_ellipse(items, tbox_render_mark_rect(cx, cy, fmax(open ? 4.0 : 2.0, size * 0.16), fmax(5.0, size * 0.36)), color, open, thickness);
+        break;
+    }
+    case TBOX_STYLE_EMPHASIS_STRING: {
+        if (run->emphasis_font == NULL) break;
+        tbox_string_view mark = tbox_string_view_from_cstr(style->text_emphasis_string);
+        double width = tbox_font_measure_text(run->emphasis_font, mark);
+        double line = tbox_font_face_line_height(run->emphasis_font);
+        tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
+        *op       = (tbox_paint_op){ 0 };
+        op->kind  = TBOX_PAINT_TEXT_RUN;
+        op->rect  = (tbox_rect){ cx - width / 2.0, cy - line / 2.0, width, line };
+        op->color = color;
+        op->text  = mark;
+        op->face  = run->emphasis_font;
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+/* text-emphasis: a mark centered over (or under) each character of `run`
+ * that takes one, just outside the text's ascent (descent). */
+static void tbox_render_push_emphasis(tbox_vector *items, const tbox_layout_text_run *run) {
+    const tbox_style *style = run->style;
+    if (style->text_emphasis_mark == TBOX_STYLE_EMPHASIS_NONE || run->font == NULL || run->text.size == 0)
+        return;
+    tbox_css_rgba color = style->text_emphasis_color.a != 0 ? style->text_emphasis_color : style->color;
+    double size = style->font_size > 0.0 ? style->font_size : 16.0;
+    double extent = style->text_emphasis_mark == TBOX_STYLE_EMPHASIS_STRING ? size * 0.5 : fmax(7.0, size * 0.42);
+    double cy = style->text_emphasis_under ? run->rect.y + tbox_font_face_line_height(run->font) + extent / 2.0 : run->rect.y - extent / 2.0;
+    size_t at = 0;
+    while (at < run->text.size) {
+        size_t start = at;
+        uint32_t c = tbox_render_next_codepoint(run->text, &at);
+        if (tbox_render_emphasis_skips(c))
+            continue;
+        double left  = tbox_font_measure_text_spaced(run->font, tbox_string_view_make(run->text.data, start), style->letter_spacing);
+        double right = tbox_font_measure_text_spaced(run->font, tbox_string_view_make(run->text.data, at), style->letter_spacing) - style->letter_spacing;
+        tbox_render_push_emphasis_mark(items, run, run->rect.x + (left + right) / 2.0, cy, size, color);
+    }
+}
+
 static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool has_clip, tbox_rect clip, tbox_arena *arena, tbox_rect viewport) {
     size_t own_start  = items->length;
     bool visible      = box->style == NULL || !box->style->visibility_hidden;
@@ -898,6 +1044,24 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     for (size_t s = shadow_count; s > 0; s--)
         if (!shadows[s - 1].inset && shadows[s - 1].color.a != 0)
             tbox_render_push_box_shadow(items, box->border_box, corners, corners_y, elliptical, &shadows[s - 1]);
+
+    /* backdrop-filter: recolors what is already painted behind the
+     * border box, before the box's own background goes on top. */
+    if (decorated && box->style != NULL && box->style->has_backdrop_filter) {
+        tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
+        if (op != NULL) {
+            memset(op, 0, sizeof(*op));
+            op->kind         = TBOX_PAINT_BACKDROP_FILTER;
+            op->rect         = box->border_box;
+            op->color        = (tbox_css_rgba){ 0, 0, 0, 255 };
+            op->color_filter = box->style->backdrop_filter_matrix;
+            op->elliptical   = true;
+            for (size_t i = 0; i < 4; i++) {
+                op->corner_radii[i]   = corners[i];
+                op->corner_radii_y[i] = elliptical ? corners_y[i] : corners[i];
+            }
+        }
+    }
 
     /* border painting. Render Pipeline isn't handed the
      * already-computed value from Layout Tree, so it re-derives it here
@@ -959,6 +1123,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
                 first->repeat_mode_x = box->style->background_repeat_mode_x;
                 first->repeat_mode_y = box->style->background_repeat_mode_y;
                 first->attachment_fixed = box->style->background_attachment_fixed;
+                first->blend_mode       = box->style->background_blend_mode;
                 tbox_render_push_background_image(items, box, first, box->background_image, background_box, background_h, background_v, rounded, viewport);
             }
         }
@@ -1309,6 +1474,12 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
                 }
             }
         }
+    }
+
+    for (size_t i = 0; i < box->text_run_count; i++) {
+        const tbox_layout_text_run *run = &box->text_runs[i];
+        if (run->image == NULL && run->style != NULL && !run->style->visibility_hidden)
+            tbox_render_push_emphasis(items, run);
     }
 
     if (tbox_render_clips(box)) {

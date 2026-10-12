@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      width: 560px;
+    }
+
+    .swatch {
+      width: 128px;
+      height: 64px;
+      padding: 4px;
+      box-sizing: border-box;
+      font-size: 12px;
+      color: #0f172a;
+      /* gradiente sobre uma cor sólida: o modo mistura os dois */
+      background: linear-gradient(90deg, #ef4444, #3b82f6), #facc15;
+    }
+
+    .multiply { background-blend-mode: multiply; }
+    .screen { background-blend-mode: screen; }
+    .overlay { background-blend-mode: overlay; }
+    .darken { background-blend-mode: darken; }
+    .lighten { background-blend-mode: lighten; }
+    .dodge { background-blend-mode: color-dodge; }
+    .burn { background-blend-mode: color-burn; }
+    .hard { background-blend-mode: hard-light; }
+    .soft { background-blend-mode: soft-light; }
+    .difference { background-blend-mode: difference; }
+    .exclusion { background-blend-mode: exclusion; }
+    .hue { background-blend-mode: hue; }
+    .saturation { background-blend-mode: saturation; }
+    .color { background-blend-mode: color; }
+    .luminosity { background-blend-mode: luminosity; }
+
+    /* Várias camadas: a lista se repete */
+    .layers {
+      width: 560px;
+      height: 64px;
+      margin-top: 12px;
+      background:
+        repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.35) 0 8px, transparent 8px 16px),
+        linear-gradient(90deg, #22c55e, #a855f7),
+        #f97316;
+      background-blend-mode: multiply, screen;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>background-blend-mode</h1>
+
+  <h2>Gradiente sobre amarelo, um modo por quadro</h2>
+  <div class="grid">
+    <div class="swatch">normal</div>
+    <div class="swatch multiply">multiply</div>
+    <div class="swatch screen">screen</div>
+    <div class="swatch overlay">overlay</div>
+    <div class="swatch darken">darken</div>
+    <div class="swatch lighten">lighten</div>
+    <div class="swatch dodge">color-dodge</div>
+    <div class="swatch burn">color-burn</div>
+    <div class="swatch hard">hard-light</div>
+    <div class="swatch soft">soft-light</div>
+    <div class="swatch difference">difference</div>
+    <div class="swatch exclusion">exclusion</div>
+    <div class="swatch hue">hue</div>
+    <div class="swatch saturation">saturation</div>
+    <div class="swatch color">color</div>
+    <div class="swatch luminosity">luminosity</div>
+  </div>
+
+  <h2>Três camadas, lista "multiply, screen"</h2>
+  <div class="layers"></div>
+</body>
+
+</html>

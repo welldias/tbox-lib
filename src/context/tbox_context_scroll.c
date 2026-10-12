@@ -29,12 +29,11 @@ static tbox_scroll_state *tbox_context_scroll_state(tbox_context *ctx, const tbo
 
 #define TBOX_SCROLL_SMOOTH_SECONDS 0.3
 
-/* Scrolls `state` (of a container styled `style`) to `target`: at once,
- * or -- with scroll-behavior: smooth and no reduced-motion preference --
- * by starting an ease-in-out animation from where it is now, which
- * tbox_context_apply_scroll advances frame by frame. */
-static void tbox_context_scroll_to(tbox_context *ctx, tbox_scroll_state *state, const tbox_style *style, double target) {
-    if (style == NULL || !style->scroll_behavior_smooth || ctx->prefers_reduced_motion) {
+/* Eases `state` to `target` from where it is now, which
+ * tbox_context_apply_scroll advances frame by frame; at once with the
+ * reduced-motion preference. */
+static void tbox_context_scroll_glide(tbox_context *ctx, tbox_scroll_state *state, double target) {
+    if (ctx->prefers_reduced_motion) {
         state->animating = false;
         state->y         = target;
         return;
@@ -44,6 +43,98 @@ static void tbox_context_scroll_to(tbox_context *ctx, tbox_scroll_state *state, 
     state->target_y   = target;
     state->start_time = ctx->animation_time;
     ctx->animations_active = true;
+}
+
+/* Scrolls `state` (of a container styled `style`) to `target`: at once,
+ * or -- with scroll-behavior: smooth and no reduced-motion preference --
+ * gliding there. */
+static void tbox_context_scroll_to(tbox_context *ctx, tbox_scroll_state *state, const tbox_style *style, double target) {
+    if (style == NULL || !style->scroll_behavior_smooth) {
+        state->animating = false;
+        state->y         = target;
+        return;
+    }
+    tbox_context_scroll_glide(ctx, state, target);
+}
+
+#define TBOX_SCROLL_SNAP_IDLE_SECONDS 0.15
+
+/* A scroll of a snapping container (`style`) by a user gesture: the snap
+ * happens once no gesture moved it for TBOX_SCROLL_SNAP_IDLE_SECONDS
+ * (`immediate`: at the next frame). */
+static void tbox_context_scroll_moved(tbox_context *ctx, tbox_scroll_state *state, const tbox_style *style, double origin, bool immediate) {
+    if (style == NULL || style->scroll_snap_type == TBOX_STYLE_SCROLL_SNAP_NONE) return;
+    if (!state->snap_pending) state->snap_origin_y = origin;
+    state->snap_pending    = true;
+    /* the idle wait starts at the next frame: ctx->animation_time is the
+     * last frame's, maybe long ago */
+    state->snap_time       = immediate ? -INFINITY : NAN;
+    ctx->animations_active = true;
+}
+
+/* Snap positions found under a container, as scroll offsets. */
+typedef struct tbox_snap_search {
+    double port_top, port_bottom, port_height, max_y;
+    double y, origin;
+    bool found, found_stop;
+    double best, best_stop; /* nearest to y; the `always` one nearest to origin, between origin and y */
+} tbox_snap_search;
+
+static void tbox_context_snap_candidates(const tbox_layout_box *box, tbox_snap_search *search) {
+    for (; box != NULL; box = box->next_sibling) {
+        const tbox_style *style = box->style;
+        if (style != NULL && style->scroll_snap_align != TBOX_STYLE_SCROLL_SNAP_ALIGN_NONE) {
+            double top    = box->border_box.y - tbox_style_length_resolve(style->scroll_margin[0], search->port_height);
+            double bottom = box->border_box.y + box->border_box.height + tbox_style_length_resolve(style->scroll_margin[2], search->port_height);
+            double position = style->scroll_snap_align == TBOX_STYLE_SCROLL_SNAP_ALIGN_START ? top - search->port_top :
+                              style->scroll_snap_align == TBOX_STYLE_SCROLL_SNAP_ALIGN_END   ? bottom - search->port_bottom :
+                                                                                               (top + bottom - search->port_top - search->port_bottom) / 2.0;
+            if (position < 0.0) position = 0.0;
+            if (position > search->max_y) position = search->max_y;
+            if (!search->found || fabs(position - search->y) < fabs(search->best - search->y)) {
+                search->best  = position;
+                search->found = true;
+            }
+            bool between = search->y > search->origin ? position > search->origin + 0.5 && position < search->y - 0.5
+                                                      : position < search->origin - 0.5 && position > search->y + 0.5;
+            if (style->scroll_snap_stop_always && between &&
+                (!search->found_stop || fabs(position - search->origin) < fabs(search->best_stop - search->origin))) {
+                search->best_stop  = position;
+                search->found_stop = true;
+            }
+        }
+        /* a nested scroll container snaps its own content */
+        if (style == NULL || style->overflow_y != TBOX_STYLE_OVERFLOW_Y_AUTO)
+            tbox_context_snap_candidates(box->first_child, search);
+    }
+}
+
+/* Where `container`, scrolled to `y` by a gesture that began at `origin`,
+ * snaps to; false when it stays put (no snap point, or none close enough
+ * for `proximity`). */
+static bool tbox_context_snap_target(const tbox_layout_box *container, double y, double origin, double max_y, double *out) {
+    const tbox_style *style = container->style;
+    double port = container->padding_box.height;
+    const tbox_style_length *padding = style->scroll_padding;
+    tbox_snap_search search = { 0 };
+    search.port_height = port;
+    search.port_top    = container->padding_box.y + (padding[0].kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 : tbox_style_length_resolve(padding[0], port));
+    search.port_bottom = container->padding_box.y + port - (padding[2].kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 : tbox_style_length_resolve(padding[2], port));
+    search.max_y       = max_y;
+    search.y           = y;
+    search.origin      = origin;
+    tbox_context_snap_candidates(container->first_child, &search);
+    if (search.found_stop) {
+        *out = search.best_stop;
+        return true;
+    }
+    if (!search.found)
+        return false;
+    /* proximity: only snap points within a third of the scrollport */
+    if (style->scroll_snap_type == TBOX_STYLE_SCROLL_SNAP_PROXIMITY && fabs(search.best - y) > port / 3.0)
+        return false;
+    *out = search.best;
+    return true;
 }
 
 /* Advances a smooth scroll to ctx->animation_time. */
@@ -81,6 +172,20 @@ void tbox_context_apply_scroll(tbox_context *ctx, tbox_layout_box *box) {
                 if (max_y < 0.0) max_y = 0.0;
                 if (state->y > max_y) state->y = max_y;
                 if (state->y < 0.0) state->y = 0.0;
+                if (state->snap_pending && isnan(state->snap_time))
+                    state->snap_time = ctx->animation_time;
+                if (state->snap_pending && box->style->scroll_snap_type == TBOX_STYLE_SCROLL_SNAP_NONE) {
+                    state->snap_pending = false;
+                } else if (state->snap_pending && !state->animating && ctx->animation_time - state->snap_time >= TBOX_SCROLL_SNAP_IDLE_SECONDS) {
+                    state->snap_pending = false;
+                    double target;
+                    if (tbox_context_snap_target(box, state->y, state->snap_origin_y, max_y, &target) && fabs(target - state->y) > 0.25) {
+                        tbox_context_scroll_glide(ctx, state, target);
+                        tbox_context_scroll_step(ctx, state);
+                    }
+                } else if (state->snap_pending) {
+                    ctx->animations_active = true;
+                }
                 if (state->y > 0.0) tbox_context_shift_subtree(box->first_child, -state->y);
             }
         }
@@ -329,8 +434,10 @@ bool tbox_context_scroll(tbox_context *ctx, double x, double y, double delta_y) 
             if (box->style->overscroll_y != TBOX_STYLE_OVERSCROLL_AUTO) return false;
             continue;
         }
+        double before    = state->y;
         state->y         = next; /* the wheel is direct manipulation: never smoothed */
         state->animating = false;
+        tbox_context_scroll_moved(ctx, state, box->style, before, false);
         return true;
     }
     return false;
@@ -354,6 +461,8 @@ bool tbox_context_scrollbar_press(tbox_context *ctx, double x, double y) {
     if (tbox_context_point_in_rect(geometry.thumb, x, y)) {
         ctx->scroll_drag_node = box->node;
         ctx->scroll_drag_grab_y = y - geometry.thumb.y;
+        state->snap_pending  = false;
+        state->snap_origin_y = state->y;
     } else {
         /* A page per track click, from where a running smooth scroll is
          * heading, so quick clicks add up. */
@@ -363,6 +472,7 @@ bool tbox_context_scrollbar_press(tbox_context *ctx, double x, double y) {
         if (target < 0.0) target = 0.0;
         if (target > geometry.max_scroll) target = geometry.max_scroll;
         tbox_context_scroll_to(ctx, state, box->style, target);
+        tbox_context_scroll_moved(ctx, state, box->style, from, true);
     }
     return true;
 }
@@ -384,13 +494,20 @@ bool tbox_context_scrollbar_drag(tbox_context *ctx, double x, double y) {
         if (thumb_y < 0.0) thumb_y = 0.0;
         if (thumb_y > travel) thumb_y = travel;
         state->y         = thumb_y / travel * geometry.max_scroll;
-        state->animating = false;
+        state->animating = false; /* snaps once released (tbox_context_scrollbar_release) */
     }
     return true;
 }
 
 void tbox_context_scrollbar_release(tbox_context *ctx) {
     if (ctx != NULL) {
+        if (ctx->scroll_drag_node != NULL) {
+            const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->scroll_drag_node);
+            tbox_scroll_state *state = tbox_context_existing_scroll_state(ctx, ctx->scroll_drag_node);
+            if (box != NULL && state != NULL) {
+                tbox_context_scroll_moved(ctx, state, box->style, state->snap_origin_y, true);
+            }
+        }
         ctx->scroll_drag_node = NULL;
         ctx->scroll_pointer_consumed = false;
     }

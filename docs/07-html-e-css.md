@@ -109,8 +109,8 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   com `url()` ou string e uma lista de media opcional (vira `@media`).
   Arquivos locais, relativos à folha que importa (ou ao documento, numa
   `<style>`), aninhados até 8 níveis; o texto importado entra antes das
-  regras da folha. `supports()` no `@import` descarta a
-  importação; `layer()` é aceito (ver `@layer`). Vale em `<style>`,
+  regras da folha. `supports()` no `@import` é avaliado como `@supports`
+  (falso descarta a importação); `layer()` é aceito (ver `@layer`). Vale em `<style>`,
   `<link>` e no CSS passado pela aplicação.
 - **`@charset`**: aceito e ignorado; todo CSS é lido como UTF-8.
 - **`@namespace`**: aceito e ignorado. Para HTML isso equivale ao
@@ -122,9 +122,9 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   um elemento aparece (primeiro frame ou saída de `display: none`) e tem
   `transition`, o estilo resolvido com essas regras
   (`tbox_css_cascade_resolve_starting_style_in_viewport`) é o ponto de
-  partida da transição. Só vale nas propriedades que já transicionam
-  (`color`, `background-color`, `opacity`); a forma aninhada dentro de uma
-  regra (CSS nesting) não é suportada.
+  partida da transição. Vale em todas as propriedades que transicionam
+  (ver [Transições e animações](#transições-e-animações)); a forma aninhada
+  dentro de uma regra (CSS nesting) não é suportada.
 - **`@layer`**: `@layer a, b;`, `@layer a { … }`, nomes com ponto
   (`a.b`), camadas anônimas (`@layer { … }`), aninhamento com `@media` nos
   dois sentidos e `@import … layer(nome)`/`layer`. Um prelúdio inválido
@@ -132,8 +132,26 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
 - **`@font-face`**: arquivos locais via `url()` relativos ao documento (ou ao
   diretório do CSS externo), com `font-family`, um `font-weight` e
   `font-style`. Sem URLs remotas nem faixas de peso.
-- **Ignorados sem quebrar o resto**: `@keyframes`, `@supports`, um
-  `@import` fora do início da folha e qualquer at-rule desconhecida; propriedades e valores desconhecidos.
+- **`@supports`**: `not`/`and`/`or` (misturar `and` e `or` sem parênteses
+  invalida a regra), `(propriedade: valor)` e `selector()`. É decidido uma
+  vez, no parse (`tbox_css_supports`): o que a tbox suporta não muda. Uma
+  declaração é verdadeira quando a tbox resolve a **propriedade** (tabela
+  em `tbox_css_supports.c`, igual à [referência](referencia/css-suportado.md))
+  e custom properties sempre; o valor não é validado, exceto os que
+  enganariam a detecção: `display` fora dos valores suportados (`grid`…),
+  `transform` com rotação/escala/matriz e `filter`/`backdrop-filter` com
+  `blur()`/`url()`. `selector()` exige que o seletor compile e só use
+  pseudo-classes e pseudo-elementos que o matcher conhece. Outras funções
+  (`font-tech()`, `font-format()`) são falsas. Aninha com `@media` e
+  `@layer` nos dois sentidos.
+- **`@keyframes nome { … }`** (e `@-webkit-keyframes`): `from`, `to` e
+  porcentagens, listas (`0%, 50% { … }`) e o nome entre aspas. Um keyframe
+  com seletor inválido é descartado sozinho; os nomes `none`/`initial`/
+  `inherit`/`unset` descartam a regra. Dentro de `@media`, só vale enquanto
+  a condição vale; com dois de mesmo nome, vence o último. Ver
+  [Transições e animações](#transições-e-animações).
+- **Ignorados sem quebrar o resto**: um `@import` fora do início da folha e
+  qualquer at-rule desconhecida; propriedades e valores desconhecidos.
 
 ## Seletores
 
@@ -174,7 +192,7 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   `select`, `textarea`, `br`, `hr`, `progress`, `meter`…).
 - **Interação**: um clique ou hover sobre o conteúdo gerado conta como sobre
   o elemento (`tbox_context_hit_test` devolve a caixa do elemento).
-- **Limitações**: pseudos não têm `transition` nem `@starting-style`; um
+- **Limitações**: pseudos não têm `transition`, `animation` nem `@starting-style`; um
   pseudo `position: absolute` dentro de `<p>`/`<li>`/`<button>` (contexto
   inline) não aparece, como qualquer filho absoluto nesses elementos;
   `::first-line`/`::first-letter` são reconhecidos mas não estilizam nada.
@@ -201,11 +219,67 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
 - **Herança e valores iniciais** seguem o CSS: `color`, fonte, `text-align`
   etc. herdam; `background`, `border`, `margin` não.
 
+## Transições e animações
+
+As duas rodam na orquestração (`tbox_context_transition.c`,
+`tbox_context_animation.c`) sobre os estilos já resolvidos do frame e antes
+do layout, então propriedades de layout (`width`, `padding`…) animam
+refazendo o layout a cada frame. O relógio é
+`tbox_context_set_animation_time`; enquanto alguma estiver ativa,
+`tbox_context_animations_active` é verdadeiro.
+
+- **Propriedades que interpolam** (`tbox_style_animatable`): `color`,
+  `background-color`, `opacity`, `border-*-color`, `border-*-width`,
+  `border-*-radius`, `outline-color`/`-width`/`-offset`,
+  `text-decoration-color`, `accent-color`, `caret-color`, `translate` e
+  `transform` (só translação), `width`/`height` (e `inline-size`/
+  `block-size`), `padding-*`, `margin-*`, `top`/`right`/`bottom`/`left`
+  (`inset`), `letter-spacing`, `word-spacing`; os shorthands (`border`,
+  `border-color`, `padding`, `outline`…) valem pelos longhands. Cores
+  interpolam em sRGB pré-multiplicado. Um comprimento que troca de tipo
+  (px ↔ % ↔ `auto`) ou um `accent-color`/`caret-color` `auto` muda de uma
+  vez.
+- **Funções de tempo**: `ease`, `linear`, `ease-in`, `ease-out`,
+  `ease-in-out`, `cubic-bezier()`, `steps(n[, jump-start | jump-end |
+  jump-none | jump-both | start | end])`, `step-start`, `step-end`. A forma
+  `linear()` com paradas não é suportada.
+- **`transition`**: o shorthand com várias entradas e os longhands
+  (`-property`, `-duration`, `-delay`, `-timing-function`), cada um uma
+  lista pareada pelo índice com `transition-property` e repetida quando é
+  mais curta. Com duas entradas para a mesma propriedade, vale a última. Uma
+  mudança no meio de uma transição recomeça do valor atual.
+- **`animation`**: shorthand (palavras-chave em qualquer ordem, o nome por
+  último) e os longhands `animation-name`, `-duration`, `-delay`,
+  `-timing-function`, `-iteration-count` (inclusive `infinite` e
+  fracionário), `-direction`, `-fill-mode`, `-play-state`, pareados com
+  `animation-name`. `animation-timing-function` dentro de um keyframe vale
+  para o trecho que começa nele; `!important` dentro de keyframes é
+  ignorado. Keyframes de 0%/100% ausentes usam o valor atual do elemento.
+  Uma animação recomeça quando o nome sai e volta para a lista do elemento
+  (ou o elemento sai de `display: none`). Com várias animações na mesma
+  propriedade, vence a última da lista.
+- **Limitações**: os valores de cada keyframe são resolvidos quando a
+  animação começa (`em`, `%` e `currentColor` ficam fixos dali em diante);
+  não há `animation-composition`, `animation-timeline` nem eventos
+  (`animationend`); pseudo-elementos não animam. Com
+  `prefers_reduced_motion` as animações continuam: use
+  `@media (prefers-reduced-motion: reduce)` como na web.
+
+## Propriedades aceitas sem efeito
+
+Não fazem nada numa tela sem paginação, sem 3D e sem `float`, e isso é o
+resultado correto para o que a tbox desenha: `break-before`/`-after`/
+`-inside`, `page-break-*`, `orphans`, `widows` (impressão), `clear` (nada
+flutua), `overflow-anchor` (não há ancoragem de rolagem, o mesmo que
+`none`), `perspective`, `perspective-origin`, `transform-style` e
+`backface-visibility` (sem transformações 3D, a face de trás nunca
+aparece). As de impressão contam como suportadas em `@supports`; as de 3D
+não, para não levar uma página ao seu caminho 3D.
+
 ## O que fica de fora
 
-Os grandes ausentes, para decidir rápido: `float`, `grid`, `::before`/
-`::after`, `transform` além de translação, `animation`/`@keyframes`,
-`writing-mode` vertical e texto bidirecional, `@import`. A lista completa
+Os grandes ausentes, para decidir rápido: `float`, `grid`, `transform`
+além de translação, `writing-mode` vertical e texto bidirecional. A lista completa
 por propriedade e por elemento está em [CSS suportado](referencia/css-suportado.md)
 e [HTML suportado](referencia/html-suportado.md); o que existe de
 layout está em [Layout e pintura](08-layout-e-pintura.md).

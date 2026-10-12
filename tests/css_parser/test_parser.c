@@ -511,5 +511,55 @@ int tbox_test_css_parser_parser_run(void) {
         tbox_css_stylesheet_destroy(NULL);
     }
 
+    /* 35: @supports keeps its rules only when the condition holds --
+     * declarations by property (with a few misleading values false),
+     * not/and/or, selector(), and unknown functions false. */
+    {
+        tbox_css_stylesheet *ss = parse_cstr(
+            "@supports (display: flex) { a { color: red; } }"
+            "@supports (display: grid) { b { color: red; } }"
+            "@supports not (display: grid) { i { color: red; } }"
+            "@supports (gap: 1px) and (transform: translateX(1px)) { u { color: red; } }"
+            "@supports (transform: rotate(5deg)) or (float: left) { s { color: red; } }"
+            "@supports selector(:nth-child(2n)) { p { color: red; @media (min-width: 1px) { q { color: red; } } } }"
+            "@supports selector(::-webkit-thing) or font-tech(color-COLRv1) { em { color: red; } }"
+            "@supports ((--x: 1) and (color: red)) or (bogus: 1) { h1 { color: red; } }"
+            "@supports (color: red) and (gap: 1px) or (x: y) { h2 { color: red; } }"
+            "span { color: blue; }");
+        const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
+        const char *expected[] = { "a", "i", "u", "p", "h1", "span" };
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 6);
+        for (size_t i = 0; i < 6 && i < tbox_css_stylesheet_ruleset_count(ss); i++)
+            TBOX_TEST_ASSERT(text_eq(r[i].selectors[0].simple_selectors[0].name, expected[i]));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(filter: drop-shadow(1px 1px red))", strlen("(filter: drop-shadow(1px 1px red))"))));
+        TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("(filter: blur(2px))", strlen("(filter: blur(2px))"))));
+        TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("display: flex", strlen("display: flex"))));
+        tbox_css_stylesheet_destroy(ss);
+    }
+
+    /* 36: @keyframes -- from/to/percentages, selector lists expanded and
+     * sorted, a bad keyframe dropped alone, reserved names and empty
+     * rules dropped, rules inside @media keep their condition. */
+    {
+        tbox_css_stylesheet *ss = parse_cstr(
+            "@keyframes pulse { to { opacity: 0; } 0%, 50% { opacity: 1; color: red; } 120% { opacity: 9; } bogus { x: y } }"
+            "@-webkit-keyframes \"quoted\" { from { width: 1px } }"
+            "@keyframes none { to { opacity: 0; } }"
+            "@keyframes empty { }"
+            "@media (min-width: 1px) { @keyframes inner { to { color: blue; } } }"
+            "p { animation: pulse 1s; }");
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_keyframes_count(ss) == 3);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 1);
+        const tbox_css_keyframes_rule *k = tbox_css_stylesheet_keyframes(ss);
+        if (tbox_css_stylesheet_keyframes_count(ss) == 3) {
+            TBOX_TEST_ASSERT(text_eq(k[0].name, "pulse") && k[0].frame_count == 3 && k[0].media == NULL);
+            TBOX_TEST_ASSERT(k[0].frame_count == 3 && k[0].frames[0].offset == 0.0 && k[0].frames[1].offset == 0.5 && k[0].frames[2].offset == 1.0);
+            TBOX_TEST_ASSERT(k[0].frames[0].declaration_count == 2 && k[0].frames[2].declaration_count == 1);
+            TBOX_TEST_ASSERT(text_eq(k[1].name, "quoted") && k[1].frame_count == 1);
+            TBOX_TEST_ASSERT(text_eq(k[2].name, "inner") && k[2].media != NULL);
+        }
+        tbox_css_stylesheet_destroy(ss);
+    }
+
     return failures;
 }

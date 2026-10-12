@@ -377,3 +377,41 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   dono quando o ponto cai em conteúdo gerado (os nós sintéticos duram um
   frame); transições ignoram os pseudos.
 - Fixture `121`; nenhum outro fixture mudou; suíte limpa com ASan/UBSan.
+
+## 2026-10-12 — Transições ampliadas, `@supports`, `@keyframes`, efeitos e `direction`
+
+- **Style**: `tbox_style_animate.c` — tabela de propriedades animáveis
+  (`tbox_style_animatable`, máscara por nome em `transition-property`),
+  leitura/escrita como 4 doubles e funções de tempo (`cubic-bezier()`,
+  `steps()`). `transition` vira uma lista (`tbox_style.transitions`,
+  substitui `transition_duration[3]`/`_delay`/`_timing`) com os longhands
+  pareados por índice; `animation` (`tbox_style.animations`);
+  `drop-shadow()` em `filter`; `backdrop-filter`
+  (`backdrop_filter_matrix`); `background-blend-mode` por camada;
+  `scroll-snap-type`/`-align`/`-stop`; `direction` (e o atributo `dir`) com
+  o mapeamento lógico invertido e `text_align_logical`; `text-emphasis`.
+  Novas entradas na tabela de palavras-chave globais.
+- **CSS Parser**: `@supports` avaliado no parse (`tbox_css_supports`, também
+  usado no `supports()` do `@import`); `@keyframes` guardado na folha
+  (`tbox_css_stylesheet_keyframes`).
+- **CSS Cascade**: `tbox_css_cascade_media_matches` público, para os
+  `@keyframes` dentro de `@media`.
+- **Orchestration**: transições em todas as propriedades animáveis, com o
+  estado de trilhas alocado sob demanda; `tbox_context_animation.c` roda as
+  animações depois das transições; scroll snap em `tbox_scroll_state`
+  (encaixe 0,15 s depois do último giro da roda, ao soltar a barra ou depois
+  de um clique na trilha).
+- **Layout Tree**: flex `row` começa na direita com `direction: rtl`;
+  `tbox_layout_text_run.emphasis_font` para marcas `<string>`.
+- **Render Pipeline / Output**: op `TBOX_PAINT_BACKDROP_FILTER`;
+  `tbox_paint_op.blend_mode` em `IMAGE`/`GRADIENT` (16 modos no raster, no
+  hash do damage tracker); marcas de `text-emphasis`.
+- Referência: animation\*, `@keyframes`, `@supports`, `backdrop-filter`,
+  `background-blend-mode`, `direction`, scroll-snap\*, text-emphasis\* e as
+  propriedades aceitas sem efeito (break-\*, page-break-\*, `orphans`,
+  `widows`, `clear`, `overflow-anchor`, `perspective`, `perspective-origin`,
+  `transform-style`, `backface-visibility`) marcadas `X*`. Corrigida a lista
+  "O que fica de fora" de [HTML e CSS](../07-html-e-css.md), que ainda
+  citava `::before`/`::after` e `@import`.
+- Fixtures `122`–`131`; nenhum fixture de 001–121 mudou de pixels; suíte
+  limpa com ASan/UBSan.

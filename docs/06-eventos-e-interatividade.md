@@ -151,6 +151,19 @@ relógio das transições. A roda e o arrasto do polegar continuam imediatos
 (são manipulação direta) e interrompem uma animação em curso; com
 `prefers_reduced_motion` tudo é imediato.
 
+**Scroll snap** (só eixo vertical): num bloco com `scroll-snap-type: y`
+(ou `block`/`both`; `mandatory` ou `proximity`, o padrão), os filhos com
+`scroll-snap-align: start | center | end` (o primeiro valor, o do eixo de
+bloco) são pontos de encaixe, contando `scroll-margin` do filho e
+`scroll-padding` do bloco. Quando a roda fica parada por 0,15 s — ou ao
+soltar o polegar da barra, ou depois de um clique na trilha — o bloco
+desliza (0,3 s, imediato com `prefers_reduced_motion`) até o ponto mais
+próximo; com `proximity`, só se ele estiver a até um terço da altura
+visível. Um ponto com `scroll-snap-stop: always` entre o início e o fim do
+gesto o segura. Revelar o controle focado não encaixa, e um layout que muda
+(redimensionar a janela) não reencaixa. As formas `x`/`inline` são aceitas
+sem efeito.
+
 Quando uma rolagem pela roda chega ao limite de um bloco, ela passa para o
 ancestral rolável; `overscroll-behavior: contain` ou `none` (ou as formas
 `-y`/`-block`) interrompe essa passagem. Ao revelar o controle focado, o
