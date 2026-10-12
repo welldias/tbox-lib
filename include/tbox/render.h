@@ -28,10 +28,20 @@ typedef enum tbox_paint_op_kind {
     TBOX_PAINT_FILL_RING, /* outer rounded rect minus inner rounded rect */
     TBOX_PAINT_WAVY_LINE, /* text-decoration-style: wavy */
     TBOX_PAINT_GRADIENT,  /* background gradient: one tile, see `gradient` */
-    /* `backdrop-filter`: `color_filter` applied to the pixels already
-     * painted inside `rect` (with corner_radii/corner_radii_y as a
-     * FILL_RECT's); color.a is the strength (an `opacity` ancestor). */
+    /* `backdrop-filter`: `filters` applied to the pixels already painted
+     * inside `rect` (with corner_radii/corner_radii_y as a FILL_RECT's) in
+     * the current buffer -- the screen or the nearest layer. */
     TBOX_PAINT_BACKDROP_FILTER,
+    /* A compositing layer (docs/08-layout-e-pintura.md): the ops up to the
+     * matching LAYER_END paint into a transparent buffer, which LAYER_END
+     * composites: `filters` (may be NULL), the mask, color.a as opacity,
+     * `blend_mode` (mix-blend-mode), clipped to this op's clip and
+     * rounded_clip. `rect` is unused. Layers nest. */
+    TBOX_PAINT_LAYER_BEGIN,
+    /* Inside a layer: the ops up to its LAYER_END paint the mask (alpha,
+     * or luminance when `mask_luminance`) instead of the content. */
+    TBOX_PAINT_LAYER_MASK,
+    TBOX_PAINT_LAYER_END,
 } tbox_paint_op_kind;
 
 typedef struct tbox_paint_op {
@@ -90,8 +100,14 @@ typedef struct tbox_paint_op {
     const double *color_filter;
 
     /* IMAGE/GRADIENT: `background-blend-mode`, blending each pixel with
-     * what is already painted under it; NORMAL for plain compositing. */
+     * what is already painted under it; NORMAL for plain compositing.
+     * LAYER_BEGIN: the layer's `mix-blend-mode`. */
     tbox_style_blend_mode blend_mode;
+
+    /* LAYER_BEGIN/BACKDROP_FILTER: the filter list to run (the style that
+     * owns it outlives the display list); NULL for none. */
+    const tbox_style_filter_list *filters;
+    bool mask_luminance; /* LAYER_MASK */
 
     /* Optional paint clip, applied to every op kind. Input text and the
      * descendants of overflow-y:auto blocks use it. */

@@ -532,7 +532,9 @@ int tbox_test_css_parser_parser_run(void) {
         for (size_t i = 0; i < 6 && i < tbox_css_stylesheet_ruleset_count(ss); i++)
             TBOX_TEST_ASSERT(text_eq(r[i].selectors[0].simple_selectors[0].name, expected[i]));
         TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(filter: drop-shadow(1px 1px red))", strlen("(filter: drop-shadow(1px 1px red))"))));
-        TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("(filter: blur(2px))", strlen("(filter: blur(2px))"))));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(filter: blur(2px))", strlen("(filter: blur(2px))"))));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(mix-blend-mode: multiply) and (mask-image: none)", strlen("(mix-blend-mode: multiply) and (mask-image: none)"))));
+        TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("(filter: url(#a))", strlen("(filter: url(#a))"))));
         TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("display: flex", strlen("display: flex"))));
         tbox_css_stylesheet_destroy(ss);
     }

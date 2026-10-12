@@ -183,10 +183,9 @@ formato atual do código. O texto integral original de cada versão está em
   vez quando a animação começa. Alternativa descartada: interpretar os
   valores do keyframe à parte, que duplicaria o parser de cada propriedade
   (2026-10-12).
-- **`filter: drop-shadow()` sem buffer separado**: vira `box-shadow` em
-  quem pinta fundo/borda e `text-shadow` nos demais. Uma sombra fiel à forma
-  alfa precisaria pintar o elemento num buffer próprio, que o raster não tem
-  (2026-10-12).
+- **`filter: drop-shadow()` sem buffer separado** (substituída no mesmo
+  dia pelas camadas de composição, abaixo): virava `box-shadow` em quem
+  pinta fundo/borda e `text-shadow` nos demais (2026-10-12).
 - **`direction` pelo `tbox_style_units`**: a flag `rtl` passa por todas as
   funções que já recebiam as unidades, e só os pontos de mapeamento lógico
   olham para ela. O atributo `dir` é lido na própria Style (como um
@@ -268,6 +267,23 @@ formato atual do código. O texto integral original de cada versão está em
   bound de texto usa métrica de fonte (v20).
 - **`tbox_app_set_debug_damage` em vez de ler variável de ambiente** — a lib
   não lê o ambiente; os exemplos mapeiam `TBOX_DEBUG_DAMAGE=1` (v20).
+- **Camadas de composição como marcadores na display list**
+  (`LAYER_BEGIN`/`LAYER_MASK`/`LAYER_END`) em vez de uma árvore de camadas:
+  a display list continua plana, o damage tracker continua comparando op a
+  op, e o Output pinta a camada num buffer só do tamanho do conteúdo, com um
+  deslocamento inteiro (cada op sai igual ao da tela). O buffer é
+  pré-multiplicado no mesmo `uint32_t` da tela; como a tela é sempre opaca,
+  a mistura por canal não mudou e nenhum fixture antigo mudou de pixel, a
+  não ser os que dependiam de `opacity` op a op (2026-10-12).
+- **Quem ganha camada é decidido pela Style** (`tbox_style_needs_layer`):
+  `opacity` < 1, filtro que espalha, máscara, `mix-blend-mode`,
+  `isolation`. Um `filter` só de cor fica op a op (sem buffer). `opacity`
+  sempre vira camada: é o comportamento certo do CSS para filhos
+  sobrepostos, e o custo é um buffer do tamanho do elemento (2026-10-12).
+- **Repintura parcial sem cache de camadas**: uma camada é refeita, a cada
+  região suja, sobre a região inflada pelo alcance dos efeitos. Guardar o
+  buffer entre frames economizaria o blur, mas pediria invalidação por
+  camada; fica para quando o custo for medido como problema (2026-10-12).
 - **`backdrop-filter` como um op que reprocessa os pixels já pintados**
   (`TBOX_PAINT_BACKDROP_FILTER`): num raster em software, aplicar a matriz
   de cor ao buffer é barato e compatível com a repintura parcial, que sempre

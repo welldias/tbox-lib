@@ -2795,6 +2795,108 @@ static void tbox_style_init_layer(tbox_style_background_layer *layer) {
     layer->repeat_mode_x = layer->repeat_mode_y = TBOX_STYLE_BACKGROUND_REPEAT_REPEAT;
 }
 
+/* A <blend-mode> keyword; false (leaving `out` alone) for anything else. */
+static bool tbox_style_parse_blend_mode(tbox_string_view raw, tbox_style_blend_mode *out) {
+    static const char *const modes[] = { "normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn",
+                                         "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity" };
+    raw = tbox_style_trim(raw);
+    for (size_t m = 0; m < sizeof(modes) / sizeof(modes[0]); m++)
+        if (tbox_style_is(raw, modes[m])) {
+            *out = (tbox_style_blend_mode)m;
+            return true;
+        }
+    return false;
+}
+
+/* `mask` (shorthand: image, position / size, repeat, mode; its first
+ * comma-separated layer) and mask-image/-size/-position/-repeat/-mode,
+ * also with the -webkit- prefix. One layer only. */
+static void tbox_style_resolve_mask(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style) {
+    tbox_style_background_layer layer;
+    tbox_style_init_layer(&layer);
+    layer.size_kind = TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT;
+    bool luminance = false;
+    const char *prefixes[2] = { "", "-webkit-" };
+    for (int p = 0; p < 2; p++) {
+        char name[48];
+        snprintf(name, sizeof(name), "%smask", prefixes[p]);
+        const tbox_css_resolved_declaration *shorthand = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+        if (shorthand != NULL) {
+            tbox_string_view parts[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
+            size_t part_count = tbox_style_split_top_level(shorthand->value, ',', parts, TBOX_STYLE_MAX_BACKGROUND_LAYERS);
+            tbox_style_background_layer parsed;
+            tbox_style_init_layer(&parsed);
+            parsed.size_kind = TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT;
+            bool parsed_luminance = false;
+            tbox_string_view tokens[16];
+            size_t count = part_count > 0 ? tbox_style_tokens(parts[0], tokens, 16) : 0;
+            bool valid = count > 0;
+            for (size_t i = 0; valid && i < count;) {
+                if (tbox_style_is_position_token(tokens[i], units)) {
+                    size_t begin = i;
+                    while (i < count && i - begin < 4 && tbox_style_is_position_token(tokens[i], units)) i++;
+                    valid = tbox_style_parse_position(tokens + begin, i - begin, units, parsed.position);
+                    if (valid && i < count && tokens[i].size == 1 && tokens[i].data[0] == '/') {
+                        size_t size_start = ++i;
+                        while (i < count && i - size_start < 2 && (tbox_style_is(tokens[i], "auto") || tbox_style_is(tokens[i], "cover") || tbox_style_is(tokens[i], "contain") || tbox_style_is_position_token(tokens[i], units))) i++;
+                        valid = tbox_style_parse_background_size(tokens + size_start, i - size_start, units, &parsed.size_kind, parsed.size);
+                    }
+                } else if (tbox_style_is_repeat_token(tokens[i])) {
+                    size_t begin = i;
+                    while (i < count && i - begin < 2 && tbox_style_is_repeat_token(tokens[i])) i++;
+                    valid = tbox_style_parse_background_repeat(tokens + begin, i - begin, &parsed.repeat_x, &parsed.repeat_y, &parsed.repeat_mode_x, &parsed.repeat_mode_y);
+                } else if (tbox_style_is(tokens[i], "alpha") || tbox_style_is(tokens[i], "luminance") || tbox_style_is(tokens[i], "match-source")) {
+                    parsed_luminance = tbox_style_is(tokens[i], "luminance");
+                    i++;
+                } else if (tbox_style_is(tokens[i], "border-box") || tbox_style_is(tokens[i], "padding-box") || tbox_style_is(tokens[i], "content-box") ||
+                           tbox_style_is(tokens[i], "add") || tbox_style_is(tokens[i], "subtract") || tbox_style_is(tokens[i], "intersect") || tbox_style_is(tokens[i], "exclude")) {
+                    i++; /* origin/clip/composite: accepted, border-box/add used */
+                } else if (tbox_style_parse_background_image(tokens[i], units, style->color, parsed.image, &parsed.gradient)) {
+                    i++;
+                } else {
+                    valid = false;
+                }
+            }
+            if (valid) layer = parsed, luminance = parsed_luminance;
+        }
+        snprintf(name, sizeof(name), "%smask-image", prefixes[p]);
+        const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+        if (tbox_style_border_longhand_wins(decl, shorthand)) {
+            tbox_string_view parts[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
+            if (tbox_style_split_top_level(decl->value, ',', parts, TBOX_STYLE_MAX_BACKGROUND_LAYERS) > 0)
+                tbox_style_parse_background_image(parts[0], units, style->color, layer.image, &layer.gradient);
+        }
+        snprintf(name, sizeof(name), "%smask-size", prefixes[p]);
+        decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+        if (tbox_style_border_longhand_wins(decl, shorthand)) {
+            tbox_string_view tokens[4];
+            size_t n = tbox_style_tokens(decl->value, tokens, 4);
+            if (n > 0) tbox_style_parse_background_size(tokens, n, units, &layer.size_kind, layer.size);
+        }
+        snprintf(name, sizeof(name), "%smask-position", prefixes[p]);
+        decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+        if (tbox_style_border_longhand_wins(decl, shorthand)) {
+            tbox_string_view tokens[4];
+            size_t n = tbox_style_tokens(decl->value, tokens, 4);
+            if (n > 0) tbox_style_parse_position(tokens, n, units, layer.position);
+        }
+        snprintf(name, sizeof(name), "%smask-repeat", prefixes[p]);
+        decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+        if (tbox_style_border_longhand_wins(decl, shorthand)) {
+            tbox_string_view tokens[4];
+            size_t n = tbox_style_tokens(decl->value, tokens, 4);
+            if (n > 0) tbox_style_parse_background_repeat(tokens, n, &layer.repeat_x, &layer.repeat_y, &layer.repeat_mode_x, &layer.repeat_mode_y);
+        }
+        snprintf(name, sizeof(name), "%smask-mode", prefixes[p]);
+        decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(name));
+        if (tbox_style_border_longhand_wins(decl, shorthand))
+            luminance = tbox_style_is(tbox_style_trim(decl->value), "luminance");
+    }
+    style->has_mask       = layer.image[0] != '\0' || layer.gradient.kind != TBOX_STYLE_GRADIENT_NONE;
+    style->mask           = layer;
+    style->mask_luminance = luminance;
+}
+
 static void tbox_style_resolve_background(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style) {
     tbox_style_background_layer layers[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
     size_t layer_count = 1;
@@ -2959,13 +3061,10 @@ static void tbox_style_resolve_background(const tbox_css_computed_style *compute
      * over the layers. */
     decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("background-blend-mode"));
     if (decl != NULL) {
-        static const char *const modes[] = { "normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn",
-                                             "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity" };
         tbox_string_view parts[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
         size_t count = tbox_style_split_top_level(decl->value, ',', parts, TBOX_STYLE_MAX_BACKGROUND_LAYERS);
         for (size_t l = 0; count > 0 && l < (layer_count > 0 ? layer_count : 1); l++)
-            for (size_t m = 0; m < sizeof(modes) / sizeof(modes[0]); m++)
-                if (tbox_style_is(tbox_style_trim(parts[l % count]), modes[m])) layers[l].blend_mode = (tbox_style_blend_mode)m;
+            tbox_style_parse_blend_mode(parts[l % count], &layers[l].blend_mode);
     }
     style->background_blend_mode  = layers[0].blend_mode;
     style->background_layer_count = layer_count;
@@ -3309,20 +3408,18 @@ static bool tbox_style_parse_amount(tbox_string_view args, double default_amount
  * skipped; anything unknown invalidates the value. */
 static bool tbox_style_parse_shadow(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, int max_lengths, double out_lengths[4], tbox_css_rgba *out_color, bool *out_inset);
 
-static bool tbox_style_parse_filter(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, bool *out_has, double out[20], tbox_style_shadow drops[TBOX_STYLE_MAX_SHADOWS], size_t *out_drop_count) {
-    *out_drop_count = 0;
+static bool tbox_style_parse_filter(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, tbox_style_filter_list *out_list) {
+    tbox_style_filter_list list;
+    memset(&list, 0, sizeof(list));
     if (tbox_style_is(raw, "none")) {
-        *out_has = false;
-        tbox_style_matrix_identity(out);
+        *out_list = list;
         return true;
     }
     tbox_string_view functions[12];
     size_t count = tbox_style_tokens(raw, functions, 12);
     if (count == 0)
         return false;
-    double total[20];
-    tbox_style_matrix_identity(total);
-    bool any = false;
+    bool open_matrix = false; /* the last op is a matrix still taking functions */
     for (size_t f = 0; f < count; f++) {
         tbox_string_view args;
         double a, m[20];
@@ -3381,56 +3478,86 @@ static bool tbox_style_parse_filter(tbox_string_view raw, const tbox_style_units
                 m[r * 5 + 4] = 0.5 - 0.5 * a;
             }
         } else if (tbox_style_function_args(functions[f], "drop-shadow", &args)) {
-            /* <x> <y> [<blur>] [<color>]: kept aside, Style turns it into
-             * a box or text shadow (tbox_style_apply_drop_shadows). */
+            /* <x> <y> [<blur>] [<color>]; the blur is a radius, like
+             * text-shadow's: its standard deviation is half of it. */
             double lengths[4];
             tbox_css_rgba color;
             bool inset = false;
-            if (!tbox_style_parse_shadow(args, units, current_color, 3, lengths, &color, &inset) || inset)
+            if (!tbox_style_parse_shadow(args, units, current_color, 3, lengths, &color, &inset) || inset || lengths[2] < 0.0)
                 return false;
-            if (*out_drop_count < TBOX_STYLE_MAX_SHADOWS)
-                drops[(*out_drop_count)++] = (tbox_style_shadow){ lengths[0], lengths[1], lengths[2], 0.0, color, false };
+            if (list.count == TBOX_STYLE_MAX_FILTERS)
+                return false;
+            tbox_style_filter_op *op = &list.ops[list.count++];
+            op->kind   = TBOX_STYLE_FILTER_DROP_SHADOW;
+            op->shadow = (tbox_style_shadow){ lengths[0], lengths[1], lengths[2], 0.0, color, false };
+            list.spreads = true;
+            open_matrix  = false;
             continue;
-        } else if (tbox_style_function_args(functions[f], "blur", &args) || tbox_style_function_args(functions[f], "url", &args)) {
+        } else if (tbox_style_function_args(functions[f], "blur", &args)) {
+            double radius = 0.0;
+            tbox_style_length length;
+            if (tbox_style_trim(args).size > 0 && !tbox_style_is(args, "0")) {
+                if (!tbox_style_parse_length(args, units, &length) || length.kind != TBOX_STYLE_LENGTH_PX || length.value < 0.0)
+                    return false;
+                radius = length.value;
+            }
+            if (list.count == TBOX_STYLE_MAX_FILTERS)
+                return false;
+            tbox_style_filter_op *op = &list.ops[list.count++];
+            op->kind   = TBOX_STYLE_FILTER_BLUR;
+            op->radius = radius;
+            list.spreads = true;
+            open_matrix  = false;
+            continue;
+        } else if (tbox_style_function_args(functions[f], "url", &args)) {
             continue; /* not supported: skipped */
         } else {
             return false;
         }
+        if (!open_matrix) {
+            if (list.count == TBOX_STYLE_MAX_FILTERS)
+                return false;
+            tbox_style_filter_op *op = &list.ops[list.count++];
+            op->kind = TBOX_STYLE_FILTER_MATRIX;
+            tbox_style_matrix_identity(op->matrix);
+            open_matrix = true;
+        }
+        double *total = list.ops[list.count - 1].matrix;
         tbox_style_matrix_multiply(m, total, total);
-        any = true;
     }
-    *out_has = any;
-    memcpy(out, total, sizeof(total));
+    *out_list = list;
     return true;
 }
 
-/* `filter: drop-shadow()` approximated without an offscreen pass: an
- * element that paints a background or a border casts it like an outer
- * box-shadow (following border-radius); any other element casts its
- * text's shadow, which its descendants inherit like text-shadow. Each
- * shadow goes under the element's own ones. */
-static void tbox_style_apply_drop_shadows(tbox_style *style, const tbox_style_shadow *drops, size_t count) {
-    bool decorated = style->background_color.a > 0 || style->background_image[0] != '\0' ||
-                     style->background_gradient.kind != TBOX_STYLE_GRADIENT_NONE || style->background_layer_count > 1;
-    for (size_t side = 0; side < 4 && !decorated; side++)
-        decorated = tbox_style_border_side_width(style, side) > 0.0;
-    tbox_style_shadow *list = decorated ? style->box_shadows : style->text_shadows;
-    size_t *list_count      = decorated ? &style->box_shadow_count : &style->text_shadow_count;
-    for (size_t i = 0; i < count && *list_count < TBOX_STYLE_MAX_SHADOWS; i++)
-        list[(*list_count)++] = drops[i];
-    if (decorated && style->box_shadow_count > 0) {
-        style->box_shadow_offset_x = style->box_shadows[0].offset_x;
-        style->box_shadow_offset_y = style->box_shadows[0].offset_y;
-        style->box_shadow_blur     = style->box_shadows[0].blur;
-        style->box_shadow_spread   = style->box_shadows[0].spread;
-        style->box_shadow_color    = style->box_shadows[0].color;
-        style->box_shadow_inset    = style->box_shadows[0].inset;
-    } else if (!decorated && style->text_shadow_count > 0) {
-        style->text_shadow_offset_x = style->text_shadows[0].offset_x;
-        style->text_shadow_offset_y = style->text_shadows[0].offset_y;
-        style->text_shadow_blur     = style->text_shadows[0].blur;
-        style->text_shadow_color    = style->text_shadows[0].color;
+/* The color-only form of `list` for Render's op-by-op path: false when it
+ * has no matrix, or spreads (then the layer runs the whole list). */
+static bool tbox_style_filter_matrix_of(const tbox_style_filter_list *list, double out[20]) {
+    tbox_style_matrix_identity(out);
+    if (list->spreads)
+        return false;
+    bool any = false;
+    for (size_t i = 0; i < list->count; i++)
+        if (list->ops[i].kind == TBOX_STYLE_FILTER_MATRIX) {
+            tbox_style_matrix_multiply(list->ops[i].matrix, out, out);
+            any = true;
+        }
+    return any;
+}
+
+double tbox_style_filter_extent(const tbox_style_filter_list *filters) {
+    double extent = 0.0;
+    for (size_t i = 0; filters != NULL && i < filters->count; i++) {
+        const tbox_style_filter_op *op = &filters->ops[i];
+        if (op->kind == TBOX_STYLE_FILTER_BLUR)
+            extent += 3.0 * op->radius;
+        else if (op->kind == TBOX_STYLE_FILTER_DROP_SHADOW)
+            extent += fmax(fabs(op->shadow.offset_x), fabs(op->shadow.offset_y)) + 1.5 * op->shadow.blur;
     }
+    return ceil(extent);
+}
+
+bool tbox_style_needs_layer(const tbox_style *style) {
+    return style != NULL && (style->opacity < 1.0 || style->filters.spreads || style->mix_blend_mode != TBOX_STYLE_BLEND_NORMAL || style->has_mask || style->isolation_isolate);
 }
 
 /* ---- clip ---- */
@@ -4638,22 +4765,26 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
     tbox_style_resolve_extras(computed, &units, parent_style, &style);
     tbox_style_matrix_identity(style.filter_matrix);
     const tbox_css_resolved_declaration *filter = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("filter"));
-    if (filter != NULL) {
-        tbox_style_shadow drops[TBOX_STYLE_MAX_SHADOWS];
-        size_t drop_count = 0;
-        if (tbox_style_parse_filter(filter->value, &units, style.color, &style.has_filter, style.filter_matrix, drops, &drop_count))
-            tbox_style_apply_drop_shadows(&style, drops, drop_count);
-    }
-    tbox_style_matrix_identity(style.backdrop_filter_matrix);
+    memset(&style.filters, 0, sizeof(style.filters));
+    if (filter != NULL && tbox_style_parse_filter(filter->value, &units, style.color, &style.filters))
+        style.has_filter = tbox_style_filter_matrix_of(&style.filters, style.filter_matrix);
+    memset(&style.backdrop_filters, 0, sizeof(style.backdrop_filters));
+    style.has_backdrop_filter = false;
     const tbox_css_resolved_declaration *backdrop = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("backdrop-filter"));
     if (backdrop == NULL)
         backdrop = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("-webkit-backdrop-filter"));
-    if (backdrop != NULL) {
-        tbox_style_shadow drops[TBOX_STYLE_MAX_SHADOWS];
-        size_t drop_count = 0;
-        if (!tbox_style_parse_filter(backdrop->value, &units, style.color, &style.has_backdrop_filter, style.backdrop_filter_matrix, drops, &drop_count))
-            style.has_backdrop_filter = false;
+    if (backdrop != NULL && tbox_style_parse_filter(backdrop->value, &units, style.color, &style.backdrop_filters)) {
+        /* drop-shadow() has no meaning on a backdrop: dropped */
+        size_t kept = 0;
+        for (size_t i = 0; i < style.backdrop_filters.count; i++)
+            if (style.backdrop_filters.ops[i].kind != TBOX_STYLE_FILTER_DROP_SHADOW) style.backdrop_filters.ops[kept++] = style.backdrop_filters.ops[i];
+        style.backdrop_filters.count = kept;
+        style.has_backdrop_filter    = kept > 0;
     }
+    style.mix_blend_mode = TBOX_STYLE_BLEND_NORMAL;
+    const tbox_css_resolved_declaration *mix = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("mix-blend-mode"));
+    if (mix != NULL) tbox_style_parse_blend_mode(mix->value, &style.mix_blend_mode);
+    tbox_style_resolve_mask(computed, &units, &style);
     style.clip_path.center[0] = style.clip_path.center[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0, 0.0, 0, 0.0, 0.0 };
     const tbox_css_resolved_declaration *clip_path = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("clip-path"));
     if (clip_path != NULL)

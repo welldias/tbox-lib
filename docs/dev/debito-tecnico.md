@@ -231,16 +231,27 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 - **Toca:** `tbox_animation_resolve_frames` em
   `src/context/tbox_context_animation.c`.
 
-### Efeitos sem buffer separado
+### Camadas refeitas a cada repintura
 
-- **O que é:** sem pintar um elemento num buffer próprio, `drop-shadow()`
-  não segue a forma alfa do conteúdo e `background-blend-mode` mistura
-  também com o que está atrás do elemento quando o fundo é transparente (o
-  CSS isola o fundo num grupo). O mesmo limite já valia para `opacity` em
-  subárvores sobrepostas.
-- **Quando revisitar:** junto com `blur()`, `mix-blend-mode` e máscaras,
-  que pedem a mesma composição em camadas.
-- **Toca:** `src/render/tbox_render.c`, `src/output/tbox_raster.c`.
+- **O que é:** uma camada de composição não é guardada entre frames: cada
+  região suja que a toca refaz o buffer e os efeitos. Um blur grande custa
+  proporcional à área (~0,1 s em tela cheia num build Release), então uma
+  animação dentro de um elemento com blur grande, ou um `backdrop-filter`
+  com blur sobre conteúdo que muda, pesa em todo frame.
+- **Quando revisitar:** quando medido numa UI real; o caminho é guardar o
+  buffer da camada e só refazê-lo quando um op de dentro mudar.
+- **Toca:** `tbox_raster_paint_layer`, `tbox_raster_blur` em
+  `src/output/tbox_raster.c`.
+
+### `mask` com uma camada
+
+- **O que é:** só a primeira camada de `mask`/`mask-image` vale, com
+  `mask-origin`/`mask-clip` `border-box` e sem `mask-composite`;
+  `mask-mode: match-source` é alfa (não há SVG). `box-shadow`/`text-shadow`
+  com blur continuam em degraus, sem usar o blur gaussiano das camadas.
+- **Quando revisitar:** quando um caso real pedir máscaras compostas, ou
+  sombras mais fiéis.
+- **Toca:** `tbox_style_resolve_mask`, `tbox_render_push_box_shadow`.
 
 ## HTML Parser
 

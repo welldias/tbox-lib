@@ -190,7 +190,7 @@ void tbox_css_stylesheet_destroy(tbox_css_stylesheet *stylesheet);
 /* An `@supports` condition (the prelude, or the inside of an `@import`'s
  * `supports()`): `not`/`and`/`or`, `(property: value)` and `selector()`.
  * A declaration is true when tbox resolves the property; a few values it
- * can't honor (`display: grid`, `transform: rotate()`, `filter: blur()`)
+ * can't honor (`display: grid`, `transform: rotate()`, `filter: url()`)
  * are false. Any other function is false; malformed text is false. */
 bool tbox_css_supports(tbox_string_view condition);
 

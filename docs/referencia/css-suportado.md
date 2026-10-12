@@ -29,7 +29,7 @@ ignorados sem erro — o parser é tolerante.
 | X* | backface-visibility | Defines whether or not the back face of an element should be visible when facing the user |
 | X* | background | A shorthand property for all the background-* properties |
 | X | background-attachment | Sets whether a background image scrolls with the rest of the page, or is fixed |
-| X* | background-blend-mode | Specifies the blending mode of each background layer (color/image) |
+| X | background-blend-mode | Specifies the blending mode of each background layer (color/image) |
 | X* | background-clip | Defines how far the background (color or image) should extend within an element |
 | X | background-color | Specifies the background color of an element |
 | X* | background-image | Specifies one or more background images for an element |
@@ -228,15 +228,15 @@ ignorados sem erro — o parser é tolerante.
 | | marker-end | Points to a marker that will be drawn on the last vertex of an element's path |
 | | marker-mid | Points to a marker that will be drawn on all the middle vertices of an element's path |
 | | marker-start | Points to a marker that will be drawn on the first vertex of an element's path |
-| | mask | A shorthand property for mask-image, mask-mode, mask-repeat, mask-position, mask-clip, mask-origin, mask-size and mask-composite |
-| | mask-clip | Specifies which area is affected by a mask image |
+| X* | mask | A shorthand property for mask-image, mask-mode, mask-repeat, mask-position, mask-clip, mask-origin, mask-size and mask-composite |
+| X* | mask-clip | Specifies which area is affected by a mask image |
 | | mask-composite | Specifies a compositing operation used on the current mask layer with the mask layers below it |
-| | mask-image | Specifies an image to be used as a mask layer for an element |
-| | mask-mode | Specifies whether the mask layer image is treated as a luminance mask or as an alpha mask |
-| | mask-origin | Specifies the origin position (the mask position area) of a mask layer image |
-| | mask-position | Sets the starting position of a mask layer image (relative to the mask position area) |
-| | mask-repeat | Specifies how the mask layer image is repeated |
-| | mask-size | Specifies the size of a mask layer image |
+| X* | mask-image | Specifies an image to be used as a mask layer for an element |
+| X* | mask-mode | Specifies whether the mask layer image is treated as a luminance mask or as an alpha mask |
+| X* | mask-origin | Specifies the origin position (the mask position area) of a mask layer image |
+| X* | mask-position | Sets the starting position of a mask layer image (relative to the mask position area) |
+| X* | mask-repeat | Specifies how the mask layer image is repeated |
+| X* | mask-size | Specifies the size of a mask layer image |
 | | mask-type | Specifies whether an SVG <mask> element is treated as a luminance mask or as an alpha mask |
 | X | max-block-size | Sets the maximum size of an element in the block direction |
 | X | max-height | Sets the maximum height of an element |
@@ -247,7 +247,7 @@ ignorados sem erro — o parser é tolerante.
 | X | min-height | Sets the minimum height of an element |
 | X | min-inline-size | Sets the minimum size of an element in the inline direction |
 | X | min-width | Sets the minimum width of an element |
-| | mix-blend-mode | Specifies how an element's content should blend with its direct parent background |
+| X | mix-blend-mode | Specifies how an element's content should blend with its direct parent background |
 | X* | @namespace | Defines an XML namespace to be used in the style sheet |
 | X | object-fit | Specifies how the contents of a replaced element should be fitted to the box established by its used height and width |
 | X | object-position | Specifies the alignment of the replaced element inside its box |

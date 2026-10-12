@@ -2381,7 +2381,9 @@ int tbox_test_style_run(void) {
         tbox_css_stylesheet *sheet = parse_css_cstr("div { filter: invert(1) blur(2px); clip-path: circle(30px at left 10px top 20px);"
                                                     " background: url(a.png) 0 0 / 10px no-repeat, linear-gradient(red, blue), #fff; background-repeat: repeat-x; }");
         tbox_style style           = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.has_filter && style.filter_matrix[0] == -1.0 && style.filter_matrix[4] == 1.0 && style.filter_matrix[18] == 1.0);
+        /* blur() makes it a layer filter: no op-by-op matrix */
+        TBOX_TEST_ASSERT(!style.has_filter && style.filters.count == 2 && style.filters.ops[1].kind == TBOX_STYLE_FILTER_BLUR && style.filters.ops[1].radius == 2.0);
+        TBOX_TEST_ASSERT(style.filters.ops[0].matrix[0] == -1.0 && style.filters.ops[0].matrix[4] == 1.0 && style.filters.ops[0].matrix[18] == 1.0);
         TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_CIRCLE && style.clip_path.radius[0].value == 30.0);
         TBOX_TEST_ASSERT(style.clip_path.center[0].px_offset == 10.0 && style.clip_path.center[1].px_offset == 20.0);
         TBOX_TEST_ASSERT(style.background_layer_count == 3 && strcmp(style.background_image, "a.png") == 0 && style.background_size[0].value == 10.0);
@@ -2513,24 +2515,34 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
-    /* filter: drop-shadow() becomes a box shadow under the element's own
-     * ones when it paints a background/border, a text shadow otherwise;
-     * color functions in the same list still fold into the matrix. */
+    /* filter as an ordered list: consecutive color functions fold into one
+     * matrix, blur()/drop-shadow() keep their place and need a layer (no
+     * op-by-op matrix then); a color-only filter keeps has_filter. The
+     * backdrop list drops drop-shadow(). mix-blend-mode and mask-*. */
     {
-        tbox_html_document *doc = parse_html_cstr("<div>x</div><p>y</p>");
+        tbox_html_document *doc = parse_html_cstr("<div>x</div><p>y</p><i>z</i>");
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
-        const tbox_html_node *p = div->next_sibling;
+        const tbox_html_node *p = div->next_sibling, *i = p->next_sibling;
         tbox_css_stylesheet *sheet = parse_css_cstr(
-            "div { background: url(a.png), linear-gradient(red, blue), white; background-blend-mode: multiply, screen; box-shadow: 1px 1px red; filter: grayscale(1) drop-shadow(2px 3px 4px rgb(0, 0, 255)); }"
-            "p { color: rgb(0, 128, 0); filter: drop-shadow(1px 2px); backdrop-filter: blur(4px) grayscale(1); }");
+            "div { background: url(a.png), linear-gradient(red, blue), white; background-blend-mode: multiply, screen; box-shadow: 1px 1px red;"
+            " filter: grayscale(1) invert(1) drop-shadow(2px 3px 4px rgb(0, 0, 255)) blur(3px) sepia(1); mix-blend-mode: multiply; }"
+            "p { color: rgb(0, 128, 0); filter: brightness(2); backdrop-filter: blur(4px) drop-shadow(1px 1px red) grayscale(1);"
+            " -webkit-mask: linear-gradient(black, transparent) no-repeat 0 0 / 50% 100% luminance; }"
+            "i { mask-image: url(m.png); mask-size: cover; opacity: 0.5; }");
         tbox_style a = resolve_node(sheet, div, NULL);
         tbox_style b = resolve_node(sheet, p, NULL);
-        TBOX_TEST_ASSERT(a.box_shadow_count == 2 && a.box_shadows[1].offset_x == 2.0 && a.box_shadows[1].offset_y == 3.0 && a.box_shadows[1].blur == 4.0 && a.box_shadows[1].color.b == 255);
-        TBOX_TEST_ASSERT(a.has_filter && a.text_shadow_count == 0);
+        tbox_style c = resolve_node(sheet, i, NULL);
+        TBOX_TEST_ASSERT(a.filters.count == 4 && a.filters.spreads && !a.has_filter && a.box_shadow_count == 1);
+        TBOX_TEST_ASSERT(a.filters.ops[0].kind == TBOX_STYLE_FILTER_MATRIX && a.filters.ops[1].kind == TBOX_STYLE_FILTER_DROP_SHADOW && a.filters.ops[2].kind == TBOX_STYLE_FILTER_BLUR && a.filters.ops[3].kind == TBOX_STYLE_FILTER_MATRIX);
+        TBOX_TEST_ASSERT(a.filters.ops[1].shadow.offset_y == 3.0 && a.filters.ops[1].shadow.color.b == 255 && a.filters.ops[2].radius == 3.0);
+        /* 3 * 3px of blur + 3px offset + half of the 4px shadow blur * 3 */
+        TBOX_TEST_ASSERT(tbox_style_filter_extent(&a.filters) == 18.0 && tbox_style_needs_layer(&a) && a.mix_blend_mode == TBOX_STYLE_BLEND_MULTIPLY);
         /* three layers (the last is the color one): the list repeats */
         TBOX_TEST_ASSERT(a.background_layer_count == 3 && a.background_blend_mode == TBOX_STYLE_BLEND_MULTIPLY && a.background_layers[0].blend_mode == TBOX_STYLE_BLEND_SCREEN && a.background_layers[1].blend_mode == TBOX_STYLE_BLEND_MULTIPLY);
-        TBOX_TEST_ASSERT(b.has_backdrop_filter && fabs(b.backdrop_filter_matrix[0] - 0.2126) < 1e-6 && !a.has_backdrop_filter);
-        TBOX_TEST_ASSERT(b.box_shadow_count == 0 && b.text_shadow_count == 1 && b.text_shadows[0].offset_y == 2.0 && b.text_shadows[0].color.g == 128 && !b.has_filter);
+        TBOX_TEST_ASSERT(b.has_filter && !b.filters.spreads && b.filter_matrix[0] == 2.0 && !a.has_backdrop_filter);
+        TBOX_TEST_ASSERT(b.has_backdrop_filter && b.backdrop_filters.count == 2 && b.backdrop_filters.ops[0].kind == TBOX_STYLE_FILTER_BLUR && fabs(b.backdrop_filters.ops[1].matrix[0] - 0.2126) < 1e-6);
+        TBOX_TEST_ASSERT(b.has_mask && b.mask_luminance && b.mask.gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && !b.mask.repeat_x && b.mask.size[0].value == 50.0 && tbox_style_needs_layer(&b));
+        TBOX_TEST_ASSERT(c.has_mask && !c.mask_luminance && strcmp(c.mask.image, "m.png") == 0 && c.mask.size_kind == TBOX_STYLE_BACKGROUND_SIZE_COVER);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }

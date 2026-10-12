@@ -1288,12 +1288,16 @@ static void tbox_test_raster_backdrop_filter(int *failures_ptr) {
     int failures = *failures_ptr;
     uint32_t pixels[20 * 10];
     for (size_t i = 0; i < 20u * 10u; i++) pixels[i] = 0xFFFF0000u;
-    double invert[20] = { -1, 0, 0, 0, 1, 0, -1, 0, 0, 1, 0, 0, -1, 0, 1, 0, 0, 0, 1, 0 };
+    const double invert[20] = { -1, 0, 0, 0, 1, 0, -1, 0, 0, 1, 0, 0, -1, 0, 1, 0, 0, 0, 1, 0 };
+    tbox_style_filter_list filters = { 0 };
+    filters.count          = 1;
+    filters.ops[0].kind    = TBOX_STYLE_FILTER_MATRIX;
+    memcpy(filters.ops[0].matrix, invert, sizeof(invert));
     tbox_paint_op op = { 0 };
     op.kind          = TBOX_PAINT_BACKDROP_FILTER;
     op.rect          = (tbox_rect){ 0, 0, 10, 10 };
     op.color         = (tbox_css_rgba){ 0, 0, 0, 255 };
-    op.color_filter  = invert;
+    op.filters       = &filters;
     op.elliptical    = true;
     op.corner_radii[0] = op.corner_radii_y[0] = 5.0;
     tbox_display_list list = { &op, 1 };
@@ -1348,12 +1352,154 @@ static void tbox_test_raster_blend_modes(int *failures_ptr) {
     *failures_ptr = failures;
 }
 
+static tbox_paint_op tbox_test_layer_op(tbox_paint_op_kind kind) {
+    tbox_paint_op op = { 0 };
+    op.kind          = kind;
+    op.color         = (tbox_css_rgba){ 0, 0, 0, 255 };
+    return op;
+}
+
+static tbox_paint_op tbox_test_fill_op(tbox_rect rect, tbox_css_rgba color) {
+    tbox_paint_op op = { 0 };
+    op.kind          = TBOX_PAINT_FILL_RECT;
+    op.rect          = rect;
+    op.color         = color;
+    return op;
+}
+
+static unsigned tbox_test_channel(uint32_t pixel, int shift) {
+    return (pixel >> shift) & 0xFFu;
+}
+
+/* Compositing layers: group opacity (overlapping ops inside don't show
+ * through each other), blur spreading past the content, a drop shadow
+ * from the content's shape, alpha and luminance masks, mix-blend-mode,
+ * and the clip of the composite. */
+static void tbox_test_raster_layers(int *failures_ptr) {
+    int failures = *failures_ptr;
+    const int32_t w = 40, h = 20;
+    tbox_css_rgba red = { 220, 30, 30, 255 }, white = { 255, 255, 255, 255 }, black = { 0, 0, 0, 255 };
+    uint32_t *pixels = tbox_test_raster_make_buffer(w, h, 0xFFFFFFFFu);
+    TBOX_TEST_ASSERT(pixels != NULL);
+    if (pixels == NULL) return;
+
+    /* group opacity: a white square over red, all at 50%, stays white */
+    tbox_paint_op group[4] = { tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN), tbox_test_fill_op((tbox_rect){ 0, 0, 20, 20 }, red),
+                               tbox_test_fill_op((tbox_rect){ 5, 5, 10, 10 }, white), tbox_test_layer_op(TBOX_PAINT_LAYER_END) };
+    group[0].color.a = 128;
+    tbox_display_list list = { group, 4 };
+    tbox_raster_display_list(pixels, w, h, &list);
+    TBOX_TEST_ASSERT(pixels[10 * w + 10] == 0xFFFFFFFFu);
+    TBOX_TEST_ASSERT(tbox_test_channel(pixels[2 * w + 2], 16) >= 236 && tbox_test_channel(pixels[2 * w + 2], 16) <= 238 && tbox_test_channel(pixels[2 * w + 2], 8) >= 141 && tbox_test_channel(pixels[2 * w + 2], 8) <= 143);
+    TBOX_TEST_ASSERT(pixels[2 * w + 30] == 0xFFFFFFFFu);
+
+    /* blur(2px): the black square bleeds about 3 sigma past its edge */
+    tbox_style_filter_list blur = { 0 };
+    blur.count = 1, blur.spreads = true;
+    blur.ops[0].kind = TBOX_STYLE_FILTER_BLUR, blur.ops[0].radius = 2.0;
+    for (int32_t i = 0; i < w * h; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_paint_op blurred[3] = { tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN), tbox_test_fill_op((tbox_rect){ 10, 5, 10, 10 }, black), tbox_test_layer_op(TBOX_PAINT_LAYER_END) };
+    blurred[0].filters = &blur;
+    list = (tbox_display_list){ blurred, 3 };
+    tbox_raster_display_list(pixels, w, h, &list);
+    TBOX_TEST_ASSERT(tbox_test_channel(pixels[10 * w + 15], 16) < 40);
+    TBOX_TEST_ASSERT(tbox_test_channel(pixels[10 * w + 8], 16) > 120 && tbox_test_channel(pixels[10 * w + 8], 16) < 245);
+    TBOX_TEST_ASSERT(pixels[10 * w + 2] == 0xFFFFFFFFu && pixels[10 * w + 28] == 0xFFFFFFFFu);
+
+    /* drop-shadow(4px 0 blue): the shadow shows right of the red square */
+    tbox_style_filter_list shadow = { 0 };
+    shadow.count = 1, shadow.spreads = true;
+    shadow.ops[0].kind = TBOX_STYLE_FILTER_DROP_SHADOW;
+    shadow.ops[0].shadow = (tbox_style_shadow){ 4.0, 0.0, 0.0, 0.0, { 0, 0, 255, 255 }, false };
+    for (int32_t i = 0; i < w * h; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_paint_op dropped[3] = { tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN), tbox_test_fill_op((tbox_rect){ 5, 5, 5, 5 }, red), tbox_test_layer_op(TBOX_PAINT_LAYER_END) };
+    dropped[0].filters = &shadow;
+    list = (tbox_display_list){ dropped, 3 };
+    tbox_raster_display_list(pixels, w, h, &list);
+    TBOX_TEST_ASSERT(pixels[7 * w + 12] == 0xFF0000FFu && pixels[7 * w + 7] == 0xFFDC1E1Eu && pixels[7 * w + 15] == 0xFFFFFFFFu);
+
+    /* masks: alpha keeps the left half; luminance keeps under white only */
+    for (int luminance = 0; luminance < 2; luminance++) {
+        for (int32_t i = 0; i < w * h; i++) pixels[i] = 0xFFFFFFFFu;
+        tbox_paint_op masked[5] = { tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN), tbox_test_fill_op((tbox_rect){ 0, 0, 40, 20 }, red), tbox_test_layer_op(TBOX_PAINT_LAYER_MASK),
+                                    tbox_test_fill_op((tbox_rect){ 0, 0, 20, 20 }, luminance ? white : black), tbox_test_layer_op(TBOX_PAINT_LAYER_END) };
+        masked[2].mask_luminance = luminance != 0;
+        list = (tbox_display_list){ masked, 5 };
+        tbox_raster_display_list(pixels, w, h, &list);
+        TBOX_TEST_ASSERT(pixels[5 * w + 5] == 0xFFDC1E1Eu && pixels[5 * w + 30] == 0xFFFFFFFFu);
+    }
+    /* luminance of black is 0: nothing shows */
+    for (int32_t i = 0; i < w * h; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_paint_op dark[5] = { tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN), tbox_test_fill_op((tbox_rect){ 0, 0, 40, 20 }, red), tbox_test_layer_op(TBOX_PAINT_LAYER_MASK),
+                              tbox_test_fill_op((tbox_rect){ 0, 0, 20, 20 }, black), tbox_test_layer_op(TBOX_PAINT_LAYER_END) };
+    dark[2].mask_luminance = true;
+    list = (tbox_display_list){ dark, 5 };
+    tbox_raster_display_list(pixels, w, h, &list);
+    TBOX_TEST_ASSERT(pixels[5 * w + 5] == 0xFFFFFFFFu);
+
+    /* mix-blend-mode: multiply cyan over yellow is green; clipped to x < 20 */
+    tbox_paint_op blended[4] = { tbox_test_fill_op((tbox_rect){ 0, 0, 40, 20 }, (tbox_css_rgba){ 255, 255, 0, 255 }), tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN),
+                                 tbox_test_fill_op((tbox_rect){ 0, 0, 40, 20 }, (tbox_css_rgba){ 0, 255, 255, 255 }), tbox_test_layer_op(TBOX_PAINT_LAYER_END) };
+    blended[1].blend_mode = TBOX_STYLE_BLEND_MULTIPLY;
+    blended[1].has_clip   = true;
+    blended[1].clip       = (tbox_rect){ 0, 0, 20, 20 };
+    list = (tbox_display_list){ blended, 4 };
+    tbox_raster_display_list(pixels, w, h, &list);
+    TBOX_TEST_ASSERT(pixels[5 * w + 5] == 0xFF00FF00u && pixels[5 * w + 30] == 0xFFFFFF00u);
+
+    free(pixels);
+    *failures_ptr = failures;
+}
+
+/* Partial repaint with layers matches a full repaint: a square moving
+ * inside a blurred layer (the damage spreads with the blur), a layer's
+ * opacity changing, and content changing under a blurred backdrop. */
+static void tbox_test_raster_layer_damage(int *failures_ptr) {
+    const int32_t w = 240, h = 160;
+    tbox_css_rgba black = { 0, 0, 0, 255 }, gray = { 120, 120, 120, 255 }, red = { 220, 30, 30, 255 };
+    tbox_style_filter_list blur = { 0 };
+    blur.count = 1, blur.spreads = true;
+    blur.ops[0].kind = TBOX_STYLE_FILTER_BLUR, blur.ops[0].radius = 3.0;
+
+    /* the layer's bounds stay put (the big rect): only the blur reach of
+     * the changed square can repaint its halo */
+    tbox_paint_op a[6] = { tbox_test_fill_op((tbox_rect){ 0, 0, 240, 20 }, gray), tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN),
+                           tbox_test_fill_op((tbox_rect){ 20, 30, 150, 80 }, (tbox_css_rgba){ 200, 200, 200, 255 }),
+                           tbox_test_fill_op((tbox_rect){ 60, 50, 20, 20 }, black), tbox_test_layer_op(TBOX_PAINT_LAYER_END),
+                           tbox_test_fill_op((tbox_rect){ 200, 120, 10, 10 }, red) };
+    a[1].filters = &blur;
+    tbox_paint_op b[6];
+    memcpy(b, a, sizeof(a));
+    b[3].color = red;
+    tbox_display_list la = { a, 6 }, lb = { b, 6 };
+    tbox_test_damage_expect_equivalent(failures_ptr, &la, &lb, w, h, "square recolored in a blurred layer");
+
+    tbox_paint_op c[6], d[6];
+    memcpy(c, a, sizeof(a));
+    c[1].filters = NULL;
+    c[1].color.a = 200;
+    memcpy(d, c, sizeof(c));
+    d[1].color.a = 90;
+    tbox_display_list lc = { c, 6 }, ld = { d, 6 };
+    tbox_test_damage_expect_equivalent(failures_ptr, &lc, &ld, w, h, "layer opacity change");
+
+    tbox_paint_op e[3] = { tbox_test_fill_op((tbox_rect){ 100, 60, 8, 8 }, red), tbox_test_layer_op(TBOX_PAINT_BACKDROP_FILTER), tbox_test_fill_op((tbox_rect){ 0, 150, 10, 10 }, gray) };
+    e[1].rect    = (tbox_rect){ 90, 50, 40, 40 };
+    e[1].filters = &blur;
+    tbox_paint_op f[3];
+    memcpy(f, e, sizeof(e));
+    f[0].rect.x = 85; /* partly outside the backdrop, still within its blur reach */
+    tbox_display_list le = { e, 3 }, lf = { f, 3 };
+    tbox_test_damage_expect_equivalent(failures_ptr, &le, &lf, w, h, "content moving under a blurred backdrop");
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
     tbox_test_raster_fill_rect_basic(&failures);
     tbox_test_raster_backdrop_filter(&failures);
     tbox_test_raster_blend_modes(&failures);
+    tbox_test_raster_layers(&failures);
     tbox_test_raster_fill_rect_out_of_bounds(&failures);
     tbox_test_raster_fill_rect_paint_order(&failures);
     tbox_test_raster_fill_rect_alpha_blend(&failures);
@@ -1385,6 +1531,7 @@ int tbox_test_output_raster_run(void) {
         tbox_test_raster_text_run_basic(&failures, font_data, font_size);
         tbox_test_raster_display_list_matches_direct_calls(&failures, font_data, font_size);
         tbox_test_raster_damage_pixel_equivalence(&failures, font_data, font_size);
+        tbox_test_raster_layer_damage(&failures);
         free(font_data);
     } else {
         failures++;

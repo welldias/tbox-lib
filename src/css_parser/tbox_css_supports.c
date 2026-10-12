@@ -52,9 +52,10 @@ static const char *const tbox_css_supported_properties[] = {
     "justify-content", "left", "letter-spacing", "line-break", "line-clamp", "-webkit-line-clamp",
     "line-height", "list-style", "list-style-image", "list-style-position", "list-style-type", "margin",
     "margin-block", "margin-block-end", "margin-block-start", "margin-bottom", "margin-inline",
-    "margin-inline-end", "margin-inline-start", "margin-left", "margin-right", "margin-top",
+    "margin-inline-end", "margin-inline-start", "margin-left", "margin-right", "margin-top", "mask", "mask-clip", "mask-image",
+    "mask-mode", "mask-origin", "mask-position", "mask-repeat", "mask-size",
     "max-block-size", "max-height", "max-inline-size", "max-width", "min-block-size", "min-height",
-    "min-inline-size", "min-width", "object-fit", "object-position", "opacity", "order", "orphans",
+    "min-inline-size", "min-width", "mix-blend-mode", "object-fit", "object-position", "opacity", "order", "orphans",
     "outline", "outline-color", "outline-offset", "outline-style", "outline-width", "overflow",
     "overflow-anchor", "overflow-wrap", "overflow-x", "overflow-y", "overscroll-behavior",
     "overscroll-behavior-block", "overscroll-behavior-inline", "overscroll-behavior-x",
@@ -94,8 +95,7 @@ typedef struct tbox_css_unsupported_function {
 
 static const tbox_css_unsupported_function tbox_css_unsupported_functions[] = {
     { "transform", "rotate" }, { "transform", "scale" }, { "transform", "skew" }, { "transform", "matrix" },
-    { "transform", "perspective" }, { "filter", "blur" }, { "filter", "url" }, { "backdrop-filter", "blur" },
-    { "backdrop-filter", "url" }, { "backdrop-filter", "drop-shadow" },
+    { "transform", "perspective" }, { "filter", "url" }, { "backdrop-filter", "url" }, { "backdrop-filter", "drop-shadow" },
 };
 
 typedef struct tbox_css_supports_cursor {

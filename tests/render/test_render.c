@@ -1098,8 +1098,9 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
-    /* opacity multiplies the alpha of the box's and its descendants' ops,
-     * image ops included; 0 drops the whole subtree. */
+    /* opacity puts the box and its descendants on a compositing layer
+     * (LAYER_BEGIN carries it; the ops inside keep their own alpha); 0
+     * drops the whole subtree. */
     for (int hidden = 0; hidden < 2; hidden++) {
         tbox_style parent_style       = tbox_test_render_default_style();
         parent_style.background_color = (tbox_css_rgba){ 10, 20, 30, 200 };
@@ -1123,12 +1124,13 @@ int tbox_test_render_run(void) {
         if (hidden) {
             TBOX_TEST_ASSERT(list.count == 1 && list.items[0].color.a == 255);
         } else {
-            TBOX_TEST_ASSERT(list.count == 4);
-            if (list.count == 4) {
-                TBOX_TEST_ASSERT(list.items[0].color.a == 100);
-                TBOX_TEST_ASSERT(list.items[1].color.a == 128);
-                TBOX_TEST_ASSERT(list.items[2].kind == TBOX_PAINT_IMAGE && list.items[2].color.a == 128);
-                TBOX_TEST_ASSERT(list.items[3].color.a == 255);
+            TBOX_TEST_ASSERT(list.count == 6);
+            if (list.count == 6) {
+                TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_LAYER_BEGIN && list.items[0].color.a == 128 && list.items[0].filters == NULL);
+                TBOX_TEST_ASSERT(list.items[1].color.a == 200);
+                TBOX_TEST_ASSERT(list.items[2].color.a == 255);
+                TBOX_TEST_ASSERT(list.items[3].kind == TBOX_PAINT_IMAGE && list.items[3].color.a == 255);
+                TBOX_TEST_ASSERT(list.items[4].kind == TBOX_PAINT_LAYER_END && list.items[5].color.a == 255);
             }
         }
         tbox_arena_destroy(&arena);
@@ -1470,9 +1472,13 @@ int tbox_test_render_run(void) {
         kid.parent = &host, host.first_child = &kid;
         tbox_arena arena       = tbox_arena_create(0);
         tbox_display_list list = tbox_render_build_display_list(&arena, &root);
-        TBOX_TEST_ASSERT(list.count == 2);
-        if (list.count == 2)
-            TBOX_TEST_ASSERT(list.items[0].color.r == (isolate ? 50 : 60) && list.items[1].color.r == (isolate ? 60 : 50));
+        /* isolated: a layer around the host and its child */
+        size_t first = isolate ? 1 : 0;
+        TBOX_TEST_ASSERT(list.count == (isolate ? 4u : 2u));
+        if (list.count == (isolate ? 4u : 2u)) {
+            TBOX_TEST_ASSERT(list.items[first].color.r == (isolate ? 50 : 60) && list.items[first + 1].color.r == (isolate ? 60 : 50));
+            if (isolate) TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_LAYER_BEGIN && list.items[3].kind == TBOX_PAINT_LAYER_END);
+        }
         tbox_arena_destroy(&arena);
     }
 

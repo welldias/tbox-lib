@@ -270,8 +270,11 @@ bool tbox_context_date_commit(tbox_context *ctx, const tbox_html_node *node, tbo
         if (!tbox_context_week_monday(&date) || !tbox_context_date_allowed(node, date)) return false;
         int year, week;
         tbox_context_week_from_date(date, &year, &week);
-        char value[9];
-        snprintf(value, sizeof(value), "%04d-W%02d", year, week);
+        /* the value format (and tbox_context_week_parse) has a 4-digit year */
+        if (year < 1 || year > 9999 || week < 1 || week > 53) return false;
+        char value[16];
+        int length = snprintf(value, sizeof(value), "%04d-W%02d", year, week);
+        if (length != 8) return false;
         const tbox_html_attribute *old = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
         if (old != NULL && tbox_string_view_equal(old->value, tbox_string_view_make(value, 8))) return false;
         tbox_html_node_set_attribute(ctx->document, (tbox_html_node *)node,
@@ -294,14 +297,19 @@ bool tbox_context_date_commit(tbox_context *ctx, const tbox_html_node *node, tbo
                       tbox_context_date_attribute(node, "value", &previous)) &&
         tbox_context_date_compare(previous, date) == 0 &&
         (!datetime || (previous_hour == ctx->date_hour && previous_minute == ctx->date_minute))) return false;
-    char value[17];
+    /* 4-digit years only, like the parsers: navigating the calendar past
+     * 9999 must not commit a truncated value */
+    if (date.year < 1 || date.year > 9999) return false;
+    char value[48];
+    int length;
     if (datetime)
-        snprintf(value, sizeof(value), "%04d-%02d-%02dT%02d:%02d", date.year, date.month, date.day,
+        length = snprintf(value, sizeof(value), "%04d-%02d-%02dT%02d:%02d", date.year, date.month, date.day,
             ctx->date_hour, ctx->date_minute);
-    else if (month) snprintf(value, sizeof(value), "%04d-%02d", date.year, date.month);
-    else snprintf(value, sizeof(value), "%04d-%02d-%02d", date.year, date.month, date.day);
+    else if (month) length = snprintf(value, sizeof(value), "%04d-%02d", date.year, date.month);
+    else length = snprintf(value, sizeof(value), "%04d-%02d-%02d", date.year, date.month, date.day);
+    if (length != (datetime ? 16 : month ? 7 : 10)) return false;
     tbox_html_node_set_attribute(ctx->document, (tbox_html_node *)node,
-        tbox_string_view_make("value", 5), tbox_string_view_make(value, datetime ? 16 : month ? 7 : 10));
+        tbox_string_view_make("value", 5), tbox_string_view_make(value, (size_t)length));
     if (ctx->input_handler != NULL) {
         const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
         if (attribute != NULL) ctx->input_handler(ctx, (tbox_html_node *)node, attribute->value, ctx->input_userdata);

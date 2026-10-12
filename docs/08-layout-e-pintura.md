@@ -92,21 +92,17 @@ Regras que explicam a maior parte do comportamento:
   ancorados por `bottom` veem um containing block mais baixo que o real.
 - **Margens negativas** entre irmãos somam em vez de colapsar pelo algoritmo
   completo.
-- **Sombras e `blur`** são aproximados em degraus; `filter: blur()` é
-  ignorado.
-- **`filter: drop-shadow()`** não segue a forma alfa do conteúdo: num
-  elemento que pinta fundo ou borda, vira uma sombra de caixa (que segue o
-  `border-radius`) abaixo das próprias; senão, vira sombra do texto, que os
-  descendentes herdam como `text-shadow` (e que um `text-shadow` próprio
-  substitui).
-- **`backdrop-filter`** aplica só as funções de cor (`grayscale`, `sepia`,
-  `invert`, `brightness`…) ao que já está pintado atrás da border box (com
-  os cantos arredondados); `blur()`, `drop-shadow()` e `url()` são
-  ignorados.
-- **`background-blend-mode`** mistura cada camada de imagem/gradiente com
-  o que já está pintado sob ela — a cor de fundo e as camadas de baixo, mas
-  também o que está atrás do elemento quando o fundo é transparente (não há
-  grupo isolado). Os 16 modos de Compositing and Blending 1.
+- **`box-shadow` e `text-shadow` com blur** continuam aproximados em
+  degraus; o blur de `filter`, `drop-shadow()` e `backdrop-filter` é
+  gaussiano (três box blurs), numa [camada](#camadas-de-composição).
+- **`filter`**: `url()` é ignorado. Em `backdrop-filter`, `drop-shadow()`
+  também.
+- **`mask`** tem uma camada só (a primeira da lista), com `mask-origin` e
+  `mask-clip` sempre `border-box` e sem `mask-composite`; `mask-mode`
+  `match-source` é alfa (não há SVG `<mask>`).
+- **Blur tem custo proporcional à área**: refeito a cada frame em que a
+  região dele suja (uma animação dentro dele, por exemplo). Em tela cheia,
+  ~0,1 s por blur num build Release.
 - **`direction: rtl`** não reordena texto (não há bidi) nem move o
   marcador de lista, a barra de rolagem ou o eixo cruzado de um flex em
   coluna; `text-align-last: start`/`end` continuam físicos.
@@ -117,8 +113,7 @@ Detalhes e o motivo de cada um: [Débito técnico](dev/debito-tecnico.md#layout)
 ## Não implementado
 
 `float`, `grid`, rolagem horizontal de containers, `writing-mode` vertical,
-texto bidirecional, `columns`, `::before`/`::after`, transformações de
-rotação/escala.
+texto bidirecional, `columns`, transformações de rotação/escala.
 
 ## Da caixa ao desenho
 
@@ -133,14 +128,15 @@ do CSS e emite comandos (`tbox_paint_op`):
 | `GRADIENT` | Gradientes lineares/radiais (e `repeating-`) |
 | `FILL_RING` | Retângulo arredondado menos outro (bordas e contornos arredondados, sombras `inset`) |
 | `WAVY_LINE` | `text-decoration-style: wavy` |
-| `BACKDROP_FILTER` | `backdrop-filter`: aplica `color_filter` aos pixels já pintados na forma |
+| `BACKDROP_FILTER` | `backdrop-filter`: aplica a lista de `filters` aos pixels já pintados na forma |
+| `LAYER_BEGIN` / `LAYER_MASK` / `LAYER_END` | [camada de composição](#camadas-de-composição) |
 
 Cada op carrega retângulo, cor, `clip` (recorte de overflow) e, se preciso,
 `rounded_clip` (cantos arredondados, `clip-path`; o `clip: rect()` legado
 de caixas `absolute`/`fixed` vira um `clip-path: inset()` equivalente na
-Style) e matriz de cor
-(`filter`, `opacity`); `IMAGE`/`GRADIENT` levam também o
-`background-blend-mode` da camada.
+Style) e matriz de cor (`filter` só de cor); `IMAGE`/`GRADIENT` levam
+também o `background-blend-mode` da camada. `opacity` e os filtros que
+espalham vão no `LAYER_BEGIN` da [camada](#camadas-de-composição).
 
 ### Ordem de pintura
 
@@ -152,8 +148,9 @@ flowchart LR
     D --> E[z-index positivo<br/>em ordem crescente]
 ```
 
-Criam contexto de empilhamento: a raiz, caixas posicionadas com `z-index`,
-caixas com `opacity` < 1 e caixas com `isolation: isolate`. Dentro de um contexto, empate é resolvido pela
+Criam contexto de empilhamento: a raiz, caixas posicionadas com `z-index`
+e caixas com camada de composição (`opacity` < 1, `filter`,
+`mix-blend-mode`, `mask`, `isolation: isolate`) ou com `backdrop-filter`. Dentro de um contexto, empate é resolvido pela
 ordem da árvore. O hit-test usa a mesma ordem
 ([Eventos](06-eventos-e-interatividade.md#hit-test)).
 
@@ -168,3 +165,50 @@ O Output rasteriza a display list em software num buffer XRGB8888
 (`uint32_t` por pixel, sempre opaco), com antialiasing de glifos e cantos.
 Não há GPU. A repintura de um frame pode ser parcial; ver
 [Atualização da tela](05-atualizacao-da-tela.md).
+
+### Camadas de composição
+
+Alguns efeitos só existem sobre o elemento **inteiro**, já pintado: o blur
+espalha pixels vizinhos, a sombra de `drop-shadow()` segue a forma alfa do
+conteúdo, `opacity` funde o grupo antes de deixá-lo transparente,
+`mix-blend-mode` e `mask-image` combinam o grupo com o fundo. Para eles o
+Render embrulha os ops do elemento (sombras, fundo, borda, texto, filhos e
+os posicionados do seu contexto) entre dois marcadores:
+
+```
+LAYER_BEGIN (efeitos, recorte de composição)
+  ...ops do elemento e da subárvore...
+  [LAYER_MASK  ...ops que pintam a máscara...]
+LAYER_END
+```
+
+No `LAYER_BEGIN`, o Output aloca um buffer transparente (RGBA
+pré-multiplicado, o mesmo `uint32_t`, com o alfa no byte de cima) do
+tamanho dos ops contidos mais o alcance dos efeitos, e desenha neles com
+um deslocamento inteiro, então cada op sai igual ao que sairia na tela. No
+`LAYER_MASK`, os ops seguintes vão para um segundo buffer, a máscara. No
+`LAYER_END`, aplica na ordem do CSS: filtros (`filter`, na ordem das
+funções: matriz de cor, `blur()`, `drop-shadow()`), máscara, `opacity` e,
+na composição com o buffer de baixo, o `mix-blend-mode` e o recorte
+(`clip-path` e o overflow dos ancestrais). Camadas aninham; a tela é a
+camada de baixo de todas, sempre opaca.
+
+Quem ganha camada (`tbox_style_needs_layer`): `opacity` < 1, `filter` com
+`blur()` ou `drop-shadow()`, `mix-blend-mode` diferente de `normal`,
+`mask-image` e `isolation: isolate`. Um `filter` só de funções de cor
+continua aplicado op a op, sem buffer. Todo elemento com camada é um
+contexto de empilhamento, para que a subárvore inteira caia entre os
+marcadores. O fundo de um elemento com `background-blend-mode` também vai
+para uma camada própria, só dele (o grupo isolado do CSS).
+
+`backdrop-filter` não precisa de camada: o op `BACKDROP_FILTER` aplica a
+mesma lista de filtros aos pixels já pintados do buffer atual — a tela ou
+a camada do ancestral mais próximo, que é a raiz de backdrop do CSS.
+
+**Repintura parcial.** O damage tracker dá ao `LAYER_BEGIN` o retângulo de
+tudo o que a camada pode tocar, e infla os ops de dentro pelo alcance dos
+efeitos que espalham (blur, sombra): mudar um op dentro de um blur suja
+também a vizinhança. Ao repintar uma região, a camada é refeita sobre a
+região inflada pelo alcance e composta só dentro da região. Um
+`backdrop-filter` com blur lê pixels fora do próprio retângulo: se a região
+suja o toca, ela cresce até cobrir tudo o que ele lê.

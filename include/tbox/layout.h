@@ -74,6 +74,7 @@ typedef struct tbox_layout_box {
      * there is none or it failed to load. */
     const tbox_image *background_image;
     const tbox_image *background_layer_images[3]; /* style->background_layers' images, same convention */
+    const tbox_image *mask_image;                 /* style->mask's image, same convention */
     bool table_suppress_border;   /* collapsed tables paint shared edges once */
     bool empty_cell_hidden;       /* `empty-cells: hide` on an empty cell: no background or border */
     struct tbox_table_edge *table_edges;

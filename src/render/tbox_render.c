@@ -487,12 +487,12 @@ static tbox_rect tbox_render_intersect(tbox_rect a, tbox_rect b) {
  * per background-repeat, and clipped to `clip_box` (background-clip) with
  * its rounded corners. A gradient has no intrinsic size: it fills the
  * padding box unless background-size says otherwise. */
-static void tbox_render_push_background_image(tbox_vector *items, const tbox_layout_box *box, const tbox_style_background_layer *layer, const tbox_image *image, tbox_rect clip_box, const double clip_h[4], const double clip_v[4], bool rounded, tbox_rect viewport) {
+static void tbox_render_push_background_image(tbox_vector *items, const tbox_layout_box *box, const tbox_style_background_layer *layer, const tbox_image *image, tbox_rect clip_box, const double clip_h[4], const double clip_v[4], bool rounded, tbox_rect viewport, tbox_style_background_origin origin) {
     const tbox_style *style  = box->style;
     bool gradient            = layer->gradient.kind != TBOX_STYLE_GRADIENT_NONE;
     tbox_style_background_repeat mode_x = layer->repeat_mode_x == TBOX_STYLE_BACKGROUND_REPEAT_NO_REPEAT && layer->repeat_x ? TBOX_STYLE_BACKGROUND_REPEAT_REPEAT : layer->repeat_mode_x;
     tbox_style_background_repeat mode_y = layer->repeat_mode_y == TBOX_STYLE_BACKGROUND_REPEAT_NO_REPEAT && layer->repeat_y ? TBOX_STYLE_BACKGROUND_REPEAT_REPEAT : layer->repeat_mode_y;
-    tbox_rect area           = layer->attachment_fixed && viewport.width > 0.0 && viewport.height > 0.0 ? viewport : style->background_origin == TBOX_STYLE_BACKGROUND_ORIGIN_BORDER_BOX ? box->border_box : style->background_origin == TBOX_STYLE_BACKGROUND_ORIGIN_CONTENT_BOX ? box->content_box : box->padding_box;
+    tbox_rect area           = layer->attachment_fixed && viewport.width > 0.0 && viewport.height > 0.0 ? viewport : origin == TBOX_STYLE_BACKGROUND_ORIGIN_BORDER_BOX ? box->border_box : origin == TBOX_STYLE_BACKGROUND_ORIGIN_CONTENT_BOX ? box->content_box : box->padding_box;
     if ((!gradient && (image == NULL || image->width <= 0 || image->height <= 0)) || area.width <= 0.0 || area.height <= 0.0 || clip_box.width <= 0.0 || clip_box.height <= 0.0)
         return;
 
@@ -596,11 +596,12 @@ static bool tbox_render_is_z_box(const tbox_layout_box *box) {
     return box->style != NULL && box->style->position != TBOX_STYLE_POSITION_STATIC && !box->style->z_index_auto;
 }
 
-/* A stacking context root: a z-index box, one with opacity below 1 --
- * opacity fades the whole subtree, z-indexed descendants included -- or
- * one with `isolation: isolate`. */
+/* A stacking context root: a z-index box, or one on a compositing layer
+ * (opacity, filter, mask, mix-blend-mode, isolation -- the layer holds the
+ * whole subtree, z-indexed descendants included), with a color filter or
+ * with backdrop-filter, as in CSS. */
 static bool tbox_render_is_context(const tbox_layout_box *box) {
-    return tbox_render_is_z_box(box) || (box->style != NULL && (box->style->opacity < 1.0 || box->style->isolation_isolate));
+    return tbox_render_is_z_box(box) || (box->style != NULL && (tbox_style_needs_layer(box->style) || box->style->has_filter || box->style->has_backdrop_filter));
 }
 
 /* A positioned box: painted by its stacking context after the in-flow
@@ -809,8 +810,13 @@ static void tbox_render_push_rounded_dashes(tbox_vector *items, tbox_rect border
 }
 
 static void tbox_render_apply_filter(tbox_vector *items, size_t start, const double m[20], tbox_arena *arena) {
+    bool in_mask = false; /* a mask is never filtered */
     for (size_t i = start; i < items->length; i++) {
         tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, i);
+        if (op->kind == TBOX_PAINT_LAYER_MASK) in_mask = true;
+        else if (op->kind == TBOX_PAINT_LAYER_END) in_mask = false;
+        if (in_mask || op->kind == TBOX_PAINT_LAYER_BEGIN || op->kind == TBOX_PAINT_LAYER_MASK || op->kind == TBOX_PAINT_LAYER_END || op->kind == TBOX_PAINT_BACKDROP_FILTER)
+            continue;
         if (op->kind == TBOX_PAINT_IMAGE || op->kind == TBOX_PAINT_GRADIENT) {
             if (op->color_filter == NULL) {
                 op->color_filter = m;
@@ -837,7 +843,7 @@ static void tbox_render_apply_filter(tbox_vector *items, size_t start, const dou
 /* `clip-path`: the shape as a rounded clip on every op of the subtree.
  * An op that already has a rounded clip (a rounded background) keeps it
  * and is only clipped to the shape's bounding box. */
-static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, const tbox_layout_box *box) {
+static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, size_t end, const tbox_layout_box *box) {
     const tbox_style_clip_path *clip = &box->style->clip_path;
     tbox_rect area = box->border_box, shape;
     double h[4] = { 0.0, 0.0, 0.0, 0.0 }, v[4] = { 0.0, 0.0, 0.0, 0.0 };
@@ -868,7 +874,7 @@ static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, const 
     }
     if (shape.width < 0.0) shape.width = 0.0;
     if (shape.height < 0.0) shape.height = 0.0;
-    for (size_t i = start; i < items->length; i++) {
+    for (size_t i = start; i < end; i++) {
         tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, i);
         if (!op->has_rounded_clip) {
             tbox_render_set_rounded_clip(op, shape, h, v);
@@ -1024,8 +1030,24 @@ static void tbox_render_push_emphasis(tbox_vector *items, const tbox_layout_text
     }
 }
 
+/* A layer marker op (LAYER_BEGIN/MASK/END), appended. */
+static tbox_paint_op *tbox_render_push_marker(tbox_vector *items, tbox_paint_op_kind kind) {
+    tbox_paint_op *op = (tbox_paint_op *)tbox_vector_push(items);
+    if (op != NULL) {
+        *op       = (tbox_paint_op){ 0 };
+        op->kind  = kind;
+        op->color = (tbox_css_rgba){ 0, 0, 0, 255 };
+    }
+    return op;
+}
+
 static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool has_clip, tbox_rect clip, tbox_arena *arena, tbox_rect viewport) {
     size_t own_start  = items->length;
+    /* A compositing layer wraps everything this box and its subtree emit;
+     * the effects ride on the LAYER_BEGIN, filled in at the end. */
+    bool layered = box->style != NULL && tbox_style_needs_layer(box->style);
+    if (layered)
+        tbox_render_push_marker(items, TBOX_PAINT_LAYER_BEGIN);
     bool visible      = box->style == NULL || !box->style->visibility_hidden;
     bool decorated    = visible && !box->empty_cell_hidden;
     double corners[4] = { 0.0, 0.0, 0.0, 0.0 }, corners_y[4] = { 0.0, 0.0, 0.0, 0.0 };
@@ -1054,7 +1076,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
             op->kind         = TBOX_PAINT_BACKDROP_FILTER;
             op->rect         = box->border_box;
             op->color        = (tbox_css_rgba){ 0, 0, 0, 255 };
-            op->color_filter = box->style->backdrop_filter_matrix;
+            op->filters      = &box->style->backdrop_filters;
             op->elliptical   = true;
             for (size_t i = 0; i < 4; i++) {
                 op->corner_radii[i]   = corners[i];
@@ -1092,7 +1114,15 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     }
 
     /* Background color, then the image layer, then inset shadows, all
-     * under the border. */
+     * under the border. With a background-blend-mode the color and the
+     * images paint in a layer of their own: they blend only with each
+     * other, as CSS isolates them. */
+    bool blend_group = false;
+    for (size_t l = 0; decorated && box->style != NULL && l < (box->style->background_layer_count > 1 ? box->style->background_layer_count : 1); l++)
+        if ((l == 0 ? box->style->background_blend_mode : box->style->background_layers[l - 1].blend_mode) != TBOX_STYLE_BLEND_NORMAL)
+            blend_group = true;
+    if (blend_group)
+        tbox_render_push_marker(items, TBOX_PAINT_LAYER_BEGIN);
     if (decorated && box->style != NULL) {
         if (box->style->background_color.a != 0) {
             if (rounded)
@@ -1106,7 +1136,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         for (size_t l = box->style->background_layer_count > 1 ? box->style->background_layer_count : 1; l > 1; l--) {
             const tbox_style_background_layer *layer = &box->style->background_layers[l - 2];
             if (layer->image[0] != '\0' || layer->gradient.kind != TBOX_STYLE_GRADIENT_NONE)
-                tbox_render_push_background_image(items, box, layer, box->background_layer_images[l - 2], background_box, background_h, background_v, rounded, viewport);
+                tbox_render_push_background_image(items, box, layer, box->background_layer_images[l - 2], background_box, background_h, background_v, rounded, viewport, box->style->background_origin);
         }
         if (box->style->background_image[0] != '\0' || box->style->background_gradient.kind != TBOX_STYLE_GRADIENT_NONE) {
             tbox_style_background_layer *first = (tbox_style_background_layer *)tbox_arena_alloc(arena, sizeof(tbox_style_background_layer));
@@ -1124,9 +1154,11 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
                 first->repeat_mode_y = box->style->background_repeat_mode_y;
                 first->attachment_fixed = box->style->background_attachment_fixed;
                 first->blend_mode       = box->style->background_blend_mode;
-                tbox_render_push_background_image(items, box, first, box->background_image, background_box, background_h, background_v, rounded, viewport);
+                tbox_render_push_background_image(items, box, first, box->background_image, background_box, background_h, background_v, rounded, viewport, box->style->background_origin);
             }
         }
+        if (blend_group)
+            tbox_render_push_marker(items, TBOX_PAINT_LAYER_END);
         for (size_t s = shadow_count; s > 0; s--)
             if (shadows[s - 1].inset && shadows[s - 1].color.a != 0)
                 tbox_render_push_inset_shadow(items, box->padding_box, padding_h, padding_v, &shadows[s - 1]);
@@ -1515,22 +1547,32 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
 
     if (box->style != NULL && box->style->has_filter)
         tbox_render_apply_filter(items, own_start, box->style->filter_matrix, arena);
+    /* clip-path: on a layer it clips the composite (after the filter, as
+     * CSS orders them); otherwise every op of the subtree. */
     if (box->style != NULL && box->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_NONE)
-        tbox_render_apply_clip_path(items, own_start, box);
+        tbox_render_apply_clip_path(items, own_start, layered ? own_start + 1 : items->length, box);
 
-    /* opacity: every op this box and its subtree emitted fades by the
-     * same factor. Each op is blended on its own, so overlapping
-     * descendants show through each other -- not a true offscreen
-     * group, see tbox_style.opacity. Fully transparent drops them. */
-    if (box->style != NULL && box->style->opacity < 1.0) {
-        if (box->style->opacity <= 0.0) {
-            items->length = own_start;
-        } else {
-            for (size_t i = own_start; i < items->length; i++) {
-                tbox_paint_op *op = tbox_vector_at(items, i);
-                op->color.a       = (unsigned char)(op->color.a * box->style->opacity + 0.5);
+    /* Fully transparent: nothing of the subtree paints. */
+    if (box->style != NULL && box->style->opacity <= 0.0) {
+        items->length = own_start;
+        return;
+    }
+    if (layered) {
+        tbox_paint_op *begin = (tbox_paint_op *)tbox_vector_at(items, own_start);
+        begin->color.a       = (unsigned char)(box->style->opacity * 255.0 + 0.5);
+        begin->blend_mode    = box->style->mix_blend_mode;
+        begin->filters       = box->style->filters.spreads ? &box->style->filters : NULL;
+        if (box->style->has_mask) {
+            tbox_paint_op *mask = tbox_render_push_marker(items, TBOX_PAINT_LAYER_MASK);
+            if (mask != NULL) mask->mask_luminance = box->style->mask_luminance;
+            size_t mask_start = items->length;
+            tbox_render_push_background_image(items, box, &box->style->mask, box->mask_image, box->border_box, corners, corners_y, false, viewport, TBOX_STYLE_BACKGROUND_ORIGIN_BORDER_BOX);
+            for (size_t i = mask_start; i < items->length; i++) {
+                tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, i);
+                op->blend_mode    = TBOX_STYLE_BLEND_NORMAL;
             }
         }
+        tbox_render_push_marker(items, TBOX_PAINT_LAYER_END);
     }
 }
 

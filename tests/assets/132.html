@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .row {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .card {
+      width: 120px;
+      padding: 10px;
+      background: #2563eb;
+      color: white;
+      font-weight: bold;
+    }
+
+    /* opacity de grupo: o texto branco continua branco sobre o fundo */
+    .faded {
+      opacity: 0.5;
+    }
+
+    .faded span {
+      display: block;
+      margin-top: 6px;
+      padding: 4px;
+      background: white;
+      color: #2563eb;
+    }
+
+    /* blur() de verdade, e encadeado com cor */
+    .blur {
+      filter: blur(3px);
+    }
+
+    .blur-gray {
+      filter: blur(1px) grayscale(1);
+    }
+
+    /* drop-shadow segue a forma: cantos arredondados e o texto */
+    .badge {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #f59e0b;
+      filter: drop-shadow(4px 6px 4px rgba(15, 23, 42, 0.6));
+    }
+
+    .shadow-text {
+      font-size: 30px;
+      font-weight: bold;
+      color: #16a34a;
+      filter: drop-shadow(3px 3px 2px rgba(0, 0, 0, 0.5));
+    }
+
+    /* mask-image: gradiente que apaga a direita, e uma imagem */
+    .fade-out {
+      width: 220px;
+      padding: 10px;
+      background: #7c3aed;
+      color: white;
+      mask-image: linear-gradient(90deg, black 40%, transparent);
+    }
+
+    .star {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #ef4444, #3b82f6);
+      -webkit-mask: url(mask-star.png) center / contain no-repeat;
+    }
+
+    /* mix-blend-mode sobre o fundo listrado */
+    .stage {
+      display: flex;
+      gap: 10px;
+      padding: 10px;
+      background: repeating-linear-gradient(90deg, #fde047 0 20px, #0ea5e9 20px 40px);
+    }
+
+    .stage div {
+      width: 70px;
+      height: 50px;
+      background: #dc2626;
+      color: white;
+      font-size: 12px;
+      padding: 4px;
+      box-sizing: border-box;
+    }
+
+    .multiply { mix-blend-mode: multiply; }
+    .screen { mix-blend-mode: screen; }
+    .difference { mix-blend-mode: difference; }
+
+    /* isolation: o filho só mistura com o grupo isolado */
+    .stage .isolated {
+      isolation: isolate;
+      background: white;
+      padding: 5px;
+    }
+
+    /* backdrop-filter com blur (vidro fosco) */
+    .scene {
+      position: relative;
+      width: 480px;
+      height: 100px;
+      background: repeating-linear-gradient(45deg, #0f172a 0 10px, #f8fafc 10px 20px);
+    }
+
+    .frosted {
+      position: absolute;
+      left: 40px;
+      top: 20px;
+      width: 200px;
+      height: 60px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(6px);
+      font-weight: bold;
+      text-align: center;
+      line-height: 60px;
+    }
+
+    .frosted.tint {
+      left: 260px;
+      backdrop-filter: blur(3px) sepia(1);
+    }
+
+    /* background-blend-mode isolado num fundo transparente */
+    .tile {
+      width: 120px;
+      height: 50px;
+      background: linear-gradient(90deg, #ef4444, #3b82f6), linear-gradient(#fde047, #fde047);
+      background-blend-mode: multiply;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Camadas de composição</h1>
+
+  <h2>opacity de grupo, blur(), blur + grayscale</h2>
+  <div class="row">
+    <div class="card faded">50%<span>texto</span></div>
+    <div class="card blur">blur(3px)</div>
+    <div class="card blur-gray">blur + cinza</div>
+  </div>
+
+  <h2>drop-shadow() na forma</h2>
+  <div class="row">
+    <div class="badge"></div>
+    <div class="shadow-text">Sombra no texto</div>
+  </div>
+
+  <h2>mask-image e -webkit-mask</h2>
+  <div class="row">
+    <div class="fade-out">Este texto some aos poucos para a direita</div>
+    <div class="star"></div>
+  </div>
+
+  <h2>mix-blend-mode e isolation</h2>
+  <div class="stage">
+    <div class="multiply">multiply</div>
+    <div class="screen">screen</div>
+    <div class="difference">difference</div>
+    <div class="isolated"><div class="multiply" style="width: 60px">isolado</div></div>
+  </div>
+
+  <h2>backdrop-filter: blur()</h2>
+  <div class="scene">
+    <div class="frosted">blur(6px)</div>
+    <div class="frosted tint">blur + sepia</div>
+  </div>
+
+  <h2>background-blend-mode isolado</h2>
+  <div class="tile"></div>
+</body>
+
+</html>

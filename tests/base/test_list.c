@@ -67,10 +67,11 @@ int tbox_test_list_run(void) {
 
         tbox_list_remove(&items[1].node);
 
-        int values[2];
-        int index = 0;
+        int values[2] = { -1, -1 };
+        int index     = 0;
         TBOX_LIST_FOR_EACH(cursor, &list) {
-            values[index++] = TBOX_LIST_ENTRY(cursor, tbox_test_item, node)->value;
+            if (index < 2) values[index] = TBOX_LIST_ENTRY(cursor, tbox_test_item, node)->value;
+            index++;
         }
         TBOX_TEST_ASSERT(index == 2);
         TBOX_TEST_ASSERT(values[0] == 0);

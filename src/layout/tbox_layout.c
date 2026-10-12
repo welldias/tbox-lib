@@ -23,6 +23,8 @@ static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images) {
             for (size_t l = 1; l < style->background_layer_count && l < 4 && images != NULL; l++)
                 if (style->background_layers[l - 1].image[0] != '\0')
                     box->background_layer_images[l - 1] = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->background_layers[l - 1].image));
+            if (style->has_mask && style->mask.image[0] != '\0' && images != NULL)
+                box->mask_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->mask.image));
             double dx = tbox_style_length_resolve(style->translate_x, box->border_box.width);
             double dy = tbox_style_length_resolve(style->translate_y, box->border_box.height);
             if (dx != 0.0 || dy != 0.0)

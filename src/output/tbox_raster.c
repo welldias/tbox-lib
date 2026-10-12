@@ -42,9 +42,14 @@ static unsigned char tbox_raster_blend_channel(unsigned char src, unsigned char 
 }
 
 /* Alpha-blends `color` (with combined alpha `alpha`, already the product of
- * whatever coverage/opacity terms apply -- see callers) over `dst_pixel`
- * (an XRGB8888 pixel), returning the new XRGB8888 pixel. alpha <= 0 returns
- * `dst_pixel` unchanged; alpha >= 1 returns a plain opaque overwrite. */
+ * whatever coverage/opacity terms apply -- see callers) over `dst_pixel`,
+ * returning the new pixel. alpha <= 0 returns `dst_pixel` unchanged;
+ * alpha >= 1 returns a plain opaque overwrite.
+ *
+ * Pixels are ARGB8888 with premultiplied color: the screen buffer is
+ * always opaque (alpha 0xFF, so premultiplied and straight agree), while a
+ * compositing layer starts transparent. Source-over is the same formula
+ * per color channel either way; only the alpha byte needs computing. */
 static uint32_t tbox_raster_blend_pixel(uint32_t dst_pixel, tbox_css_rgba color, double alpha) {
     if (alpha <= 0.0) {
         return dst_pixel;
@@ -56,12 +61,34 @@ static uint32_t tbox_raster_blend_pixel(uint32_t dst_pixel, tbox_css_rgba color,
     unsigned char dst_r = (unsigned char)((dst_pixel >> 16) & 0xFFu);
     unsigned char dst_g = (unsigned char)((dst_pixel >> 8) & 0xFFu);
     unsigned char dst_b = (unsigned char)(dst_pixel & 0xFFu);
+    uint32_t dst_a      = dst_pixel >> 24;
 
     unsigned char r = tbox_raster_blend_channel(color.r, dst_r, alpha);
     unsigned char g = tbox_raster_blend_channel(color.g, dst_g, alpha);
     unsigned char b = tbox_raster_blend_channel(color.b, dst_b, alpha);
+    uint32_t a      = dst_a == 0xFFu ? 0xFFu : (uint32_t)(255.0 * alpha + (double)dst_a * (1.0 - alpha) + 0.5);
 
-    return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+    return (a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
+/* A pixel's straight (unpremultiplied) color. */
+static tbox_css_rgba tbox_raster_unpack(uint32_t pixel) {
+    unsigned a = pixel >> 24;
+    tbox_css_rgba c = { (unsigned char)((pixel >> 16) & 0xFFu), (unsigned char)((pixel >> 8) & 0xFFu), (unsigned char)(pixel & 0xFFu), (unsigned char)a };
+    if (a != 0xFFu && a != 0) {
+        c.r = (unsigned char)fmin(255.0, c.r * 255.0 / a + 0.5);
+        c.g = (unsigned char)fmin(255.0, c.g * 255.0 / a + 0.5);
+        c.b = (unsigned char)fmin(255.0, c.b * 255.0 / a + 0.5);
+    }
+    return c;
+}
+
+/* A straight color as a premultiplied pixel. */
+static uint32_t tbox_raster_pack(tbox_css_rgba c) {
+    if (c.a == 0xFFu)
+        return 0xFF000000u | ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | (uint32_t)c.b;
+    double a = c.a / 255.0;
+    return ((uint32_t)c.a << 24) | ((uint32_t)(c.r * a + 0.5) << 16) | ((uint32_t)(c.g * a + 0.5) << 8) | (uint32_t)(c.b * a + 0.5);
 }
 
 void tbox_raster_fill_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, tbox_css_rgba color) {
@@ -300,13 +327,13 @@ static void tbox_raster_set_sat(const double c[3], double sat, double out[3]) {
     out[min] = 0.0;
 }
 
-/* `src` blended into the opaque `dst_pixel` with `mode`, then composited
- * with coverage `alpha` (the backdrop is opaque, so the general formula
- * reduces to a mix of the backdrop and B(backdrop, source)). */
+/* `src` blended into `dst_pixel` with `mode`, then composited with
+ * coverage `alpha` (Compositing and Blending 1's general formula). */
 static uint32_t tbox_raster_blend_mode_pixel(uint32_t dst_pixel, tbox_css_rgba src, double alpha, tbox_style_blend_mode mode) {
     if (mode == TBOX_STYLE_BLEND_NORMAL)
         return tbox_raster_blend_pixel(dst_pixel, src, alpha);
-    double b[3] = { ((dst_pixel >> 16) & 0xFFu) / 255.0, ((dst_pixel >> 8) & 0xFFu) / 255.0, (dst_pixel & 0xFFu) / 255.0 };
+    tbox_css_rgba backdrop = tbox_raster_unpack(dst_pixel);
+    double b[3] = { backdrop.r / 255.0, backdrop.g / 255.0, backdrop.b / 255.0 };
     double s[3] = { src.r / 255.0, src.g / 255.0, src.b / 255.0 }, out[3];
     if (mode >= TBOX_STYLE_BLEND_HUE) {
         double tmp[3];
@@ -326,33 +353,17 @@ static uint32_t tbox_raster_blend_mode_pixel(uint32_t dst_pixel, tbox_css_rgba s
     } else {
         for (int i = 0; i < 3; i++) out[i] = tbox_raster_blend_separable(mode, b[i], s[i]);
     }
+    /* A translucent backdrop (inside a layer) blends only where it is:
+     * Cs' = (1 - ab) Cs + ab B(Cb, Cs). */
+    double ab = backdrop.a / 255.0;
+    if (backdrop.a != 0xFFu)
+        for (int i = 0; i < 3; i++) out[i] = (1.0 - ab) * s[i] + ab * out[i];
     tbox_css_rgba blended;
     blended.r = (unsigned char)(fmin(1.0, fmax(0.0, out[0])) * 255.0 + 0.5);
     blended.g = (unsigned char)(fmin(1.0, fmax(0.0, out[1])) * 255.0 + 0.5);
     blended.b = (unsigned char)(fmin(1.0, fmax(0.0, out[2])) * 255.0 + 0.5);
     blended.a = 255;
     return tbox_raster_blend_pixel(dst_pixel, blended, alpha);
-}
-
-/* BACKDROP_FILTER: `color_filter` over the pixels inside the op's shape,
- * mixed with the original by color.a. */
-static void tbox_raster_backdrop_filter(uint32_t *pixels, int32_t width, int32_t height, const tbox_paint_op *op) {
-    if (op->color_filter == NULL || op->color.a == 0 || op->rect.width <= 0.0 || op->rect.height <= 0.0) return;
-    int32_t x0, y0, x1, y1;
-    if (!tbox_raster_op_bounds(op, op->rect, width, height, &x0, &y0, &x1, &y1)) return;
-    double strength = op->color.a / 255.0;
-    for (int32_t y = y0; y < y1; y++) {
-        uint32_t *row = pixels + (size_t)y * (size_t)width;
-        for (int32_t x = x0; x < x1; x++) {
-            double px = (double)x + 0.5, py = (double)y + 0.5;
-            if (!tbox_raster_point_in_shape(px, py, op->rect, op->corner_radii, op->corner_radii_y) || !tbox_raster_in_rounded_clip(op, px, py))
-                continue;
-            uint32_t pixel = row[x];
-            tbox_css_rgba filtered = tbox_raster_filter(op->color_filter, (tbox_css_rgba){ (unsigned char)((pixel >> 16) & 0xFFu), (unsigned char)((pixel >> 8) & 0xFFu), (unsigned char)(pixel & 0xFFu), 255 });
-            /* the buffer is opaque: a filtered alpha blends over the old pixel */
-            row[x] = tbox_raster_blend_pixel(pixel, filtered, strength * filtered.a / 255.0);
-        }
-    }
 }
 
 /* A gradient stop resolved to a fraction of the gradient line. */
@@ -754,8 +765,10 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
     case TBOX_PAINT_FILL_RING:
         tbox_raster_fill_ring_clipped(pixels, buffer_width, buffer_height, op);
         break;
-    case TBOX_PAINT_BACKDROP_FILTER:
-        tbox_raster_backdrop_filter(pixels, buffer_width, buffer_height, op);
+    case TBOX_PAINT_BACKDROP_FILTER: /* need the paint region: tbox_raster_paint_range */
+    case TBOX_PAINT_LAYER_BEGIN:
+    case TBOX_PAINT_LAYER_MASK:
+    case TBOX_PAINT_LAYER_END:
         break;
     case TBOX_PAINT_WAVY_LINE: {
         double thickness = op->rect.height;
@@ -782,13 +795,318 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
     }
 }
 
-void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list) {
-    if (list == NULL) {
+/* ---- compositing layers (docs/08-layout-e-pintura.md) ---- */
+
+/* A buffer ops paint into: the screen, or a layer covering the screen
+ * pixels [x, x + width) x [y, y + height). */
+typedef struct tbox_raster_target {
+    uint32_t *pixels;
+    int32_t width, height, x, y;
+} tbox_raster_target;
+
+static tbox_rect tbox_raster_rect_intersect(tbox_rect a, tbox_rect b) {
+    double x0 = fmax(a.x, b.x), y0 = fmax(a.y, b.y);
+    double x1 = fmin(a.x + a.width, b.x + b.width), y1 = fmin(a.y + a.height, b.y + b.height);
+    return (tbox_rect){ x0, y0, x1 > x0 ? x1 - x0 : 0.0, y1 > y0 ? y1 - y0 : 0.0 };
+}
+
+static bool tbox_raster_rect_empty(tbox_rect r) {
+    return r.width <= 0.0 || r.height <= 0.0;
+}
+
+/* `r` grown by `by` px on every side and snapped outward to whole pixels. */
+static tbox_rect tbox_raster_rect_grow(tbox_rect r, double by) {
+    double x0 = floor(r.x - by), y0 = floor(r.y - by), x1 = ceil(r.x + r.width + by), y1 = ceil(r.y + r.height + by);
+    return (tbox_rect){ x0, y0, x1 - x0, y1 - y0 };
+}
+
+static tbox_rect tbox_raster_target_rect(const tbox_raster_target *t) {
+    return (tbox_rect){ (double)t->x, (double)t->y, (double)t->width, (double)t->height };
+}
+
+static bool tbox_raster_rect_covers(tbox_rect outer, tbox_rect inner) {
+    return outer.x <= inner.x && outer.y <= inner.y && outer.x + outer.width >= inner.x + inner.width && outer.y + outer.height >= inner.y + inner.height;
+}
+
+/* Paints `op` into `t`, clipped to `region` (screen coordinates, whole
+ * pixels) unless the region covers the whole target: every op clip
+ * floors its edges, so clipping to a whole-pixel region changes nothing
+ * inside it. A layer's offset is whole pixels too, so an op lands on the
+ * same pixels it would on the screen. */
+static void tbox_raster_paint_into(const tbox_raster_target *t, const tbox_paint_op *op, tbox_rect region) {
+    tbox_paint_op shifted = *op;
+    if (!tbox_raster_rect_covers(region, tbox_raster_target_rect(t))) {
+        shifted.clip     = shifted.has_clip ? tbox_raster_rect_intersect(shifted.clip, region) : region;
+        shifted.has_clip = true;
+    }
+    if (t->x != 0 || t->y != 0) {
+        double dx = -(double)t->x, dy = -(double)t->y;
+        shifted.rect.x += dx, shifted.rect.y += dy;
+        shifted.inner_rect.x += dx, shifted.inner_rect.y += dy;
+        shifted.clip.x += dx, shifted.clip.y += dy;
+        shifted.rounded_clip.x += dx, shifted.rounded_clip.y += dy;
+    }
+    tbox_raster_paint_op(t->pixels, t->width, t->height, &shifted);
+}
+
+/* Gaussian blur (standard deviation `sigma`) of premultiplied pixels,
+ * approximated by three box blurs per axis; outside the buffer is
+ * transparent. */
+static void tbox_raster_blur(uint32_t *pixels, int32_t width, int32_t height, double sigma) {
+    if (sigma < 0.3 || width <= 0 || height <= 0)
+        return;
+    size_t count = (size_t)width * (size_t)height;
+    float *planes = malloc(count * 4 * sizeof(float)), *scratch = malloc(count * 4 * sizeof(float));
+    double *sums  = malloc((size_t)width * sizeof(double));
+    if (planes == NULL || scratch == NULL || sums == NULL) {
+        free(planes), free(scratch), free(sums);
         return;
     }
+    for (size_t i = 0; i < count; i++)
+        for (int c = 0; c < 4; c++) planes[(size_t)c * count + i] = (float)((pixels[i] >> (24 - 8 * c)) & 0xFFu);
+    /* box sizes for three passes ("boxes for Gauss") */
+    double ideal = sqrt(12.0 * sigma * sigma / 3.0 + 1.0);
+    int lower    = (int)floor(ideal);
+    if (lower % 2 == 0) lower--;
+    int upper = lower + 2;
+    int m     = (int)lround((12.0 * sigma * sigma - 3.0 * lower * lower - 12.0 * lower - 9.0) / (-4.0 * lower - 4.0));
+    for (int pass = 0; pass < 3; pass++) {
+        int radius = ((pass < m ? lower : upper) - 1) / 2;
+        double scale = 1.0 / (2.0 * radius + 1.0);
+        for (int c = 0; c < 4; c++) {
+            float *src = planes + (size_t)c * count, *dst = scratch + (size_t)c * count;
+            for (int32_t y = 0; y < height; y++) { /* horizontal: src -> dst */
+                const float *row = src + (size_t)y * (size_t)width;
+                float *out = dst + (size_t)y * (size_t)width;
+                double sum = 0.0;
+                for (int32_t x = -radius; x <= radius; x++) if (x >= 0 && x < width) sum += row[x];
+                for (int32_t x = 0; x < width; x++) {
+                    out[x] = (float)(sum * scale);
+                    int32_t add = x + radius + 1, sub = x - radius;
+                    if (add < width) sum += row[add];
+                    if (sub >= 0) sum -= row[sub];
+                }
+            }
+            /* vertical: dst -> src, row by row with one running sum per
+             * column (walking columns would defeat the cache) */
+            for (int32_t x = 0; x < width; x++) sums[x] = 0.0;
+            for (int32_t y = 0; y <= radius && y < height; y++) {
+                const float *row = dst + (size_t)y * (size_t)width;
+                for (int32_t x = 0; x < width; x++) sums[x] += row[x];
+            }
+            for (int32_t y = 0; y < height; y++) {
+                float *out = src + (size_t)y * (size_t)width;
+                for (int32_t x = 0; x < width; x++) out[x] = (float)(sums[x] * scale);
+                int32_t add = y + radius + 1, sub = y - radius;
+                if (add < height) {
+                    const float *row = dst + (size_t)add * (size_t)width;
+                    for (int32_t x = 0; x < width; x++) sums[x] += row[x];
+                }
+                if (sub >= 0) {
+                    const float *row = dst + (size_t)sub * (size_t)width;
+                    for (int32_t x = 0; x < width; x++) sums[x] -= row[x];
+                }
+            }
+        }
+    }
+    for (size_t i = 0; i < count; i++) {
+        uint32_t v[4];
+        for (int c = 0; c < 4; c++) {
+            float f = planes[(size_t)c * count + i];
+            v[c] = f <= 0.0f ? 0u : f >= 255.0f ? 255u : (uint32_t)(f + 0.5f);
+        }
+        /* premultiplied: no channel above alpha */
+        for (int c = 1; c < 4; c++) if (v[c] > v[0]) v[c] = v[0];
+        pixels[i] = (v[0] << 24) | (v[1] << 16) | (v[2] << 8) | v[3];
+    }
+    free(planes);
+    free(scratch);
+    free(sums);
+}
 
-    for (size_t i = 0; i < list->count; i++)
-        tbox_raster_paint_op(pixels, buffer_width, buffer_height, &list->items[i]);
+/* drop-shadow(): the buffer's alpha, in the shadow color, blurred and
+ * offset, under the buffer itself. */
+static void tbox_raster_drop_shadow(uint32_t *pixels, int32_t width, int32_t height, const tbox_style_shadow *shadow) {
+    size_t count = (size_t)width * (size_t)height;
+    uint32_t *under = calloc(count, sizeof(uint32_t));
+    if (under == NULL || shadow->color.a == 0) {
+        free(under);
+        return;
+    }
+    int32_t dx = (int32_t)lround(shadow->offset_x), dy = (int32_t)lround(shadow->offset_y);
+    double color_alpha = shadow->color.a / 255.0;
+    for (int32_t y = 0; y < height; y++)
+        for (int32_t x = 0; x < width; x++) {
+            int32_t sx = x - dx, sy = y - dy;
+            if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
+            double a = (pixels[(size_t)sy * (size_t)width + (size_t)sx] >> 24) / 255.0 * color_alpha;
+            if (a <= 0.0) continue;
+            tbox_css_rgba c = shadow->color;
+            c.a = (unsigned char)(a * 255.0 + 0.5);
+            under[(size_t)y * (size_t)width + (size_t)x] = tbox_raster_pack(c);
+        }
+    tbox_raster_blur(under, width, height, shadow->blur / 2.0);
+    for (size_t i = 0; i < count; i++) {
+        uint32_t top = pixels[i];
+        unsigned a = top >> 24;
+        if (a == 0xFFu) continue;
+        pixels[i] = a == 0 ? under[i] : tbox_raster_blend_pixel(under[i], tbox_raster_unpack(top), a / 255.0);
+    }
+    free(under);
+}
+
+/* Runs `filters` over a premultiplied buffer, in order. */
+static void tbox_raster_apply_filters(uint32_t *pixels, int32_t width, int32_t height, const tbox_style_filter_list *filters) {
+    size_t count = (size_t)width * (size_t)height;
+    for (size_t f = 0; filters != NULL && f < filters->count; f++) {
+        const tbox_style_filter_op *op = &filters->ops[f];
+        if (op->kind == TBOX_STYLE_FILTER_MATRIX) {
+            for (size_t i = 0; i < count; i++)
+                if (pixels[i] != 0) pixels[i] = tbox_raster_pack(tbox_raster_filter(op->matrix, tbox_raster_unpack(pixels[i])));
+        } else if (op->kind == TBOX_STYLE_FILTER_BLUR) {
+            tbox_raster_blur(pixels, width, height, op->radius);
+        } else {
+            tbox_raster_drop_shadow(pixels, width, height, &op->shadow);
+        }
+    }
+}
+
+static size_t tbox_raster_paint_range(const tbox_raster_target *t, const tbox_display_list *list, size_t from, size_t to, tbox_rect region, int32_t screen_width, int32_t screen_height);
+
+/* BACKDROP_FILTER: the filters run over a copy of what `t` already holds
+ * around the op (blur reads past its edges), and the result replaces the
+ * pixels inside the op's shape -- over them, so a filtered alpha shows the
+ * old pixel through, then mixed with the original by color.a. */
+static void tbox_raster_backdrop(const tbox_raster_target *t, const tbox_paint_op *op, tbox_rect region) {
+    if (op->filters == NULL || op->filters->count == 0 || op->color.a == 0 || tbox_raster_rect_empty(op->rect))
+        return;
+    tbox_rect out = tbox_raster_rect_intersect(tbox_raster_rect_grow(op->rect, 0.0), region);
+    if (op->has_clip) out = tbox_raster_rect_intersect(out, op->clip);
+    if (op->has_rounded_clip) out = tbox_raster_rect_intersect(out, op->rounded_clip);
+    out = tbox_raster_rect_intersect(tbox_raster_rect_grow(out, 0.0), tbox_raster_target_rect(t));
+    if (tbox_raster_rect_empty(out))
+        return;
+    tbox_rect source = tbox_raster_rect_intersect(tbox_raster_rect_grow(out, tbox_style_filter_extent(op->filters)), tbox_raster_target_rect(t));
+    int32_t sx = (int32_t)source.x, sy = (int32_t)source.y, sw = (int32_t)source.width, sh = (int32_t)source.height;
+    uint32_t *copy = malloc((size_t)sw * (size_t)sh * sizeof(uint32_t));
+    if (copy == NULL)
+        return;
+    for (int32_t y = 0; y < sh; y++)
+        memcpy(copy + (size_t)y * (size_t)sw, t->pixels + (size_t)(sy + y - t->y) * (size_t)t->width + (size_t)(sx - t->x), (size_t)sw * sizeof(uint32_t));
+    tbox_raster_apply_filters(copy, sw, sh, op->filters);
+    double strength = op->color.a / 255.0;
+    for (int32_t y = (int32_t)out.y; y < (int32_t)(out.y + out.height); y++) {
+        uint32_t *row = t->pixels + (size_t)(y - t->y) * (size_t)t->width;
+        for (int32_t x = (int32_t)out.x; x < (int32_t)(out.x + out.width); x++) {
+            double px = (double)x + 0.5, py = (double)y + 0.5;
+            if (!tbox_raster_point_in_shape(px, py, op->rect, op->corner_radii, op->corner_radii_y) || !tbox_raster_in_rounded_clip(op, px, py))
+                continue;
+            uint32_t original = row[x - t->x], filtered = copy[(size_t)(y - sy) * (size_t)sw + (size_t)(x - sx)];
+            unsigned fa = filtered >> 24;
+            uint32_t result = fa == 0xFFu ? filtered : tbox_raster_blend_pixel(original, tbox_raster_unpack(filtered), fa / 255.0);
+            if (strength < 1.0) {
+                uint32_t mixed = 0;
+                for (int c = 0; c < 4; c++) {
+                    double a = (original >> (8 * c)) & 0xFFu, b = (result >> (8 * c)) & 0xFFu;
+                    mixed |= (uint32_t)(a + (b - a) * strength + 0.5) << (8 * c);
+                }
+                result = mixed;
+            }
+            row[x - t->x] = result;
+        }
+    }
+    free(copy);
+}
+
+/* LAYER_BEGIN at `begin`: paints the layer and composites it onto `t`
+ * within `region`. Returns the index of its LAYER_END. */
+static size_t tbox_raster_paint_layer(const tbox_raster_target *t, const tbox_display_list *list, size_t begin, tbox_rect region, int32_t screen_width, int32_t screen_height) {
+    const tbox_paint_op *op = &list->items[begin];
+    size_t mask_index;
+    size_t end = tbox_raster_layer_end(list, begin, &mask_index);
+    tbox_rect content;
+    if (!tbox_raster_layer_content_bounds(list, begin, screen_width, screen_height, &content))
+        return end;
+    double extent = tbox_style_filter_extent(op->filters);
+    tbox_rect screen = { 0.0, 0.0, (double)screen_width, (double)screen_height };
+    /* pixels of `region` depend on content up to `extent` away */
+    tbox_rect inner = tbox_raster_rect_intersect(tbox_raster_rect_grow(region, extent), screen);
+    tbox_rect area  = tbox_raster_rect_intersect(tbox_raster_rect_grow(content, extent), inner);
+    tbox_rect out   = tbox_raster_rect_intersect(area, region);
+    if (op->has_clip) out = tbox_raster_rect_intersect(out, op->clip);
+    if (op->has_rounded_clip) out = tbox_raster_rect_intersect(out, op->rounded_clip);
+    out = tbox_raster_rect_intersect(tbox_raster_rect_grow(out, 0.0), area);
+    if (tbox_raster_rect_empty(out))
+        return end;
+    tbox_raster_target layer = { NULL, (int32_t)area.width, (int32_t)area.height, (int32_t)area.x, (int32_t)area.y };
+    size_t count = (size_t)layer.width * (size_t)layer.height;
+    layer.pixels = calloc(count, sizeof(uint32_t));
+    if (layer.pixels == NULL)
+        return end;
+    tbox_raster_paint_range(&layer, list, begin + 1, mask_index, area, screen_width, screen_height);
+    tbox_raster_apply_filters(layer.pixels, layer.width, layer.height, op->filters);
+    if (mask_index < end) {
+        tbox_raster_target mask = layer;
+        mask.pixels = calloc(count, sizeof(uint32_t));
+        if (mask.pixels != NULL) {
+            tbox_raster_paint_range(&mask, list, mask_index + 1, end, area, screen_width, screen_height);
+            bool luminance = list->items[mask_index].mask_luminance;
+            for (size_t i = 0; i < count; i++) {
+                uint32_t m = mask.pixels[i];
+                /* premultiplied, so luminance already carries the alpha */
+                double factor = luminance ? (0.2125 * ((m >> 16) & 0xFFu) + 0.7154 * ((m >> 8) & 0xFFu) + 0.0721 * (m & 0xFFu)) / 255.0 : (m >> 24) / 255.0;
+                uint32_t p = layer.pixels[i], scaled = 0;
+                for (int c = 0; c < 4; c++) scaled |= (uint32_t)(((p >> (8 * c)) & 0xFFu) * factor + 0.5) << (8 * c);
+                layer.pixels[i] = scaled;
+            }
+            free(mask.pixels);
+        }
+    }
+    double opacity = op->color.a / 255.0;
+    for (int32_t y = (int32_t)out.y; y < (int32_t)(out.y + out.height); y++) {
+        const uint32_t *source = layer.pixels + (size_t)(y - layer.y) * (size_t)layer.width;
+        uint32_t *row = t->pixels + (size_t)(y - t->y) * (size_t)t->width;
+        for (int32_t x = (int32_t)out.x; x < (int32_t)(out.x + out.width); x++) {
+            uint32_t p = source[x - layer.x];
+            if ((p >> 24) == 0 || !tbox_raster_in_rounded_clip(op, (double)x + 0.5, (double)y + 0.5))
+                continue;
+            tbox_css_rgba color = tbox_raster_unpack(p);
+            row[x - t->x] = tbox_raster_blend_mode_pixel(row[x - t->x], color, color.a / 255.0 * opacity, op->blend_mode);
+        }
+    }
+    free(layer.pixels);
+    return end;
+}
+
+/* Paints items [from, to) into `t`, within `region` (screen coordinates,
+ * whole pixels). Returns `to`. */
+static size_t tbox_raster_paint_range(const tbox_raster_target *t, const tbox_display_list *list, size_t from, size_t to, tbox_rect region, int32_t screen_width, int32_t screen_height) {
+    for (size_t i = from; i < to; i++) {
+        const tbox_paint_op *op = &list->items[i];
+        if (op->kind == TBOX_PAINT_LAYER_BEGIN) {
+            i = tbox_raster_paint_layer(t, list, i, region, screen_width, screen_height);
+            continue;
+        }
+        if (op->kind == TBOX_PAINT_LAYER_MASK || op->kind == TBOX_PAINT_LAYER_END)
+            continue; /* unmatched marker */
+        if (op->kind == TBOX_PAINT_BACKDROP_FILTER) {
+            tbox_raster_backdrop(t, op, region);
+            continue;
+        }
+        tbox_rect bounds;
+        if (!tbox_raster_op_paint_bounds(op, screen_width, screen_height, &bounds) || tbox_raster_rect_empty(tbox_raster_rect_intersect(bounds, region)))
+            continue;
+        tbox_raster_paint_into(t, op, region);
+    }
+    return to;
+}
+
+void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list) {
+    if (list == NULL || pixels == NULL || buffer_width <= 0 || buffer_height <= 0) {
+        return;
+    }
+    tbox_raster_target screen = { pixels, buffer_width, buffer_height, 0, 0 };
+    tbox_raster_paint_range(&screen, list, 0, list->count, tbox_raster_target_rect(&screen), buffer_width, buffer_height);
 }
 
 void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list, const tbox_damage *damage) {
@@ -801,6 +1119,7 @@ void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, in
         tbox_raster_display_list(pixels, buffer_width, buffer_height, list);
         return;
     }
+    tbox_raster_target screen = { pixels, buffer_width, buffer_height, 0, 0 };
     for (size_t d = 0; d < damage->count; d++) {
         tbox_rect region = damage->rects[d];
         int32_t x0 = (int32_t)region.x, y0 = (int32_t)region.y;
@@ -817,26 +1136,8 @@ void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, in
                 row[x] = 0xFFFFFFFFu;
         }
         region = (tbox_rect){ (double)x0, (double)y0, (double)(x1 - x0), (double)(y1 - y0) };
-        for (size_t i = 0; list != NULL && i < list->count; i++) {
-            const tbox_paint_op *op = &list->items[i];
-            tbox_rect bounds;
-            if (!tbox_raster_op_paint_bounds(op, buffer_width, buffer_height, &bounds) || bounds.x >= region.x + region.width || region.x >= bounds.x + bounds.width ||
-                bounds.y >= region.y + region.height || region.y >= bounds.y + bounds.height)
-                continue;
-            /* Every op clip floors its edges, and floor commutes with
-             * min/max, so clipping to a whole-pixel region changes nothing
-             * inside it. */
-            tbox_paint_op clipped = *op;
-            if (clipped.has_clip) {
-                double cx0 = fmax(clipped.clip.x, region.x), cy0 = fmax(clipped.clip.y, region.y);
-                double cx1 = fmin(clipped.clip.x + clipped.clip.width, region.x + region.width), cy1 = fmin(clipped.clip.y + clipped.clip.height, region.y + region.height);
-                clipped.clip = (tbox_rect){ cx0, cy0, cx1 > cx0 ? cx1 - cx0 : 0.0, cy1 > cy0 ? cy1 - cy0 : 0.0 };
-            } else {
-                clipped.has_clip = true;
-                clipped.clip     = region;
-            }
-            tbox_raster_paint_op(pixels, buffer_width, buffer_height, &clipped);
-        }
+        if (list != NULL)
+            tbox_raster_paint_range(&screen, list, 0, list->count, region, buffer_width, buffer_height);
     }
 }
 

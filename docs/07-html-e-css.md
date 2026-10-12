@@ -139,8 +139,8 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   em `tbox_css_supports.c`, igual à [referência](referencia/css-suportado.md))
   e custom properties sempre; o valor não é validado, exceto os que
   enganariam a detecção: `display` fora dos valores suportados (`grid`…),
-  `transform` com rotação/escala/matriz e `filter`/`backdrop-filter` com
-  `blur()`/`url()`. `selector()` exige que o seletor compile e só use
+  `transform` com rotação/escala/matriz, `filter`/`backdrop-filter` com
+  `url()` e `backdrop-filter` com `drop-shadow()`. `selector()` exige que o seletor compile e só use
   pseudo-classes e pseudo-elementos que o matcher conhece. Outras funções
   (`font-tech()`, `font-format()`) são falsas. Aninha com `@media` e
   `@layer` nos dois sentidos.

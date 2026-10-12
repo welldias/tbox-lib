@@ -415,3 +415,44 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   citava `::before`/`::after` e `@import`.
 - Fixtures `122`–`131`; nenhum fixture de 001–121 mudou de pixels; suíte
   limpa com ASan/UBSan.
+
+## 2026-10-12 — Camadas de composição
+
+- **Style**: `filter` e `backdrop-filter` como listas ordenadas
+  (`tbox_style_filter_list`: matriz de cor, `blur()`, `drop-shadow()`);
+  `has_filter`/`filter_matrix` ficam só para filtros de cor;
+  `backdrop_filter_matrix` saiu. `mix-blend-mode`, `mask`/`mask-*` (e
+  `-webkit-mask*`), `tbox_style_needs_layer`, `tbox_style_filter_extent`. A
+  aproximação de `drop-shadow()` por `box-shadow`/`text-shadow` saiu.
+- **Layout Tree**: `tbox_layout_box.mask_image`.
+- **Render Pipeline**: ops `LAYER_BEGIN`/`LAYER_MASK`/`LAYER_END` em volta
+  de quem precisa de camada (o elemento vira contexto de empilhamento,
+  também com filtro de cor ou `backdrop-filter`); `opacity` sai do op a op
+  para o `LAYER_BEGIN`; `clip-path` de um elemento com camada recorta a
+  composição; o fundo com `background-blend-mode` ganha camada própria.
+- **Output**: pixels pré-multiplicados (a tela segue opaca); pintor com
+  pilha de camadas (`tbox_raster_paint_range`), blur gaussiano, sombra,
+  máscara alfa/luminância e composição com `mix-blend-mode`; o
+  `BACKDROP_FILTER` roda a lista de filtros (com blur). Damage tracker:
+  bounds de camada, ops inflados pelo alcance do blur, e a região suja
+  cresce para cobrir o que um `backdrop-filter` com blur lê.
+- **CSS Parser**: `@supports` aceita `blur()` e conhece `mix-blend-mode` e
+  `mask-*`.
+- Fixture `132` (e `mask-star.png`). Mudaram de pixel: `036` (texto sobre o
+  próprio fundo com `opacity` deixou de ficar transparente, como no
+  navegador), `116` (1 nível de arredondamento em `isolation`), `124` e
+  `125` (sombra na forma e blur no backdrop). Suíte limpa com ASan/UBSan.
+
+## 2026-10-12 — Build otimizado com `-Werror`
+
+- O build `Release` (e `RelWithDebInfo`/`MinSizeRel`) falhava: com
+  otimização o GCC analisa faixas de valores e avisava
+  (`-Wformat-truncation`) que o `snprintf` de `<input type=week>` podia
+  truncar. Era um defeito real: navegando o calendário além do ano 9999,
+  o valor gravado saía cortado. **Orchestration**:
+  `tbox_context_date_commit` recusa anos fora de 1–9999 (o formato e os
+  parsers só aceitam 4 dígitos), usa buffers folgados e confere o tamanho
+  escrito.
+- `tests/base/test_list.c`: o vetor preenchido no laço é inicializado
+  (`-Wmaybe-uninitialized` em `-O3`) e o índice é limitado.
+- Todos os tipos de build (GCC e Clang) compilam limpos e passam no `ctest`.

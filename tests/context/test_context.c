@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "context/tbox_context_hit_test.h"
+#include "context/tbox_context_internal.h"
 #include "context/tbox_ua_style.h"
 #include "output/tbox_key_repeat.h"
 #include "output/tbox_pointer_click.h"
@@ -4203,6 +4204,84 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(dots == 3 && strings == 2);
             /* 'a' is about 11px wide at 20px: its mark sits near x = 20 + 5.5 */
             TBOX_TEST_ASSERT(first_x > 23.0 && first_x < 28.0 && mark_y < text_y);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Compositing layers from CSS: a blurred element is wrapped in
+     * LAYER_BEGIN/END carrying the filter, with clip-path on the composite
+     * (not on the ops inside); a mask adds LAYER_MASK; the pixels show the
+     * blur bleeding out and the mask cutting the content. */
+    {
+        const char *css = "body { margin: 0; background: white; }"
+                          "#soft { width: 40px; height: 40px; background: black; filter: blur(4px); clip-path: inset(0 20px 0 0); }"
+                          "#cut { width: 40px; height: 20px; background: rgb(255, 0, 0); mask: linear-gradient(90deg, black 50%, transparent 50%) luminance; mask-mode: alpha; }"
+                          "#mix { width: 40px; height: 20px; background: rgb(0, 255, 255); mix-blend-mode: multiply; }"
+                          "#host { background: rgb(255, 255, 0); }";
+        tbox_context *ctx = open_cstr("<body><div id='soft'></div><div id='cut'></div><div id='host'><div id='mix'></div></div></body>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 120.0, 100.0, &list);
+            size_t begins = 0, ends = 0, masks = 0;
+            const tbox_paint_op *blur_begin = NULL;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind == TBOX_PAINT_LAYER_BEGIN) {
+                    begins++;
+                    if (op->filters != NULL && blur_begin == NULL) {
+                        blur_begin = op;
+                        TBOX_TEST_ASSERT(i + 1 < list.count && list.items[i + 1].kind == TBOX_PAINT_FILL_RECT && !list.items[i + 1].has_rounded_clip);
+                    }
+                }
+                if (op->kind == TBOX_PAINT_LAYER_END) ends++;
+                if (op->kind == TBOX_PAINT_LAYER_MASK) {
+                    masks++;
+                    TBOX_TEST_ASSERT(!op->mask_luminance); /* mask-mode wins over the shorthand */
+                }
+            }
+            TBOX_TEST_ASSERT(begins == 3 && ends == 3 && masks == 1);
+            TBOX_TEST_ASSERT(blur_begin != NULL && blur_begin->filters->ops[0].kind == TBOX_STYLE_FILTER_BLUR && blur_begin->has_rounded_clip && blur_begin->rounded_clip.width == 20.0);
+            uint32_t *pixels = malloc(120 * 100 * sizeof(uint32_t));
+            TBOX_TEST_ASSERT(pixels != NULL);
+            if (pixels != NULL) {
+                for (size_t i = 0; i < 120 * 100; i++) pixels[i] = 0xFFFFFFFFu;
+                tbox_raster_display_list(pixels, 120, 100, &list);
+                /* blur: dark inside; the clip-path cuts the composite at
+                 * x = 20, so the halo at x = 25 is gone */
+                TBOX_TEST_ASSERT(((pixels[20 * 120 + 10] >> 16) & 0xFFu) < 60 && pixels[20 * 120 + 25] == 0xFFFFFFFFu);
+                /* the edge at y = 0 is blurred: not fully dark */
+                TBOX_TEST_ASSERT(((pixels[0 * 120 + 10] >> 16) & 0xFFu) > 60);
+                /* mask: red on the left half, white on the right */
+                TBOX_TEST_ASSERT(pixels[50 * 120 + 5] == 0xFFFF0000u && pixels[50 * 120 + 35] == 0xFFFFFFFFu);
+                /* multiply: cyan over the yellow host is green */
+                TBOX_TEST_ASSERT(pixels[70 * 120 + 5] == 0xFF00FF00u);
+                free(pixels);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Committing a date the value format can't hold (5-digit year, reached
+     * by navigating the calendar) is refused instead of writing a truncated
+     * value; 4-digit years still commit, for date, month and week inputs. */
+    {
+        tbox_context *ctx = open_cstr("<div><input type='date' value='2024-05-06'><input type='month'><input type='week'></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_html_node *date = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            tbox_html_node *month = date->next_sibling, *week = month->next_sibling;
+            tbox_string_view value_name = tbox_string_view_make("value", 5);
+            TBOX_TEST_ASSERT(!tbox_context_date_commit(ctx, date, (tbox_date){ 10000, 1, 15 }));
+            TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(tbox_html_node_get_attribute(date, value_name)->value, "2024-05-06"));
+            TBOX_TEST_ASSERT(!tbox_context_date_commit(ctx, week, (tbox_date){ 10000, 1, 15 }));
+            TBOX_TEST_ASSERT(tbox_html_node_get_attribute(week, value_name) == NULL);
+            TBOX_TEST_ASSERT(tbox_context_date_commit(ctx, date, (tbox_date){ 9999, 12, 31 }));
+            TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(tbox_html_node_get_attribute(date, value_name)->value, "9999-12-31"));
+            TBOX_TEST_ASSERT(tbox_context_date_commit(ctx, month, (tbox_date){ 2025, 3, 1 }));
+            TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(tbox_html_node_get_attribute(month, value_name)->value, "2025-03"));
+            TBOX_TEST_ASSERT(tbox_context_date_commit(ctx, week, (tbox_date){ 2025, 3, 5 }));
+            TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(tbox_html_node_get_attribute(week, value_name)->value, "2025-W10"));
             tbox_context_close(ctx);
         }
     }

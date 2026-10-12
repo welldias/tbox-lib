@@ -61,6 +61,17 @@ bool tbox_raster_op_paint_bounds(const tbox_paint_op *op, int32_t buffer_width, 
         r.height += 2.0 * amplitude;
         break;
     }
+    case TBOX_PAINT_BACKDROP_FILTER: {
+        /* everything it reads: a blur samples past its edges */
+        double extent = tbox_style_filter_extent(op->filters);
+        r = (tbox_rect){ r.x - extent, r.y - extent, r.width + 2.0 * extent, r.height + 2.0 * extent };
+        break;
+    }
+    case TBOX_PAINT_LAYER_BEGIN:
+    case TBOX_PAINT_LAYER_MASK:
+    case TBOX_PAINT_LAYER_END:
+        *out = (tbox_rect){ 0.0, 0.0, 0.0, 0.0 }; /* see tbox_raster_layer_content_bounds */
+        return false;
     default:
         break;
     }
@@ -70,6 +81,68 @@ bool tbox_raster_op_paint_bounds(const tbox_paint_op *op, int32_t buffer_width, 
         r = tbox_damage_intersect(r, op->rounded_clip);
     *out = tbox_damage_empty(r) ? (tbox_rect){ 0.0, 0.0, 0.0, 0.0 } : tbox_damage_snap(r, buffer_width, buffer_height);
     return !tbox_damage_empty(*out);
+}
+
+/* ---- compositing layers ---- */
+
+size_t tbox_raster_layer_end(const tbox_display_list *list, size_t begin, size_t *out_mask) {
+    size_t depth = 0, mask = SIZE_MAX;
+    for (size_t i = begin; i < list->count; i++) {
+        tbox_paint_op_kind kind = list->items[i].kind;
+        if (kind == TBOX_PAINT_LAYER_BEGIN) {
+            depth++;
+        } else if (kind == TBOX_PAINT_LAYER_MASK && depth == 1 && mask == SIZE_MAX) {
+            mask = i;
+        } else if (kind == TBOX_PAINT_LAYER_END && --depth == 0) {
+            if (out_mask != NULL) *out_mask = mask != SIZE_MAX ? mask : i;
+            return i;
+        }
+    }
+    if (out_mask != NULL) *out_mask = list->count;
+    return list->count; /* unterminated: runs to the end */
+}
+
+/* What one op inside a layer can touch: its bounds, or a nested layer's
+ * content grown by that layer's reach. Sets `*next` past it. */
+static bool tbox_raster_layer_item_bounds(const tbox_display_list *list, size_t i, int32_t width, int32_t height, tbox_rect *out, size_t *next) {
+    const tbox_paint_op *op = &list->items[i];
+    *next = i + 1;
+    if (op->kind != TBOX_PAINT_LAYER_BEGIN)
+        return tbox_raster_op_paint_bounds(op, width, height, out);
+    *next = tbox_raster_layer_end(list, i, NULL) + 1;
+    tbox_rect content;
+    if (!tbox_raster_layer_content_bounds(list, i, width, height, &content))
+        return false;
+    double extent = tbox_style_filter_extent(op->filters);
+    tbox_rect r = { content.x - extent, content.y - extent, content.width + 2.0 * extent, content.height + 2.0 * extent };
+    if (op->has_clip) r = tbox_damage_intersect(r, op->clip);
+    if (op->has_rounded_clip) r = tbox_damage_intersect(r, op->rounded_clip);
+    *out = tbox_damage_snap(r, width, height);
+    return !tbox_damage_empty(*out);
+}
+
+bool tbox_raster_layer_content_bounds(const tbox_display_list *list, size_t begin, int32_t width, int32_t height, tbox_rect *out) {
+    size_t mask;
+    tbox_raster_layer_end(list, begin, &mask);
+    bool any = false;
+    tbox_rect total = { 0.0, 0.0, 0.0, 0.0 };
+    for (size_t i = begin + 1; i < mask;) {
+        tbox_rect r;
+        size_t next;
+        if (tbox_raster_layer_item_bounds(list, i, width, height, &r, &next)) {
+            if (!any) {
+                total = r;
+            } else {
+                double x0 = fmin(total.x, r.x), y0 = fmin(total.y, r.y);
+                double x1 = fmax(total.x + total.width, r.x + r.width), y1 = fmax(total.y + total.height, r.y + r.height);
+                total = (tbox_rect){ x0, y0, x1 - x0, y1 - y0 };
+            }
+            any = true;
+        }
+        i = next;
+    }
+    *out = total;
+    return any;
 }
 
 /* ---- op hash: FNV-1a over each field, never over struct padding ---- */
@@ -169,6 +242,18 @@ static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
     if (op->color_filter != NULL)
         hash = tbox_damage_mix_doubles(hash, op->color_filter, 20);
     hash = tbox_damage_mix_int(hash, (long long)op->blend_mode);
+    hash = tbox_damage_mix_int(hash, op->mask_luminance);
+    hash = tbox_damage_mix_int(hash, op->filters != NULL ? (long long)op->filters->count : -1);
+    for (size_t i = 0; op->filters != NULL && i < op->filters->count; i++) {
+        const tbox_style_filter_op *filter = &op->filters->ops[i];
+        hash = tbox_damage_mix_int(hash, (long long)filter->kind);
+        hash = tbox_damage_mix_doubles(hash, filter->matrix, 20);
+        hash = tbox_damage_mix_double(hash, filter->radius);
+        hash = tbox_damage_mix_double(hash, filter->shadow.offset_x);
+        hash = tbox_damage_mix_double(hash, filter->shadow.offset_y);
+        hash = tbox_damage_mix_double(hash, filter->shadow.blur);
+        hash = tbox_damage_mix_color(hash, filter->shadow.color);
+    }
     hash = tbox_damage_mix_int(hash, op->has_clip);
     if (op->has_clip)
         hash = tbox_damage_mix_rect(hash, op->clip);
@@ -321,6 +406,55 @@ static void tbox_damage_diff_middle(tbox_damage *damage, const tbox_damage_signa
     free(sorted);
 }
 
+/* Layers in the signatures: a LAYER_BEGIN (and its MASK/END) covers all its
+ * layer can touch, so changing its effects repaints the whole layer; an
+ * op inside layers that spread (blur, drop shadow) grows by their reach,
+ * since changing it changes pixels that far away. */
+static void tbox_damage_layer_bounds(const tbox_display_list *list, tbox_damage_signature *signatures, int32_t width, int32_t height) {
+    double reach[64];
+    size_t ends[64], depth = 0;
+    for (size_t i = 0; list != NULL && i < list->count; i++) {
+        const tbox_paint_op *op = &list->items[i];
+        while (depth > 0 && i > ends[depth - 1]) depth--;
+        double grow = depth > 0 ? reach[depth - 1] : 0.0;
+        if (op->kind == TBOX_PAINT_LAYER_BEGIN) {
+            size_t mask, next;
+            size_t end = tbox_raster_layer_end(list, i, &mask);
+            tbox_rect r;
+            if (!tbox_raster_layer_item_bounds(list, i, width, height, &r, &next))
+                r = (tbox_rect){ 0.0, 0.0, 0.0, 0.0 };
+            if (grow > 0.0 && !tbox_damage_empty(r))
+                r = tbox_damage_snap((tbox_rect){ r.x - grow, r.y - grow, r.width + 2.0 * grow, r.height + 2.0 * grow }, width, height);
+            signatures[i].bounds = r;
+            if (mask < list->count) signatures[mask].bounds = r;
+            if (end < list->count) signatures[end].bounds = r;
+            if (depth < 64) {
+                reach[depth] = grow + tbox_style_filter_extent(op->filters);
+                ends[depth++] = end;
+            }
+        } else if (op->kind != TBOX_PAINT_LAYER_MASK && op->kind != TBOX_PAINT_LAYER_END && grow > 0.0 && !tbox_damage_empty(signatures[i].bounds)) {
+            tbox_rect r = signatures[i].bounds;
+            signatures[i].bounds = tbox_damage_snap((tbox_rect){ r.x - grow, r.y - grow, r.width + 2.0 * grow, r.height + 2.0 * grow }, width, height);
+        }
+    }
+}
+
+/* A blurred backdrop-filter reads past its own rect: damage touching what
+ * it reads must repaint all of it, or the blur would read pixels it
+ * already filtered last frame. */
+static void tbox_damage_grow_for_backdrops(tbox_damage *damage, const tbox_display_list *list, const tbox_damage_signature *signatures, int32_t width, int32_t height) {
+    for (size_t i = 0; list != NULL && i < list->count && !damage->full; i++) {
+        const tbox_paint_op *op = &list->items[i];
+        if (op->kind != TBOX_PAINT_BACKDROP_FILTER || tbox_style_filter_extent(op->filters) <= 0.0 || tbox_damage_empty(signatures[i].bounds))
+            continue;
+        for (size_t d = 0; d < damage->count; d++)
+            if (!tbox_damage_empty(tbox_damage_intersect(damage->rects[d], signatures[i].bounds))) {
+                tbox_damage_add(damage, signatures[i].bounds, width, height);
+                break;
+            }
+    }
+}
+
 tbox_damage tbox_damage_tracker_update(tbox_damage_tracker *tracker, const tbox_display_list *list, int32_t buffer_width, int32_t buffer_height) {
     tbox_damage damage = { .count = 0, .full = true };
     if (tracker == NULL)
@@ -346,6 +480,7 @@ tbox_damage tbox_damage_tracker_update(tbox_damage_tracker *tracker, const tbox_
         tracker->current[i].hash = tbox_damage_hash_op(&list->items[i]);
         tbox_raster_op_paint_bounds(&list->items[i], buffer_width, buffer_height, &tracker->current[i].bounds);
     }
+    tbox_damage_layer_bounds(list, tracker->current, buffer_width, buffer_height);
 
     if (tracker->valid && tracker->width == buffer_width && tracker->height == buffer_height) {
         damage.full                       = false;
@@ -359,6 +494,7 @@ tbox_damage tbox_damage_tracker_update(tbox_damage_tracker *tracker, const tbox_
             suffix++;
         if (prefix + suffix < old_count || prefix + suffix < new_count)
             tbox_damage_diff_middle(&damage, old_ops + prefix, old_count - prefix - suffix, new_ops + prefix, new_count - prefix - suffix, buffer_width, buffer_height);
+        tbox_damage_grow_for_backdrops(&damage, list, new_ops, buffer_width, buffer_height);
     }
 
     tbox_damage_signature *swap = tracker->previous;

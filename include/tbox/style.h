@@ -481,6 +481,30 @@ typedef struct tbox_style_shadow {
     bool inset; /* box-shadow only */
 } tbox_style_shadow;
 
+/* `filter`/`backdrop-filter` as the ordered list of what they do:
+ * consecutive color functions folded into one 4x5 matrix (same layout as
+ * tbox_style.filter_matrix), blur() and drop-shadow(). */
+typedef enum tbox_style_filter_kind {
+    TBOX_STYLE_FILTER_MATRIX,
+    TBOX_STYLE_FILTER_BLUR,        /* radius: the Gaussian's standard deviation, px */
+    TBOX_STYLE_FILTER_DROP_SHADOW, /* shadow (offset, blur, color) */
+} tbox_style_filter_kind;
+
+typedef struct tbox_style_filter_op {
+    tbox_style_filter_kind kind;
+    double matrix[20];
+    double radius;
+    tbox_style_shadow shadow;
+} tbox_style_filter_op;
+
+#define TBOX_STYLE_MAX_FILTERS 6
+
+typedef struct tbox_style_filter_list {
+    tbox_style_filter_op ops[TBOX_STYLE_MAX_FILTERS];
+    size_t count;
+    bool spreads; /* some blur() or drop-shadow(): needs a compositing layer (filter) */
+} tbox_style_filter_list;
+
 typedef enum tbox_style_background_origin {
     TBOX_STYLE_BACKGROUND_ORIGIN_PADDING_BOX, /* initial */
     TBOX_STYLE_BACKGROUND_ORIGIN_BORDER_BOX,
@@ -827,8 +851,9 @@ typedef struct tbox_style {
     tbox_css_rgba text_shadow_color;
     tbox_style_shadow text_shadows[TBOX_STYLE_MAX_SHADOWS]; /* same convention as box_shadows */
     size_t text_shadow_count;
-    /* `opacity`, 0..1 (numbers or percentages, clamped). NOT inheritable,
-     * but Render multiplies it into the element's whole subtree. Initial
+    /* `opacity`, 0..1 (numbers or percentages, clamped). NOT inheritable;
+     * below 1, Render paints the element and its subtree on a compositing
+     * layer faded as a whole (tbox_style_needs_layer). Initial
      * 1.0 -- a hand-built, zero-initialized tbox_style must set it, or the
      * element paints nothing. */
     double opacity;
@@ -842,17 +867,29 @@ typedef struct tbox_style {
      * transition lists. Not inheritable. */
     tbox_style_animation animations[TBOX_STYLE_MAX_ANIMATIONS];
     size_t animation_count;
-    /* `filter` color functions (grayscale, sepia, saturate, hue-rotate,
-     * invert, opacity, brightness, contrast) folded into one 4x5 color
-     * matrix over 0..1 RGBA, rows R G B A, columns r g b a + offset;
-     * has_filter false means none. blur()/drop-shadow() are ignored. */
+    /* `filter`, in order (url() ignored). Without blur()/drop-shadow() the
+     * color functions also come folded into one 4x5 color matrix over 0..1
+     * RGBA (rows R G B A, columns r g b a + offset) that Render applies op
+     * by op: has_filter. With them (filters.spreads) has_filter is false
+     * and the whole list runs on a compositing layer. */
     bool has_filter;
     double filter_matrix[20];
-    /* `backdrop-filter`: the same color functions, applied by Render to
-     * what is painted behind the element's border box. blur(),
-     * drop-shadow() and url() are ignored. Not inheritable. */
+    tbox_style_filter_list filters;
+    /* `backdrop-filter`: the same list, applied by the Output to what is
+     * already painted behind the element's border box (drop-shadow() and
+     * url() ignored). Not inheritable. */
     bool has_backdrop_filter;
-    double backdrop_filter_matrix[20];
+    tbox_style_filter_list backdrop_filters;
+    /* `mix-blend-mode`: how the element's layer composites onto what is
+     * under it; not inheritable. */
+    tbox_style_blend_mode mix_blend_mode;
+    /* `mask-image` and friends: one layer, painted like a background
+     * layer over the border box (mask-origin/-clip border-box) into the
+     * layer's mask. mask_luminance: `mask-mode: luminance` (the default
+     * match-source is alpha for images and gradients). Not inheritable. */
+    bool has_mask;
+    tbox_style_background_layer mask;
+    bool mask_luminance;
     tbox_style_clip_path clip_path;
     /* Replaced images: fit and position pixels inside their CSS content box.
      * Positions are percentages of the free space, or px offsets from the
@@ -1065,6 +1102,15 @@ bool tbox_style_parse_easing_function(tbox_string_view text, tbox_style_easing *
 
 /* The `ease` preset, the initial timing function. */
 tbox_style_easing tbox_style_easing_default(void);
+
+/* Whether Render paints the element on its own compositing layer:
+ * opacity < 1, a filter with blur()/drop-shadow(), mix-blend-mode, a
+ * mask or `isolation: isolate`. See docs/08-layout-e-pintura.md. */
+bool tbox_style_needs_layer(const tbox_style *style);
+
+/* How far (px, each side) the layer's effects can reach past what it
+ * contains: blur and drop shadows. 0 when nothing spreads. */
+double tbox_style_filter_extent(const tbox_style_filter_list *filters);
 
 /* The transition entry that applies to `property` (the last that names
  * it), NULL when none does or its duration is 0. */

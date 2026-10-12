@@ -57,7 +57,7 @@
       backdrop-filter: sepia(1) brightness(1.2);
     }
 
-    /* blur() é ignorado: só o invert vale */
+    /* blur() e depois invert(), na ordem */
     .c {
       left: 340px;
       color: white;
@@ -74,7 +74,7 @@
     <div class="stripe"></div>
     <div class="glass a">grayscale</div>
     <div class="glass b">sepia + brightness</div>
-    <div class="glass c">invert (blur ignorado)</div>
+    <div class="glass c">blur + invert</div>
   </div>
 </body>
 
