@@ -29,7 +29,11 @@ typedef struct tbox_test_font_resolver_state {
  * this file, no matter which family/bold/italic is requested -- only
  * increments state->calls so tests can assert the cache does/doesn't
  * re-resolve. */
-static bool tbox_test_font_resolver(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size) {
+static void tbox_test_font_release(void *userdata) {
+    (*(int *)userdata)++;
+}
+
+static bool tbox_test_font_resolver(void *userdata, const tbox_font_query *query, const void **out_data, size_t *out_size) {
     (void)query;
     tbox_test_font_resolver_state *state = userdata;
     state->calls++;
@@ -162,7 +166,7 @@ int tbox_test_font_run(void) {
      * two independent copies regardless, and these tests only need to prove
      * the cache mechanics (miss/hit, distinct keys), not that regular and
      * bold actually render differently. */
-    tbox_font_face_cache *cache = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL);
+    tbox_font_face_cache *cache = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL, NULL);
     TBOX_TEST_ASSERT(cache != NULL);
 
     if (cache != NULL) {
@@ -218,7 +222,7 @@ int tbox_test_font_run(void) {
         .font_size = font_size,
         .calls     = 0,
     };
-    tbox_font_face_cache *resolving_cache = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, tbox_test_font_resolver, &resolver_state);
+    tbox_font_face_cache *resolving_cache = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, tbox_test_font_resolver, &resolver_state, NULL);
     TBOX_TEST_ASSERT(resolving_cache != NULL);
 
     if (resolving_cache != NULL) {
@@ -289,9 +293,18 @@ int tbox_test_font_run(void) {
         tbox_font_face_cache_destroy(resolving_cache);
     }
 
+    /* the resolver's userdata is released once, by the cache's destroy. */
+    {
+        int released                 = 0;
+        tbox_font_face_cache *owning = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, &released, tbox_test_font_release);
+        TBOX_TEST_ASSERT(owning != NULL && released == 0);
+        tbox_font_face_cache_destroy(owning);
+        TBOX_TEST_ASSERT(released == 1);
+    }
+
     /* 19: a cache with resolver == NULL returns NULL for a non-empty family,
      * without crashing. */
-    tbox_font_face_cache *no_resolver_cache = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL);
+    tbox_font_face_cache *no_resolver_cache = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL, NULL);
     TBOX_TEST_ASSERT(no_resolver_cache != NULL);
 
     if (no_resolver_cache != NULL) {

@@ -15,6 +15,7 @@
 #include <tbox/string_view.h>
 
 #include "base/tbox_mutex.h"
+#include "base/tbox_release.h"
 #include "output/tbox_window_backend.h"
 
 #ifndef TBOX_HAS_WINDOW_BACKEND
@@ -32,6 +33,7 @@
 typedef struct tbox_app_task_entry {
     tbox_app_task task;
     void *userdata;
+    tbox_destroy_notify destroy;
     struct tbox_app_task_entry *next;
 } tbox_app_task_entry;
 
@@ -68,6 +70,10 @@ struct tbox_app {
     char *control_css_copy;
     tbox_app_key_handler key_handler;
     void *key_handler_userdata;
+    tbox_destroy_notify key_handler_destroy;
+    /* Userdata releases waiting for the key handler or a task in progress
+     * (see src/base/tbox_release.h). */
+    tbox_release_list releases;
 
     /* After a frame the layout may have moved under a still pointer: the
      * next wait re-tests :hover before sleeping. */
@@ -112,9 +118,9 @@ static tbox_font_source *tbox_app_resolve_font_source(bool bold, const void **ou
 /* The cache copies returned bytes before another resolve. The shared source
  * remains alive until the cache is destroyed, so the callback's output is
  * valid during that copy and each resolved font is eventually released. */
-static bool tbox_app_font_resolver(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size) {
+static bool tbox_app_font_resolver(void *userdata, const tbox_font_query *query, const void **out_data, size_t *out_size) {
     tbox_font_source *source = userdata;
-    return tbox_font_source_resolve(source, query, out_data, out_size);
+    return tbox_font_source_resolve(source, *query, out_data, out_size);
 }
 
 /* shared by tbox_app_create_impl and tbox_app_screenshot_from_files
@@ -151,7 +157,7 @@ static tbox_font_face_cache *tbox_app_build_font_cache(tbox_font_source **out_re
         return NULL;
     }
 
-    tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size, tbox_app_font_resolver, resolver_source);
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(regular_data, regular_size, bold_data, bold_size, tbox_app_font_resolver, resolver_source, NULL);
     /* Both sources' bytes are already copied into `fonts` above (or the
      * call failed and there is nothing left to copy from) -- neither source
      * is needed past this point, success or failure alike. */
@@ -196,12 +202,12 @@ static void tbox_app_dirname(const char *path, char *out, size_t out_size) {
     out[len] = '\0';
 }
 
-/* Shared by tbox_app_create/tbox_app_create_with_config (the same "thin
+/* Shared by tbox_app_create/tbox_app_create_with_options (the same "thin
  * public wrapper over one real implementation" shape as
- * tbox_context_open/tbox_context_open_with_config): builds the font cache
+ * tbox_context_open/tbox_context_open_with_options): builds the font cache
  * (see tbox_app_build_font_cache above) and the image cache (`base_dir` --
  * see tbox_app_dirname above -- is NULL/empty for tbox_app_create/
- * _with_config's raw-HTML-string callers, since there is no HTML file to
+ * _with_options's raw-HTML-string callers, since there is no HTML file to
  * derive one from; tbox_app_create_from_files_impl below passes the real
  * one), opens the tbox_context (with or without an explicit
  * tbox_ua_style_config, per `use_config`) and the Wayland window, and
@@ -228,7 +234,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
 
     if (options.asset_base_dir == NULL)
         options.asset_base_dir = base_dir;
-    tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css, strlen(css), fonts, images, options);
+    tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css, strlen(css), fonts, images, &options);
     if (ctx == NULL) {
         tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
@@ -291,6 +297,8 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     }
     app->key_handler          = NULL;
     app->key_handler_userdata = NULL;
+    app->key_handler_destroy  = NULL;
+    app->releases             = (tbox_release_list){ 0 };
     app->hover_recheck        = false;
     app->tasks_head           = NULL;
     app->tasks_tail           = NULL;
@@ -302,13 +310,8 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
     return tbox_app_create_impl(html, css, NULL, width, height, tbox_context_options_default());
 }
 
-tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
-    tbox_context_options options = tbox_context_options_default();
-    options.ua_style             = config;
-    return tbox_app_create_impl(html, css, NULL, width, height, options);
-}
-tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options) {
-    return tbox_app_create_impl(html, css, NULL, width, height, options);
+tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, const tbox_context_options *options) {
+    return tbox_app_create_impl(html, css, NULL, width, height, options != NULL ? *options : tbox_context_options_default());
 }
 #endif
 
@@ -359,17 +362,17 @@ static char *tbox_app_read_file(const char *path) {
     return buffer;
 }
 
-/* Shared by tbox_app_create_from_files/tbox_app_create_from_files_with_config
+/* Shared by tbox_app_create_from_files/tbox_app_create_from_files_with_options
  * -- same "thin public wrapper over one shared impl" shape as
  * tbox_app_create_impl above. Reads html_path (required: NULL, or a read
  * failure, returns NULL immediately without touching css_path) and css_path
  * (NULL means "no author stylesheet", treated as an empty CSS string rather
  * than an error; a non-NULL css_path that fails to read IS an error) via
  * tbox_app_read_file(), then forwards the resulting NUL-terminated buffers
- * to tbox_app_create_impl exactly like tbox_app_create/_with_config already
+ * to tbox_app_create_impl exactly like tbox_app_create/_with_options already
  * do above. Both buffers are freed right after that call returns, success or
  * failure alike -- tbox_html_parse/tbox_css_parse (called inside
- * tbox_context_open/_with_config, called inside tbox_app_create_impl)
+ * tbox_context_open/_with_options, called inside tbox_app_create_impl)
  * already copy whatever they need into their own document/stylesheet
  * arenas, so these buffers don't need to outlive that call. */
 #if TBOX_HAS_WINDOW_BACKEND
@@ -412,13 +415,8 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
     return tbox_app_create_from_files_impl(html_path, css_path, width, height, tbox_context_options_default());
 }
 
-tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
-    tbox_context_options options = tbox_context_options_default();
-    options.ua_style             = config;
-    return tbox_app_create_from_files_impl(html_path, css_path, width, height, options);
-}
-tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
-    return tbox_app_create_from_files_impl(html_path, css_path, width, height, options);
+tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const tbox_context_options *options) {
+    return tbox_app_create_from_files_impl(html_path, css_path, width, height, options != NULL ? *options : tbox_context_options_default());
 }
 
 bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path) {
@@ -445,7 +443,7 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
         tbox_context_options options = app->options;
         options.asset_base_dir       = base_dir;
         options.css_base_dir         = css_path != NULL ? css_dir : NULL;
-        ctx                          = tbox_context_open_with_options(html, strlen(html), css_text, strlen(css_text), app->fonts, images, options);
+        ctx                          = tbox_context_open_with_options(html, strlen(html), css_text, strlen(css_text), app->fonts, images, &options);
     }
     free(css);
     free(html);
@@ -472,10 +470,11 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
  * along the way (font cache, context, pixel buffer) is torn down before
  * returning, success or failure alike -- there is no handle for a caller to
  * hold onto afterward, unlike tbox_app_create*. */
-bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, tbox_context_options options) {
+bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, const tbox_context_options *options_in) {
     if (html_path == NULL || png_path == NULL || width <= 0 || height <= 0) {
         return false;
     }
+    tbox_context_options options = options_in != NULL ? *options_in : tbox_context_options_default();
 
     char *html = tbox_app_read_file(html_path);
     if (html == NULL) {
@@ -508,7 +507,7 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
         if (images != NULL) {
             if (options.asset_base_dir == NULL)
                 options.asset_base_dir = base_dir;
-            tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts, images, options);
+            tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css != NULL ? css : "", css != NULL ? strlen(css) : 0, fonts, images, &options);
             if (ctx != NULL) {
                 tbox_display_list list;
                 tbox_context_run_frame(ctx, (double)width, (double)height, &list);
@@ -547,7 +546,7 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
 }
 
 bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path) {
-    return tbox_app_screenshot_from_files_with_options(html_path, css_path, width, height, png_path, tbox_context_options_default());
+    return tbox_app_screenshot_from_files_with_options(html_path, css_path, width, height, png_path, NULL);
 }
 
 #if TBOX_HAS_WINDOW_BACKEND
@@ -565,11 +564,13 @@ tbox_context *tbox_app_context(tbox_app *app) {
     return app->ctx;
 }
 
-void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata) {
+void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata, tbox_destroy_notify destroy) {
     if (app == NULL)
         return;
+    tbox_release_add(&app->releases, app->key_handler_destroy, app->key_handler_userdata);
     app->key_handler          = handler;
     app->key_handler_userdata = userdata;
+    app->key_handler_destroy  = destroy;
 }
 
 void tbox_app_request_redraw(tbox_app *app) {
@@ -585,7 +586,7 @@ void tbox_app_set_debug_damage(tbox_app *app, bool enabled) {
     }
 }
 
-bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata) {
+bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata, tbox_destroy_notify destroy) {
     if (app == NULL || task == NULL)
         return false;
     tbox_app_task_entry *entry = malloc(sizeof(*entry));
@@ -593,6 +594,7 @@ bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata) {
         return false;
     entry->task     = task;
     entry->userdata = userdata;
+    entry->destroy  = destroy;
     entry->next     = NULL;
     tbox_mutex_lock(&app->tasks_lock);
     if (app->tasks_tail != NULL)
@@ -615,12 +617,15 @@ static bool tbox_app_run_tasks(tbox_app *app) {
     app->tasks_tail            = NULL;
     tbox_mutex_unlock(&app->tasks_lock);
     bool ran = entry != NULL;
+    tbox_release_enter(&app->releases);
     while (entry != NULL) {
         tbox_app_task_entry *next = entry->next;
         entry->task(app, entry->userdata);
+        tbox_release_add(&app->releases, entry->destroy, entry->userdata);
         free(entry);
         entry = next;
     }
+    tbox_release_leave(&app->releases);
     return ran;
 }
 
@@ -696,7 +701,7 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
 
             tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
             if (event.data.click.double_click) {
-                tbox_context_dispatch_key(app->ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true });
+                tbox_context_dispatch_key(app->ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true });
             }
             /* Clicking inside an already focused text field may move its
              * cursor without changing focus or firing a click handler. */
@@ -726,14 +731,19 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
                 dirty = true;
             break;
         case TBOX_INPUT_KEY:
-            if (app->key_handler != NULL && app->key_handler(app, event.data.key, app->key_handler_userdata)) {
-                dirty = true;
-                break;
+            if (app->key_handler != NULL) {
+                tbox_release_enter(&app->releases);
+                bool consumed = app->key_handler(app, &event.data.key, app->key_handler_userdata);
+                tbox_release_leave(&app->releases);
+                if (consumed) {
+                    dirty = true;
+                    break;
+                }
             }
             if (event.data.key.pressed && event.data.key.control && (event.data.key.key == TBOX_KEY_C || event.data.key.key == TBOX_KEY_X)) {
                 tbox_string_view selected = tbox_context_selected_text(app->ctx);
                 if (selected.size > 0 && tbox_window_backend_clipboard_copy(app->backend, selected.data, selected.size, event.serial) && event.data.key.key == TBOX_KEY_X) {
-                    if (tbox_context_dispatch_key(app->ctx, (tbox_key_event){ TBOX_KEY_DELETE, true, false, false }))
+                    if (tbox_context_dispatch_key(app->ctx, &(tbox_key_event){ TBOX_KEY_DELETE, true, false, false }))
                         dirty = true;
                 }
                 break;
@@ -742,7 +752,7 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
                 app->paste_target = tbox_window_backend_clipboard_paste(app->backend) ? tbox_context_focused_node(app->ctx) : NULL;
                 break;
             }
-            if (tbox_context_dispatch_key(app->ctx, event.data.key)) {
+            if (tbox_context_dispatch_key(app->ctx, &event.data.key)) {
                 dirty = true;
             } else if (event.data.key.pressed && event.data.key.key == TBOX_KEY_ESCAPE) {
                 app->closed = true;
@@ -839,13 +849,16 @@ void tbox_app_close(tbox_app *app) {
 
     tbox_window_backend_destroy(app->backend);
     tbox_context_close(app->ctx);
-    /* Tasks never run are dropped; their userdata is the poster's. */
+    /* Tasks never run are dropped, their userdata released. */
     for (tbox_app_task_entry *entry = app->tasks_head; entry != NULL;) {
         tbox_app_task_entry *next = entry->next;
+        tbox_release_add(&app->releases, entry->destroy, entry->userdata);
         free(entry);
         entry = next;
     }
     tbox_mutex_destroy(&app->tasks_lock);
+    tbox_release_add(&app->releases, app->key_handler_destroy, app->key_handler_userdata);
+    tbox_release_finish(&app->releases);
     tbox_image_cache_destroy(app->images);
     tbox_font_face_cache_destroy(app->fonts);
     tbox_font_source_destroy(app->resolver_source);
@@ -865,15 +878,7 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
     return NULL;
 }
 
-tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
-    (void)html;
-    (void)css;
-    (void)width;
-    (void)height;
-    (void)config;
-    return NULL;
-}
-tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options) {
+tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, const tbox_context_options *options) {
     (void)html;
     (void)css;
     (void)width;
@@ -890,15 +895,7 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
     return NULL;
 }
 
-tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
-    (void)html_path;
-    (void)css_path;
-    (void)width;
-    (void)height;
-    (void)config;
-    return NULL;
-}
-tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
+tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const tbox_context_options *options) {
     (void)html_path;
     (void)css_path;
     (void)width;
@@ -914,10 +911,11 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
     return false;
 }
 
-void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata) {
+void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata, tbox_destroy_notify destroy) {
     (void)app;
     (void)handler;
     (void)userdata;
+    (void)destroy;
 }
 
 tbox_context *tbox_app_context(tbox_app *app) {
@@ -941,10 +939,11 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
 void tbox_app_run(tbox_app *app) {
     (void)app;
 }
-bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata) {
+bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata, tbox_destroy_notify destroy) {
     (void)app;
     (void)task;
     (void)userdata;
+    (void)destroy;
     return false;
 }
 bool tbox_app_should_close(const tbox_app *app) {

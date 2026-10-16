@@ -29,20 +29,12 @@ bool tbox_app_backend_available(void);
  * is built. The current backend is Linux/Wayland. */
 tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int32_t height);
 
-/* same as tbox_app_create, plus an explicit tbox_ua_style_config
- * this app's tbox_context is opened with (via tbox_context_open_with_config
- * instead of tbox_context_open -- see docs/dev/historico.md's "Application /
- * Orchestration -- fiação do cache de fontes e do config"). Application
- * does not interpret any field of `config` itself; it only forwards it to
- * Orchestration, which is the sole reader. Font resolution (two fontconfig
- * queries, one regular/one bold -- see tbox_app_create's own doc comment
- * above) is identical between the two functions; `config` only affects the
- * generated user-agent stylesheet, not font discovery. Fails under the
- * exact same conditions as tbox_app_create. */
-tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config);
-/* Same creation path, with an optional separate picker stylesheet. The app
- * copies control_css so a later tbox_app_load_from_files keeps the theme. */
-tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options);
+/* Same as tbox_app_create, opening the context with `options` (user-agent
+ * style config, picker theme, resource directories, reduced motion; see
+ * tbox_context_open_with_options). NULL is tbox_context_options_default().
+ * Neither `options` nor its strings need outlive the call: the app copies
+ * control_css so a later tbox_app_load_from_files keeps the theme. */
+tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, const tbox_context_options *options);
 
 /* same as tbox_app_create, but html_path/css_path are paths to
  * files read fully into memory (a local helper in tbox_app.c, same
@@ -63,13 +55,8 @@ tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_
  * load failure, or the window failing to open). */
 tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height);
 
-/* same as tbox_app_create_from_files, plus an explicit
- * tbox_ua_style_config this app's tbox_context is opened with -- same
- * relationship tbox_app_create_with_config has to tbox_app_create. Fails
- * under the same conditions as tbox_app_create_from_files. */
-tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config);
 /* File-based counterpart of tbox_app_create_with_options. */
-tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options);
+tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const tbox_context_options *options);
 
 /* Development/testing tool: renders html_path/css_path into an offscreen
  * width x height buffer and writes it to png_path -- WITHOUT ever opening a
@@ -89,8 +76,8 @@ tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const c
  * success. Needs Fontconfig at build time, but no Wayland dependency. When
  * Fontconfig is unavailable the symbol remains linkable and returns false. */
 bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path);
-/* Offscreen counterpart accepting the separate picker theme. */
-bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, tbox_context_options options);
+/* Offscreen counterpart taking context options (NULL: defaults). */
+bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, const tbox_context_options *options);
 
 /* Access to the internal tbox_context -- for registering click handlers via
  * tbox_context_on_click, at any point before or after the first
@@ -98,9 +85,13 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
 tbox_context *tbox_app_context(tbox_app *app);
 
 /* Called for each translated key event before the context handles it.
- * Return true to consume the key. The handler may load another document. */
-typedef bool (*tbox_app_key_handler)(tbox_app *app, tbox_key_event event, void *userdata);
-void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata);
+ * Return true to consume the key. The handler may load another document.
+ * `event` is valid only during the call. Setting a handler replaces the
+ * previous one (NULL clears it); the previous `destroy` (may be NULL) is
+ * called for the previous userdata then, and the current one at
+ * tbox_app_close (see <tbox/callback.h>). */
+typedef bool (*tbox_app_key_handler)(tbox_app *app, const tbox_key_event *event, void *userdata);
+void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata, tbox_destroy_notify destroy);
 
 /* Replaces the current document in the existing window. NULL css_path uses
  * only the document's embedded styles and the user-agent stylesheet. On
@@ -147,13 +138,16 @@ typedef void (*tbox_app_task)(tbox_app *app, void *userdata);
 
 /* Queues `task` and wakes a tbox_app_wait in progress. Safe to call from
  * any thread -- the only function in this API that is -- including from a
- * task or handler on the UI thread itself. Returns false (task not queued)
- * if app or task is NULL or memory runs out. Every poster must be done
- * before tbox_app_close; tasks still queued then are dropped without
- * running. Once the window is closed, tbox_app_wait/tbox_app_step only run
- * queued tasks, so after joining the posting threads one tbox_app_step
- * drains them (and frees whatever `userdata` they own). */
-bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata);
+ * task or handler on the UI thread itself. `destroy` (may be NULL) is
+ * called once on the UI thread for `userdata` when the library is done
+ * with it: right after the task ran, or when tbox_app_close drops a task
+ * that never ran (see <tbox/callback.h>). Returns false -- nothing queued,
+ * destroy not called, userdata still the caller's -- if app or task is
+ * NULL or memory runs out. Every poster must be done before tbox_app_close.
+ * Once the window is closed, tbox_app_wait/tbox_app_step only run queued
+ * tasks, so after joining the posting threads one tbox_app_step delivers
+ * whatever is left. */
+bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata, tbox_destroy_notify destroy);
 
 /* True once the window should close or its backend connection is lost.
  * The current Wayland backend also closes on Escape. NULL is already closed. */

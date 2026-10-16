@@ -351,7 +351,7 @@ static long tbox_app_demo_elapsed_ms(const struct timespec *start) {
  * ctx/handler NULL). Small helper shared by every registration in main()
  * below purely to avoid repeating this same six-line check seven times. */
 static bool tbox_app_demo_register(tbox_app *app, const char *selector, tbox_context_click_handler handler, void *userdata, int *out_binding) {
-    int binding = tbox_context_on_click(tbox_app_context(app), selector, strlen(selector), handler, userdata);
+    int binding = tbox_context_on_click(tbox_app_context(app), selector, strlen(selector), handler, userdata, NULL);
     if (binding < 0) {
         fprintf(stderr, "tbox_context_on_click failed to register the \"%s\" handler\n", selector);
         return false;

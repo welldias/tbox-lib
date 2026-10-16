@@ -50,9 +50,9 @@ está desenhada por cima. Caixas com `visibility: hidden` ou
 ## Cliques: delegação por seletor
 
 ```c
-int id = tbox_context_on_click(ctx, ".item button", 12, on_item_click, userdata);
+int id = tbox_context_on_click(ctx, ".item button", 12, on_item_click, userdata, destroy);
 /* ... */
-tbox_context_unbind_click(ctx, id);
+tbox_context_unbind_click(ctx, id);   /* chama destroy(userdata), se houver */
 ```
 
 - O handler é associado a um **seletor CSS**, não a um nó. Vale para
@@ -60,6 +60,9 @@ tbox_context_unbind_click(ctx, id);
   handler pendurado.
 - Seletor inválido retorna `-1` e nada é registrado.
 - O id retornado é monotônico e nunca reutilizado.
+- `destroy` (pode ser `NULL`) libera o `userdata` no `unbind` ou no
+  `tbox_context_close`; se o próprio handler fizer o `unbind`, a liberação
+  espera ele retornar.
 
 ### Bubbling e `stopPropagation`
 

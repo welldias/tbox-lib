@@ -89,9 +89,7 @@ bool tbox_context_submit_form(tbox_context *ctx, const tbox_html_node *activator
                                      const tbox_html_node *submitter) {
     const tbox_html_node *form = tbox_context_nearest_form(activator);
     if (form == NULL) return false;
-    if (ctx->submit_handler != NULL)
-        ctx->submit_handler(ctx, (tbox_html_node *)form, (tbox_html_node *)submitter,
-            ctx->submit_userdata);
+    tbox_context_emit_submit(ctx, form, submitter);
     return true;
 }
 

@@ -25,7 +25,7 @@ bool tbox_context_color_commit(tbox_context *ctx, const tbox_html_node *node, tb
                                  tbox_string_view_make("value", 5), tbox_string_view_make(hex, 7));
     if (ctx->input_handler != NULL) {
         const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-        if (value != NULL) ctx->input_handler(ctx, (tbox_html_node *)node, value->value, ctx->input_userdata);
+        if (value != NULL) tbox_context_emit_input(ctx, node, value->value);
     }
     return true;
 }

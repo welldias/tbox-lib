@@ -32,12 +32,12 @@ static bool on_button(tbox_context *ctx, tbox_html_node *button, void *userdata)
     return true;
 }
 
-static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view value, void *userdata) {
+static void on_input(tbox_context *ctx, tbox_html_node *input, const char *value, size_t value_length, void *userdata) {
     (void)userdata;
     const tbox_html_attribute *id = tbox_html_node_get_attribute(input, tbox_string_view_make("id", 2));
     if (id != NULL && id->value.size == 16 && memcmp(id->value.data, "account-password", 16) == 0) {
         char message[40];
-        int written = snprintf(message, sizeof(message), "Password length: %zu", value.size);
+        int written = snprintf(message, sizeof(message), "Password length: %zu", value_length);
         if (written > 0 && (size_t)written < sizeof(message)) {
             tbox_css_selector_node_set matches = tbox_css_selector_select(
                 tbox_html_document_root(tbox_context_document(ctx)), "#password-status", 16);
@@ -50,7 +50,7 @@ static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view 
     }
     if (id != NULL && id->value.size == 14 && memcmp(id->value.data, "favorite-color", 14) == 0) {
         char message[32];
-        int written = snprintf(message, sizeof(message), "Color: %.*s", (int)value.size, value.data);
+        int written = snprintf(message, sizeof(message), "Color: %.*s", (int)value_length, value);
         if (written > 0 && (size_t)written < sizeof(message)) {
             tbox_css_selector_node_set matches = tbox_css_selector_select(
                 tbox_html_document_root(tbox_context_document(ctx)), "#color-status", 13);
@@ -62,7 +62,7 @@ static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view 
     }
     if (id != NULL && id->value.size == 12 && memcmp(id->value.data, "meeting-date", 12) == 0) {
         char message[32];
-        int written = snprintf(message, sizeof(message), "Date: %.*s", (int)value.size, value.data);
+        int written = snprintf(message, sizeof(message), "Date: %.*s", (int)value_length, value);
         if (written > 0 && (size_t)written < sizeof(message)) {
             tbox_css_selector_node_set matches = tbox_css_selector_select(
                 tbox_html_document_root(tbox_context_document(ctx)), "#date-status", 12);
@@ -74,7 +74,7 @@ static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view 
     }
     if (id != NULL && id->value.size == 12 && memcmp(id->value.data, "meeting-time", 12) == 0) {
         char message[40];
-        int written = snprintf(message, sizeof(message), "Date and time: %.*s", (int)value.size, value.data);
+        int written = snprintf(message, sizeof(message), "Date and time: %.*s", (int)value_length, value);
         if (written > 0 && (size_t)written < sizeof(message)) {
             tbox_css_selector_node_set matches = tbox_css_selector_select(
                 tbox_html_document_root(tbox_context_document(ctx)), "#time-status", 12);
@@ -86,7 +86,7 @@ static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view 
     }
     if (id != NULL && id->value.size == 13 && memcmp(id->value.data, "billing-month", 13) == 0) {
         char message[32];
-        int written = snprintf(message, sizeof(message), "Month: %.*s", (int)value.size, value.data);
+        int written = snprintf(message, sizeof(message), "Month: %.*s", (int)value_length, value);
         if (written > 0 && (size_t)written < sizeof(message)) {
             tbox_css_selector_node_set matches = tbox_css_selector_select(
                 tbox_html_document_root(tbox_context_document(ctx)), "#month-status", 13);
@@ -125,7 +125,7 @@ static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view 
     }
     if (id != NULL && id->value.size == 12 && memcmp(id->value.data, "volume-range", 12) == 0) {
         char message[32];
-        int written = snprintf(message, sizeof(message), "Range: %.*s", (int)value.size, value.data);
+        int written = snprintf(message, sizeof(message), "Range: %.*s", (int)value_length, value);
         if (written > 0 && (size_t)written < sizeof(message)) {
             tbox_css_selector_node_set matches = tbox_css_selector_select(
                 tbox_html_document_root(tbox_context_document(ctx)), "#range-status", 13);
@@ -138,7 +138,7 @@ static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view 
     if (id != NULL && id->value.size == 10 && memcmp(id->value.data, "attachment", 10) == 0) {
         char message[160];
         int written = snprintf(message, sizeof(message), "File: %.*s",
-            (int)(value.size < 140 ? value.size : 140), value.data);
+            (int)(value_length < 140 ? value_length : 140), value);
         if (written > 0 && (size_t)written < sizeof(message)) {
             tbox_css_selector_node_set matches = tbox_css_selector_select(
                 tbox_html_document_root(tbox_context_document(ctx)), "#file-status", 12);
@@ -151,7 +151,7 @@ static void on_input(tbox_context *ctx, tbox_html_node *input, tbox_string_view 
         if (path.size > 0) printf("Selected path: %.*s\n", (int)path.size, path.data);
     }
     fputs("Input: ", stdout);
-    fwrite(value.data, 1, value.size, stdout);
+    fwrite(value, 1, value_length, stdout);
     fputc('\n', stdout);
 }
 
@@ -185,12 +185,12 @@ static bool on_radio(tbox_context *ctx, tbox_html_node *radio, void *userdata) {
     return true;
 }
 
-static void on_select(tbox_context *ctx, tbox_html_node *select, tbox_string_view value, void *userdata) {
+static void on_select(tbox_context *ctx, tbox_html_node *select, const char *value, size_t value_length, void *userdata) {
     (void)select;
     (void)userdata;
     char message[128];
     int written = snprintf(message, sizeof(message), "Selected: %.*s",
-                           (int)(value.size < 100 ? value.size : 100), value.data != NULL ? value.data : "");
+                           (int)(value_length < 100 ? value_length : 100), value != NULL ? value : "");
     if (written < 0) return;
     tbox_css_selector_node_set matches = tbox_css_selector_select(
         tbox_html_document_root(tbox_context_document(ctx)), "#choice", 7);
@@ -224,14 +224,14 @@ int main(void) {
         fputs("Could not create the window\n", stderr);
         return 1;
     }
-    tbox_context_on_click(tbox_app_context(app), "button", 6, on_button, NULL);
-    tbox_context_on_click(tbox_app_context(app), "input[type=button]", 18, on_button, NULL);
-    tbox_context_on_click(tbox_app_context(app), "input[type=image]", 17, on_button, NULL);
-    tbox_context_on_click(tbox_app_context(app), "input[type=checkbox]", 20, on_checkbox, NULL);
-    tbox_context_on_click(tbox_app_context(app), "input[type=radio]", 17, on_radio, NULL);
-    tbox_context_on_input(tbox_app_context(app), on_input, NULL);
-    tbox_context_on_submit(tbox_app_context(app), on_submit, NULL);
-    tbox_context_on_select(tbox_app_context(app), on_select, NULL);
+    tbox_context_on_click(tbox_app_context(app), "button", 6, on_button, NULL, NULL);
+    tbox_context_on_click(tbox_app_context(app), "input[type=button]", 18, on_button, NULL, NULL);
+    tbox_context_on_click(tbox_app_context(app), "input[type=image]", 17, on_button, NULL, NULL);
+    tbox_context_on_click(tbox_app_context(app), "input[type=checkbox]", 20, on_checkbox, NULL, NULL);
+    tbox_context_on_click(tbox_app_context(app), "input[type=radio]", 17, on_radio, NULL, NULL);
+    tbox_context_on_input(tbox_app_context(app), on_input, NULL, NULL);
+    tbox_context_on_submit(tbox_app_context(app), on_submit, NULL, NULL);
+    tbox_context_on_select(tbox_app_context(app), on_select, NULL, NULL);
     tbox_app_run(app);
     tbox_app_close(app);
     return 0;

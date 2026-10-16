@@ -174,7 +174,7 @@ static bool tbox_context_select_commit(tbox_context *ctx, const tbox_html_node *
     field->dirty = true;
     if (ctx->select_handler != NULL) {
         tbox_string_view value = tbox_context_option_value(ctx, option);
-        ctx->select_handler(ctx, (tbox_html_node *)select, value, ctx->select_userdata);
+        tbox_context_emit_select(ctx, select, value);
     }
     return true;
 }
@@ -402,8 +402,10 @@ bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *sele
     return false;
 }
 
-void tbox_context_on_select(tbox_context *ctx, tbox_context_select_handler handler, void *userdata) {
+void tbox_context_on_select(tbox_context *ctx, tbox_context_select_handler handler, void *userdata, tbox_destroy_notify destroy) {
     if (ctx == NULL) return;
-    ctx->select_handler = handler;
+    tbox_release_add(&ctx->releases, ctx->select_destroy, ctx->select_userdata);
+    ctx->select_handler  = handler;
     ctx->select_userdata = userdata;
+    ctx->select_destroy  = destroy;
 }

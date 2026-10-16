@@ -2,7 +2,7 @@
 
 static bool tbox_context_dispatch_click_node(tbox_context *ctx, const tbox_html_node *node);
 
-int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata) {
+int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata, tbox_destroy_notify destroy) {
     if (ctx == NULL || handler == NULL) {
         return -1;
     }
@@ -18,6 +18,7 @@ int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t select
     binding->query                      = query;
     binding->handler                    = handler;
     binding->userdata                   = userdata;
+    binding->destroy                    = destroy;
     binding->active                     = true;
     binding->id                         = ctx->next_handler_id;
     ctx->next_handler_id++;
@@ -38,6 +39,8 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding) {
             tbox_css_selector_query_destroy(entry->query);
             entry->query  = NULL;
             entry->active = false;
+            tbox_release_add(&ctx->releases, entry->destroy, entry->userdata);
+            entry->destroy = NULL;
             return true;
         }
     }
@@ -51,6 +54,7 @@ static bool tbox_context_dispatch_click_node(tbox_context *ctx, const tbox_html_
     tbox_css_selector_set_active_context(ctx->active_node);
     bool dispatched      = false;
     size_t handler_count = tbox_vector_length(&ctx->handlers);
+    tbox_release_enter(&ctx->releases);
 
     /* walk the ancestor chain ONCE, nearest to farthest -- real
      * bubbling order. At each level, test EVERY currently-active binding
@@ -71,7 +75,9 @@ static bool tbox_context_dispatch_click_node(tbox_context *ctx, const tbox_html_
                  * own read-only view), but a click handler's whole point is
                  * to be able to mutate the tree (e.g.
                  * tbox_html_node_set_attribute) -- see
-                 * tbox_context_click_handler's signature. */
+                 * tbox_context_click_handler's signature. The handler may
+                 * register more bindings, moving the vector: nothing is
+                 * read through `binding` after this call. */
                 bool keep_propagating = binding->handler(ctx, (tbox_html_node *)ancestor, binding->userdata);
                 dispatched            = true;
 
@@ -87,7 +93,32 @@ static bool tbox_context_dispatch_click_node(tbox_context *ctx, const tbox_html_
         }
     }
 
+    tbox_release_leave(&ctx->releases);
     return dispatched;
+}
+
+void tbox_context_emit_input(tbox_context *ctx, const tbox_html_node *input, tbox_string_view value) {
+    if (ctx->input_handler == NULL)
+        return;
+    tbox_release_enter(&ctx->releases);
+    ctx->input_handler(ctx, (tbox_html_node *)input, value.data, value.size, ctx->input_userdata);
+    tbox_release_leave(&ctx->releases);
+}
+
+void tbox_context_emit_select(tbox_context *ctx, const tbox_html_node *select, tbox_string_view value) {
+    if (ctx->select_handler == NULL)
+        return;
+    tbox_release_enter(&ctx->releases);
+    ctx->select_handler(ctx, (tbox_html_node *)select, value.data, value.size, ctx->select_userdata);
+    tbox_release_leave(&ctx->releases);
+}
+
+void tbox_context_emit_submit(tbox_context *ctx, const tbox_html_node *form, const tbox_html_node *submitter) {
+    if (ctx->submit_handler == NULL)
+        return;
+    tbox_release_enter(&ctx->releases);
+    ctx->submit_handler(ctx, (tbox_html_node *)form, (tbox_html_node *)submitter, ctx->submit_userdata);
+    tbox_release_leave(&ctx->releases);
 }
 
 bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
@@ -211,7 +242,13 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
     return clicked || submitted || toggled || toggled_details || selected_radio || reset_form || cleared_search || changed_range || opened_color || (clicked_color && focus == previous_color) || clicked_date || opened_file || (clicked_file && focus == previous_file) || stepped;
 }
 
-bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event) {
+static bool tbox_context_dispatch_key_event(tbox_context *ctx, tbox_key_event event);
+
+bool tbox_context_dispatch_key(tbox_context *ctx, const tbox_key_event *event) {
+    return event != NULL && tbox_context_dispatch_key_event(ctx, *event);
+}
+
+static bool tbox_context_dispatch_key_event(tbox_context *ctx, tbox_key_event event) {
     if (ctx == NULL || !event.pressed) {
         return false;
     }

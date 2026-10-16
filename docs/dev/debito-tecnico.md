@@ -134,15 +134,17 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   terminou de carregar.
 - **Quando revisitar:** quando houver recursos remotos ou grandes.
 
-### Callbacks para bindings
+### ABI das structs públicas
 
-- **O que é:** handlers e tarefas recebem `userdata` sem um
-  `destroy_notify`; linguagens com GC precisam saber quando liberar o que
-  amarraram ao callback (ex.: uma tarefa descartada no `tbox_app_close`).
-  Algumas structs são passadas por valor (`tbox_context_options`,
-  `tbox_key_event` no handler de tecla), o que é incômodo em certas FFIs.
-- **Quando revisitar:** no primeiro binding para outra linguagem.
-- **Toca:** `include/tbox/app.h`, `include/tbox/context.h`.
+- **O que é:** structs de opções (`tbox_context_options`) já entram por
+  ponteiro, mas não têm campo de tamanho/versão; `tbox_context_options_default()`
+  e `tbox_ua_style_config_default()` retornam por valor. Um binding
+  compilado contra uma versão continua quebrando se a struct crescer em
+  outra.
+- **Quando revisitar:** antes da primeira versão estável (até lá a API muda
+  livremente). Caminho provável: `size_t struct_size` no início, ou funções
+  `_init(ptr)` no lugar dos `_default()`.
+- **Toca:** `include/tbox/context.h`, `include/tbox/app.h`.
 
 ## Build e empacotamento
 

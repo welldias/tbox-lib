@@ -166,7 +166,7 @@ bool tbox_context_file_activate(tbox_context *ctx, size_t index) {
     tbox_context_file_close(ctx);
     if (ctx->input_handler != NULL) {
         const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-        if (value != NULL) ctx->input_handler(ctx, (tbox_html_node *)node, value->value, ctx->input_userdata);
+        if (value != NULL) tbox_context_emit_input(ctx, node, value->value);
     }
     free(name);
     return true;

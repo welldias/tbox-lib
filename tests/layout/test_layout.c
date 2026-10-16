@@ -123,7 +123,7 @@ typedef struct tbox_test_layout_resolver_state {
     int calls;
 } tbox_test_layout_resolver_state;
 
-static bool tbox_test_layout_resolver(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size) {
+static bool tbox_test_layout_resolver(void *userdata, const tbox_font_query *query, const void **out_data, size_t *out_size) {
     (void)query;
     tbox_test_layout_resolver_state *state = userdata;
     state->calls++;
@@ -149,7 +149,7 @@ int tbox_test_layout_run(void) {
      * pointer than regular -- which the cache guarantees regardless of
      * whether the underlying bytes happen to be identical, since (bold,
      * size_px) is the cache key). */
-    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL);
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL, NULL);
     TBOX_TEST_ASSERT_MSG(fonts != NULL, "failed to create font face cache");
     if (fonts == NULL) {
         free(font_data);
@@ -2442,7 +2442,7 @@ int tbox_test_layout_run(void) {
             .font_size = font_size,
             .calls     = 0,
         };
-        tbox_font_face_cache *family_fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, tbox_test_layout_resolver, &resolver_state);
+        tbox_font_face_cache *family_fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, tbox_test_layout_resolver, &resolver_state, NULL);
         TBOX_TEST_ASSERT_MSG(family_fonts != NULL, "failed to create font face cache with test resolver");
 
         if (family_fonts != NULL) {
@@ -2521,7 +2521,7 @@ int tbox_test_layout_run(void) {
             .font_size = font_size,
             .calls     = 0,
         };
-        tbox_font_face_cache *italic_fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, tbox_test_layout_resolver, &resolver_state);
+        tbox_font_face_cache *italic_fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, tbox_test_layout_resolver, &resolver_state, NULL);
         TBOX_TEST_ASSERT_MSG(italic_fonts != NULL, "failed to create font face cache with test resolver");
 
         if (italic_fonts != NULL) {

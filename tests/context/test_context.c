@@ -159,7 +159,69 @@ static bool record_click_stop(tbox_context *ctx, tbox_html_node *node, void *use
     return false;
 }
 
-static void record_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+/* tbox_destroy_notify bookkeeping: how often a probe was released and
+ * called, and what its handler saw right after removing itself. */
+typedef struct release_probe {
+    int released;
+    int calls;
+    int released_seen_in_handler;
+    int binding;
+} release_probe;
+
+static void probe_release(void *userdata) {
+    ((release_probe *)userdata)->released++;
+}
+
+static bool probe_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)ctx;
+    (void)node;
+    ((release_probe *)userdata)->calls++;
+    return true;
+}
+
+static bool probe_click_unbind_self(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)node;
+    release_probe *probe = userdata;
+    probe->calls++;
+    tbox_context_unbind_click(ctx, probe->binding);
+    probe->released_seen_in_handler = probe->released; /* still usable here */
+    return true;
+}
+
+static void probe_input_replace_self(tbox_context *ctx, tbox_html_node *node, const char *value, size_t value_length, void *userdata) {
+    (void)node;
+    (void)value;
+    (void)value_length;
+    release_probe *probe = userdata;
+    probe->calls++;
+    tbox_context_on_input(ctx, NULL, NULL, NULL);
+    probe->released_seen_in_handler = probe->released;
+}
+
+static void probe_select(tbox_context *ctx, tbox_html_node *node, const char *value, size_t value_length, void *userdata) {
+    (void)ctx;
+    (void)node;
+    (void)value;
+    (void)value_length;
+    ((release_probe *)userdata)->calls++;
+}
+
+static void probe_submit(tbox_context *ctx, tbox_html_node *form, tbox_html_node *submitter, void *userdata) {
+    (void)ctx;
+    (void)form;
+    (void)submitter;
+    ((release_probe *)userdata)->calls++;
+}
+
+/* The user-agent config tests: options carrying just that config. */
+static tbox_context *open_with_ua_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config) {
+    tbox_context_options options = tbox_context_options_default();
+    options.ua_style             = config;
+    return tbox_context_open_with_options(html, html_length, css, css_length, fonts, images, &options);
+}
+
+static void record_input(tbox_context *ctx, tbox_html_node *node, const char *value_data, size_t value_length, void *userdata) {
+    tbox_string_view value = tbox_string_view_make(value_data, value_length);
     (void)ctx;
     (void)node;
     (void)value;
@@ -172,7 +234,8 @@ typedef struct color_capture {
     const tbox_html_node *node;
 } color_capture;
 
-static void record_color_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+static void record_color_input(tbox_context *ctx, tbox_html_node *node, const char *value_data, size_t value_length, void *userdata) {
+    tbox_string_view value = tbox_string_view_make(value_data, value_length);
     (void)ctx;
     color_capture *capture = userdata;
     capture->count++;
@@ -208,7 +271,8 @@ static void record_submit(tbox_context *ctx, tbox_html_node *form, tbox_html_nod
     capture->submitter = submitter;
 }
 
-static void record_month_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+static void record_month_input(tbox_context *ctx, tbox_html_node *node, const char *value_data, size_t value_length, void *userdata) {
+    tbox_string_view value = tbox_string_view_make(value_data, value_length);
     (void)ctx;
     month_capture *capture = userdata;
     capture->count++;
@@ -218,7 +282,8 @@ static void record_month_input(tbox_context *ctx, tbox_html_node *node, tbox_str
     capture->value[7] = '\0';
 }
 
-static void record_date_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+static void record_date_input(tbox_context *ctx, tbox_html_node *node, const char *value_data, size_t value_length, void *userdata) {
+    tbox_string_view value = tbox_string_view_make(value_data, value_length);
     (void)ctx;
     date_capture *capture = userdata;
     capture->count++;
@@ -234,7 +299,8 @@ typedef struct datetime_capture {
     const tbox_html_node *node;
 } datetime_capture;
 
-static void record_datetime_input(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+static void record_datetime_input(tbox_context *ctx, tbox_html_node *node, const char *value_data, size_t value_length, void *userdata) {
+    tbox_string_view value = tbox_string_view_make(value_data, value_length);
     (void)ctx;
     datetime_capture *capture = userdata;
     capture->count++;
@@ -264,7 +330,8 @@ typedef struct select_capture {
     char value[64];
 } select_capture;
 
-static void record_select(tbox_context *ctx, tbox_html_node *node, tbox_string_view value, void *userdata) {
+static void record_select(tbox_context *ctx, tbox_html_node *node, const char *value_data, size_t value_length, void *userdata) {
+    tbox_string_view value = tbox_string_view_make(value_data, value_length);
     (void)ctx;
     (void)node;
     select_capture *capture = userdata;
@@ -379,7 +446,7 @@ int tbox_test_context_run(void) {
      * single tbox_font_face -- same regular-bytes-for-both-slots
      * placeholder tbox_app_create uses (see src/app/tbox_app.c), fine here
      * since none of these tests exercise bold text specifically. */
-    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL);
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL, NULL);
     TBOX_TEST_ASSERT_MSG(fonts != NULL, "failed to create font face cache");
     if (fonts == NULL) {
         free(font_data);
@@ -543,7 +610,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT_MSG(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture) >= 0, "tbox_context_on_click must succeed for a well-formed selector");
+            TBOX_TEST_ASSERT_MSG(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture, NULL) >= 0, "tbox_context_on_click must succeed for a well-formed selector");
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -569,7 +636,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture, NULL) >= 0);
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -579,6 +646,61 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT_MSG(capture.call_count == 0, "no handler may fire for a click outside every box");
 
             tbox_context_close(ctx);
+        }
+    }
+
+    /* tbox_destroy_notify: released exactly once -- at unbind, at
+     * replacement, at close -- never for a failed registration, and only
+     * after a handler that removes itself has returned. */
+    {
+        tbox_context *ctx = open_cstr("<button></button>", "button { width: 100px; height: 40px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            release_probe unbound = { 0 }, kept = { 0 }, self = { 0 }, failed = { 0 };
+            release_probe first_input = { 0 }, second_input = { 0 }, select = { 0 }, submit = { 0 };
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "[", 1, probe_click, &failed, probe_release) == -1);
+            int unbound_id = tbox_context_on_click(ctx, "button", 6, probe_click, &unbound, probe_release);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", 6, probe_click, &kept, probe_release) >= 0);
+            self.binding = tbox_context_on_click(ctx, "button", 6, probe_click_unbind_self, &self, probe_release);
+            TBOX_TEST_ASSERT(unbound_id >= 0 && self.binding >= 0);
+
+            TBOX_TEST_ASSERT(tbox_context_unbind_click(ctx, unbound_id));
+            TBOX_TEST_ASSERT(!tbox_context_unbind_click(ctx, unbound_id));
+            TBOX_TEST_ASSERT(unbound.released == 1);
+
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, 10.0, 10.0));
+            TBOX_TEST_ASSERT(self.calls == 1 && self.released_seen_in_handler == 0 && self.released == 1);
+            TBOX_TEST_ASSERT(kept.calls == 1 && kept.released == 0 && unbound.calls == 0);
+
+            tbox_context_on_input(ctx, record_input, &first_input, probe_release);
+            tbox_context_on_input(ctx, record_input, &second_input, probe_release);
+            TBOX_TEST_ASSERT(first_input.released == 1 && second_input.released == 0);
+            tbox_context_on_input(ctx, NULL, NULL, NULL);
+            TBOX_TEST_ASSERT(second_input.released == 1);
+            tbox_context_on_select(ctx, probe_select, &select, probe_release);
+            tbox_context_on_submit(ctx, probe_submit, &submit, probe_release);
+
+            tbox_context_close(ctx);
+            TBOX_TEST_ASSERT(kept.released == 1 && select.released == 1 && submit.released == 1);
+            TBOX_TEST_ASSERT(unbound.released == 1 && self.released == 1 && failed.released == 0);
+            TBOX_TEST_ASSERT(first_input.released == 1 && second_input.released == 1);
+        }
+    }
+    {
+        tbox_context *ctx = open_cstr("<input>", "input { width: 100px; height: 20px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            release_probe probe = { 0 };
+            tbox_context_on_input(ctx, probe_input_replace_self, &probe, probe_release);
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 800.0, 600.0, &list);
+            tbox_context_dispatch_click(ctx, 5.0, 5.0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("x", 1)));
+            TBOX_TEST_ASSERT(probe.calls == 1 && probe.released_seen_in_handler == 0 && probe.released == 1);
+            tbox_context_close(ctx);
+            TBOX_TEST_ASSERT(probe.released == 1);
         }
     }
 
@@ -600,7 +722,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), record_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), record_click, &capture, NULL) >= 0);
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -638,8 +760,8 @@ int tbox_test_context_run(void) {
             click_capture class_capture;
             click_capture_reset(&id_capture);
             click_capture_reset(&class_capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#target", strlen("#target"), record_click, &id_capture) >= 0);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".box", strlen(".box"), record_click, &class_capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#target", strlen("#target"), record_click, &id_capture, NULL) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".box", strlen(".box"), record_click, &class_capture, NULL) >= 0);
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -667,7 +789,7 @@ int tbox_test_context_run(void) {
              * before it -- a syntax error (same example
              * tests/css_selector/test_*.c already uses for
              * tbox_css_selector_compile). */
-            int registered = tbox_context_on_click(ctx, ">", strlen(">"), record_click, &capture);
+            int registered = tbox_context_on_click(ctx, ">", strlen(">"), record_click, &capture, NULL);
             TBOX_TEST_ASSERT_MSG(registered == -1, "a selector syntax error must make tbox_context_on_click return -1");
 
             tbox_display_list list;
@@ -690,7 +812,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture, NULL) >= 0);
 
             bool dispatched = tbox_context_dispatch_click(ctx, 10.0, 10.0);
             TBOX_TEST_ASSERT_MSG(!dispatched, "dispatch before any run_frame must return false, not crash");
@@ -717,7 +839,7 @@ int tbox_test_context_run(void) {
             fonts);
         TBOX_TEST_ASSERT_MSG(ctx != NULL, "tbox_context_open must succeed");
         if (ctx != NULL) {
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".off", strlen(".off"), toggle_class_handler, NULL) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".off", strlen(".off"), toggle_class_handler, NULL, NULL) >= 0);
 
             tbox_display_list before_list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &before_list);
@@ -825,8 +947,8 @@ int tbox_test_context_run(void) {
         tbox_ua_style_config custom_config  = default_config;
         custom_config.font.heading_em[0]    = 5.0;
 
-        tbox_context *default_ctx = tbox_context_open_with_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, NULL, default_config);
-        tbox_context *custom_ctx  = tbox_context_open_with_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, NULL, custom_config);
+        tbox_context *default_ctx = open_with_ua_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, NULL, default_config);
+        tbox_context *custom_ctx  = open_with_ua_config("<h1>oi</h1>", strlen("<h1>oi</h1>"), "", 0, fonts, NULL, custom_config);
         TBOX_TEST_ASSERT_MSG(default_ctx != NULL && custom_ctx != NULL, "tbox_context_open_with_config must succeed for both configs");
         if (default_ctx != NULL && custom_ctx != NULL) {
             tbox_display_list default_list, custom_list;
@@ -897,8 +1019,8 @@ int tbox_test_context_run(void) {
         custom_config.font.base_px          = 32.0;
 
         const char *html          = "<body><p>oi</p></body>";
-        tbox_context *default_ctx = tbox_context_open_with_config(html, strlen(html), "", 0, fonts, NULL, default_config);
-        tbox_context *custom_ctx  = tbox_context_open_with_config(html, strlen(html), "", 0, fonts, NULL, custom_config);
+        tbox_context *default_ctx = open_with_ua_config(html, strlen(html), "", 0, fonts, NULL, default_config);
+        tbox_context *custom_ctx  = open_with_ua_config(html, strlen(html), "", 0, fonts, NULL, custom_config);
         TBOX_TEST_ASSERT_MSG(default_ctx != NULL && custom_ctx != NULL, "tbox_context_open_with_config must succeed for both configs");
         if (default_ctx != NULL && custom_ctx != NULL) {
             tbox_display_list default_list, custom_list;
@@ -1042,8 +1164,8 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             bubble_log log;
             bubble_log_reset(&log);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".inner", strlen(".inner"), bubble_log_inner_handler, &log) >= 0);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), bubble_log_outer_handler, &log) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".inner", strlen(".inner"), bubble_log_inner_handler, &log, NULL) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), bubble_log_outer_handler, &log, NULL) >= 0);
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -1073,8 +1195,8 @@ int tbox_test_context_run(void) {
             click_capture outer_capture;
             click_capture_reset(&inner_capture);
             click_capture_reset(&outer_capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".inner", strlen(".inner"), record_click_stop, &inner_capture) >= 0);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), record_click, &outer_capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".inner", strlen(".inner"), record_click_stop, &inner_capture, NULL) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, ".outer", strlen(".outer"), record_click, &outer_capture, NULL) >= 0);
 
             tbox_display_list list;
             tbox_context_run_frame(ctx, 800.0, 600.0, &list);
@@ -1100,7 +1222,7 @@ int tbox_test_context_run(void) {
         if (ctx != NULL) {
             click_capture capture;
             click_capture_reset(&capture);
-            int binding = tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture);
+            int binding = tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture, NULL);
             TBOX_TEST_ASSERT_MSG(binding >= 0, "tbox_context_on_click must succeed for a well-formed selector");
 
             tbox_display_list list;
@@ -1130,7 +1252,7 @@ int tbox_test_context_run(void) {
 
             click_capture capture;
             click_capture_reset(&capture);
-            int binding = tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture);
+            int binding = tbox_context_on_click(ctx, "button", strlen("button"), record_click, &capture, NULL);
             TBOX_TEST_ASSERT_MSG(binding >= 0, "tbox_context_on_click must succeed for a well-formed selector");
 
             TBOX_TEST_ASSERT_MSG(tbox_context_unbind_click(ctx, binding), "the first unbind of a real registration must succeed");
@@ -1637,9 +1759,9 @@ int tbox_test_context_run(void) {
             const tbox_html_node *two  = one->next_sibling->next_sibling->next_sibling;
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#one", 4, record_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#one", 4, record_click, &capture, NULL) >= 0);
 
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
             tbox_context_run_frame(ctx, 320.0, 200.0, &list);
             bool focus_painted = false;
@@ -1649,15 +1771,15 @@ int tbox_test_context_run(void) {
                 }
             }
             TBOX_TEST_ASSERT_MSG(focus_painted, ":focus must reach CSS painting");
-            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, false, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, false, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(capture.call_count == 1 && capture.node == one);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.call_count == 2);
 
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, true, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, true, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
             tbox_context_run_frame(ctx, 320.0, 200.0, &list);
             double two_x, two_y;
@@ -1667,10 +1789,10 @@ int tbox_test_context_run(void) {
                 TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
             }
             TBOX_TEST_ASSERT_MSG(clicked_two, "pointer click must focus a rendered button without a handler");
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, true, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, true, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == one);
             tbox_html_node_remove((tbox_html_node *)one);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
             tbox_context_close(ctx);
         }
@@ -1690,7 +1812,7 @@ int tbox_test_context_run(void) {
             tbox_context_run_frame(ctx, 120.0, 100.0, &list);
             const tbox_html_node *first = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
             for (int i = 0; i < 3; i++) {
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
                 tbox_context_run_frame(ctx, 120.0, 100.0, &list);
                 const tbox_layout_box *root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
                 while (root_box != NULL && root_box->parent != NULL)
@@ -1708,10 +1830,10 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 10.0, 10.0, -100.0));
             tbox_context_run_frame(ctx, 120.0, 100.0, &list);
             TBOX_TEST_ASSERT(!tbox_context_scroll(ctx, 10.0, 10.0, -100.0));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             tbox_context_run_frame(ctx, 120.0, 100.0, &list);
             for (int i = 0; i < 3; i++) {
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, true, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, true, false }));
                 tbox_context_run_frame(ctx, 120.0, 100.0, &list);
                 const tbox_layout_box *root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
                 while (root_box != NULL && root_box->parent != NULL)
@@ -1743,7 +1865,7 @@ int tbox_test_context_run(void) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 120.0, 100.0, &list);
             for (int i = 0; i < 3; i++) {
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
                 tbox_context_run_frame(ctx, 120.0, 100.0, &list);
             }
             const tbox_layout_box *root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
@@ -1777,7 +1899,7 @@ int tbox_test_context_run(void) {
             tbox_context_set_animation_time(ctx, 1.0);
             tbox_context_run_frame(ctx, 120.0, 100.0, &list);
             for (int i = 0; i < 4; i++)
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             const tbox_layout_box *list_box = NULL;
             double tops[3];
             const double times[3] = { 1.0, 1.15, 1.5 };
@@ -1907,24 +2029,24 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(find_layout_box(root_box, select->first_child) == NULL);
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
             select_capture capture = { 0 };
-            tbox_context_on_select(ctx, record_select, &capture);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_select(ctx, record_select, &capture, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == select);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Gamma"));
             TBOX_TEST_ASSERT(capture.count == 1 && strcmp(capture.value, "Gamma") == 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
             TBOX_TEST_ASSERT(capture.count == 2);
             tbox_context_run_frame(ctx, 160.0, 220.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 2);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 3 && strcmp(capture.value, "Gamma") == 0);
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Gamma"));
             tbox_context_run_frame(ctx, 160.0, 220.0, &list);
@@ -1957,7 +2079,7 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
             TBOX_TEST_ASSERT(capture.count == 4);
             TBOX_TEST_ASSERT(!tbox_context_select_set_value(ctx, select, tbox_string_view_make("missing", 7)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == button);
             tbox_context_close(ctx);
         }
@@ -1976,8 +2098,8 @@ int tbox_test_context_run(void) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 140.0, 240.0, &list);
             const tbox_html_node *select = tbox_html_document_root(tbox_context_document(ctx))->first_child;
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             tbox_context_run_frame(ctx, 140.0, 240.0, &list);
             tbox_rect popup = { 0 };
             for (size_t i = 0; i < list.count; i++) {
@@ -1997,9 +2119,9 @@ int tbox_test_context_run(void) {
                 }
                 TBOX_TEST_ASSERT(saw_two_first);
             }
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_END, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_END, true, false, false }));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "1"));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "8"));
             tbox_context_close(ctx);
         }
@@ -2019,10 +2141,10 @@ int tbox_test_context_run(void) {
             const tbox_html_node *select = tbox_html_document_root(tbox_context_document(ctx))->first_child;
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "a"));
             TBOX_TEST_ASSERT(!tbox_context_select_set_value(ctx, select, tbox_string_view_make("b", 1)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "c"));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             tbox_context_run_frame(ctx, 250.0, 300.0, &list);
             bool group_label = false, disabled_label = false;
             for (size_t i = 0; i < list.count; i++) {
@@ -2032,8 +2154,8 @@ int tbox_test_context_run(void) {
                 if (string_view_equal_cstr(op->text, "Bloqueado")) disabled_label = true;
             }
             TBOX_TEST_ASSERT(group_label && disabled_label);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_END, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_END, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "d"));
             tbox_context_close(ctx);
         }
@@ -2070,10 +2192,10 @@ int tbox_test_context_run(void) {
 
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input", 5, record_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input", 5, record_click, &capture, NULL) >= 0);
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
             tbox_context_run_frame(ctx, 160.0, 180.0, &list);
             bool focus_painted = false;
@@ -2084,15 +2206,15 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(focus_painted);
             TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("X", 1)));
             TBOX_TEST_ASSERT(changes == 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.call_count == 2 && capture.node == action);
 
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == empty);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == blank);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
 
             double hx, hy;
@@ -2164,21 +2286,21 @@ int tbox_test_context_run(void) {
 
                 click_capture capture;
                 click_capture_reset(&capture);
-                TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#image-action", 13, record_click, &capture) >= 0);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "#image-action", 13, record_click, &capture, NULL) >= 0);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
                 TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
                 TBOX_TEST_ASSERT(capture.call_count == 2 && capture.node == action);
                 TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("x", 1)));
                 if (box != NULL)
                     TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
                 TBOX_TEST_ASSERT(capture.call_count == 3);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
                 TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == broken);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
                 TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == scaled);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
                 TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == action);
                 const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
                 TBOX_TEST_ASSERT(disabled_box != NULL);
@@ -2217,12 +2339,12 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(off_content.width == 12.0 && off_content.height == 12.0);
 
             checkbox_capture capture = { 0 };
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=checkbox]", 20, record_checkbox_click, &capture) >= 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=checkbox]", 20, record_checkbox_click, &capture, NULL) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == off);
-            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 1 && capture.node == off && capture.checked);
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(off, tbox_string_view_make("checked", 7)) != NULL);
             tbox_context_run_frame(ctx, 160.0, 180.0, &list);
@@ -2237,7 +2359,7 @@ int tbox_test_context_run(void) {
                     painted_checked_background = true;
             }
             TBOX_TEST_ASSERT(painted_check && painted_checked_background);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 2 && !capture.checked);
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(off, tbox_string_view_make("checked", 7)) == NULL);
             tbox_context_run_frame(ctx, 160.0, 180.0, &list);
@@ -2249,11 +2371,11 @@ int tbox_test_context_run(void) {
             }
             TBOX_TEST_ASSERT(!painted_check);
 
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == on);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 3 && capture.node == on && !capture.checked);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == disabled->next_sibling);
 
             tbox_context_run_frame(ctx, 160.0, 180.0, &list);
@@ -2299,19 +2421,19 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(painted_dot);
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=radio]", 17, record_click, &capture) >= 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=radio]", 17, record_click, &capture, NULL) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == a);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.call_count == 1 && capture.node == a);
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(a, tbox_string_view_make("checked", 7)) != NULL);
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(b, tbox_string_view_make("checked", 7)) == NULL);
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(c, tbox_string_view_make("checked", 7)) != NULL);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(a, tbox_string_view_make("checked", 7)) != NULL);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == b);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(a, tbox_string_view_make("checked", 7)) == NULL);
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(b, tbox_string_view_make("checked", 7)) != NULL);
             tbox_context_run_frame(ctx, 160.0, 180.0, &list);
@@ -2352,13 +2474,13 @@ int tbox_test_context_run(void) {
                     painted_thumb = true;
             TBOX_TEST_ASSERT(painted_thumb);
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == level);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
             value = tbox_html_node_get_attribute(level, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "20"));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
             value = tbox_html_node_get_attribute(level, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "10"));
             if (box != NULL) {
@@ -2463,14 +2585,14 @@ int tbox_test_context_run(void) {
                     painted_submit = true;
             TBOX_TEST_ASSERT(painted_submit);
             submit_capture capture = { 0 };
-            tbox_context_on_submit(ctx, record_submit, &capture);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_submit(ctx, record_submit, &capture, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == query);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 1 && capture.form == form && capture.submitter == NULL);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == send);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 2 && capture.submitter == send);
             const tbox_layout_box *send_box = find_context_box(ctx, send);
             TBOX_TEST_ASSERT(send_box != NULL);
@@ -2504,17 +2626,17 @@ int tbox_test_context_run(void) {
                     painted_clear = true;
             TBOX_TEST_ASSERT(painted_clear);
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == query);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("new query", 9)));
             if (box != NULL)
                 TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->content_box.x + box->content_box.width - 8.0, box->content_box.y + box->content_box.height / 2.0));
             const tbox_html_attribute *value = tbox_html_node_get_attribute(query, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && value->value.size == 0 && changes == 2);
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("again", 5)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
             value = tbox_html_node_get_attribute(query, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && value->value.size == 0 && changes == 4);
             tbox_context_close(ctx);
@@ -2537,7 +2659,7 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(!tbox_context_url_valid(url->next_sibling));
             TBOX_TEST_ASSERT(tbox_context_url_valid(url->next_sibling->next_sibling));
             TBOX_TEST_ASSERT(!tbox_context_url_valid(url->next_sibling->next_sibling->next_sibling));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == tel);
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("#", 1)));
             const tbox_html_attribute *value = tbox_html_node_get_attribute(tel, tbox_string_view_make("value", 5));
@@ -2560,13 +2682,13 @@ int tbox_test_context_run(void) {
             const tbox_html_attribute *invalid = tbox_html_node_get_attribute(input->next_sibling, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(invalid != NULL && invalid->value.size == 0);
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == input);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, true }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             const tbox_html_attribute *value = tbox_html_node_get_attribute(input, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "10:31") && changes == 1);
             tbox_context_close(ctx);
@@ -2586,12 +2708,12 @@ int tbox_test_context_run(void) {
             const tbox_html_attribute *invalid = tbox_html_node_get_attribute(input->next_sibling, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(invalid != NULL && invalid->value.size == 0);
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == input);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             const tbox_html_attribute *value = tbox_html_node_get_attribute(input, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2021-W01") && changes == 1);
             tbox_context_close(ctx);
@@ -2636,17 +2758,17 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(painted_chosen && painted_invalid);
 
             color_capture capture = { 0 };
-            tbox_context_on_input(ctx, record_color_input, &capture);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_color_input, &capture, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == chosen);
             TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("x", 1)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 1 && capture.node == chosen && strcmp(capture.value, "#133456") == 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, true, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, true, false }));
             TBOX_TEST_ASSERT(strcmp(capture.value, "#1d3456") == 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
             TBOX_TEST_ASSERT(strcmp(capture.value, "#1d0056") == 0);
             tbox_context_run_frame(ctx, 240.0, 220.0, &list);
             const tbox_layout_box *chosen_box = NULL;
@@ -2662,11 +2784,11 @@ int tbox_test_context_run(void) {
                 TBOX_TEST_ASSERT(tbox_context_color_drag(ctx, popup_x + 210.0, popup_y + 73.0));
                 TBOX_TEST_ASSERT(strcmp(capture.value, "#1d00ff") == 0);
             }
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
             TBOX_TEST_ASSERT(!tbox_context_color_drag(ctx, 100.0, 100.0));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == invalid);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == chosen);
             tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)chosen, tbox_string_view_make("value", 5), tbox_string_view_make("#abcdef", 7));
             tbox_context_run_frame(ctx, 240.0, 220.0, &list);
@@ -2708,7 +2830,7 @@ int tbox_test_context_run(void) {
                     TBOX_TEST_ASSERT(capture.count == previous_changes + 1);
                     TBOX_TEST_ASSERT(strcmp(capture.value, "#ffcdef") == 0);
                 }
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
             }
             double dx, dy;
             bool clicked_disabled = hit_point_for(ctx, disabled, 240.0, 220.0, &dx, &dy);
@@ -2745,20 +2867,20 @@ int tbox_test_context_run(void) {
                     painted = true;
             TBOX_TEST_ASSERT(painted);
             date_capture capture = { 0 };
-            tbox_context_on_input(ctx, record_date_input, &capture);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_date_input, &capture, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == date);
             TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("2025", 4)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, false }));
-            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 1 && capture.node == date && strcmp(capture.value, "2024-03-01") == 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == disabled->next_sibling);
             tbox_context_run_frame(ctx, 320.0, 340.0, &list);
             box = find_context_box(ctx, date);
@@ -2812,23 +2934,23 @@ int tbox_test_context_run(void) {
                     painted_value = true;
             TBOX_TEST_ASSERT(painted_value);
             month_capture capture = { 0 };
-            tbox_context_on_input(ctx, record_month_input, &capture);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_month_input, &capture, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == month);
             TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("2025", 4)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             tbox_context_run_frame(ctx, 320.0, 340.0, &list);
             bool painted_march = false;
             for (size_t i = 0; i < list.count; i++)
                 if (list.items[i].kind == TBOX_PAINT_TEXT_RUN && string_view_equal_cstr(list.items[i].text, "Mar"))
                     painted_march = true;
             TBOX_TEST_ASSERT(painted_march);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
-            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 1 && capture.node == month && strcmp(capture.value, "2024-03") == 0);
             tbox_context_run_frame(ctx, 320.0, 340.0, &list);
             box = find_context_box(ctx, month);
@@ -2885,15 +3007,15 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(painted);
 
             datetime_capture capture = { 0 };
-            tbox_context_on_input(ctx, record_datetime_input, &capture);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_datetime_input, &capture, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == when);
             TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("x", 1)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, true }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, true, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_SPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, true, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 1 && capture.node == when && strcmp(capture.value, "2024-03-01T13:31") == 0);
 
             tbox_context_run_frame(ctx, 360.0, 440.0, &list);
@@ -2960,26 +3082,26 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(painted_mail);
 
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
             click_capture clicks;
             click_capture_reset(&clicks);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=email]", 17, record_click, &clicks) >= 0);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "input[type=email]", 17, record_click, &clicks, NULL) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == mail);
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make(".net", 4)));
             TBOX_TEST_ASSERT(changes == 1 && tbox_context_email_valid(mail));
             TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("\n", 1)));
             TBOX_TEST_ASSERT(changes == 1);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("bad@@example", 12)));
             TBOX_TEST_ASSERT(changes == 2 && !tbox_context_email_valid(mail));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("new@example.com", 15)));
             TBOX_TEST_ASSERT(changes == 3 && tbox_context_email_valid(mail));
             tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)mail, tbox_string_view_make("value", 5), tbox_string_view_make("", 0));
             TBOX_TEST_ASSERT(!tbox_context_email_valid(mail));
             tbox_context_run_frame(ctx, 320.0, 320.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == multi);
             tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)multi, tbox_string_view_make("value", 5), tbox_string_view_make("a@b, nope", 9));
             TBOX_TEST_ASSERT(!tbox_context_email_valid(multi));
@@ -3025,28 +3147,28 @@ int tbox_test_context_run(void) {
             const tbox_html_attribute *invalid_value = tbox_html_node_get_attribute(invalid, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(invalid_value != NULL && invalid_value->value.size == 0);
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == quantity);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("2.25", 4)));
             TBOX_TEST_ASSERT(!tbox_context_number_valid(quantity));
             TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("abc", 3)));
             TBOX_TEST_ASSERT(changes == 1);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
             const tbox_html_attribute *value = tbox_html_node_get_attribute(quantity, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2.5"));
             TBOX_TEST_ASSERT(tbox_context_number_valid(quantity));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, false }));
-            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
             TBOX_TEST_ASSERT(changes == 4);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("1e2", 3)));
             TBOX_TEST_ASSERT(!tbox_context_number_valid(quantity));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == required);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
             value = tbox_html_node_get_attribute(required, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2"));
             TBOX_TEST_ASSERT(tbox_context_number_valid(required));
@@ -3100,10 +3222,10 @@ int tbox_test_context_run(void) {
             }
             TBOX_TEST_ASSERT(!painted_secret && painted_mask);
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == secret);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
             TBOX_TEST_ASSERT(tbox_context_selected_text(ctx).size == 0);
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Z", 1)));
             value = tbox_html_node_get_attribute(secret, tbox_string_view_make("value", 5));
@@ -3115,7 +3237,7 @@ int tbox_test_context_run(void) {
                 if (list.items[i].kind == TBOX_PAINT_TEXT_RUN && string_view_equal_cstr(list.items[i].text, "Z"))
                     painted_secret = true;
             TBOX_TEST_ASSERT(!painted_secret);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == secret->next_sibling->next_sibling);
             tbox_context_close(ctx);
         }
@@ -3143,19 +3265,19 @@ int tbox_test_context_run(void) {
                 TBOX_TEST_ASSERT(initial != NULL && initial->value.size == 0);
                 TBOX_TEST_ASSERT(tbox_context_file_path(ctx, upload).size == 0);
                 int changes = 0;
-                tbox_context_on_input(ctx, record_input, &changes);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                tbox_context_on_input(ctx, record_input, &changes, NULL);
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
                 TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == upload);
                 TBOX_TEST_ASSERT(!tbox_context_dispatch_text(ctx, tbox_string_view_make("/tmp/file", 9)));
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_END, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_END, true, false, false }));
                 tbox_context_run_frame(ctx, 380.0, 360.0, &list);
                 bool showed_file = false;
                 for (size_t i = 0; i < list.count; i++)
                     if (list.items[i].kind == TBOX_PAINT_TEXT_RUN && string_view_equal_cstr(list.items[i].text, "yellow.png"))
                         showed_file = true;
                 TBOX_TEST_ASSERT(showed_file);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
                 TBOX_TEST_ASSERT(changes == 1);
                 const tbox_html_attribute *selected = tbox_html_node_get_attribute(upload, tbox_string_view_make("value", 5));
                 TBOX_TEST_ASSERT(selected != NULL && string_view_equal_cstr(selected->value, "yellow.png"));
@@ -3176,12 +3298,12 @@ int tbox_test_context_run(void) {
                     double popup_x = box->border_box.x;
                     double popup_y = box->border_box.y + box->border_box.height;
                     TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 5.0, box->border_box.y + 5.0));
-                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_BACKSPACE, true, false, false }));
-                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
-                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_BACKSPACE, true, false, false }));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
                     TBOX_TEST_ASSERT(tbox_context_scroll(ctx, popup_x + 20.0, popup_y + 100.0, 1.0));
                     TBOX_TEST_ASSERT(!tbox_context_scrollbar_press(ctx, popup_x + 20.0, popup_y + 100.0));
-                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_END, true, false, false }));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_END, true, false, false }));
                     tbox_context_run_frame(ctx, 380.0, 360.0, &list);
                     TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, popup_x + 20.0, popup_y + 222.0));
                     TBOX_TEST_ASSERT(changes == 2);
@@ -3234,9 +3356,9 @@ int tbox_test_context_run(void) {
             if (first_box != NULL && second_box != NULL)
                 /* The hidden input takes no room: the inline-block buttons touch. */
                 TBOX_TEST_ASSERT(second_box->margin_box.y == first_box->margin_box.y && second_box->margin_box.x == first_box->margin_box.x + first_box->margin_box.width);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == first);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == second);
             tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)secret, tbox_string_view_make("value", 5), tbox_string_view_make("updated", 7));
             tbox_context_run_frame(ctx, 400.0, 300.0, &list);
@@ -3270,24 +3392,24 @@ int tbox_test_context_run(void) {
             tbox_context_run_frame(ctx, 320.0, 180.0, &list);
             const tbox_html_node *field = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
             int changes                 = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == field);
             /* Navigation through an initial HTML value must persist across
              * frames even before the first text insertion. */
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_LEFT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_LEFT, true, false, false }));
             tbox_context_run_frame(ctx, 320.0, 180.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
             tbox_context_run_frame(ctx, 320.0, 180.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_END, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_END, true, false, false }));
             TBOX_TEST_ASSERT(changes == 0);
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("é", 2)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_LEFT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_LEFT, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("X", 1)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_BACKSPACE, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DELETE, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_BACKSPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DELETE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Z", 1)));
             TBOX_TEST_ASSERT(changes == 5);
             const tbox_html_attribute *value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
@@ -3302,7 +3424,7 @@ int tbox_test_context_run(void) {
                     painted_caret = true;
             }
             TBOX_TEST_ASSERT(painted_value && painted_caret);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) != field);
             bool clicked_field = false;
             for (int y = 0; y < 180 && !clicked_field; y++) {
@@ -3329,11 +3451,11 @@ int tbox_test_context_run(void) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 200.0, 80.0, &list);
             int changes = 0;
-            tbox_context_on_input(ctx, record_input, &changes);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, true, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, true, false }));
+            tbox_context_on_input(ctx, record_input, &changes, NULL);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, true, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, true, false }));
             tbox_context_run_frame(ctx, 200.0, 80.0, &list);
             bool highlighted = false;
             for (size_t i = 0; i < list.count; i++) {
@@ -3342,20 +3464,20 @@ int tbox_test_context_run(void) {
             }
             TBOX_TEST_ASSERT(highlighted);
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Z", 1)));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_RIGHT, true, true, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_BACKSPACE, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_END, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_LEFT, true, true, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DELETE, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_HOME, true, true, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_LEFT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, true, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_BACKSPACE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_END, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_LEFT, true, true, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DELETE, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_HOME, true, true, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_LEFT, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("Q", 1)));
             const tbox_html_node *field      = tbox_context_focused_node(ctx);
             const tbox_html_attribute *value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "QZ"));
             TBOX_TEST_ASSERT(changes == 4);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
-            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(!tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("!", 1)));
             value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "!"));
@@ -3388,7 +3510,7 @@ int tbox_test_context_run(void) {
                 for (int y = (int)text_op->clip.y; y < (int)(text_op->clip.y + text_op->clip.height); y++)
                     TBOX_TEST_ASSERT(pixels[y * 300 + outside_x] == 0xffffffffu);
             }
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             tbox_context_run_frame(ctx, 300.0, 80.0, &list);
             bool scrolled = false, caret_inside = false;
             for (size_t i = 0; i < list.count; i++) {
@@ -3437,7 +3559,7 @@ int tbox_test_context_run(void) {
                 char copied[6];
                 if (selected.size == 5)
                     memcpy(copied, selected.data, 5);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_DELETE, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DELETE, true, false, false }));
                 const tbox_html_node *field      = tbox_context_focused_node(ctx);
                 const tbox_html_attribute *value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
                 TBOX_TEST_ASSERT(value != NULL && value->value.size == 0);
@@ -3574,9 +3696,9 @@ int tbox_test_context_run(void) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 300.0, 160.0, &list);
             const tbox_html_node *node = tbox_html_document_root(tbox_context_document(ctx))->first_child;
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == node);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("X", 1)));
             TBOX_TEST_ASSERT(string_view_equal_cstr(node->first_child->text.text, "ab\ncd\nX"));
             tbox_context_run_frame(ctx, 300.0, 160.0, &list);
@@ -3598,7 +3720,7 @@ int tbox_test_context_run(void) {
                 TBOX_TEST_ASSERT(tbox_context_scroll(ctx, hit->content_box.x + 2.0, hit->content_box.y + 2.0, -100.0));
                 TBOX_TEST_ASSERT(tbox_context_drag_select_at(ctx, hit->content_box.x, hit->content_box.y));
             }
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
             TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_selected_text(ctx), "ab\ncd\nX"));
             tbox_context_close(ctx);
         }
@@ -3685,12 +3807,12 @@ int tbox_test_context_run(void) {
         tbox_context_options options = tbox_context_options_default();
         options.control_css          = theme;
         options.control_css_length   = strlen(theme);
-        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 400.0, 300.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             const tbox_html_node *input = tbox_context_focused_node(ctx);
             const tbox_layout_box *box  = find_context_box(ctx, input);
             TBOX_TEST_ASSERT(box != NULL);
@@ -3721,12 +3843,12 @@ int tbox_test_context_run(void) {
         tbox_context_options options = tbox_context_options_default();
         options.control_css          = theme;
         options.control_css_length   = strlen(theme);
-        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 440.0, 360.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             const tbox_html_node *input = tbox_context_focused_node(ctx);
             const tbox_layout_box *box  = find_context_box(ctx, input);
             if (box != NULL) {
@@ -3753,13 +3875,13 @@ int tbox_test_context_run(void) {
         tbox_context_options options = tbox_context_options_default();
         options.control_css          = theme;
         options.control_css_length   = strlen(theme);
-        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 450.0, 400.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             tbox_context_run_frame(ctx, 450.0, 400.0, &list);
             bool found_popup = false;
             for (size_t i = 0; i < list.count; i++)
@@ -3774,13 +3896,13 @@ int tbox_test_context_run(void) {
         tbox_context_options options = tbox_context_options_default();
         options.control_css          = "";
         options.control_css_length   = 0;
-        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 320.0, 220.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             tbox_context_run_frame(ctx, 320.0, 220.0, &list);
             const tbox_layout_box *box = find_context_box(ctx, tbox_context_focused_node(ctx));
             if (box != NULL)
@@ -3807,14 +3929,14 @@ int tbox_test_context_run(void) {
             tbox_context_options options = tbox_context_options_default();
             options.control_css          = theme;
             options.control_css_length   = strlen(theme);
-            tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+            tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
             TBOX_TEST_ASSERT(ctx != NULL);
             if (ctx == NULL)
                 continue;
             tbox_display_list list;
             tbox_context_run_frame(ctx, 420.0, 420.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             tbox_context_run_frame(ctx, 420.0, 420.0, &list);
             bool found = false;
             for (size_t i = 0; i < list.count; i++)
@@ -3830,13 +3952,13 @@ int tbox_test_context_run(void) {
         tbox_context_options options = tbox_context_options_default();
         options.control_css          = theme;
         options.control_css_length   = strlen(theme);
-        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        tbox_context *ctx            = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 320.0, 220.0, &list);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             tbox_context_run_frame(ctx, 320.0, 220.0, &list);
             bool used_fallback = false;
             for (size_t i = 0; i < list.count; i++)
@@ -4018,7 +4140,7 @@ int tbox_test_context_run(void) {
                           "#box { font-family: 'Fixture Font'; font-size: 19px; }";
         tbox_context_options options = tbox_context_options_default();
         options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
-        tbox_context *ctx = tbox_context_open_with_options("<div id='box'>Font fixture</div>", strlen("<div id='box'>Font fixture</div>"), css, strlen(css), fonts, NULL, options);
+        tbox_context *ctx = tbox_context_open_with_options("<div id='box'>Font fixture</div>", strlen("<div id='box'>Font fixture</div>"), css, strlen(css), fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             const tbox_font_face *registered = tbox_font_face_cache_get(fonts, tbox_string_view_make("Fixture Font", 12), false, false, 19.0);
@@ -4040,7 +4162,7 @@ int tbox_test_context_run(void) {
                           "@media (prefers-reduced-motion: reduce) { #box { color: green; transition: none; } }";
         tbox_context_options options = tbox_context_options_default();
         options.prefers_reduced_motion = true;
-        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css, strlen(css), fonts, NULL, options);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), css, strlen(css), fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
@@ -4349,9 +4471,9 @@ int tbox_test_context_run(void) {
             const tbox_html_node *content = summary->next_sibling;
             TBOX_TEST_ASSERT(find_context_box(ctx, summary) != NULL);
             TBOX_TEST_ASSERT(find_context_box(ctx, content) == NULL);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == summary);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(details, tbox_string_view_make("open", 4)) != NULL);
             tbox_context_run_frame(ctx, 360.0, 240.0, &list);
             TBOX_TEST_ASSERT(find_context_box(ctx, content) != NULL);
@@ -4364,7 +4486,7 @@ int tbox_test_context_run(void) {
             }
             tbox_context_run_frame(ctx, 360.0, 240.0, &list);
             TBOX_TEST_ASSERT(find_context_box(ctx, content) == NULL);
-            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == root->last_child);
             tbox_context_close(ctx);
         }
@@ -4489,7 +4611,7 @@ int tbox_test_context_run(void) {
         tbox_context_options options = tbox_context_options_default();
         options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
         const char *html = "<div><link rel='stylesheet' href='110.css'><p>Ligado</p></div>";
-        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
@@ -4500,7 +4622,7 @@ int tbox_test_context_run(void) {
             tbox_context_close(ctx);
         }
         html = "<div><link rel='stylesheet' href='110.css'><style>p { color: blue; }</style><p>Depois</p></div>";
-        ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
@@ -4520,7 +4642,7 @@ int tbox_test_context_run(void) {
         options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
         const char *html = "<div><style>@import url(117.css); .import-base { padding-left: 3px; } @import url(110.css);</style>"
                            "<p class='import-color import-base'>Importado</p></div>";
-        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
@@ -4543,7 +4665,7 @@ int tbox_test_context_run(void) {
         const char *html = "<div><style>@layer reset, theme; @import url(119-reset.css) layer(reset);"
                            "@layer theme { p { background: #dbeafe; } } p { color: #1d4ed8; }</style>"
                            "<p class='layer-demo'>camadas</p></div>";
-        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, options);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
@@ -4602,7 +4724,7 @@ int tbox_test_context_run(void) {
         options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
         const char *html = "<div><base href='base-demo/'><link rel='stylesheet' href='112.css'>"
             "<p>Base</p><img src='yellow.png' width='40' height='40'></div>";
-        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, images, options);
+        tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, images, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
             tbox_display_list list;
@@ -4639,7 +4761,7 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(img != NULL && img->text_run_count > 0);
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "area", 4, record_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "area", 4, record_click, &capture, NULL) >= 0);
             if (img != NULL && img->text_run_count > 0) {
                 tbox_rect rect = img->text_runs[0].rect;
                 TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, rect.x + 30, rect.y + 30) == TBOX_STYLE_CURSOR_POINTER);
@@ -4650,7 +4772,7 @@ int tbox_test_context_run(void) {
                 TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, rect.x + 225, rect.y + 225));
                 TBOX_TEST_ASSERT(capture.node == map->last_child);
                 TBOX_TEST_ASSERT(capture.call_count == 3);
-                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, (tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
                 TBOX_TEST_ASSERT(capture.call_count == 4);
             }
             tbox_context_close(ctx);
@@ -4664,7 +4786,7 @@ int tbox_test_context_run(void) {
             tbox_context_run_frame(ctx, 300.0, 300.0, &list);
             click_capture capture;
             click_capture_reset(&capture);
-            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "area", 4, record_click, &capture) >= 0);
+            TBOX_TEST_ASSERT(tbox_context_on_click(ctx, "area", 4, record_click, &capture, NULL) >= 0);
             for (size_t i = 0; i < list.count; i++)
                 if (list.items[i].kind == TBOX_PAINT_IMAGE && list.items[i].image ==
                     tbox_image_cache_get(images, tbox_string_view_make("yellow.png", 10))) {

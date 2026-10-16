@@ -60,7 +60,7 @@ int main(void) {
         "button { padding: 8px 16px; }", 480, 240);
     if (app == NULL) return 1;
 
-    tbox_context_on_click(tbox_app_context(app), "button", 6, on_click, NULL);
+    tbox_context_on_click(tbox_app_context(app), "button", 6, on_click, NULL, NULL);
     tbox_app_run(app);
     tbox_app_close(app);
     return 0;

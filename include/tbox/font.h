@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <tbox/callback.h>
 #include <tbox/string_view.h>
 
 #ifdef __cplusplus
@@ -199,6 +200,7 @@ typedef struct tbox_font_face_cache tbox_font_face_cache;
  * returns true; on failure, returns false and leaves *out_data / *out_size
  * untouched. `userdata` is whatever opaque pointer was passed alongside this
  * function to tbox_font_face_cache_create, unused by the cache itself.
+ * `query` is valid only during the call.
  * Deliberately a callback rather than this header (or tbox_font_face_cache.c)
  * calling a specific backend such as tbox_font_source_fontconfig_* directly:
  * it keeps src/font/tbox_font_face_cache.c free of any dependency on a
@@ -210,7 +212,7 @@ typedef struct tbox_font_face_cache tbox_font_face_cache;
  * rules) -- tbox_font_face_cache_get copies the bytes into its own arena
  * immediately, so the caller of this typedef's implementation need not keep
  * them valid past the call. */
-typedef bool (*tbox_font_resolver_fn)(void *userdata, tbox_font_query query, const void **out_data, size_t *out_size);
+typedef bool (*tbox_font_resolver_fn)(void *userdata, const tbox_font_query *query, const void **out_data, size_t *out_size);
 
 /* Copies regular_data/bold_data into memory the cache owns -- the caller's
  * buffers need not outlive this call (same defensive copy
@@ -232,9 +234,11 @@ typedef bool (*tbox_font_resolver_fn)(void *userdata, tbox_font_query query, con
  * -- see tbox_font_face_cache_get's doc comment. `resolver` may be NULL
  * (e.g. a test build with no backend available): any non-default family
  * then always fails to resolve, same failure contract
- * tbox_font_face_cache_get already has for a load failure. Returns NULL
- * only on allocation failure. */
-tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size, tbox_font_resolver_fn resolver, void *resolver_userdata);
+ * tbox_font_face_cache_get already has for a load failure.
+ * `resolver_destroy` (may be NULL) releases `resolver_userdata` in
+ * tbox_font_face_cache_destroy (see <tbox/callback.h>). Returns NULL only
+ * on allocation failure, in which case resolver_destroy is not called. */
+tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size, tbox_font_resolver_fn resolver, void *resolver_userdata, tbox_destroy_notify resolver_destroy);
 
 /* Frees every tbox_font_face this cache loaded, plus the cache's own copied
  * byte buffers and the cache struct itself. A no-op if cache == NULL. */

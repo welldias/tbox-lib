@@ -21,7 +21,8 @@ e define as regras abaixo.
 | `tbox_html_node` | parser ou `tbox_html_node_create` | fechamento do contexto/documento | Mesmo removido da árvore, continua válido (só desconectado). |
 | atributos e textos do DOM | parser ou funções de mutação | fechamento do documento | Ao trocar um atributo ou texto, o valor antigo fica órfão na arena. |
 | `tbox_layout_box`, `tbox_display_list`, `tbox_style_table` | `tbox_context_run_frame` | **próximo** `run_frame` | Não guarde ponteiros entre frames. |
-| views passadas a handlers (`value` de `on_input`/`on_select`) | o contexto | fim do handler / próxima edição | Copie se precisar guardar. |
+| views passadas a handlers (`value` de `on_input`/`on_select`, `tbox_key_event *`) | o contexto | fim do handler / próxima edição | Copie se precisar guardar. |
+| `userdata` de handlers, tarefas e resolver | você | o `destroy` que você passou junto | A biblioteca chama `destroy(userdata)` uma vez, quando deixa de usá-lo (`unbind`, troca, tarefa concluída, `close`); com `destroy = NULL`, a posse continua sua. |
 | `tbox_css_selector_node_set`, `tbox_xpath_node_set` | consultas | `_destroy` | Os nós apontados seguem as regras do DOM. |
 
 ## Consequências práticas
@@ -31,7 +32,8 @@ e define as regras abaixo.
   ele ser fechado. Para interfaces normais isso é irrelevante; para uma
   aplicação que roda dias com atualização contínua, recarregar o documento
   (`tbox_app_load_from_files`, que cria um contexto novo — os handlers precisam
-  ser registrados de novo) devolve a memória. Isso é conhecido e será
+  ser registrados de novo; o `destroy` de cada handler antigo é chamado)
+  devolve a memória. Isso é conhecido e será
   tratado se medido como problema ([Débito técnico](dev/debito-tecnico.md#memória-do-dom-em-sessões-longas)).
 - **`tbox_layout_box` é do frame.** Um ponteiro obtido por
   `tbox_context_hit_test` só vale até o próximo frame. Guarde o
@@ -51,7 +53,7 @@ e define as regras abaixo.
   única thread — a thread de UI, a mesma em que foi criado. No macOS (quando
   houver backend) ela terá de ser a thread principal do processo, como em
   toda toolkit nativa.
-- **`tbox_app_post(app, fn, userdata)` é a única função que outras threads
+- **`tbox_app_post(app, fn, userdata, destroy)` é a única função que outras threads
   podem chamar.** Ela enfileira `fn` e acorda o loop; `fn` roda na thread de
   UI, dentro do próximo `tbox_app_wait`, na ordem em que foi postada, e o
   frame fica sujo. É ali que o resultado de um trabalho em outra thread
@@ -60,8 +62,9 @@ e define as regras abaixo.
   global novo, e nenhuma outra estrutura ganhou lock.
 - Termine (`join`) as threads que postam antes de `tbox_app_close`. Com a
   janela fechada, `tbox_app_wait`/`tbox_app_step` só rodam a fila: um
-  `tbox_app_step` depois do `join` entrega (e libera) o que sobrou. O que
-  ainda estiver na fila no `close` é descartado sem rodar.
+  `tbox_app_step` depois do `join` entrega o que sobrou. O que ainda
+  estiver na fila no `close` é descartado sem rodar, mas o `destroy` de
+  cada tarefa é chamado. O `destroy` sempre roda na thread de UI.
 - O estado de `:hover`, `:focus` e `:active` é aplicado aos seletores por
   meio de variáveis globais durante o frame. Por isso, nem dois contextos
   independentes em threads diferentes são seguros hoje.

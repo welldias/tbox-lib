@@ -70,7 +70,7 @@ static bool on_toggle(tbox_context *ctx, tbox_html_node *button, void *userdata)
 }
 
 /* depois de criar o app: */
-tbox_context_on_click(tbox_app_context(app), "button.toggle", 13, on_toggle, NULL);
+tbox_context_on_click(tbox_app_context(app), "button.toggle", 13, on_toggle, NULL, NULL);
 ```
 
 O handler é registrado por **seletor**, não por nó: vale também para
@@ -82,23 +82,25 @@ clique já suja o frame.
 ```c
 /* <input id="nome"> <p id="saudacao"></p> */
 static void on_input(tbox_context *ctx, tbox_html_node *input,
-                     tbox_string_view value, void *userdata) {
+                     const char *value, size_t value_length, void *userdata) {
     (void)userdata;
     const tbox_html_attribute *id =
         tbox_html_node_get_attribute(input, tbox_string_view_make("id", 2));
     if (id == NULL || !tbox_string_view_equal_cstr(id->value, "nome")) return;
 
     char message[128];
-    snprintf(message, sizeof message, "Olá, %.*s!", (int)value.size, value.data);
+    snprintf(message, sizeof message, "Olá, %.*s!", (int)value_length, value);
     set_text(ctx, "#saudacao", message);
 }
 
-tbox_context_on_input(tbox_app_context(app), on_input, NULL);
+tbox_context_on_input(tbox_app_context(app), on_input, NULL, NULL);
 ```
 
 Há um único handler de input por contexto; distinga os campos pelo `id`
-(ou outro atributo). `value` só vale durante a chamada — copie se precisar
-guardar.
+(ou outro atributo). `value` não termina em `\0` (use `value_length`) e só
+vale durante a chamada — copie se precisar guardar. O último argumento de
+todo registro é o `destroy` do `userdata` (aqui `NULL`; ver
+[seção 11](#11-userdata-com-dono)).
 
 ## 4. Enviar um formulário
 
@@ -119,7 +121,7 @@ static void on_submit(tbox_context *ctx, tbox_html_node *form,
     tbox_css_selector_node_set_destroy(&fields);
 }
 
-tbox_context_on_submit(tbox_app_context(app), on_submit, NULL);
+tbox_context_on_submit(tbox_app_context(app), on_submit, NULL, NULL);
 ```
 
 O valor atual de cada campo está no atributo `value` do nó (para checkbox e
@@ -129,16 +131,16 @@ rede: o que fazer com os dados é decisão da aplicação.
 ## 5. Atalho de teclado
 
 ```c
-static bool on_key(tbox_app *app, tbox_key_event event, void *userdata) {
+static bool on_key(tbox_app *app, const tbox_key_event *event, void *userdata) {
     (void)userdata;
-    if (event.pressed && event.control && event.key == TBOX_KEY_A) {
+    if (event->pressed && event->control && event->key == TBOX_KEY_A) {
         set_text(tbox_app_context(app), "#status", "Ctrl+A interceptado");
         return true;  /* consumido: o contexto não vê a tecla */
     }
     return false;     /* segue para foco, edição, Esc etc. */
 }
 
-tbox_app_on_key(app, on_key, NULL);
+tbox_app_on_key(app, on_key, NULL, NULL);
 ```
 
 As teclas disponíveis são as de `tbox_key` em `input.h` (Tab, Enter, Espaço,
@@ -180,19 +182,20 @@ roda na thread de UI e o frame já fica sujo, sem `request_redraw`:
 ```c
 static void mostrar(tbox_app *app, void *userdata) {   /* thread de UI */
     set_text(tbox_app_context(app), "#status", userdata);
-    free(userdata);
 }
 
 static void *trabalho(void *arg) {                     /* outra thread */
     tbox_app *app = arg;
     char *texto = baixar_algo();
-    if (!tbox_app_post(app, mostrar, texto)) free(texto);
+    /* `free` libera o texto depois que `mostrar` rodar (ou no close) */
+    if (!tbox_app_post(app, mostrar, texto, free)) free(texto);
     return NULL;
 }
 ```
 
 Antes de `tbox_app_close`, termine (`join`) as threads que postam; um
-`tbox_app_step` depois disso roda o que ainda estiver na fila. Exemplo
+`tbox_app_step` depois disso roda o que ainda estiver na fila, e o
+`tbox_app_close` chama o `destroy` das tarefas que nunca rodaram. Exemplo
 completo: `example/worker_post_demo.c` (`tbox_worker_post_demo`).
 
 ## 7. Criar elementos dinamicamente
@@ -253,7 +256,7 @@ int render_png(const char *html, const char *css, const char *ttf, const char *p
     void *font = read_file(ttf, &font_size);
     if (font == NULL) return 1;
     /* mesma fonte para regular e negrito; sem resolver de outras famílias */
-    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font, font_size, font, font_size, NULL, NULL);
+    tbox_font_face_cache *fonts = tbox_font_face_cache_create(font, font_size, font, font_size, NULL, NULL, NULL);
     free(font); /* o cache copiou os bytes */
 
     tbox_context *ctx = tbox_context_open(html, strlen(html), css, strlen(css), fonts, NULL);
@@ -288,10 +291,40 @@ const char *theme =
     "tbox-popup#minha-cor .thumb { background-color: yellow; }";
 options.control_css = theme;
 options.control_css_length = strlen(theme);
-tbox_app *app = tbox_app_create_with_options(html, css, 800, 600, options);
+tbox_app *app = tbox_app_create_with_options(html, css, 800, 600, &options);
 ```
 
 Partes e classes disponíveis: [Formulários e controles](10-formularios-e-controles.md#tema-dos-popups).
+
+## 11. `userdata` com dono
+
+Todo registro que guarda um `userdata` (`on_click`, `on_input`,
+`on_select`, `on_submit`, `tbox_app_on_key`, `tbox_app_post`, o resolver
+de fontes) recebe por último um `tbox_destroy_notify`. A biblioteca o chama
+uma única vez, quando deixa de usar o `userdata`: no `unbind`, quando o
+handler é trocado (ou limpo com `NULL`), depois de uma tarefa postada rodar
+e no `close`. Assim o estado de um handler pode pertencer a ele:
+
+```c
+typedef struct contador { int cliques; } contador;
+
+static bool contar(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+    (void)ctx; (void)node;
+    ((contador *)userdata)->cliques++;
+    return true;
+}
+
+contador *c = calloc(1, sizeof *c);
+int id = tbox_context_on_click(ctx, "button", 6, contar, c, free);
+/* ... */
+tbox_context_unbind_click(ctx, id);   /* chama free(c) */
+```
+
+Um handler que remove o próprio registro (ou troca o próprio `on_input`)
+continua podendo usar o `userdata` até retornar; a liberação acontece
+depois. Se o registro falhar (`-1`/`false`), o `destroy` não é chamado e o
+`userdata` continua seu. É isso que um binding para outra linguagem usa
+para soltar a closure que entregou ao C.
 
 ## Exemplos executáveis no repositório
 

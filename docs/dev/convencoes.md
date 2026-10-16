@@ -35,6 +35,14 @@ Há dois padrões. Uma estrutura usa um ou outro, nunca os dois.
    prática, `tbox_context_run_frame` reseta a `frame_arena` no início de cada
    frame.
 
+**Callbacks.** Toda função que guarda um `userdata` junto de um callback
+recebe também um `tbox_destroy_notify` (`include/tbox/callback.h`) e o
+chama exatamente uma vez quando deixa de usá-lo — adiado com
+`src/base/tbox_release.h` se um callback estiver em execução. Registro que
+falha não chama o `destroy`. Nenhum callback recebe struct por valor
+(ponteiro `const` ou `(const char *, size_t)`), e structs que podem crescer
+entram por ponteiro. Ver [Decisões](decisoes.md#callbacks-e-structs-na-fronteira-de-ffi).
+
 Consequência para mutação do DOM: remover nós ou trocar atributos deixa a
 memória antiga órfã na arena do documento até ele ser destruído. Isso é
 aceito; só será revisto se for medido como problema real (ver

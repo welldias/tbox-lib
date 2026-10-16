@@ -421,6 +421,39 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   aplicação tenta de novo quando o compositor liberar um — o dano não se
   perde porque já foi somado aos buffers (2026-10-16).
 
+## Callbacks e structs na fronteira de FFI
+
+- **Todo `userdata` guardado pela biblioteca vem com um
+  `tbox_destroy_notify`** (`on_click`, `on_input`, `on_submit`,
+  `on_select`, `tbox_app_on_key`, `tbox_app_post`, o resolver de
+  `tbox_font_face_cache_create`). A biblioteca o chama **exatamente uma
+  vez**, quando deixa de usar o `userdata`: `unbind`, troca do handler
+  (inclusive por `NULL`), fim de uma tarefa postada (rodou ou foi
+  descartada), `close`/`destroy` do dono. `NULL` = nada a liberar. Motivo:
+  bindings de linguagens com GC precisam soltar a referência à closure no
+  momento certo; sem isso, ou vaza, ou é use-after-free. Padrão do
+  `GDestroyNotify` (GLib) e do `xDestroy` (SQLite) (2026-10-16).
+- **Falha não transfere posse**: se o registro falha (`-1`/`false`), o
+  `destroy` não é chamado e o `userdata` continua do chamador (2026-10-16).
+- **Liberação adiada durante o despacho**: um handler que faz `unbind` de
+  si mesmo, ou troca o próprio handler, continua usando o `userdata` até
+  retornar; o `destroy` roda quando o despacho termina
+  (`src/base/tbox_release.h`). Descartado: chamar na hora (use-after-free
+  dentro do próprio handler) (2026-10-16).
+- **Nenhum callback recebe struct por valor**: `tbox_key_event` e
+  `tbox_font_query` chegam por ponteiro `const`; o valor de `on_input`/
+  `on_select` chega como `(const char *, size_t)`. Funções que recebem
+  structs grandes ou que vão crescer (`tbox_context_options`) recebem
+  ponteiro (`NULL` = padrão); `tbox_context_dispatch_key` também, por
+  simetria com o handler. Motivo: callbacks com struct por valor não
+  funcionam (ou funcionam mal) em várias FFIs, e uma struct passada por
+  valor que ganha um campo quebra a ABI de quem já compilou. Retornos por
+  valor (`tbox_context_options_default()`) e `tbox_string_view` em
+  parâmetros comuns ficam: as FFIs os suportam bem (2026-10-16).
+- **Saem as variantes `_with_config`**: `tbox_context_options` já contém
+  `tbox_ua_style_config`; com a API ainda instável, mudar as assinaturas é
+  preferível a manter variantes de compatibilidade (2026-10-16).
+
 ## Ferramentas
 
 - **`tbox_cmp` em C++/OpenCV, opcional, fora do `ctest`**: a API C do OpenCV

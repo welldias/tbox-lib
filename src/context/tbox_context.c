@@ -289,7 +289,8 @@ tbox_context_options tbox_context_options_default(void) {
     return (tbox_context_options){ .ua_style = tbox_ua_style_config_default() };
 }
 
-tbox_context *tbox_context_open_with_options(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_context_options options) {
+tbox_context *tbox_context_open_with_options(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, const tbox_context_options *options_in) {
+    tbox_context_options options = options_in != NULL ? *options_in : tbox_context_options_default();
     if (options.control_css != NULL && options.control_css_length == SIZE_MAX)
         return NULL;
     tbox_html_document *document = tbox_html_parse(html, html_length);
@@ -412,6 +413,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->viewport_height                                    = 0.0;
     ctx->select_handler                                     = NULL;
     ctx->select_userdata                                    = NULL;
+    ctx->select_destroy                                     = NULL;
     ctx->scroll_states                                      = NULL;
     ctx->scroll_drag_node                                   = NULL;
     ctx->scroll_drag_grab_y                                 = 0.0;
@@ -419,8 +421,11 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->focus_scroll_pending                               = false;
     ctx->input_handler                                      = NULL;
     ctx->input_userdata                                     = NULL;
+    ctx->input_destroy                                      = NULL;
     ctx->submit_handler                                     = NULL;
     ctx->submit_userdata                                    = NULL;
+    ctx->submit_destroy                                     = NULL;
+    ctx->releases                                           = (tbox_release_list){ 0 };
     ctx->styles                                             = (tbox_style_table){ 0 };
     ctx->transitions                                        = NULL;
     ctx->animations                                         = NULL;
@@ -440,20 +445,27 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     return ctx;
 }
 
-tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config) {
-    tbox_context_options options = tbox_context_options_default();
-    options.ua_style             = config;
-    return tbox_context_open_with_options(html, html_length, css, css_length, fonts, images, options);
-}
-
 tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images) {
-    return tbox_context_open_with_config(html, html_length, css, css_length, fonts, images, tbox_ua_style_config_default());
+    return tbox_context_open_with_options(html, html_length, css, css_length, fonts, images, NULL);
 }
 
 void tbox_context_close(tbox_context *ctx) {
     if (ctx == NULL) {
         return;
     }
+
+    /* The application's userdata first, while the document its destroy
+     * functions might still look at is alive. */
+    size_t binding_count = tbox_vector_length(&ctx->handlers);
+    for (size_t i = 0; i < binding_count; i++) {
+        tbox_context_click_binding *binding = (tbox_context_click_binding *)tbox_vector_at(&ctx->handlers, i);
+        if (binding->active)
+            tbox_release_add(&ctx->releases, binding->destroy, binding->userdata);
+    }
+    tbox_release_add(&ctx->releases, ctx->input_destroy, ctx->input_userdata);
+    tbox_release_add(&ctx->releases, ctx->select_destroy, ctx->select_userdata);
+    tbox_release_add(&ctx->releases, ctx->submit_destroy, ctx->submit_userdata);
+    tbox_release_finish(&ctx->releases);
 
     tbox_context_free_transitions(ctx);
     tbox_context_free_animations(ctx);
@@ -595,18 +607,22 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     tbox_context_append_control_paint(ctx, out_list);
 }
 
-void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata) {
+void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata, tbox_destroy_notify destroy) {
     if (ctx == NULL)
         return;
+    tbox_release_add(&ctx->releases, ctx->input_destroy, ctx->input_userdata);
     ctx->input_handler  = handler;
     ctx->input_userdata = userdata;
+    ctx->input_destroy  = destroy;
 }
 
-void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata) {
+void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata, tbox_destroy_notify destroy) {
     if (ctx == NULL)
         return;
+    tbox_release_add(&ctx->releases, ctx->submit_destroy, ctx->submit_userdata);
     ctx->submit_handler  = handler;
     ctx->submit_userdata = userdata;
+    ctx->submit_destroy  = destroy;
 }
 
 tbox_html_document *tbox_context_document(tbox_context *ctx) {

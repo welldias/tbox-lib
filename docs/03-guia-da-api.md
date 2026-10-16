@@ -56,16 +56,15 @@ dos stops são percentuais de uma volta. Inicialize as estruturas com zero.
 | `tbox_app_backend_available()` | `true` se este build consegue abrir janela. |
 | `tbox_app_create(html, css, w, h)` | Abre janela a partir de strings. `NULL` em falha ou sem backend. |
 | `tbox_app_create_from_files(html_path, css_path, w, h)` | Igual, lendo arquivos. `css_path` pode ser `NULL`. Imagens e `@font-face` relativos usam o diretório do HTML. |
-| `…_with_config(…, tbox_ua_style_config)` | Ajusta a folha user-agent (tamanho base, escala de headings, margens). |
-| `…_with_options(…, tbox_context_options)` | Config UA + tema dos popups + diretórios de recursos + `prefers_reduced_motion`. |
+| `…_with_options(…, const tbox_context_options *)` | Config UA (`ua_style`: tamanho base, escala de headings, margens) + tema dos popups + diretórios de recursos + `prefers_reduced_motion`. `NULL` = padrão. |
 | `tbox_app_run(app)` | O loop pronto: dorme até haver evento, tarefa ou frame de animação; volta quando a janela fecha. |
 | `tbox_app_wait(app, max_ms)` | Uma volta do loop esperando no máximo `max_ms` (`-1`: sem limite). Para quem tem loop próprio: passe o seu próximo prazo. |
 | `tbox_app_step(app)` | `tbox_app_wait(app, 0)`: uma volta que nunca bloqueia. |
-| `tbox_app_post(app, fn, userdata)` | **Única função thread-safe.** Executa `fn(app, userdata)` na thread de UI, na próxima volta, e marca o frame como sujo. |
+| `tbox_app_post(app, fn, userdata, destroy)` | **Única função thread-safe.** Executa `fn(app, userdata)` na thread de UI, na próxima volta, e marca o frame como sujo; depois chama `destroy(userdata)`. |
 | `tbox_app_should_close(app)` | `true` quando a janela pediu fechamento ou a conexão caiu. Esc também fecha (se nenhum controle consumir a tecla). |
 | `tbox_app_close(app)` | Libera tudo. |
 | `tbox_app_context(app)` | O `tbox_context` interno, para registrar handlers e acessar o DOM. |
-| `tbox_app_on_key(app, handler, userdata)` | Handler de tecla chamado antes do contexto; retorne `true` para consumir. |
+| `tbox_app_on_key(app, handler, userdata, destroy)` | Handler de tecla (recebe `const tbox_key_event *`) chamado antes do contexto; retorne `true` para consumir. |
 | `tbox_app_load_from_files(app, html, css)` | Troca o documento na mesma janela (cria um contexto novo). Em falha, o atual continua. Handlers do contexto antigo não são levados: registre de novo. |
 | `tbox_app_request_redraw(app)` | Peça um frame depois de mudar o DOM fora de um handler. |
 | `tbox_app_set_debug_damage(app, on)` | Contorna as regiões repintadas (depuração). |
@@ -91,7 +90,7 @@ obtém por `tbox_app_context(app)`; sem janela, você o abre direto.
 | Função | Uso |
 |---|---|
 | `tbox_context_open(html, len, css, len, fonts, images)` | Parseia e guarda. `fonts`/`images` são emprestados (`images` pode ser `NULL`). |
-| `tbox_context_open_with_config` / `_with_options` | Mesmas variantes de `tbox_app`. |
+| `tbox_context_open_with_options(…, const tbox_context_options *)` | Mesmas opções de `tbox_app`; `NULL` = padrão. |
 | `tbox_context_run_frame(ctx, w, h, &list)` | Recalcula tudo e devolve a display list (válida até o próximo frame). |
 | `tbox_context_set_animation_time(ctx, s)` / `tbox_context_next_frame_time(ctx)` | Tempo para `transition`, `animation`, rolagem suave e scroll snap. Depois de um frame, `next_frame_time` diz quando o próximo muda algo: `INFINITY` = ocioso; ≤ agora = já; senão, um prazo (fim de um atraso, do snap). `tbox_context_animations_active` = prazo finito. |
 | `tbox_context_close(ctx)` | Libera documento, folhas e arena de frame. Não toca `fonts`/`images`. |
@@ -111,7 +110,7 @@ frame é necessário.
 | `tbox_context_scroll(ctx, x, y, dy)` | Roda do mouse |
 | `tbox_context_scrollbar_press/_drag/_release` | Barra de rolagem |
 | `tbox_context_drag_select_at`, `_color_drag`, `_range_drag`, `_datetime_drag` | Arrastos em campos e popups |
-| `tbox_context_dispatch_key(ctx, tbox_key_event)` | Tecla lógica (`tbox_key` em `input.h`) |
+| `tbox_context_dispatch_key(ctx, const tbox_key_event *)` | Tecla lógica (`tbox_key` em `input.h`) |
 | `tbox_context_dispatch_text(ctx, utf8)` | Texto já composto (digitação, colar) |
 | `tbox_context_hit_test(ctx, x, y)` | Caixa mais profunda sob o ponto (último frame) |
 | `tbox_context_cursor_at(ctx, x, y)` | Cursor CSS a mostrar |
@@ -120,15 +119,20 @@ frame é necessário.
 
 | Registro | Chamado quando |
 |---|---|
-| `tbox_context_on_click(ctx, "seletor", len, handler, ud)` → `int` | Um clique (ou Enter/Espaço num botão focado) atinge um elemento que casa com o seletor, ou um descendente dele. Retorna um id; `-1` em seletor inválido. |
+| `tbox_context_on_click(ctx, "seletor", len, handler, ud, destroy)` → `int` | Um clique (ou Enter/Espaço num botão focado) atinge um elemento que casa com o seletor, ou um descendente dele. Retorna um id; `-1` em seletor inválido. |
 | `tbox_context_unbind_click(ctx, id)` | Remove o registro. |
-| `tbox_context_on_input(ctx, handler, ud)` | O valor de um `input`/`textarea` muda por edição ou por um popup. |
-| `tbox_context_on_select(ctx, handler, ud)` | O usuário escolhe outra opção num `<select>`. |
-| `tbox_context_on_submit(ctx, handler, ud)` | Um formulário é enviado (botão submit ou Enter num campo). |
+| `tbox_context_on_input(ctx, handler, ud, destroy)` | O valor de um `input`/`textarea` muda por edição ou por um popup. O handler recebe `(const char *value, size_t value_length)`. |
+| `tbox_context_on_select(ctx, handler, ud, destroy)` | O usuário escolhe outra opção num `<select>`. Valor como em `on_input`. |
+| `tbox_context_on_submit(ctx, handler, ud, destroy)` | Um formulário é enviado (botão submit ou Enter num campo). |
 
 O handler de clique retorna `bool`: `true` continua a propagação para
 ancestrais, `false` para (`stopPropagation`). Detalhes em
 [Eventos e interatividade](06-eventos-e-interatividade.md).
+
+`destroy` (`tbox_destroy_notify` em `callback.h`, pode ser `NULL`) libera o
+`ud` uma única vez, quando a biblioteca deixa de usá-lo: `unbind`, troca do
+handler, `close`. Nenhum callback recebe struct por valor. Ver
+[Exemplos](04-exemplos.md#11-userdata-com-dono).
 
 ### Formulários
 
@@ -205,7 +209,7 @@ seus).
 
 | Função | Uso |
 |---|---|
-| `tbox_font_face_cache_create(regular, n, bold, n, resolver, ud)` | Cache de faces. Os bytes são copiados. `resolver` (opcional) busca outras famílias sob demanda. |
+| `tbox_font_face_cache_create(regular, n, bold, n, resolver, ud, destroy)` | Cache de faces. Os bytes são copiados. `resolver` (opcional, recebe `const tbox_font_query *`) busca outras famílias sob demanda; `destroy` libera `ud` no `_destroy` do cache. |
 | `tbox_font_source_fontconfig_create()` + `tbox_font_source_resolve()` | Descoberta pelo Fontconfig (Linux). |
 | `tbox_font_source_embedded_create(data, n)` | Fonte fixa, útil para testes determinísticos. |
 | `tbox_font_face_cache_register(cache, família, peso, itálico, data, n)` | Registra uma fonte própria (é o que `@font-face` usa). |

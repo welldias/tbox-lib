@@ -262,7 +262,7 @@ bool tbox_context_date_commit(tbox_context *ctx, const tbox_html_node *node, tbo
             tbox_string_view_make("value", 5), tbox_string_view_make(value, 5));
         if (ctx->input_handler != NULL) {
             const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-            if (attribute != NULL) ctx->input_handler(ctx, (tbox_html_node *)node, attribute->value, ctx->input_userdata);
+            if (attribute != NULL) tbox_context_emit_input(ctx, node, attribute->value);
         }
         return true;
     }
@@ -281,7 +281,7 @@ bool tbox_context_date_commit(tbox_context *ctx, const tbox_html_node *node, tbo
             tbox_string_view_make("value", 5), tbox_string_view_make(value, 8));
         if (ctx->input_handler != NULL) {
             const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-            if (attribute != NULL) ctx->input_handler(ctx, (tbox_html_node *)node, attribute->value, ctx->input_userdata);
+            if (attribute != NULL) tbox_context_emit_input(ctx, node, attribute->value);
         }
         return true;
     }
@@ -312,7 +312,7 @@ bool tbox_context_date_commit(tbox_context *ctx, const tbox_html_node *node, tbo
         tbox_string_view_make("value", 5), tbox_string_view_make(value, (size_t)length));
     if (ctx->input_handler != NULL) {
         const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-        if (attribute != NULL) ctx->input_handler(ctx, (tbox_html_node *)node, attribute->value, ctx->input_userdata);
+        if (attribute != NULL) tbox_context_emit_input(ctx, node, attribute->value);
     }
     return true;
 }

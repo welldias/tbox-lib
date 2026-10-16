@@ -559,3 +559,35 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   entrada sintética).
 - Débito resolvido: "Buffer duplo no backend Wayland" e "Loop sem espera".
   Novos: integração com loops externos, callbacks para bindings.
+
+## 2026-10-16 — Callbacks e structs prontos para bindings
+
+- **API pública** (mudança de assinaturas, sem variantes de
+  compatibilidade): novo `include/tbox/callback.h` com
+  `tbox_destroy_notify`. `tbox_context_on_click`, `on_input`, `on_select`,
+  `on_submit`, `tbox_app_on_key`, `tbox_app_post` e
+  `tbox_font_face_cache_create` ganharam um `destroy` para o `userdata`,
+  chamado uma vez quando a biblioteca deixa de usá-lo (`unbind`, troca do
+  handler, tarefa concluída ou descartada, `close`/`destroy`); registro
+  que falha não o chama.
+- Nenhum callback recebe struct por valor: o handler de tecla recebe
+  `const tbox_key_event *`, o resolver de fontes `const tbox_font_query *`,
+  `on_input`/`on_select` recebem `(const char *value, size_t value_length)`.
+  `tbox_context_dispatch_key` recebe ponteiro. `tbox_context_options` entra
+  por ponteiro (`NULL` = padrão) em `tbox_context_open_with_options`,
+  `tbox_app_create*_with_options` e `tbox_app_screenshot_from_files_with_options`.
+- Saíram `tbox_context_open_with_config`, `tbox_app_create_with_config` e
+  `tbox_app_create_from_files_with_config`: `tbox_context_options.ua_style`
+  cobre o caso.
+- **Base**: `src/base/tbox_release.{h,c}` adia o `destroy` enquanto um
+  callback está em execução (handler que faz `unbind` de si mesmo ou troca
+  o próprio `on_input`). **Orchestration**: toda chamada de handler passa
+  por `tbox_context_emit_input/select/submit` ou pelo despacho de clique,
+  que delimitam a execução.
+- Testes: liberação no `unbind`, na troca, no `close`, nunca em registro
+  que falhou, adiada para handler que remove a si mesmo (clique e
+  `on_input`); `destroy` do resolver de fontes. Uma mutação que chama o
+  `destroy` na hora é pega por dois testes. Suíte limpa com ASan/UBSan;
+  demos abertos e fechados sob ASan sem vazamento.
+- Débito: sai "Callbacks para bindings"; entra "ABI das structs públicas"
+  (campo de tamanho/versão antes da versão estável).

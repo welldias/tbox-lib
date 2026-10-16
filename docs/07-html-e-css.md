@@ -80,10 +80,10 @@ etc. É gerada pela biblioteca (não há arquivo externo) e os valores
 numéricos vêm de `tbox_ua_style_config`:
 
 ```c
-tbox_ua_style_config ua = tbox_ua_style_config_default();
-ua.font.base_px = 18.0;           /* tamanho base do body */
-ua.margin.paragraph_px = 10.0;    /* margem vertical de <p> */
-tbox_app *app = tbox_app_create_with_config(html, css, 800, 600, ua);
+tbox_context_options options = tbox_context_options_default();
+options.ua_style.font.base_px = 18.0;         /* tamanho base do body */
+options.ua_style.margin.paragraph_px = 10.0;  /* margem vertical de <p> */
+tbox_app *app = tbox_app_create_with_options(html, css, 800, 600, &options);
 ```
 
 Campos: `font.base_px`, `font.heading_em[6]` (escala de `h1`…`h6`),

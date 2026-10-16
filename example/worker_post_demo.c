@@ -13,9 +13,10 @@
 /* tbox_app_post: a worker thread does slow work and hands each progress
  * step to the UI thread, the only one that touches the document. The loop
  * is tbox_app_run, which sleeps between posts and only wakes per display
- * frame while the bar's width transition runs. Closing the window early
- * stops the worker; one tbox_app_step after the join runs (and frees)
- * whatever it posted meanwhile. */
+ * frame while the bar's width transition runs. Each task's userdata is
+ * released by `free`, passed as its destroy function: after the task ran,
+ * or at tbox_app_close for a task the closed window never ran. Closing the
+ * window early stops the worker. */
 
 static const char *demo_html = "<body><h1>Worker thread</h1><div id='track'><div id='bar'></div></div><p id='label'>starting...</p></body>";
 static const char *demo_css  = "body { margin: 24px; font-family: sans-serif; }"
@@ -51,7 +52,6 @@ static void show_progress(tbox_app *app, void *userdata) {
         tbox_html_node_set_attribute(doc, bar, tbox_string_view_make("style", 5), tbox_string_view_make(style, strlen(style)));
     if (label != NULL)
         tbox_html_node_set_text_content(doc, label, tbox_string_view_make(text, strlen(text)));
-    free(percent);
 }
 
 static void *work(void *arg) {
@@ -63,8 +63,8 @@ static void *work(void *arg) {
         if (percent == NULL)
             continue;
         *percent = step * 10;
-        if (!tbox_app_post(self->app, show_progress, percent))
-            free(percent);
+        if (!tbox_app_post(self->app, show_progress, percent, free))
+            free(percent); /* not queued: still ours */
     }
     return NULL;
 }
@@ -85,7 +85,6 @@ int main(void) {
     tbox_app_run(app);
     atomic_store(&self.stop, true);
     pthread_join(thread, NULL);
-    tbox_app_step(app); /* runs what the worker posted after the window closed */
-    tbox_app_close(app);
+    tbox_app_close(app); /* frees what the worker posted after the window closed */
     return 0;
 }

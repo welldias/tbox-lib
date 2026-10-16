@@ -11,11 +11,7 @@ tbox_app *tbox_app_create(const char *html, const char *css, int32_t width, int3
     return NULL;
 }
 
-tbox_app *tbox_app_create_with_config(const char *html, const char *css, int32_t width, int32_t height, tbox_ua_style_config config) {
-    (void)html; (void)css; (void)width; (void)height; (void)config;
-    return NULL;
-}
-tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, tbox_context_options options) {
+tbox_app *tbox_app_create_with_options(const char *html, const char *css, int32_t width, int32_t height, const tbox_context_options *options) {
     (void)html; (void)css; (void)width; (void)height; (void)options;
     return NULL;
 }
@@ -25,11 +21,7 @@ tbox_app *tbox_app_create_from_files(const char *html_path, const char *css_path
     return NULL;
 }
 
-tbox_app *tbox_app_create_from_files_with_config(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_ua_style_config config) {
-    (void)html_path; (void)css_path; (void)width; (void)height; (void)config;
-    return NULL;
-}
-tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, tbox_context_options options) {
+tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const tbox_context_options *options) {
     (void)html_path; (void)css_path; (void)width; (void)height; (void)options;
     return NULL;
 }
@@ -39,15 +31,15 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
     return false;
 }
 
-void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata) {
-    (void)app; (void)handler; (void)userdata;
+void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata, tbox_destroy_notify destroy) {
+    (void)app; (void)handler; (void)userdata; (void)destroy;
 }
 
 bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path) {
     (void)html_path; (void)css_path; (void)width; (void)height; (void)png_path;
     return false;
 }
-bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, tbox_context_options options) {
+bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, const tbox_context_options *options) {
     (void)html_path; (void)css_path; (void)width; (void)height; (void)png_path; (void)options;
     return false;
 }
@@ -58,6 +50,6 @@ void tbox_app_set_debug_damage(tbox_app *app, bool enabled) { (void)app; (void)e
 void tbox_app_step(tbox_app *app) { (void)app; }
 void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) { (void)app; (void)max_wait_ms; }
 void tbox_app_run(tbox_app *app) { (void)app; }
-bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata) { (void)app; (void)task; (void)userdata; return false; }
+bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata, tbox_destroy_notify destroy) { (void)app; (void)task; (void)userdata; (void)destroy; return false; }
 bool tbox_app_should_close(const tbox_app *app) { (void)app; return true; }
 void tbox_app_close(tbox_app *app) { (void)app; }

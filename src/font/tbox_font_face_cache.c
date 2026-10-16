@@ -50,6 +50,7 @@ struct tbox_font_face_cache {
     size_t bold_size;
     tbox_font_resolver_fn resolver;
     void *resolver_userdata;
+    tbox_destroy_notify resolver_destroy;
     tbox_vector entries;      /* tbox_font_face_cache_entry, linear-scanned by _get. */
     tbox_vector family_blobs; /* tbox_font_face_cache_family_blob, linear-scanned by _get. */
     unsigned generation;
@@ -67,7 +68,7 @@ static void *tbox_font_face_cache_copy_bytes(tbox_arena *arena, const void *data
     return copy;
 }
 
-tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size, tbox_font_resolver_fn resolver, void *resolver_userdata) {
+tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size_t regular_size, const void *bold_data, size_t bold_size, tbox_font_resolver_fn resolver, void *resolver_userdata, tbox_destroy_notify resolver_destroy) {
     tbox_font_face_cache *cache = malloc(sizeof(*cache));
     if (cache == NULL) {
         return NULL;
@@ -91,6 +92,7 @@ tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size
 
     cache->resolver          = resolver;
     cache->resolver_userdata = resolver_userdata;
+    cache->resolver_destroy  = resolver_destroy;
 
     tbox_vector_init(&cache->entries, &cache->arena, sizeof(tbox_font_face_cache_entry), 0);
     tbox_vector_init(&cache->family_blobs, &cache->arena, sizeof(tbox_font_face_cache_family_blob), 0);
@@ -121,6 +123,8 @@ void tbox_font_face_cache_destroy(tbox_font_face_cache *cache) {
     if (cache == NULL) {
         return;
     }
+    if (cache->resolver_destroy != NULL)
+        cache->resolver_destroy(cache->resolver_userdata);
 
     size_t count = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < count; i++) {
@@ -222,7 +226,7 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
 
             const void *resolved_data = NULL;
             size_t resolved_size      = 0;
-            if (cache->resolver == NULL || !cache->resolver(cache->resolver_userdata, query, &resolved_data, &resolved_size)) {
+            if (cache->resolver == NULL || !cache->resolver(cache->resolver_userdata, &query, &resolved_data, &resolved_size)) {
                 if (!default_upright)
                     return NULL;
                 resolved_data = bold ? cache->bold_data : cache->regular_data;

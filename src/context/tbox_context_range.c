@@ -159,7 +159,7 @@ bool tbox_context_range_commit(tbox_context *ctx, const tbox_html_node *node, do
         tbox_string_view_make("value", 5), tbox_string_view_make(buffer, (size_t)length));
     if (ctx->input_handler != NULL) {
         const tbox_html_attribute *current = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-        if (current != NULL) ctx->input_handler(ctx, (tbox_html_node *)node, current->value, ctx->input_userdata);
+        if (current != NULL) tbox_context_emit_input(ctx, node, current->value);
     }
     return true;
 }

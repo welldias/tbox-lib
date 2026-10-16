@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_release.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 #include "context/tbox_context_hit_test.h"
@@ -46,6 +47,7 @@ typedef struct tbox_context_click_binding {
     tbox_css_selector_query *query;
     tbox_context_click_handler handler;
     void *userdata;
+    tbox_destroy_notify destroy; /* released at unbind or close, see <tbox/callback.h> */
     int id;
     bool active;
 } tbox_context_click_binding;
@@ -202,6 +204,7 @@ struct tbox_context {
     double viewport_height;
     tbox_context_select_handler select_handler;
     void *select_userdata;
+    tbox_destroy_notify select_destroy;
     tbox_scroll_state *scroll_states;
     const tbox_html_node *scroll_drag_node;
     double scroll_drag_grab_y;
@@ -209,8 +212,14 @@ struct tbox_context {
     bool focus_scroll_pending;
     tbox_context_input_handler input_handler;
     void *input_userdata;
+    tbox_destroy_notify input_destroy;
     tbox_context_submit_handler submit_handler;
     void *submit_userdata;
+    tbox_destroy_notify submit_destroy;
+    /* Userdata releases waiting for the application callbacks in progress
+     * (see src/base/tbox_release.h); every handler call goes through
+     * tbox_context_emit_* or the click dispatch, which bracket it. */
+    tbox_release_list releases;
     tbox_style_table styles; /* last frame's styles, for focus visibility checks */
     tbox_transition_state *transitions;
     tbox_animation_state *animations;
@@ -227,6 +236,12 @@ struct tbox_context {
 static inline void tbox_context_wake_at(tbox_context *ctx, double seconds) {
     if (seconds < ctx->next_frame_time) ctx->next_frame_time = seconds;
 }
+
+/* Call the application's input/select/submit handler, if set, with the
+ * userdata release bracket around it. */
+void tbox_context_emit_input(tbox_context *ctx, const tbox_html_node *input, tbox_string_view value);
+void tbox_context_emit_select(tbox_context *ctx, const tbox_html_node *select, tbox_string_view value);
+void tbox_context_emit_submit(tbox_context *ctx, const tbox_html_node *form, const tbox_html_node *submitter);
 
 void tbox_context_free_transitions(tbox_context *ctx);
 void tbox_context_free_animations(tbox_context *ctx);

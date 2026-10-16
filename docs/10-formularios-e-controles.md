@@ -71,7 +71,7 @@ aplicação decide no handler de submit.
 
 ## Envio
 
-`tbox_context_on_submit(ctx, handler, ud)` recebe o `<form>` e o botão que
+`tbox_context_on_submit(ctx, handler, ud, destroy)` recebe o `<form>` e o botão que
 enviou (`NULL` quando foi Enter num campo). O tbox não navega nem faz
 requisição: leia os campos (por seletor dentro do form) e aja.
 
@@ -85,7 +85,7 @@ documento continua estilizando o input em si.
 tbox_context_options options = tbox_context_options_default();
 options.control_css = tema;               /* NULL = tema embutido */
 options.control_css_length = strlen(tema);
-tbox_app *app = tbox_app_create_with_options(html, css, 800, 600, options);
+tbox_app *app = tbox_app_create_with_options(html, css, 800, 600, &options);
 ```
 
 - O popup é apresentado aos seletores como um elemento `tbox-popup` com

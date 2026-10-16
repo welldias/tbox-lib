@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include <tbox/callback.h>
 #include <tbox/font.h>
 #include <tbox/html_parser.h>
 #include <tbox/image.h>
@@ -15,7 +16,9 @@
 extern "C" {
 #endif
 
-/* Not thread-safe: like the rest of tbox, there is no internal locking.
+/* UI thread only: a context, and everything reached through it, belongs to
+ * the thread that uses it; there is no internal locking (see "Threads" in
+ * docs/13-memoria-e-concorrencia.md).
  *
  * Orchestration: owns the *compute* pipeline end to end (parse once at
  * open, then per frame: cascade+style -> layout -> render -> display
@@ -44,7 +47,7 @@ typedef struct tbox_context tbox_context;
 /* Orchestration's user-agent stylesheet configuration (see
  * docs/dev/historico.md's "CSS Cascade / Orchestration -- folha de estilo
  * user-agent" -> "Configuração da UA stylesheet"). Every number the UA
- * stylesheet text embeds (see tbox_context_open_with_config) comes from one
+ * stylesheet text embeds (see tbox_context_open_with_options) comes from one
  * of these fields, never a literal baked into the generated CSS -- a host
  * that wants a different heading scale, margin, or base font-size just
  * copies tbox_ua_style_config_default() and overwrites the one field it
@@ -63,7 +66,7 @@ typedef struct tbox_ua_style_font_config {
      * (or from a nearer ancestor, if author CSS overrides font-size partway
      * down -- same rule as any em in CSS). Included as an explicit
      * `body { font-size: ... }` declaration in the UA stylesheet
-     * (tbox_context_open_with_config), so a non-default value takes effect
+     * (tbox_context_open_with_options), so a non-default value takes effect
      * even though it happens to match the Style layer's own hardcoded
      * "no parent" root default (16px) -- that fallback only matters for a
      * document whose top-level element isn't literally `<body>` (tbox's
@@ -113,9 +116,10 @@ typedef struct tbox_context_options {
 
 tbox_context_options tbox_context_options_default(void);
 
-/* The context parses and owns a copy of control_css. The caller's buffer
- * need only remain valid for this call. */
-tbox_context *tbox_context_open_with_options(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_context_options options);
+/* Same as tbox_context_open, with explicit options; NULL `options` is
+ * tbox_context_options_default(). The context parses and owns a copy of
+ * control_css; neither `options` nor its strings need outlive this call. */
+tbox_context *tbox_context_open_with_options(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, const tbox_context_options *options);
 
 /* Parses `html`/`css` (tbox_html_parse/tbox_css_parse) and stores the
  * result. Both of those tolerate malformed markup/CSS themselves (see
@@ -129,18 +133,8 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
  * layout exists yet after this call returns (tbox_context_hit_test returns
  * NULL until the first tbox_context_run_frame).
  *
- * internally a thin wrapper over tbox_context_open_with_config,
- * passing tbox_ua_style_config_default() -- the caller of this function
- * never needs to know tbox_ua_style_config exists. */
+ * tbox_context_open_with_options(..., NULL). */
 tbox_context *tbox_context_open(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images);
-
-/* Same as tbox_context_open, plus an explicit tbox_ua_style_config.
- * The user-agent stylesheet is built from typed rules and the supplied
- * values; author CSS still goes through tbox_css_parse. This is the REAL
- * implementation; tbox_context_open is a thin wrapper around this one with
- * tbox_ua_style_config_default(). Fails under the exact same conditions as
- * tbox_context_open. */
-tbox_context *tbox_context_open_with_config(const char *html, size_t html_length, const char *css, size_t css_length, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_ua_style_config config);
 
 /* Destroys the parsed document/stylesheet/user-agent-stylesheet
  * and the frame arena -- every tbox_style_table/tbox_layout_box/
@@ -293,8 +287,13 @@ typedef bool (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *no
  * the returned handle to tbox_context_unbind_click to remove this
  * registration later; a binding never unbound lives for `ctx`'s whole
  * lifetime, destroyed (its compiled query, specifically) in
- * tbox_context_close. */
-int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata);
+ * tbox_context_close.
+ *
+ * `destroy` (may be NULL) releases `userdata` once the binding is gone:
+ * at tbox_context_unbind_click or tbox_context_close -- after the
+ * handler returns, if it unbinds itself (see <tbox/callback.h>). Not
+ * called when this returns -1. */
+int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata, tbox_destroy_notify destroy);
 
 /* Interatividade Avançada: removes the registration identified
  * by `binding` (a handle previously returned by tbox_context_on_click) from
@@ -374,8 +373,8 @@ tbox_string_view tbox_context_selected_text(tbox_context *ctx);
  * keys act on a focused text control. Up/Down steps a focused number input.
  * Shift with Left, Right, Home or End extends its selection. Backspace and
  * Delete remove a selection when one exists; Ctrl+A selects all text.
- * Returns true when a frame should be recomputed. */
-bool tbox_context_dispatch_key(tbox_context *ctx, tbox_key_event event);
+ * Returns true when a frame should be recomputed; false for a NULL event. */
+bool tbox_context_dispatch_key(tbox_context *ctx, const tbox_key_event *event);
 
 /* Inserts committed UTF-8 text at the focused text control's cursor, replacing its
  * selection when one exists. Invalid UTF-8 and control characters are
@@ -400,7 +399,12 @@ bool tbox_context_number_valid(const tbox_html_node *input);
  * does not navigate or send a network request; the application reads values
  * from the form's DOM controls. */
 typedef void (*tbox_context_submit_handler)(tbox_context *ctx, tbox_html_node *form, tbox_html_node *submitter, void *userdata);
-void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata);
+
+/* The single-slot handlers (submit, input, select) replace whatever was
+ * set before; a NULL handler clears the slot. The previous `destroy` is
+ * called for the previous `userdata` when it is replaced or cleared, and
+ * the current one at tbox_context_close (see <tbox/callback.h>). */
+void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata, tbox_destroy_notify destroy);
 
 /* Absolute path chosen by the user for input type=file, or an empty view.
  * The value attribute contains only the file name. The path is owned by the
@@ -411,21 +415,22 @@ tbox_string_view tbox_context_file_path(tbox_context *ctx, const tbox_html_node 
 /* Called after the value of an input or textarea changes through editing, or
  * when the user changes an input type=color, type=date, type=datetime-local,
  * type=month, or type=file through its picker. For a file input, value is the file name.
- * The value
- * view is valid through the call and until the next edit of this field. */
-typedef void (*tbox_context_input_handler)(tbox_context *ctx, tbox_html_node *input, tbox_string_view value, void *userdata);
-void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata);
+ * `value` (`value_length` bytes, not NUL-terminated) is valid through the
+ * call and until the next edit of this field. */
+typedef void (*tbox_context_input_handler)(tbox_context *ctx, tbox_html_node *input, const char *value, size_t value_length, void *userdata);
+void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata, tbox_destroy_notify destroy);
 
 /* Single-choice <select> controls. The value is the selected <option>'s
  * value attribute, or its collapsed text if no value attribute exists.
- * The returned view is borrowed and valid until the next frame or document
+ * The returned view (and the handler's `value`, `value_length` bytes, not
+ * NUL-terminated) is borrowed and valid until the next frame or document
  * mutation. The handler runs only when the user changes the choice. */
-typedef void (*tbox_context_select_handler)(tbox_context *ctx, tbox_html_node *select, tbox_string_view value, void *userdata);
+typedef void (*tbox_context_select_handler)(tbox_context *ctx, tbox_html_node *select, const char *value, size_t value_length, void *userdata);
 tbox_string_view tbox_context_select_value(tbox_context *ctx, const tbox_html_node *select);
 /* Chooses the first option with `value`; returns true only if selection
  * changed. Programmatic changes do not call the selection handler. */
 bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *select, tbox_string_view value);
-void tbox_context_on_select(tbox_context *ctx, tbox_context_select_handler handler, void *userdata);
+void tbox_context_on_select(tbox_context *ctx, tbox_context_select_handler handler, void *userdata, tbox_destroy_notify destroy);
 
 const tbox_html_node *tbox_context_focused_node(const tbox_context *ctx);
 

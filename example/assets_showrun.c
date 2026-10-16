@@ -97,12 +97,12 @@ static void showrun_announce(const showrun *state) {
     fflush(stdout);
 }
 
-static bool showrun_on_key(tbox_app *app, tbox_key_event event, void *userdata) {
-    if (!event.pressed || (event.key != TBOX_KEY_RIGHT && event.key != TBOX_KEY_LEFT)) return false;
+static bool showrun_on_key(tbox_app *app, const tbox_key_event *event, void *userdata) {
+    if (!event->pressed || (event->key != TBOX_KEY_RIGHT && event->key != TBOX_KEY_LEFT)) return false;
     showrun *state = userdata;
     size_t next = state->current;
-    if (event.key == TBOX_KEY_RIGHT && next + 1 < state->count) next++;
-    if (event.key == TBOX_KEY_LEFT && next > 0) next--;
+    if (event->key == TBOX_KEY_RIGHT && next + 1 < state->count) next++;
+    if (event->key == TBOX_KEY_LEFT && next > 0) next--;
     if (next != state->current) {
         char *path = showrun_path(state->directory, state->names[next]);
         bool loaded = path != NULL && tbox_app_load_from_files(app, path, NULL);
@@ -149,7 +149,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     showrun_announce(&state);
-    tbox_app_on_key(app, showrun_on_key, &state);
+    tbox_app_on_key(app, showrun_on_key, &state, NULL);
     tbox_app_run(app);
     tbox_app_close(app);
     showrun_destroy(&state);

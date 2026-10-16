@@ -92,10 +92,7 @@ void tbox_context_sync_text_value(tbox_context *ctx, tbox_text_field *field) {
      * layout and application code see the live value without an arena
      * allocation for every keystroke. */
     tbox_context_bind_text_value(ctx, field);
-    if (ctx->input_handler != NULL) {
-        ctx->input_handler(ctx, (tbox_html_node *)field->node,
-                           tbox_string_view_make(field->value, field->length), ctx->input_userdata);
-    }
+    tbox_context_emit_input(ctx, field->node, tbox_string_view_make(field->value, field->length));
 }
 
 size_t tbox_utf8_next(const char *data, size_t length, size_t at) {

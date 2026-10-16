@@ -34,14 +34,14 @@ static char *read_theme(const char *path, size_t *length) {
 }
 
 static void on_input(tbox_context *ctx, tbox_html_node *input,
-                     tbox_string_view value, void *userdata) {
+                     const char *value, size_t value_length, void *userdata) {
     (void)ctx;
     (void)userdata;
     const tbox_html_attribute *id = tbox_html_node_get_attribute(input,
         tbox_string_view_make("id", 2));
     printf("%.*s = %.*s\n", id != NULL ? (int)id->value.size : 0,
-        id != NULL ? id->value.data : "", (int)value.size,
-        value.data != NULL ? value.data : "");
+        id != NULL ? id->value.data : "", (int)value_length,
+        value != NULL ? value : "");
     fflush(stdout);
 }
 
@@ -72,13 +72,13 @@ int main(int argc, char **argv) {
 
     tbox_app *app = tbox_app_create_from_files_with_options(
         TBOX_CONTROL_THEME_HTML_PATH, TBOX_CONTROL_THEME_PAGE_CSS_PATH,
-        620, 720, options);
+        620, 720, &options);
     free(theme);
     if (app == NULL) {
         fputs("Could not create the example window.\n", stderr);
         return 1;
     }
-    tbox_context_on_input(tbox_app_context(app), on_input, NULL);
+    tbox_context_on_input(tbox_app_context(app), on_input, NULL, NULL);
     tbox_app_run(app);
     tbox_app_close(app);
     return 0;

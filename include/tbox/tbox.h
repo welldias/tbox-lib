@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <tbox/app.h>
+#include <tbox/callback.h>
 #include <tbox/context.h>
 #include <tbox/css_cascade.h>
 #include <tbox/css_parser.h>
