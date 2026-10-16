@@ -200,18 +200,68 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
 
 ## Valores
 
+A resolução das propriedades fica em `src/style/tbox_style.c`. Os parsers de
+funções de cálculo, gradientes, filtros, formas, transformações e tempo ficam
+em `tbox_style_functions.c`, apoiados pelos utilitários de valores em
+`tbox_style_values.c`. Cores, substituições e conteúdo gerado mantêm seus
+arquivos especializados; veja [Organização do código](dev/organizacao-do-codigo.md).
+
 - **Unidades**: `px`, `em`, `rem`, `ex`/`ch` (aproximados como 0,5em), `pt`,
   `pc`, `in`, `cm`, `mm`, `Q`, `%`, `vw`/`vh`/`vmin`/`vmax` (e as variantes
   `sv*`/`lv*`/`dv*`, iguais ao tamanho da janela).
 - **Funções**: `calc()` (`+ - * /`, parênteses, aninhado), `min()`, `max()`,
   `clamp()`, `var()` com fallback (custom properties `--nome`, herdadas).
+  Comparações aceitam percentuais puros (`min(20%, 50%)`) e expressões com
+  o mesmo termo em pixels ou percentual; uma chamada de `min()`/`max()`
+  com argumento único preserva seu valor. Misturas gerais continuam
+  limitadas aos casos descritos na referência. `pow()`, `sqrt()`, `exp()` e
+  `log()` avaliam números sem unidade dentro de cálculos de comprimento,
+  como `calc(pow(2, 3) * 10px)`; domínios inválidos e valores não finitos
+  são rejeitados. `hypot()` aceita até oito números ou comprimentos com
+  unidades compatíveis. `abs()` preserva o tipo do número/comprimento e
+  `sign()` retorna -1, zero ou 1. As constantes `pi`/`e` podem ser usadas
+  dentro de cálculos, como `calc(pi * 10px)`. `round()`, `mod()` e
+  `rem()` aceitam números ou comprimentos resolvidos em pixels. `round()`
+  oferece `nearest` (padrão, empate para cima), `up`, `down` e `to-zero`.
+  `mod()` segue o sinal do divisor e `rem()` o do dividendo; percentuais e
+  limites pendentes nessas operações ficam de fora. `sin()`/`cos()`/`tan()`
+  recebem expressão numérica em radianos, como `sin(pi / 2)`, ou um ângulo
+  em `deg`/`rad`/`grad`/`turn`, como `cos(60deg)`, inclusive expressões
+  angulares como `sin(45deg + 45deg)`. `asin()`/`acos()`/`atan()` retornam
+  ângulos; `atan2(y, x)` aceita dois números, comprimentos resolvidos ou
+  ângulos de tipos iguais. Os resultados podem alimentar trigonometria,
+  gradientes lineares e `hue-rotate()`. Valores não finitos, domínios
+  inválidos e percentuais de comprimento pendentes são rejeitados.
+  Veja o [catálogo por custo](referencia/funcoes-css-pendentes.md).
+- **Gradientes radiais**: aceitam raio explícito de círculo (`circle 40px`)
+  ou dois raios de elipse (`ellipse 80px 40px`), inclusive percentuais por
+  eixo na elipse. Isso também vale para `repeating-radial-gradient()`;
+  a forma omitida é inferida pelo número de raios.
+- **Gradientes cônicos**: `conic-gradient()` e `repeating-conic-gradient()`
+  aceitam `from <angle>`, `at <position>` e stops angulares/percentuais,
+  inclusive duas posições por cor. Reutilizam fundos em camadas, máscaras e
+  dimensionamento/repetição de imagem; interpolação em sRGB premultiplicado,
+  até oito stops, sem hints ou seleção de espaço de cor.
+- **Polígonos**: `clip-path: polygon(...)` aceita três a 32 vértices em
+  comprimentos/percentuais e regra `nonzero` (padrão) ou `evenodd`. Recorta
+  descendentes e barras de rolagem, com o mesmo interior no hit-test.
+  Sem `round`, caixa de referência explícita ou antialiasing nas arestas.
+- **Opacidade calculada**: `opacity` usa o mesmo avaliador e aceita funções
+  numéricas diretamente, como `sqrt(.25)`, ou dentro de `calc()`. Percentuais
+  viram números antes da aritmética (100% = 1): `calc(50% + .25)` resulta em
+  0,75. O valor final é limitado a 0–1; resultados em unidades de comprimento
+  e valores não finitos são rejeitados. Outras propriedades numéricas ainda
+  não passam por esse avaliador.
 - **Palavras-chave globais**: `inherit`, `initial`, `unset` (`revert` age
   como `unset`), também via `all`, que as aplica a toda propriedade que a
   tbox resolve (custom properties ficam de fora); uma declaração de
   prioridade maior de uma propriedade específica ainda vence. O `display`
   inicial é `inline`, como no CSS.
 - **Cores**: nomes CSS, hexadecimal (`#rgb`, `#rrggbb`), `rgb()`/`hsl()` nas duas
-  sintaxes, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color-mix()`,
+  sintaxes, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`,
+  `color(srgb ...)`/`color(srgb-linear ...)`, `color-mix()`
+  (em OKLCH: `shorter hue`, `longer hue`, `increasing hue`, `decreasing hue`;
+  nomes de espaços desconhecidos e pesos fora de 0%–100% são rejeitados),
   `transparent`, `currentColor`, `light-dark()` (escolhe pelo
   `color-scheme` herdado: escuro só com `dark` sem `light`, já que o
   ambiente prefere claro; vale em qualquer propriedade, inclusive vindo de

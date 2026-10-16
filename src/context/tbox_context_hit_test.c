@@ -3,6 +3,25 @@
 #include <stdlib.h>
 
 #include "render/tbox_render_internal.h"
+#include "base/tbox_polygon.h"
+
+/* A clipped ancestor also removes descendants from pointer targeting,
+ * even when the descendant escaped its ancestor's border box. */
+bool tbox_context_in_polygon_clips(const tbox_layout_box *box, double x, double y) {
+    for (const tbox_layout_box *ancestor = box; ancestor != NULL; ancestor = ancestor->parent) {
+        if (ancestor->style == NULL || ancestor->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_POLYGON) continue;
+        const tbox_style_clip_path *clip = &ancestor->style->clip_path;
+        double points[TBOX_STYLE_MAX_POLYGON_POINTS][2];
+        if (clip->point_count > TBOX_STYLE_MAX_POLYGON_POINTS) return false;
+        for (size_t i = 0; i < clip->point_count; i++) {
+            points[i][0] = tbox_style_length_resolve(clip->points[i][0], ancestor->border_box.width);
+            points[i][1] = tbox_style_length_resolve(clip->points[i][1], ancestor->border_box.height);
+        }
+        if (!tbox_polygon_contains(points, clip->point_count, clip->evenodd,
+            x - ancestor->border_box.x, y - ancestor->border_box.y)) return false;
+    }
+    return true;
+}
 
 static const tbox_layout_box *tbox_context_hit_test_clipped(const tbox_layout_box *box, double x, double y);
 
@@ -13,7 +32,7 @@ static tbox_rect tbox_context_scrollport(const tbox_layout_box *box) {
 }
 
 static const tbox_layout_box *tbox_context_hit_test_clipped(const tbox_layout_box *box, double x, double y) {
-    if (box == NULL) {
+    if (box == NULL || !tbox_context_in_polygon_clips(box, x, y)) {
         return NULL;
     }
 
@@ -76,7 +95,8 @@ const tbox_layout_box *tbox_context_hit_test_box(const tbox_layout_box *box, dou
         const tbox_render_painted_box *entry = &order[i - 1];
         const tbox_style *style              = entry->box->style;
         if ((style == NULL || (!style->visibility_hidden && !style->pointer_events_none)) && tbox_context_point_in_rect(entry->box->border_box, x, y) &&
-            (!entry->has_clip || tbox_context_point_in_rect(entry->clip, x, y)))
+            (!entry->has_clip || tbox_context_point_in_rect(entry->clip, x, y)) &&
+            tbox_context_in_polygon_clips(entry->box, x, y))
             hit = entry->box;
     }
     free(order);

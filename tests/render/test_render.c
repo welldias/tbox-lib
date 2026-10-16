@@ -1616,6 +1616,43 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* Rounded inset percentages refer to the border box, then all
+     * elliptical radii shrink together to fit the resulting rectangle. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.background_color = (tbox_css_rgba){ 255, 0, 0, 255 };
+        style.clip_path.kind = TBOX_STYLE_CLIP_PATH_INSET;
+        for (size_t i = 0; i < 4; i++) {
+            style.clip_path.inset[i] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 10, 0, 0, 0, 0 };
+            style.clip_path.round_h_percent[i] = 25;
+            style.clip_path.round_v_percent[i] = 25;
+        }
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box = box.padding_box = box.content_box = (tbox_rect){ 0, 0, 200, 100 };
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1);
+        if (list.count == 1) {
+            const tbox_paint_op *op = &list.items[0];
+            TBOX_TEST_ASSERT(op->has_rounded_clip && op->rounded_clip.x == 10 && op->rounded_clip.y == 10);
+            TBOX_TEST_ASSERT(op->rounded_clip.width == 180 && op->rounded_clip.height == 80);
+            TBOX_TEST_ASSERT(op->rounded_clip_radii[0] == 50 && op->rounded_clip_radii_y[0] == 25);
+        }
+        tbox_arena_destroy(&arena);
+        for (size_t i = 0; i < 4; i++) {
+            style.clip_path.round_h_percent[i] = 100;
+            style.clip_path.round_v_percent[i] = 50;
+        }
+        arena = tbox_arena_create(0);
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 1);
+        if (list.count == 1) {
+            TBOX_TEST_ASSERT(list.items[0].rounded_clip_radii[0] == 90);
+            TBOX_TEST_ASSERT(list.items[0].rounded_clip_radii_y[0] == 22.5);
+        }
+        tbox_arena_destroy(&arena);
+    }
+
     tbox_font_face_destroy(bold_font);
     tbox_font_face_destroy(font);
     free(font_data);

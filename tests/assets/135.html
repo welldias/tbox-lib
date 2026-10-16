@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <title>Hipotenusa, arredondamento, restos e misturas</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font: 16px sans-serif;
+      color: #172033;
+      background: #edf1f7;
+    }
+
+    h1 {
+      font-size: 22px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin: 20px 0 8px;
+    }
+
+    p {
+      margin: 6px 0;
+    }
+
+    .track {
+      width: 300px;
+      background: white;
+      margin-bottom: 10px;
+    }
+
+    .bar {
+      height: 16px;
+      background: #2563eb;
+    }
+
+    .hypot {
+      width: calc(hypot(3, 4) * 30px);
+    }
+
+    .nearest {
+      width: round(125px, 10px);
+    }
+
+    .up {
+      width: round(up, 123px, 10px);
+    }
+
+    .down {
+      width: round(down, 123px, 10px);
+    }
+
+    .zero {
+      width: round(to-zero, 123px, 10px);
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+    }
+
+    .lane {
+      width: 200px;
+      height: 28px;
+      background: white;
+    }
+
+    .dot {
+      position: relative;
+      width: 20px;
+      height: 28px;
+      background: #2563eb;
+    }
+
+    .mod {
+      left: calc(80px + mod(-18px, 5px) * 10);
+    }
+
+    .rem {
+      left: calc(80px + rem(-18px, 5px) * 10);
+    }
+
+    .swatch {
+      width: 160px;
+      height: 50px;
+      border-radius: 6px;
+    }
+
+    .normalized {
+      background: color-mix(in srgb, red 80%, blue 80%);
+    }
+
+    .alpha {
+      background: color-mix(in srgb, red 25%, blue 25%);
+    }
+
+    .invalid {
+      background-color: #16a34a;
+      background-image: linear-gradient(color-mix(in misspelled, red, blue), white);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Funções matemáticas e pesos de cores</h1>
+  <h2>hypot(3, 4) * 30px = 150px</h2>
+  <div class="track">
+    <div class="bar hypot"></div>
+  </div>
+  <h2>Arredondamento: passo de 10px</h2>
+  <p>nearest: 125px → 130px (empate para cima)</p>
+  <div class="track">
+    <div class="bar nearest"></div>
+  </div>
+  <p>up: 123px → 130px</p>
+  <div class="track">
+    <div class="bar up"></div>
+  </div>
+  <p>down: 123px → 120px</p>
+  <div class="track">
+    <div class="bar down"></div>
+  </div>
+  <p>to-zero: 123px → 120px</p>
+  <div class="track">
+    <div class="bar zero"></div>
+  </div>
+  <h2>Sinais: mod(-18px, 5px) = 2px; rem = -3px</h2>
+  <div class="row">
+    <div>
+      <p>mod: marcador em 100px</p>
+      <div class="lane">
+        <div class="dot mod"></div>
+      </div>
+    </div>
+    <div>
+      <p>rem: marcador em 50px</p>
+      <div class="lane">
+        <div class="dot rem"></div>
+      </div>
+    </div>
+  </div>
+  <h2>color-mix: pesos válidos e entrada inválida</h2>
+  <div class="row">
+    <div>
+      <p>80% + 80%: opaco</p>
+      <div class="swatch normalized"></div>
+    </div>
+    <div>
+      <p>25% + 25%: alfa 50%</p>
+      <div class="swatch alpha"></div>
+    </div>
+    <div>
+      <p>Espaço inválido: verde</p>
+      <div class="swatch invalid"></div>
+    </div>
+  </div>
+</body>
+
+</html>

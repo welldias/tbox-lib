@@ -106,3 +106,11 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 130 | `direction: rtl` e atributo `dir` (propriedades lógicas, flex, `text-align: start/end`) |
 | 131 | `text-emphasis` (formas cheias/abertas, `<string>`, `under`, herança) |
 | 132 | camadas de composição: `opacity` de grupo, `filter: blur()`, `drop-shadow()` na forma, `mask-image`/`-webkit-mask` (`mask-star.png`), `mix-blend-mode`, `isolation`, `backdrop-filter: blur()`, `background-blend-mode` isolado |
+| 133 | `min()`/`max()`/`clamp()` percentuais, `clip-path: xywh()`, raios percentuais em `inset(round ...)`, quatro percursos de matiz em `color-mix(in oklch)` |
+| 134 | `color(srgb)`/`color(srgb-linear)`, `clip-path: rect()` com `auto` e `round`, `pow()`/`sqrt()`/`exp()`/`log()` em cálculos de comprimento |
+| 135 | `hypot()`, `round()` com quatro estratégias, sinais de `mod()`/`rem()` e validação/normalização dos pesos de `color-mix()` |
+| 136 | `abs()`/`sign()`, `hypot()` com comprimentos, constantes `pi`/`e` e `opacity` calculada com números/percentuais |
+| 137 | `sin()`/`cos()`/`tan()` com radianos e ângulos literais; raios explícitos em gradientes radiais circulares, elípticos e repetidos |
+| 138 | `asin()`/`acos()`/`atan()`/`atan2()`: pares com ângulos literais em gradientes e filtros; aninhamento em largura e opacidade |
+| 139 | Gradientes cônicos: interpolação, setores, `from`/`at`, repetição angular, mosaico e máscara |
+| 140 | `polygon()`: triângulo, concavidade, `nonzero`/`evenodd`, interseção de recortes e filtros |

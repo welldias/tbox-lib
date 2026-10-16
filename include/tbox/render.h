@@ -44,6 +44,14 @@ typedef enum tbox_paint_op_kind {
     TBOX_PAINT_LAYER_END,
 } tbox_paint_op_kind;
 
+/* Resolved polygon vertices, local to polygon_clip_origin. Borrowed from
+ * the frame arena, with the same lifetime as the display list. */
+typedef struct tbox_paint_polygon {
+    double points[TBOX_STYLE_MAX_POLYGON_POINTS][2];
+    size_t count;
+    bool evenodd;
+} tbox_paint_polygon;
+
 typedef struct tbox_paint_op {
     tbox_paint_op_kind kind;
 
@@ -120,6 +128,9 @@ typedef struct tbox_paint_op {
     bool has_rounded_clip;
     tbox_rect rounded_clip;
     double rounded_clip_radii[4], rounded_clip_radii_y[4];
+
+    const tbox_paint_polygon *polygon_clip; /* NULL for none; also LAYER_BEGIN */
+    double polygon_clip_origin[2];
 } tbox_paint_op;
 
 typedef struct tbox_display_list {

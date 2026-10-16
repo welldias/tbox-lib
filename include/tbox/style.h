@@ -324,13 +324,15 @@ typedef enum tbox_style_gradient_kind {
     TBOX_STYLE_GRADIENT_NONE, /* initial */
     TBOX_STYLE_GRADIENT_LINEAR,
     TBOX_STYLE_GRADIENT_RADIAL,
+    TBOX_STYLE_GRADIENT_CONIC,
 } tbox_style_gradient_kind;
 
 #define TBOX_STYLE_MAX_GRADIENT_STOPS 8
 
 /* One color stop. `position` is a PERCENT or PX length along the gradient
  * line (radius for radial gradients), or AUTO for a stop declared without
- * one, spaced evenly between its neighbors when painted. */
+ * one, spaced evenly between its neighbors when painted. For CONIC,
+ * explicit positions are PERCENT fractions of a full turn. */
 typedef struct tbox_style_gradient_stop {
     tbox_css_rgba color;
     tbox_style_length position;
@@ -350,7 +352,9 @@ typedef enum tbox_style_gradient_extent {
  * `corner` is nonzero, toward that corner (x: -1 left, 1 right; y: -1 top,
  * 1 bottom), whose angle depends on the box's proportions. A radial one is
  * centered at `center` (as background-position) and reaches `extent`, as
- * an ellipse unless `circle`. */
+ * an ellipse unless `circle`. Explicit `radius` overrides the extent;
+ * AUTO uses the extent, ellipse percentages resolve against each axis.
+ * CONIC turns clockwise from the top by `angle` degrees around `center`. */
 typedef struct tbox_style_gradient {
     tbox_style_gradient_kind kind;
     bool repeating;
@@ -361,6 +365,7 @@ typedef struct tbox_style_gradient {
     tbox_style_length center[2];
     tbox_style_gradient_stop stops[TBOX_STYLE_MAX_GRADIENT_STOPS];
     size_t stop_count;
+    tbox_style_length radius[2]; /* explicit rx/ry; AUTO selects extent */
 } tbox_style_gradient;
 
 /* Properties `transition` and `animation` can interpolate. Each is one
@@ -536,17 +541,27 @@ typedef enum tbox_style_clip_path_kind {
     TBOX_STYLE_CLIP_PATH_INSET,
     TBOX_STYLE_CLIP_PATH_CIRCLE,
     TBOX_STYLE_CLIP_PATH_ELLIPSE,
+    TBOX_STYLE_CLIP_PATH_POLYGON,
 } tbox_style_clip_path_kind;
+
+#define TBOX_STYLE_MAX_POLYGON_POINTS 32
 
 /* `clip-path` basic shapes over the border box: inset(<1-4 lengths>
  * [round <radius>]), circle([<r>] [at <position>]), ellipse([<rx> <ry>]
- * [at <position>]). A radius left AUTO is `closest-side`. */
+ * [at <position>]), xywh(x y width height [round <radius>]), and
+ * rect(top right bottom left [round <radius>]) converted to inset().
+ * polygon([nonzero | evenodd,] x y, ...) has up to 32 vertices.
+ * A radius left AUTO is `closest-side`. */
 typedef struct tbox_style_clip_path {
     tbox_style_clip_path_kind kind;
     tbox_style_length inset[4];      /* top right bottom left */
     double round_h[4], round_v[4];   /* inset() corner radii, px */
     tbox_style_length radius[2];     /* circle: [0]; ellipse: rx, ry */
     tbox_style_length center[2];     /* initial 50% 50% */
+    double round_h_percent[4], round_v_percent[4]; /* radii, % of reference box */
+    tbox_style_length points[TBOX_STYLE_MAX_POLYGON_POINTS][2]; /* polygon x/y */
+    size_t point_count;
+    bool evenodd; /* polygon fill rule; false = nonzero */
 } tbox_style_clip_path;
 
 typedef enum tbox_style_background_repeat {
@@ -1105,7 +1120,7 @@ tbox_style_easing tbox_style_easing_default(void);
 
 /* Whether Render paints the element on its own compositing layer:
  * opacity < 1, a filter with blur()/drop-shadow(), mix-blend-mode, a
- * mask or `isolation: isolate`. See docs/08-layout-e-pintura.md. */
+ * mask, polygon clip-path or `isolation: isolate`. See docs/08-layout-e-pintura.md. */
 bool tbox_style_needs_layer(const tbox_style *style);
 
 /* How far (px, each side) the layer's effects can reach past what it

@@ -10,6 +10,32 @@ de design adiadas que têm complexidade própria. Cada item diz **o que é**,
 **por que importa**, **quando revisitar** e **o que toca**. Itens resolvidos
 saem da lista (o histórico deles está em [historico.md](historico.md)).
 
+## Limites de polígonos e gradientes cônicos
+
+- **O que é:** polígonos limitam-se a 32 pontos, sem arredondamento,
+  antialiasing das arestas, caixas explícitas ou interpolação de animação.
+  São compostos em camada temporária; bounds de damage conservam a área
+  original, sem otimização pelo polígono. Barras de rolagem anexadas depois
+  do conteúdo recebem camadas extras para os polígonos ancestrais.
+  Cônicos usam sRGB premultiplicado e até oito stops, sem hints, escolha de
+  espaço de cor ou cálculos misturando ângulos e percentuais. Período nulo
+  em repetidos ainda não produz a cor média especificada.
+- **Quando resolver:** conforme casos reais exigirem fidelidade ou a medição
+  mostrar custo das camadas; compartilhar a geometria entre pintura e eventos.
+- **Código:** style functions, render, raster/damage e context hit-test/scroll.
+
+## Limites do avaliador angular CSS
+
+- **O que é:** `asin`/`acos`/`atan`/`atan2` operam com entradas finitas;
+  `atan2` não resolve percentuais de comprimento pendentes nem dimensões de
+  tempo/frequência. O contexto de opacidade converte percentuais em números.
+  Ângulos suportam aritmética básica, comparações e trigonometria, mas ainda
+  não as demais funções escalares (`abs`, `hypot`, `round`, `mod`, `rem`).
+  Funções matemáticas em componentes de cor seguem fora desse avaliador.
+- **Quando resolver:** ao ampliar os tipos matemáticos ou conectar novos
+  consumidores; preservar a distinção entre ângulos, números e comprimentos.
+- **Código:** `src/style/tbox_style_functions.c`, `tbox_style_internal.h`.
+
 ## Pipeline
 
 ### Estilo e layout incrementais
@@ -242,6 +268,17 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   buffer da camada e só refazê-lo quando um op de dentro mudar.
 - **Toca:** `tbox_raster_paint_layer`, `tbox_raster_blur` em
   `src/output/tbox_raster.c`.
+
+### Gradientes radiais degenerados
+
+- **O que é:** raios nulos são substituídos por epsilon no raster. Elipses
+  com um eixo nulo e a cor média de gradientes repetidos degenerados ainda
+  não implementam as regras específicas de CSS Images.
+- **Por que importa:** raios explícitos zero ou cálculos que chegam a zero
+  tornam esses casos acessíveis diretamente pelo CSS.
+- **Quando revisitar:** ao precisar de fidelidade nesses limites, junto dos
+  casos de período nulo dos gradientes repetidos.
+- **Toca:** `src/output/tbox_raster.c` (`tbox_raster_gradient`).
 
 ### `mask` com uma camada
 

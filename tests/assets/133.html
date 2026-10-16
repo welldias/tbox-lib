@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Funções CSS: percentuais, recortes e matiz</title>
+<style>
+  body { font: 16px sans-serif; padding: 24px; color: #172033; background: #edf1f7; }
+  h1 { font-size: 24px; }
+  h2 { font-size: 18px; margin: 24px 0 10px; }
+  .row { display: flex; gap: 16px; }
+  .frame { width: 200px; height: 100px; background: #d6deea; }
+  .shape { width: 200px; height: 100px; background: linear-gradient(90deg, #2563eb, #38bdf8); }
+  .xywh { clip-path: xywh(10% 10px 80% 80px round 15% / 20%); }
+  .inset { clip-path: inset(10px 10% round 15% / 20%); }
+  .wide { width: 400px; background: white; margin: 8px 0; }
+  .bar { height: 24px; background: #2563eb; }
+  .minimum { width: min(20%, 50%); }
+  .maximum { width: max(20%, 50%); }
+  .clamp { width: clamp(20%, 70%, 50%); }
+  .swatch { width: 120px; height: 70px; border-radius: 8px; }
+  .shorter { background: color-mix(in oklch shorter hue, oklch(0.65 0.08 30), oklch(0.65 0.08 90)); }
+  .longer { background: color-mix(in oklch longer hue, oklch(0.65 0.08 30), oklch(0.65 0.08 90)); }
+  .increasing { background: color-mix(in oklch increasing hue, oklch(0.65 0.08 30), oklch(0.65 0.08 90)); }
+  .decreasing { background: color-mix(in oklch decreasing hue, oklch(0.65 0.08 30), oklch(0.65 0.08 90)); }
+</style>
+</head>
+<body>
+<h1>Funções CSS</h1>
+<h2>Comparações percentuais em uma caixa de 400px</h2>
+<p>min(20%, 50%): 80px</p><div class="wide"><div class="bar minimum"></div></div>
+<p>max(20%, 50%): 200px</p><div class="wide"><div class="bar maximum"></div></div>
+<p>clamp(20%, 70%, 50%): 200px</p><div class="wide"><div class="bar clamp"></div></div>
+<h2>xywh e inset equivalentes, com raios percentuais</h2>
+<div class="row">
+  <div><p>xywh()</p><div class="frame"><div class="shape xywh"></div></div></div>
+  <div><p>inset()</p><div class="frame"><div class="shape inset"></div></div></div>
+</div>
+<h2>Matiz OKLCH: shorter = increasing; longer = decreasing</h2>
+<div class="row">
+  <div><p>shorter</p><div class="swatch shorter"></div></div>
+  <div><p>longer</p><div class="swatch longer"></div></div>
+  <div><p>increasing</p><div class="swatch increasing"></div></div>
+  <div><p>decreasing</p><div class="swatch decreasing"></div></div>
+</div>
+</body>
+</html>

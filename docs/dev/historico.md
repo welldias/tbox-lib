@@ -18,6 +18,72 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Funções CSS de custo médio
+
+`conic-gradient()`/`repeating-conic-gradient()` com ângulo inicial, centro,
+stops angulares/percentuais, fundos e máscaras. `polygon()` com até 32 vértices,
+`nonzero`/`evenodd`, composição aninhada e recorte de eventos/barras de rolagem.
+Fix-up de stops omitidos agora compara com a última posição explícita.
+Hash de polígonos por geometria; testes de pixels, hit-test e repintura parcial.
+Fixtures 139–140. Campos novos de estilo/pintura exigem recompilar consumidores.
+
+## Após v20 — Catálogo por custo e trigonometria inversa
+
+Catálogo das 27 funções então ausentes, ordenadas por custo e dependências.
+Implementadas as quatro fáceis: `asin()`, `acos()`, `atan()` e `atan2()`,
+com ângulos tipados, expressões angulares e consumo em gradientes/filtros.
+Testes de validação e equivalência de pixels; fixture 138. Restam 23 ausentes.
+
+## Após v20 — Trigonometria e raios radiais
+
+`sin()`/`cos()`/`tan()` aceitam números em radianos e ângulos literais. Os
+gradientes radiais, inclusive repetidos/máscaras, aceitam raios explícitos de
+círculo/elipse, com percentuais por eixo na elipse. O hash de repintura inclui
+os raios. Testes de estilo, pixels e equivalência de repintura parcial;
+fixture `tests/assets/137.html`. O acréscimo de `radius` à estrutura pública
+`tbox_style_gradient` exige recompilar consumidores.
+
+## Após v20 — Sinal, constantes e opacidade calculada
+
+`abs()`/`sign()` operam sobre números/comprimentos; `hypot()` passa a aceitar
+comprimentos compatíveis. `pi`/`e` são operandos numéricos em cálculos.
+`opacity` reutiliza o avaliador, convertendo percentuais para números e
+limitando a faixa somente no final. Testes de estilo e pixels, com tipos,
+sinais de zero e rejeição de entradas inválidas; fixture `tests/assets/136.html`.
+
+## Após v20 — Hipotenusa, passos e validação de color-mix
+
+`hypot()` avalia até oito números. `round()` oferece quatro estratégias em
+números/comprimentos; `mod()` e `rem()` distinguem os sinais do divisor e do
+dividendo. Leitura de argumentos compartilhada com exponenciais/comparações.
+`color-mix()` rejeita espaços desconhecidos, pesos não finitos/fora de 0%–100%
+e soma zero, mantendo a normalização de pesos válidos. Testes de estilo e
+cores; fixture `tests/assets/135.html`.
+
+## Após v20 — Cores explícitas sRGB, rect e exponenciais
+
+`color()` aceita `srgb` e `srgb-linear`, componentes numéricos/percentuais e
+alfa. `clip-path: rect()` compartilha `round` e a representação de `inset()`,
+com coordenadas, `auto` e dimensões vazias para arestas cruzadas. `pow()`,
+`sqrt()`, `exp()` e `log()` avaliam números finitos dentro dos cálculos de
+comprimento. Testes de cores, estilo e pixels; fixture `tests/assets/134.html`.
+
+## Após v20 — Cálculos percentuais, recortes e matiz
+
+`min()`/`max()`/`clamp()` comparam percentuais e expressões afins compatíveis;
+`min()`/`max()` de um argumento preservam o valor. `clip-path: xywh()` reutiliza
+`inset()`, cujo `round` passa a preservar percentuais e a normalizar raios
+elípticos juntos. `color-mix(in oklch … hue, …)` aplica os quatro percursos de
+matiz. Testes de estilo, cores e render; fixture `tests/assets/133.html`.
+Os campos percentuais acrescentados a `tbox_style_clip_path` exigem recompilar
+consumidores da biblioteca.
+
+## Após v20 — Organização das funções CSS
+
+Extraídos os parsers de funções para `tbox_style_functions.c` e os utilitários
+de valores para `tbox_style_values.c`, com contratos internos compartilhados.
+A resolução de propriedades e o comportamento CSS permanecem preservados.
+
 ## Após v20 — Catálogo de funções CSS
 
 Auditoria das 80 entradas da tabela de funções CSS: marca suporte existente,

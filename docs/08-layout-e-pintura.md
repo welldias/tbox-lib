@@ -74,6 +74,27 @@ Regras que explicam a maior parte do comportamento:
 | **Overflow** | `overflow-y: auto/scroll/hidden/clip`, `overflow-x` com recorte; rolagem vertical com barras. |
 | **Unidades de viewport e `@media`** | Resolvidas contra o tamanho atual da janela. |
 
+## Gradientes cônicos e polígonos
+
+Gradientes cônicos reutilizam stops e cores dos demais gradientes, amostrando
+o ângulo horário em torno do centro. Stops angulares são percentuais de uma
+volta no estilo, sem depender do tamanho da imagem. Polígonos de `clip-path`
+formam uma camada composta: Render resolve seus vértices na arena do frame e
+Output testa a regra `nonzero` ou `evenodd` ao compor. Os pontos ficam locais
+à border box, com origem separada para buffers temporários. Recortes de
+ancestrais são preservados por camadas aninhadas; damage conserva os bounds
+do conteúdo e compara toda a geometria do polígono.
+
+## Raios de gradientes radiais
+
+O estilo preserva raios explícitos em `tbox_style_gradient.radius`. Com
+`AUTO`, o raster usa a extensão automática (`closest-*`/`farthest-*`); com
+comprimentos/percentuais, resolve o raio horizontal pela largura e o vertical
+pela altura da imagem do gradiente. Círculos usam um comprimento nos dois
+eixos. As mesmas regras atendem fundos, máscaras e gradientes repetidos.
+Raios zero usam a aproximação por epsilon já existente; elipses degeneradas
+e a média dos repetidos ainda não seguem todas as regras CSS.
+
 ## Simplificações que você pode notar
 
 - **`text-justify`** só distribui espaço entre palavras: `inter-character`
@@ -83,6 +104,15 @@ Regras que explicam a maior parte do comportamento:
 - **`hyphenate-character: ""`** equivale a `auto` (mostra `-`), e a largura
   do caractere não entra na decisão de quebra de linha (o mesmo vale para o
   `-` padrão).
+- **`clip-path`** aceita `circle()`, `ellipse()`, `inset()`, `xywh()` e
+  `rect()`, referidos à border box. `rect()` recebe top/right/bottom/left
+  e um `round` opcional. `xywh()`/`rect()`
+  são convertidos para o mesmo recorte de `inset()`. `rect()` usa espaços,
+  aceita `auto` e produz dimensão zero se as arestas se cruzarem.
+  Raios de `round` preservam pixels e percentuais (incluindo eixos distintos com `/`); percentuais
+  usam largura/altura da border box e os raios compartilham uma escala de
+  redução para caber no retângulo. `polygon()` aceita três a 32 vértices,
+  com `nonzero`/`evenodd`; sem cantos arredondados ou caixa explícita.
 - **`clip`** só aceita `rect()` (com vírgulas ou espaços, lados `auto`) em
   caixas `absolute`/`fixed`; perde para `clip-path` quando os dois existem e
   não aceita `inherit`/`initial`/`unset`.
@@ -125,7 +155,7 @@ do CSS e emite comandos (`tbox_paint_op`):
 | `FILL_RECT` | Fundos, bordas, decorações de texto, destaque de `<mark>` (com raio, para cantos arredondados) |
 | `TEXT_RUN` | Um trecho de texto com uma face e uma cor |
 | `IMAGE` | Imagens e `background-image` |
-| `GRADIENT` | Gradientes lineares/radiais (e `repeating-`) |
+| `GRADIENT` | Gradientes lineares/radiais/cônicos (e `repeating-`) |
 | `FILL_RING` | Retângulo arredondado menos outro (bordas e contornos arredondados, sombras `inset`) |
 | `WAVY_LINE` | `text-decoration-style: wavy` |
 | `BACKDROP_FILTER` | `backdrop-filter`: aplica a lista de `filters` aos pixels já pintados na forma |
@@ -150,7 +180,7 @@ flowchart LR
 
 Criam contexto de empilhamento: a raiz, caixas posicionadas com `z-index`
 e caixas com camada de composição (`opacity` < 1, `filter`,
-`mix-blend-mode`, `mask`, `isolation: isolate`) ou com `backdrop-filter`. Dentro de um contexto, empate é resolvido pela
+`mix-blend-mode`, `mask`, `isolation: isolate`, `clip-path: polygon(...)`) ou com `backdrop-filter`. Dentro de um contexto, empate é resolvido pela
 ordem da árvore. O hit-test usa a mesma ordem
 ([Eventos](06-eventos-e-interatividade.md#hit-test)).
 
@@ -168,10 +198,15 @@ Não há GPU. A repintura de um frame pode ser parcial; ver
 
 ### Camadas de composição
 
+A `opacity` usada aqui já foi calculada em Style, inclusive para expressões
+como `calc(pow(.5, 2))`; o resultado é limitado a 0–1 antes de gerar a camada.
+
 Alguns efeitos só existem sobre o elemento **inteiro**, já pintado: o blur
 espalha pixels vizinhos, a sombra de `drop-shadow()` segue a forma alfa do
 conteúdo, `opacity` funde o grupo antes de deixá-lo transparente,
-`mix-blend-mode` e `mask-image` combinam o grupo com o fundo. Para eles o
+`mix-blend-mode` e `mask-image` combinam o grupo com o fundo.
+`clip-path: polygon(...)` também usa uma camada para recortar o conjunto,
+com interseção correta de polígonos aninhados. Para eles o
 Render embrulha os ops do elemento (sombras, fundo, borda, texto, filhos e
 os posicionados do seu contexto) entre dois marcadores:
 

@@ -840,21 +840,52 @@ static void tbox_render_apply_filter(tbox_vector *items, size_t start, const dou
     }
 }
 
+const tbox_paint_polygon *tbox_render_resolve_polygon(const tbox_layout_box *box, tbox_arena *arena) {
+    const tbox_style_clip_path *clip = &box->style->clip_path;
+    tbox_paint_polygon *polygon = tbox_arena_alloc_zero(arena, sizeof(*polygon));
+    if (polygon == NULL) return NULL;
+    polygon->count = clip->point_count <= TBOX_STYLE_MAX_POLYGON_POINTS ? clip->point_count : 0;
+    polygon->evenodd = clip->evenodd;
+    for (size_t i = 0; i < polygon->count; i++) {
+        polygon->points[i][0] = tbox_style_length_resolve(clip->points[i][0], box->border_box.width);
+        polygon->points[i][1] = tbox_style_length_resolve(clip->points[i][1], box->border_box.height);
+    }
+    return polygon;
+}
+
 /* `clip-path`: the shape as a rounded clip on every op of the subtree.
  * An op that already has a rounded clip (a rounded background) keeps it
  * and is only clipped to the shape's bounding box. */
-static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, size_t end, const tbox_layout_box *box) {
+static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, size_t end, const tbox_layout_box *box, tbox_arena *arena) {
     const tbox_style_clip_path *clip = &box->style->clip_path;
     tbox_rect area = box->border_box, shape;
+    if (clip->kind == TBOX_STYLE_CLIP_PATH_POLYGON) {
+        const tbox_paint_polygon *polygon = tbox_render_resolve_polygon(box, arena);
+        if (polygon == NULL) return;
+        for (size_t i = start; i < end; i++) {
+            tbox_paint_op *op = tbox_vector_at(items, i);
+            op->polygon_clip = polygon;
+            op->polygon_clip_origin[0] = area.x;
+            op->polygon_clip_origin[1] = area.y;
+        }
+        return;
+    }
     double h[4] = { 0.0, 0.0, 0.0, 0.0 }, v[4] = { 0.0, 0.0, 0.0, 0.0 };
     if (clip->kind == TBOX_STYLE_CLIP_PATH_INSET) {
         double top = tbox_style_length_resolve(clip->inset[0], area.height), right = tbox_style_length_resolve(clip->inset[1], area.width);
         double bottom = tbox_style_length_resolve(clip->inset[2], area.height), left = tbox_style_length_resolve(clip->inset[3], area.width);
         shape = (tbox_rect){ area.x + left, area.y + top, area.width - left - right, area.height - top - bottom };
         for (size_t i = 0; i < 4; i++)
-            h[i] = clip->round_h[i], v[i] = clip->round_v[i];
-        tbox_render_normalize_corners(shape, h, h);
-        tbox_render_normalize_corners(shape, v, v);
+            h[i] = fmax(0.0, clip->round_h[i] + area.width * clip->round_h_percent[i] / 100.0),
+            v[i] = fmax(0.0, clip->round_v[i] + area.height * clip->round_v_percent[i] / 100.0);
+        /* Elliptical corners share one scale, using each axis separately. */
+        const double sums[4] = { h[0] + h[1], h[2] + h[3], v[0] + v[3], v[1] + v[2] };
+        const double limits[4] = { fmax(0.0, shape.width), fmax(0.0, shape.width), fmax(0.0, shape.height), fmax(0.0, shape.height) };
+        double scale = 1.0;
+        for (size_t i = 0; i < 4; i++)
+            if (sums[i] > 0.0) scale = fmin(scale, limits[i] / sums[i]);
+        for (size_t i = 0; i < 4; i++)
+            h[i] *= scale, v[i] *= scale;
     } else {
         double cx = area.x + tbox_style_length_resolve(clip->center[0], area.width), cy = area.y + tbox_style_length_resolve(clip->center[1], area.height);
         double near_x = fmin(cx - area.x, area.x + area.width - cx), far_x = fmax(cx - area.x, area.x + area.width - cx);
@@ -1550,7 +1581,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     /* clip-path: on a layer it clips the composite (after the filter, as
      * CSS orders them); otherwise every op of the subtree. */
     if (box->style != NULL && box->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_NONE)
-        tbox_render_apply_clip_path(items, own_start, layered ? own_start + 1 : items->length, box);
+        tbox_render_apply_clip_path(items, own_start, layered ? own_start + 1 : items->length, box, arena);
 
     /* Fully transparent: nothing of the subtree paints. */
     if (box->style != NULL && box->style->opacity <= 0.0) {

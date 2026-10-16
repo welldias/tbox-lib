@@ -101,9 +101,17 @@
       box-sizing: border-box;
     }
 
-    .multiply { mix-blend-mode: multiply; }
-    .screen { mix-blend-mode: screen; }
-    .difference { mix-blend-mode: difference; }
+    .multiply {
+      mix-blend-mode: multiply;
+    }
+
+    .screen {
+      mix-blend-mode: screen;
+    }
+
+    .difference {
+      mix-blend-mode: difference;
+    }
 
     /* isolation: o filho só mistura com o grupo isolado */
     .stage .isolated {
@@ -176,7 +184,9 @@
     <div class="multiply">multiply</div>
     <div class="screen">screen</div>
     <div class="difference">difference</div>
-    <div class="isolated"><div class="multiply" style="width: 60px">isolado</div></div>
+    <div class="isolated">
+      <div class="multiply" style="width: 60px">isolado</div>
+    </div>
   </div>
 
   <h2>backdrop-filter: blur()</h2>

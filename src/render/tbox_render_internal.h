@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 #include <tbox/layout.h>
+#include <tbox/render.h>
 
 /* One box in paint order, with the overflow clip its ancestors put on it. */
 typedef struct tbox_render_painted_box {
@@ -19,5 +20,8 @@ typedef struct tbox_render_painted_box {
  * array of `*out_count` entries the caller frees; NULL for an empty tree
  * (or on allocation failure, with `*out_count` 0). */
 tbox_render_painted_box *tbox_render_paint_order(const tbox_layout_box *root, size_t *out_count);
+
+/* Same frame-arena geometry for content and separately appended scrollbars. */
+const tbox_paint_polygon *tbox_render_resolve_polygon(const tbox_layout_box *box, tbox_arena *arena);
 
 #endif /* TBOX_RENDER_INTERNAL_H */

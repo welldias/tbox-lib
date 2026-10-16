@@ -63,6 +63,9 @@ sua: as funções de evento (`tbox_context_dispatch_click`,
 `tbox_context_scroll`, …) retornam `true` quando algo visível mudou. O
 contexto não guarda flag de "sujo"; o retorno é o sinal.
 
+Os raios explícitos dos gradientes radiais também entram no hash da display
+list; mudar apenas um raio já invalida a área pintada pelo gradiente.
+
 ## O que um frame recalcula
 
 `tbox_context_run_frame(ctx, largura, altura, &lista)`:
@@ -111,7 +114,9 @@ for (cada byte) {
 Entram no hash: tipo e geometria da op (`rect`, `inner_rect`, raios), cor,
 os **bytes** do texto e `letter_spacing`, fonte e imagem (pelo ponteiro),
 cada campo do gradiente, as 20 entradas da matriz de filtro, e
-`clip`/`rounded_clip`. Três cuidados:
+`clip`/`rounded_clip`, além de origem, regra e vértices dos recortes
+poligonais (pelo conteúdo, não pelo ponteiro da arena). Os bounds de polígonos
+são conservadores: preservam a área do conteúdo. Três cuidados:
 
 - **Campo a campo, nunca a struct inteira** — bytes de padding entre campos
   podem conter lixo.

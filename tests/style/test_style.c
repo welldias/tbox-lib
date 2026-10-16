@@ -2616,5 +2616,587 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Percentage comparisons remain responsive to the containing block,
+     * including singleton and nested compatible affine expressions. */
+    {
+        static const struct { const char *value; double small, large; } cases[] = {
+            { "min(20%, 50%)", 20, 80 }, { "max(20%, 50%)", 50, 200 },
+            { "clamp(20%, 50%, 80%)", 50, 200 }, { "clamp(80%, 50%, 20%)", 80, 320 },
+            { "min(50%)", 50, 200 }, { "max(50%)", 50, 200 },
+            { "min(0%, 50%)", 0, 0 }, { "max(0%, 50%)", 50, 200 },
+            { "min(calc(20% + 10px), calc(50% + 10px))", 30, 90 },
+            { "max(calc(20% + 10px), calc(20% + 30px))", 50, 110 },
+            { "min(max(20%, 40%), 60%)", 40, 160 },
+            { "min(min(50%, 100px))", 50, 100 },
+            { "clamp(10px, 50%, 100px)", 50, 100 },
+            { "max(50%, 10px)", 50, 200 }, { "min(10px, 20px)", 10, 10 },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { width: %s; }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.width.kind != TBOX_STYLE_LENGTH_AUTO, cases[i].value);
+            TBOX_TEST_ASSERT_MSG(tbox_style_length_resolve(style.width, 100) == cases[i].small, cases[i].value);
+            TBOX_TEST_ASSERT_MSG(tbox_style_length_resolve(style.width, 400) == cases[i].large, cases[i].value);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* xywh uses the same resolved rectangle as inset, preserving px/%
+     * offsets and both axes of rounded corners. Invalid calls stay unset. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { clip-path: xywh(10% 5px calc(50% - 4px) 30px round 10% 20% / 3px 4px); }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.inset[0], 100) == 5);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.inset[3], 200) == 20);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.inset[1], 200) == 84);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.inset[2], 100) == 65);
+        TBOX_TEST_ASSERT(style.clip_path.round_h_percent[0] == 10 && style.clip_path.round_h_percent[1] == 20);
+        TBOX_TEST_ASSERT(style.clip_path.round_v[0] == 3 && style.clip_path.round_v[1] == 4);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { clip-path: inset(0 round 10% 20% 30% 40% / 5% 6% 7% 8%); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.clip_path.round_h_percent[3] == 40 && style.clip_path.round_v_percent[3] == 8);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { clip-path: inset(0 round calc(10% + 2px) / calc(20% + 3px)); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.clip_path.round_h[0] == 2 && style.clip_path.round_h_percent[0] == 10);
+        TBOX_TEST_ASSERT(style.clip_path.round_v[0] == 3 && style.clip_path.round_v_percent[0] == 20);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { clip-path: xywh(-10px -20px 0 0 round 25%); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET);
+        TBOX_TEST_ASSERT(style.clip_path.round_h_percent[2] == 25 && style.clip_path.round_v_percent[2] == 25);
+        tbox_css_stylesheet_destroy(sheet);
+        static const char *const invalid[] = {
+            "xywh(0 0 -1px 10px)", "xywh(0 0 10px -1%)", "xywh(0 0 10px)",
+            "xywh(0, 0, 10px, 10px)", "xywh(auto 0 10px 10px)",
+            "xywh(0 0 10px 10px round)", "xywh(0 0 10px 10px round -1%)",
+            "xywh(0 0 10px 10px) padding-box", "inset(0 round 10% /)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { clip-path: %s; }", invalid[i]);
+            sheet = parse_css_cstr(css);
+            style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Numeric exponential functions compose with lengths, percentages,
+     * variables and nested arithmetic without adding layout expressions. */
+    {
+        static const struct { const char *value; double expected; } cases[] = {
+            { "calc(pow(2, 3) * 10px)", 80 }, { "calc(pow(-2, 3) * 1px)", -8 },
+            { "calc(pow(0, 0) * 10px)", 10 }, { "calc(pow(4, -1) * 100px)", 25 },
+            { "calc(sqrt(9) * 10px)", 30 }, { "calc(exp(0) * 10px)", 10 },
+            { "calc(log(8, 2) * 10px)", 30 }, { "calc(log(1) * 10px)", 0 },
+            { "calc(log(exp(2)) * 10px)", 20 }, { "calc(sqrt(pow(3, 2) + pow(4, 2)) * 10px)", 50 },
+            { "calc(pow(1 + 1, 2 * 2) * 1em)", 256 },
+            { "min(calc(sqrt(16) * 10px), 60px)", 40 },
+            { "calc(exp(-1000) * 10px)", 0 }, { "calc(log(4, 0.5) * 10px)", -20 },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { margin-left: %s; }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.margin[3].kind == TBOX_STYLE_LENGTH_PX && fabs(style.margin[3].value - cases[i].expected) < 1e-9, cases[i].value);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { --n: 4; width: calc(sqrt(var(--n)) * 10%); color: color(srgb 1 0 0); background: linear-gradient(color(srgb-linear .5 0 0), color(srgb 0 0 1)); }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.width.kind == TBOX_STYLE_LENGTH_PERCENT && tbox_style_length_resolve(style.width, 200) == 40);
+        TBOX_TEST_ASSERT(style.color.r == 255 && style.color.g == 0);
+        TBOX_TEST_ASSERT(style.background_gradient.stop_count == 2 && style.background_gradient.stops[0].color.r == 188);
+        tbox_css_stylesheet_destroy(sheet);
+        static const char *const invalid[] = {
+            "calc(pow(2) * 1px)", "calc(pow(2, 3, 4) * 1px)", "calc(pow(-2, 0.5) * 1px)",
+            "calc(pow(0, -1) * 1px)", "calc(sqrt(-1) * 1px)", "calc(sqrt(4, 2) * 1px)",
+            "calc(sqrt(4px) * 1px)", "calc(sqrt(25%) * 1px)", "calc(exp() * 1px)",
+            "calc(exp(1000) * 1px)", "calc(log(0) * 1px)", "calc(log(-1) * 1px)",
+            "calc(log(4, 0) * 1px)", "calc(log(4, 1) * 1px)", "calc(log(4, -2) * 1px)",
+            "calc(pow(2, 3,) * 1px)", "calc(exp(1e999) * 1px)", "sqrt(4)",
+            "calc(sqrt(4) * 1e308px * 1e308)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { width: %s; }", invalid[i]);
+            sheet = parse_css_cstr(css);
+            style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.width.kind == TBOX_STYLE_LENGTH_AUTO, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Modern rect() is top/right/bottom/left coordinates with round,
+     * distinct from the legacy comma syntax accepted by clip. */
+    {
+        static const struct { const char *value; double edges[4]; } cases[] = {
+            { "rect(10px 150px 80px 20px round 10% / 20%)", { 10, 50, 20, 20 } },
+            { "rect(auto auto auto auto)", { 0, 0, 0, 0 } },
+            { "rect(10% 80% 90% 20%)", { 10, 40, 10, 40 } },
+            { "rect(0 calc(100% - 10px) calc(100% - 5px) 0)", { 0, 10, 5, 0 } },
+            { "rect(-10px auto auto -20px)", { -10, 0, 0, -20 } },
+            { "rect(10px 0 0 20px)", { 10, 200, 100, 20 } },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { clip-path: %s; }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET, cases[i].value);
+            for (size_t side = 0; side < 4; side++)
+                TBOX_TEST_ASSERT_MSG(fabs(tbox_style_length_resolve(style.clip_path.inset[side], side % 2 ? 200 : 100) - cases[i].edges[side]) < 1e-9, cases[i].value);
+            if (i == 0) TBOX_TEST_ASSERT(style.clip_path.round_h_percent[0] == 10 && style.clip_path.round_v_percent[0] == 20);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        static const char *const invalid[] = {
+            "rect(0, 100px, 100px, 0)", "rect(0 100px 100px)", "rect(0 auto auto 0 0)",
+            "rect(0 auto auto 0 round)", "rect(0 auto auto 0 round -1px)",
+            "rect(0 auto auto 0) padding-box", "rect(0 bogus auto 0)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { clip-path: %s; }", invalid[i]);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Stepped values preserve units and distinguish divisor/dividend
+     * signs; nearest ties go toward positive infinity, not away from zero. */
+    {
+        static const struct { const char *value; double expected; } cases[] = {
+            { "calc(hypot(3, 4) * 10px)", 50 }, { "calc(hypot(-3) * 1px)", 3 },
+            { "calc(hypot(1, 2, 2, 0, 0, 0, 0, 0) * 1px)", 3 },
+            { "calc(hypot(1e200, 1e200) * 1px)", 1.414213562373095e200 },
+            { "calc(hypot(sqrt(9), pow(2, 2)) * 1px)", 5 },
+            { "mod(18px, 5px)", 3 }, { "mod(-18px, 5px)", 2 },
+            { "mod(18px, -5px)", -2 }, { "mod(-18px, -5px)", -3 },
+            { "rem(18px, 5px)", 3 }, { "rem(-18px, 5px)", -3 },
+            { "rem(18px, -5px)", 3 }, { "rem(-18px, -5px)", -3 },
+            { "mod(1em, 6px)", 4 }, { "rem(10rem, 3rem)", 16 },
+            { "calc(mod(-18, 5) * 10px)", 20 }, { "calc(rem(-18, 5) * 10px)", -30 },
+            { "mod(10px, -5px)", 0 }, { "rem(-10px, 5px)", 0 },
+            { "round(123px, 10px)", 120 }, { "round(up, 123px, 10px)", 130 },
+            { "round(down, 123px, 10px)", 120 }, { "round(to-zero, 123px, 10px)", 120 },
+            { "round(nearest, 125px, 10px)", 130 }, { "round(nearest, -125px, 10px)", -120 },
+            { "round(up, -123px, 10px)", -120 }, { "round(down, -123px, 10px)", -130 },
+            { "round(to-zero, -123px, 10px)", -120 }, { "round(123px, -10px)", 120 },
+            { "round(2em, 10px)", 30 }, { "calc(round(2.5) * 10px)", 30 },
+            { "calc(round(-2.5) * 10px)", -20 }, { "calc(round(up, 2.1) * 10px)", 30 },
+            { "round(120px, 10px)", 120 }, { "round(up, 120px, 10px)", 120 },
+            { "calc(round(to-zero, -0.1) * 10px)", 0 },
+            { "round(up, -1e-200px, 1e200px)", 0 },
+            { "min(round(123px, 10px), 140px)", 120 },
+            { "calc(round(up, mod(17px, 10px), 4px) + rem(18px, 5px))", 11 },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { margin-left: %s; }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.margin[3].kind == TBOX_STYLE_LENGTH_PX &&
+                fabs(style.margin[3].value - cases[i].expected) / fmax(1.0, fabs(cases[i].expected)) < 1e-12, cases[i].value);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        static const char *const invalid[] = {
+            "calc(hypot() * 1px)", "hypot(3px, 4)", "calc(hypot(3, 4px) * 1px)",
+            "calc(hypot(3, 4,) * 1px)", "calc(hypot(1,2,3,4,5,6,7,8,9) * 1px)",
+            "calc(hypot(1e309, 1) * 1px)", "calc(log(2, 3, 4) * 1px)",
+            "round(10px)", "round(10px, 0px)", "round(bogus, 10px, 2px)",
+            "round(up 10px, 2px)", "round(10px, 2)", "round(10px, 2px, 3px)",
+            "round(10%, 2px)", "round(10px, 2%)", "round(clamp(1px, 50%, 20px), 2px)",
+            "mod(10px, 0px)", "rem(10px, 0px)", "mod(10px)", "rem(10px, 2px, 1px)",
+            "mod(10px, 2)", "rem(10%, 2px)", "mod(10px, 1e999px)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { width: %s; }", invalid[i]);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.width.kind == TBOX_STYLE_LENGTH_AUTO, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Unary functions preserve length types, sign returns a number,
+     * hypot converts compatible units, and constants are calculation-only. */
+    {
+        static const struct { const char *value; double expected; } cases[] = {
+            { "abs(-12px)", 12 }, { "abs(2em - 40px)", 8 },
+            { "calc(abs(-2) * 10px)", 20 }, { "calc(sign(-2px) * 10px)", -10 },
+            { "calc(sign(2em - 40px) * 10px)", -10 }, { "calc(sign(0) * 10px)", 0 },
+            { "calc(sign(2) * abs(-5px))", 5 }, { "hypot(30px, 40px)", 50 },
+            { "hypot(-30px, 40px, 120px)", 130 }, { "hypot(3em, 64px)", 80 },
+            { "hypot(0.5in, -4em)", 80 }, { "hypot(abs(-30px), 40px)", 50 },
+            { "calc(pi * 10px)", 31.41592653589793 },
+            { "calc(E * 10px)", 27.18281828459045 },
+            { "calc(log(e) * 10px)", 10 }, { "calc(pow(pi, 0) * 10px)", 10 },
+            { "max(abs(-12px), hypot(3px, 4px))", 12 },
+            { "abs(-0px)", 0 }, { "calc(sign(-0px) * 1px)", 0 },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { margin-left: %s; }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.margin[3].kind == TBOX_STYLE_LENGTH_PX && fabs(style.margin[3].value - cases[i].expected) < 1e-9, cases[i].value);
+            if (strcmp(cases[i].value, "abs(-0px)") == 0) TBOX_TEST_ASSERT(!signbit(style.margin[3].value));
+            if (strcmp(cases[i].value, "calc(sign(-0px) * 1px)") == 0) TBOX_TEST_ASSERT(signbit(style.margin[3].value));
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        static const char *const invalid[] = {
+            "abs()", "abs(1px, 2px)", "sign(1px)", "abs(-25%)", "hypot(3px, 4)",
+            "hypot(3px, 4%)", "hypot(clamp(1px, 50%, 100px), 4px)", "abs(1e999px)",
+            "pi", "e", "calc(pie * 1px)", "calc(2pi * 1px)", "calc(sign(2deg) * 1px)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { width: %s; }", invalid[i]);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.width.kind == TBOX_STYLE_LENGTH_AUTO, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Opacity shares the evaluator with a number-percentage context;
+     * dimensions cannot leak into its result, and clamping is final. */
+    {
+        static const struct { const char *value; double expected; } cases[] = {
+            { "calc(pow(.5, 2))", .25 }, { "sqrt(.25)", .5 },
+            { "calc(50%)", .5 }, { "calc(50% + .25)", .75 },
+            { "calc(100% - 25%)", .75 }, { "min(75%, .5)", .5 },
+            { "clamp(25%, 75%, .5)", .5 }, { "abs(-50%)", .5 },
+            { "calc(1 + sign(-2px) * .25)", .75 },
+            { "calc(pi - 3)", .141592653589793 }, { "calc(e - 2)", .718281828459045 },
+            { "hypot(.3, .4)", .5 }, { "round(.46, .1)", .5 },
+            { "mod(.7, .5)", .2 }, { "rem(.7, .5)", .2 },
+            { "calc(150% - 75%)", .75 }, { "calc(2 - 1.5)", .5 },
+            { "calc(2)", 1 }, { "calc(-2)", 0 },
+            { "50%", .5 }, { "-25%", 0 }, { "150%", 1 },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { opacity: %s; }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(isfinite(style.opacity) && fabs(style.opacity - cases[i].expected) < 1e-9, cases[i].value);
+            tbox_style child = resolve_node(sheet, div->first_child, &style);
+            TBOX_TEST_ASSERT(child.opacity == 1.0); /* opacity is not inherited */
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { --fade: .5; opacity: calc(pow(var(--fade), 2)); }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.opacity == .25);
+        tbox_css_stylesheet_destroy(sheet);
+        static const char *const invalid[] = {
+            "calc(1px)", "calc(1px - 1px)", "calc(1px + .5)", "hypot(3px, 4px)",
+            "sqrt(-1)", "calc(1 / 0)", "calc(pi * 1e999)", "calc(sign(25deg))",
+            "calc(abs())", "calc(.5) extra", "e", "pi", "NaN", "1e999", "",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { opacity: %s; }", invalid[i]);
+            sheet = parse_css_cstr(css);
+            style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.opacity == 1.0, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Radian expressions and literal angles share numeric trig results. */
+    {
+        static const struct { const char *value; double expected; } cases[] = {
+            { "calc(sin(pi / 2) * 100px)", 100 }, { "calc(cos(pi) * 10px)", -10 },
+            { "calc(tan(pi / 4) * 10px)", 10 }, { "calc(sin(90deg) * 10px)", 10 },
+            { "calc(sin(-270deg) * 10px)", 10 }, { "calc(sin(180deg) * 10px)", 0 },
+            { "calc(cos(100grad) * 10px)", 0 }, { "calc(cos(.5turn) * 10px)", -10 },
+            { "calc(tan(45deg) * 10px)", 10 }, { "calc(sin(1.5707963267948966rad) * 10px)", 10 },
+            { "calc(sin(cos(0) * pi / 2) * 10px)", 10 },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { margin-left: %s; }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.margin[3].kind == TBOX_STYLE_LENGTH_PX && fabs(style.margin[3].value - cases[i].expected) < 1e-9, cases[i].value);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { --angle: .25turn; opacity: sin(var(--angle)); }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.opacity == 1.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { opacity: cos(60deg); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(fabs(style.opacity - .5) < 1e-9);
+        tbox_css_stylesheet_destroy(sheet);
+        static const char *const invalid[] = {
+            "sin()", "calc(sin(1, 2) * 1px)", "calc(sin(1px) * 1px)",
+            "calc(sin(50%) * 1px)", "calc(sin(1e999) * 1px)", "calc(cos(1e999deg) * 1px)",
+            "calc(tan(90deg) * 1px)", "calc(tan(-90deg) * 1px)", "calc(tan(pi / 2) * 1px)",
+            "calc(sin(45deg + 1px) * 1px)", "calc(cos(10deg + 20) * 1px)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { width: %s; }", invalid[i]);
+            sheet = parse_css_cstr(css);
+            style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.width.kind == TBOX_STYLE_LENGTH_AUTO, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Explicit radial sizes infer shape and preserve each ellipse axis. */
+    {
+        static const struct { const char *value; bool circle; double rx, ry; bool repeating; } cases[] = {
+            { "radial-gradient(circle 40px, red, blue)", true, 40, 40, false },
+            { "radial-gradient(40px circle, red, blue)", true, 40, 40, false },
+            { "radial-gradient(2em, red, blue)", true, 32, 32, false },
+            { "radial-gradient(ellipse 80px 40px at 25% 75%, red, blue)", false, 80, 40, false },
+            { "radial-gradient(50% 25%, red, blue)", false, 100, 25, false },
+            { "radial-gradient(50% 25% ellipse, red, blue)", false, 100, 25, false },
+            { "radial-gradient(circle calc(20px + 10px), red, blue)", true, 30, 30, false },
+            { "radial-gradient(ellipse calc(50% - 10px) 20px, red, blue)", false, 90, 20, false },
+            { "repeating-radial-gradient(circle 10px, red, blue)", true, 10, 10, true },
+            { "radial-gradient(circle 0px, red, blue)", true, 0, 0, false },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { background-image: %s; }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            const tbox_style_gradient *g = &style.background_gradient;
+            TBOX_TEST_ASSERT_MSG(g->kind == TBOX_STYLE_GRADIENT_RADIAL && g->circle == cases[i].circle && g->repeating == cases[i].repeating, cases[i].value);
+            TBOX_TEST_ASSERT_MSG(fabs(tbox_style_length_resolve(g->radius[0], 200) - cases[i].rx) < 1e-9 &&
+                                fabs(tbox_style_length_resolve(g->radius[1], 100) - cases[i].ry) < 1e-9, cases[i].value);
+            if (i == 3) TBOX_TEST_ASSERT(g->center[0].value == 25 && g->center[1].value == 75);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        static const char *const invalid[] = {
+            "radial-gradient(circle 50%, red, blue)", "radial-gradient(50%, red, blue)",
+            "radial-gradient(ellipse 10px, red, blue)", "radial-gradient(circle 10px 20px, red, blue)",
+            "radial-gradient(circle -10px, red, blue)", "radial-gradient(ellipse 10px -20%, red, blue)",
+            "radial-gradient(circle 10px closest-side, red, blue)", "radial-gradient(circle circle, red, blue)",
+            "radial-gradient(closest-side farthest-side, red, blue)", "radial-gradient(1e999px, red, blue)",
+            "radial-gradient(circle min(10px, 50%), red, blue)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[256];
+            snprintf(css, sizeof(css), "div { background-image: %s; }", invalid[i]);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.background_gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Inverse functions preserve angular types, quadrants and unit contexts. */
+    {
+        static const struct { const char *value; double expected; } cases[] = {
+            { "asin(1)", 90 }, { "asin(-1)", -90 }, { "acos(1)", 0 },
+            { "acos(-1)", 180 }, { "atan(1)", 45 }, { "atan(-1)", -45 },
+            { "atan2(1, -1)", 135 }, { "atan2(-1, -1)", -135 },
+            { "atan2(-1, 1)", -45 }, { "atan2(1, 0)", 90 },
+            { "atan2(0, -1)", 180 }, { "atan2(-0, -1)", -180 },
+            { "atan2(0, 0)", 0 }, { "atan2(-0, 1)", -0.0 },
+            { "atan2(1em, 16px)", 45 }, { "atan2(1in, 96px)", 45 },
+            { "atan2(.25turn, 100grad)", 45 }, { "ASIN(.5)", 30 },
+            { "calc(asin(1) + .25turn)", 180 }, { "calc(2 * atan(1))", 90 },
+            { "calc(atan(1) * 2 / 3)", 30 }, { "calc(asin(1) - 30deg)", 60 },
+            { "min(asin(1), 45deg)", 45 }, { "max(atan(1), 90deg)", 90 },
+            { "clamp(0deg, asin(-1), .5turn)", 0 },
+            { "atan2(sqrt(4), pow(2, 1))", 45 },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[512];
+            snprintf(css, sizeof(css), "div { background-image: linear-gradient(%s, red, blue); }", cases[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.background_gradient.kind == TBOX_STYLE_GRADIENT_LINEAR &&
+                                fabs(style.background_gradient.angle - cases[i].expected) < 1e-9, cases[i].value);
+            if (i == 13) TBOX_TEST_ASSERT(signbit(style.background_gradient.angle));
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        static const char *const invalid[] = {
+            "asin()", "acos(1, 2)", "atan2(1)", "atan2(1, 2, 3)",
+            "asin(1.01)", "acos(-1.01)", "atan(1px)", "asin(90deg)",
+            "atan2(1px, 1)", "atan2(1deg, 1px)", "atan2(10%, 20%)",
+            "atan2(0px, 20%)", "atan2(min(1px, 10%), 1px)",
+            "atan(1e999)", "atan2(1e999, 1)", "calc(asin(1) + 1px)",
+            "calc(asin(1) * 1deg)", "calc(asin(1) / 1deg)", "calc(asin(1) / 0)",
+            "asin(1) extra", "calc(1deg + 0)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[512];
+            snprintf(css, sizeof(css), "div { background-image: linear-gradient(%s, red, blue); }", invalid[i]);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.background_gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        static const struct { const char *value; double expected; } numeric[] = {
+            { "sin(asin(.5))", .5 }, { "cos(acos(.5))", .5 },
+            { "tan(atan(.5))", .5 }, { "sin(atan2(3px, 4px))", .6 },
+            { "sin(calc(45deg + 45deg))", 1 }, { "cos(10deg + 20deg)", .8660254037844386 },
+        };
+        for (size_t i = 0; i < sizeof(numeric) / sizeof(numeric[0]); i++) {
+            char css[512];
+            snprintf(css, sizeof(css), "div { margin-left: calc(%s * 10px); opacity: %s; }", numeric[i].value, numeric[i].value);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.margin[3].kind == TBOX_STYLE_LENGTH_PX &&
+                fabs(style.margin[3].value - numeric[i].expected * 10) < 1e-9 &&
+                fabs(style.opacity - numeric[i].expected) < 1e-9, numeric[i].value);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { width: asin(1); opacity: atan(.5); filter: hue-rotate(acos(0)); }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.width.kind == TBOX_STYLE_LENGTH_AUTO && style.opacity == 1.0 && style.has_filter);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { opacity: sin(atan2(30%, 40%)); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(fabs(style.opacity - .6) < 1e-9);
+        tbox_css_stylesheet_destroy(sheet);
+        /* Angle consumers must use the element's font size for relative lengths. */
+        sheet = parse_css_cstr("div { font-size: 32px; background-image: linear-gradient(atan2(1em, 32px), red, blue); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.background_gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && fabs(style.background_gradient.angle - 45) < 1e-9);
+        tbox_css_stylesheet_destroy(sheet);
+        char css[1024] = "div { width: calc(";
+        for (int i = 0; i < 24; i++) strcat(css, "sin(asin(");
+        strcat(css, ".5");
+        for (int i = 0; i < 24; i++) strcat(css, "))");
+        strcat(css, " * 10px); }");
+        sheet = parse_css_cstr(css);
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.width.kind == TBOX_STYLE_LENGTH_AUTO);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Conic gradients use angular fractions, independent of image size. */
+    {
+        static const struct { const char *css; double angle; double first, last; bool repeat; } cases[] = {
+            { "conic-gradient(red, blue)", 0, 0, 0, false },
+            { "conic-gradient(from 90deg, red 0deg, blue 1turn)", 90, 0, 100, false },
+            { "conic-gradient(from asin(1) at 25% 75%, red -90deg, blue 150%)", 90, -25, 150, false },
+            { "conic-gradient(at left top, red 10%, blue calc(.5turn + 90deg))", 0, 10, 75, false },
+            { "repeating-conic-gradient(from -45deg at center, red 0 45deg, blue 45deg 90deg)", -45, 0, 25, true },
+            { "conic-gradient(red calc(10% + 15%), blue 100grad)", 0, 25, 25, false },
+        };
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char css[512];
+            snprintf(css, sizeof(css), "div { background-image: %s; mask-image: %s; }", cases[i].css, cases[i].css);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            const tbox_style_gradient *g = &style.background_gradient;
+            TBOX_TEST_ASSERT_MSG(g->kind == TBOX_STYLE_GRADIENT_CONIC && g->angle == cases[i].angle && g->repeating == cases[i].repeat, cases[i].css);
+            TBOX_TEST_ASSERT_MSG(g->stop_count >= 2, cases[i].css);
+            if (g->stop_count >= 2) {
+                TBOX_TEST_ASSERT(fabs(g->stops[0].position.value - cases[i].first) < 1e-9);
+                TBOX_TEST_ASSERT(fabs(g->stops[g->stop_count - 1].position.value - cases[i].last) < 1e-9);
+            }
+            TBOX_TEST_ASSERT(style.has_mask && style.mask.gradient.kind == TBOX_STYLE_GRADIENT_CONIC);
+            if (i == 2) TBOX_TEST_ASSERT(g->center[0].value == 25 && g->center[1].value == 75);
+            if (i == 4) TBOX_TEST_ASSERT(g->stop_count == 4);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        static const char *const invalid[] = {
+            "conic-gradient(red)", "conic-gradient(from, red, blue)", "conic-gradient(from 10px, red, blue)",
+            "conic-gradient(from 45deg from 90deg, red, blue)", "conic-gradient(at, red, blue)",
+            "conic-gradient(at center at top, red, blue)", "conic-gradient(red 10px, blue)",
+            "conic-gradient(red calc(10% + 1px), blue)", "conic-gradient(red 1e999deg, blue)",
+            "conic-gradient(from 1e999deg, red, blue)", "conic-gradient(red, 50%, blue)",
+            "conic-gradient(in oklch, red, blue)", "conic-gradient(red 0 20% 30%, blue)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[512];
+            snprintf(css, sizeof(css), "div { background-image: %s; }", invalid[i]);
+            tbox_css_stylesheet *sheet = parse_css_cstr(css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.background_gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Polygon vertices retain each coordinate's percentage base and rule. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { clip-path: polygon(evenodd, -10px 0, calc(100% - 5px) 0, 50% min(30px, 90%)); }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_POLYGON && style.clip_path.evenodd && style.clip_path.point_count == 3);
+        TBOX_TEST_ASSERT(tbox_style_needs_layer(&style));
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.points[1][0], 100) == 95);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.points[2][1], 100) == 30);
+        tbox_css_stylesheet_destroy(sheet);
+        static const char *const invalid[] = {
+            "polygon()", "polygon(0 0, 100% 0)", "polygon(0, 100% 0, 0 100%)",
+            "polygon(0 0 0, 100% 0, 0 100%)", "polygon(winding, 0 0, 100% 0, 0 100%)",
+            "polygon(evenodd 0 0, 100% 0, 0 100%)", "polygon(0 0, 100% 0, 0 100%,)",
+            "polygon(0 0, 100% auto, 0 100%)", "polygon(0 0, 100% 0, NaN 100%)",
+            "polygon(0 0, 100% 0, 1e999px 100%)", "polygon(0 0, 100% 0, 1deg 100%)",
+            "polygon(0 0, 100% 0, 0 100%) content-box", "polygon(round 5px, 0 0, 100% 0, 0 100%)",
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            char css[512];
+            snprintf(css, sizeof(css), "div { clip-path: %s; }", invalid[i]);
+            sheet = parse_css_cstr(css);
+            style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT_MSG(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        for (int n = 32; n <= 33; n++) {
+            char css[1024] = "div { clip-path: polygon(nonzero";
+            for (int i = 0; i < n; i++) strcat(css, ", 10% 20%");
+            strcat(css, "); }");
+            sheet = parse_css_cstr(css);
+            style = resolve_node(sheet, div, NULL);
+            TBOX_TEST_ASSERT((style.clip_path.kind == TBOX_STYLE_CLIP_PATH_POLYGON) == (n == 32));
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

@@ -21,4 +21,7 @@
  * the public API. */
 const tbox_layout_box *tbox_context_hit_test_box(const tbox_layout_box *box, double x, double y);
 
+/* Pointer targeting and scrollbar picking share ancestor polygon clips. */
+bool tbox_context_in_polygon_clips(const tbox_layout_box *box, double x, double y);
+
 #endif /* TBOX_CONTEXT_HIT_TEST_H */

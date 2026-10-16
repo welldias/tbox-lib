@@ -9,6 +9,98 @@ Cada item: **decisão** — motivo (versão em que foi tomada). Itens marcados
 formato atual do código. O texto integral original de cada versão está em
 `git show fe51140:ARCHITECTURE.md`.
 
+## Gradientes cônicos e recortes poligonais
+
+Cônicos reutilizam `tbox_style_gradient`, com tipo CONIC, `angle` como
+rotação inicial e `center` como centro. Stops angulares são convertidos para
+percentuais de uma volta no parser; o raster amostra o ângulo horário a partir
+do topo. Fix-up e interpolação sRGB premultiplicada continuam compartilhados.
+
+`polygon()` preserva até 32 pares length-percentage no estilo. Render resolve
+os pontos uma vez na arena de frame e prende o polígono ao LAYER_BEGIN. O
+recorte é aplicado na composição, depois de filtros, evitando perder formas
+em descendentes e recortes aninhados. A representação pintada guarda pontos
+locais e origem separada para rasterização em buffers deslocados. Raster e
+hit-test compartilham um teste geométrico imutável; eventos verificam também
+polígonos dos ancestrais. Damage inclui pontos, origem e regra no hash e usa
+bounds conservadores do conteúdo. Novos campos públicos exigem recompilação.
+Sem caixas de referência explícitas, arredondamento de polygon ou hints de
+interpolação/seleção de espaço de cor em cônicos nesta rodada.
+
+## Ângulos tipados para funções inversas
+
+O avaliador privado distingue ângulos de números e comprimentos, armazenando
+seu valor em graus. As funções inversas ficam em `tbox_style_functions.c`;
+a leitura literal de unidades em `tbox_style_values.c` não chama o avaliador,
+evita recursão circular e mantém o limite de profundidade no mesmo parser.
+Consumidores angulares recebem as unidades reais do elemento, inclusive para
+`atan2(1em, 32px)`. Não houve alteração adicional na API pública.
+A decisão anterior de limitar trigonometria a ângulos literais fica superada;
+álgebra angular reutiliza soma, escala e comparações com tipos compatíveis.
+O catálogo de pendências classifica mudanças pelo efeito em todo o pipeline.
+
+## Trigonometria e raios radiais explícitos
+
+`sin()`/`cos()`/`tan()` aceitam expressões numéricas em radianos ou um ângulo
+literal, reutilizando o parser de unidades angulares. Não introduzem álgebra
+angular geral no avaliador. Raios explícitos ficam em `tbox_style_gradient.radius`;
+`AUTO` mantém o dimensionamento automático por extensão. Style valida forma,
+quantidade e tipo dos raios; o raster resolve percentuais elípticos por eixo.
+O hash de repintura inclui os dois raios. A extensão da estrutura pública
+exige recompilar os consumidores.
+
+## Avaliador numérico para opacity e funções de sinal
+
+A entrada comum do avaliador de funções separa a avaliação da conversão final
+para comprimento ou número. `opacity` ativa um contexto interno em que
+percentuais são números (100% = 1), exige resultado numérico finito e limita
+a faixa apenas ao final. Isso permite reutilizar as funções existentes sem
+ampliar estruturas públicas ou habilitar cálculos nas demais propriedades
+numéricas. `abs()`/`sign()` e `hypot()` usam os mesmos comprimentos resolvidos
+em pixels; percentuais pendentes continuam rejeitados. `pi`/`e` são
+reconhecidos apenas como operandos de cálculos.
+
+## Operações matemáticas por passos e validação de misturas
+
+`hypot()` reutiliza a leitura compartilhada de argumentos numéricos (até oito)
+e acumula a norma com `hypot` de C para evitar o overflow da soma de quadrados.
+`round()`/`mod()`/`rem()` operam em escalares e comprimentos já convertidos para
+pixels, sem criar expressões pendentes no layout. `round()` calcula os dois
+múltiplos vizinhos com resto, preservando os empates para cima e evitando
+uma divisão que poderia transbordar. Percentuais/limites pendentes continuam
+fora desse caminho. `color-mix()` mantém aproximações para espaços conhecidos,
+mas passa a rejeitar nomes desconhecidos e pesos fora da faixa antes da
+normalização. Não há mudanças de estruturas públicas nessa rodada.
+
+## Exponenciais CSS e color(srgb)
+
+As exponenciais são operandos numéricos no avaliador de comprimentos existente;
+não ampliam a tipagem para potências de unidades, ângulos ou propriedades
+numéricas independentes. Valores não finitos são rejeitados em vez de
+introduzir a semântica completa de NaN/infinito CSS. `color()` reutiliza as
+conversões sRGB/RGBA existentes e fica restrito a `srgb`/`srgb-linear`.
+`clip-path: rect()` compartilha o parser de cantos e a representação de
+`inset()`, preservando o parser separado de `clip: rect()` legado.
+
+## Representação de recortes e cálculos CSS
+
+`xywh()` é convertido para os quatro insets existentes, sem criar um novo
+primitivo de pintura. Essa conversão aceita expressões lineares `px + %`,
+mas rejeita limites que ainda dependam do layout. Raios percentuais de
+`round` ficam separados dos pixels até a pintura, que conhece o tamanho da
+border box; a normalização elíptica usa um fator comum para os dois eixos.
+Comparações de expressões com coeficientes compatíveis são reduzidas no
+avaliador existente; combinações gerais continuam sem árvore de expressões.
+
+## Organização das funções CSS
+
+Os parsers de funções de valores ficam em `src/style/tbox_style_functions.c`,
+com utilitários em `tbox_style_values.c` e contratos em `tbox_style_internal.h`.
+A resolução de propriedades continua em `tbox_style.c`. Cores, substituições
+e conteúdo gerado mantêm seus arquivos especializados, pois dependem de
+contextos distintos (cascata, custom properties e DOM/contadores). Reunir
+todas as chamadas CSS num dispatcher único aumentaria essas dependências.
+
 ## Pipeline e camadas
 
 - **`<ruby>` é uma unidade inline indivisível.** Cada trecho de texto-base

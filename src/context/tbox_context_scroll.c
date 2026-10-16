@@ -1,5 +1,6 @@
 #include <math.h>
 #include "tbox_context_internal.h"
+#include "render/tbox_render_internal.h"
 
 typedef struct tbox_scrollbar_geometry {
     tbox_rect track, thumb;
@@ -10,7 +11,7 @@ static tbox_scroll_state *tbox_context_scroll_state(tbox_context *ctx, const tbo
 static void tbox_context_shift_subtree(tbox_layout_box *box, double dy);
 static bool tbox_context_scrollbar_geometry(const tbox_layout_box *box, double offset, tbox_scrollbar_geometry *out);
 static tbox_scroll_state *tbox_context_existing_scroll_state(tbox_context *ctx, const tbox_html_node *node);
-static size_t tbox_context_scrollbar_count(const tbox_layout_box *box);
+static size_t tbox_context_scrollbar_op_count(const tbox_layout_box *box);
 static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_box *box,
                                            tbox_paint_op *items, size_t *index);
 static const tbox_layout_box *tbox_context_scrollbar_at(const tbox_layout_box *box,
@@ -327,12 +328,16 @@ static tbox_scroll_state *tbox_context_existing_scroll_state(tbox_context *ctx, 
     return NULL;
 }
 
-static size_t tbox_context_scrollbar_count(const tbox_layout_box *box) {
+static size_t tbox_context_scrollbar_op_count(const tbox_layout_box *box) {
     size_t count = 0;
     for (; box != NULL; box = box->next_sibling) {
         tbox_scrollbar_geometry geometry;
-        if (tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, 0.0, &geometry)) count++;
-        count += tbox_context_scrollbar_count(box->first_child);
+        if (tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, 0.0, &geometry)) {
+            count += 2;
+            for (const tbox_layout_box *ancestor = box; ancestor != NULL; ancestor = ancestor->parent)
+                if (ancestor->style != NULL && ancestor->style->clip_path.kind == TBOX_STYLE_CLIP_PATH_POLYGON) count += 2;
+        }
+        count += tbox_context_scrollbar_op_count(box->first_child);
     }
     return count;
 }
@@ -343,6 +348,18 @@ static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_b
         tbox_scrollbar_geometry geometry;
         tbox_scroll_state *state = box->node != NULL ? tbox_context_existing_scroll_state(ctx, box->node) : NULL;
         if (tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, state != NULL ? state->y : 0.0, &geometry)) {
+            /* Scrollbars are appended after content: wrap them in the same
+             * ancestor polygon intersections instead of escaping the clip. */
+            size_t polygon_count = 0;
+            for (const tbox_layout_box *ancestor = box; ancestor != NULL; ancestor = ancestor->parent) {
+                if (ancestor->style == NULL || ancestor->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_POLYGON) continue;
+                items[(*index)++] = (tbox_paint_op){
+                    .kind = TBOX_PAINT_LAYER_BEGIN, .color = {0, 0, 0, 255},
+                    .polygon_clip = tbox_render_resolve_polygon(ancestor, &ctx->frame_arena),
+                    .polygon_clip_origin = {ancestor->border_box.x, ancestor->border_box.y},
+                };
+                polygon_count++;
+            }
             /* scrollbar-color, alpha 0 being the default colors. */
             tbox_css_rgba track_color = box->style->scrollbar_track_color.a != 0 ? box->style->scrollbar_track_color : (tbox_css_rgba){ 220, 224, 230, 255 };
             tbox_css_rgba thumb_color = box->style->scrollbar_thumb_color.a != 0 ? box->style->scrollbar_thumb_color : (tbox_css_rgba){ 100, 110, 122, 255 };
@@ -359,16 +376,18 @@ static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_b
                 .color = thumb_color, .radius = geometry.thumb.width / 2.5,
                 .has_clip = true, .clip = clip,
             };
+            for (size_t i = 0; i < polygon_count; i++)
+                items[(*index)++] = (tbox_paint_op){.kind = TBOX_PAINT_LAYER_END};
         }
         tbox_context_paint_scrollbars(ctx, box->first_child, items, index);
     }
 }
 
 void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list) {
-    size_t count = tbox_context_scrollbar_count(ctx->root);
+    size_t count = tbox_context_scrollbar_op_count(ctx->root);
     if (count == 0) return;
     tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena,
-        (list->count + count * 2) * sizeof(*items));
+        (list->count + count) * sizeof(*items));
     if (items == NULL) return;
     if (list->count > 0) memcpy(items, list->items, list->count * sizeof(*items));
     size_t index = list->count;
@@ -381,7 +400,7 @@ static const tbox_layout_box *tbox_context_scrollbar_at(const tbox_layout_box *b
                                                          double x, double y, bool has_clip, tbox_rect clip) {
     const tbox_layout_box *last = NULL;
     for (; box != NULL; box = box->next_sibling) {
-        if (has_clip && !tbox_context_point_in_rect(clip, x, y)) continue;
+        if ((has_clip && !tbox_context_point_in_rect(clip, x, y)) || !tbox_context_in_polygon_clips(box, x, y)) continue;
         tbox_scrollbar_geometry geometry;
         if ((box->style == NULL || !box->style->pointer_events_none) &&
             tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, 0.0, &geometry) &&

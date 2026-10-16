@@ -30,7 +30,7 @@ Este arquivo é o mapa físico, para quem vai editar o código.
 | `css_parser/` | `css_parser.h` | tokenizer, parser, stylesheet (incl. `@media`, `@font-face`, `@keyframes`), `tbox_css_supports.c` (condições de `@supports`) |
 | `css_selector/` | `css_selector.h` | parse e match de seletores; contextos de `:hover`/`:focus`/`:active` |
 | `css_cascade/` | `css_cascade.h` | cascata por origem/especificidade, parsing e conversão de cores |
-| `style/` | `style.h` | `tbox_style.c` (valores tipados), `tbox_style_keywords.c` (`inherit`/`initial`/`unset`), `tbox_style_vars.c` (`var()`), `tbox_style_generated.c` (`::before`/`::after`), `tbox_style_animate.c` (propriedades animáveis, funções de tempo) |
+| `style/` | `style.h` | `tbox_style.c` (resolução de propriedades), `tbox_style_values.c` (valores compartilhados), `tbox_style_functions.c` (funções CSS), `tbox_style_keywords.c` (`inherit`/`initial`/`unset`), `tbox_style_vars.c` (`var()`), `tbox_style_generated.c` (`::before`/`::after`), `tbox_style_animate.c` (interpolação de propriedades e avaliação de curvas de tempo) |
 | `font/` | `font.h` | `tbox_font_source*` (fontconfig/embedded), `tbox_font_face`, `tbox_font_face_cache` |
 | `image/` | `image.h` | `tbox_image_cache` (decodificação via `stb_image`) |
 | `layout/` | `layout.h` | ver abaixo |
@@ -38,6 +38,25 @@ Este arquivo é o mapa físico, para quem vai editar o código.
 | `output/` | `output.h` | `tbox_raster.c`, `tbox_raster_damage.c`, `tbox_window_backend.*`, `tbox_backend_wayland.*` |
 | `context/` | `context.h` | ver abaixo |
 | `app/` | `app.h` | `tbox_app.c`; `tbox_app_unavailable.c` (stubs quando falta Fontconfig) |
+
+O teste geométrico de polígonos fica em `src/base/tbox_polygon.h`, compartilhado
+por raster e hit-test. A resolução para pixels fica em Render, inclusive para
+barras de rolagem acrescentadas pelo contexto; parsing de `polygon()` e dos
+gradientes cônicos continua centralizado em `tbox_style_functions.c`.
+
+## `src/style/`
+
+`tbox_style.c` coordena a resolução das propriedades e monta o estilo final.
+`tbox_style_functions.c` interpreta funções de cálculo, gradientes, filtros,
+formas, transformações e funções de tempo, produzindo os tipos existentes.
+`tbox_style_values.c` reúne os utilitários compartilhados de números, unidades,
+comprimentos, ângulos, posições, raios e argumentos. Os contratos entre esses
+arquivos ficam em `tbox_style_internal.h`, sem ampliar a API pública.
+
+Cores continuam em `css_cascade/tbox_css_color_parse.c`; substituições
+`var()`/`light-dark()` em `tbox_style_vars.c`; funções dependentes do DOM e
+contadores em `tbox_style_generated.c`. Layout e pintura consomem os valores
+resolvidos sem interpretar a sintaxe das funções.
 
 ## `src/layout/`
 

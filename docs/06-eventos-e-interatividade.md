@@ -4,6 +4,11 @@
 > - **Código relacionado:** `include/tbox/context.h`, `include/tbox/input.h`, `src/context/tbox_context_events.c`, `tbox_context_focus.c`, `tbox_context_hit_test.c`, `tbox_context_scroll.c`, `src/app/tbox_app.c`
 > - **Veja também:** [Atualização da tela](05-atualizacao-da-tela.md), [Formulários e controles](10-formularios-e-controles.md), [Guia da API](03-guia-da-api.md)
 
+Polígonos de `clip-path` são testados no elemento e em todos os ancestrais,
+com a mesma regra `nonzero`/`evenodd` da pintura. Um descendente fora do recorte
+não recebe eventos, mesmo se sua border box contiver o ponto. Barras de rolagem
+respeitam esses recortes tanto na pintura quanto ao iniciar um arrasto.
+
 ## Caminho de um evento
 
 ```mermaid

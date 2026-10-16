@@ -5,6 +5,63 @@
 
 #include <tbox/style.h>
 
+/* What relative length units resolve against: em/ex/ch the element's own
+ * font size, rem the root's, viewport units the window (0 = unknown). */
+typedef struct tbox_style_units {
+    double font_size, root_font_size, viewport_width, viewport_height;
+    bool rtl; /* `direction: rtl`: inline-start is the right side */
+} tbox_style_units;
+
+/* Calculation value: px + percent, a plain number (`number`), or an
+ * angle in degrees (`angle`). Numbers can scale lengths and angles. */
+typedef struct tbox_style_calc_value {
+    double px, percent;
+    bool number;
+    /* px bounds of a min()/max()/clamp() over a percentage; such a value
+     * can't take part in further arithmetic. */
+    unsigned char bounds;
+    double lo, hi;
+    bool angle; /* px stores degrees instead of a length; number is false */
+} tbox_style_calc_value;
+
+/* Typed value/function parsers. False leaves error recovery to the property
+ * resolver; these routines do not perform cascade or mutate DOM state. */
+bool tbox_style_is_space(char byte);
+tbox_string_view tbox_style_trim(tbox_string_view value);
+bool tbox_style_parse_number(tbox_string_view text, double *out_value);
+bool tbox_style_parse_dimension(tbox_string_view text, const tbox_style_units *units, double em_base, double *out);
+bool tbox_style_parse_calc(tbox_string_view text, const tbox_style_units *units, double em_base, double percent_base, double *out_px, double *out_percent);
+/* Unitless evaluation for opacity: percentages are numbers with 100% = 1.
+ * Requires functional notation and a finite numeric final result. */
+bool tbox_style_parse_calc_number(tbox_string_view text, const tbox_style_units *units, double *out);
+bool tbox_style_parse_calc_bounded(tbox_string_view text, const tbox_style_units *units, double em_base, double percent_base, tbox_style_calc_value *out);
+bool tbox_style_parse_length(tbox_string_view raw, const tbox_style_units *units, tbox_style_length *out);
+bool tbox_style_parse_spacing_length(tbox_string_view raw, const tbox_style_units *units, tbox_style_length *out);
+bool tbox_style_parse_edge_color(tbox_string_view raw, tbox_css_rgba current_color, tbox_css_rgba *out);
+bool tbox_style_parse_object_position_component(tbox_string_view token, const tbox_style_units *units, bool horizontal, tbox_style_length *out);
+size_t tbox_style_four_value_index(size_t count, size_t side);
+bool tbox_style_parse_radius(tbox_string_view value, const tbox_style_units *units, double *out_px, double *out_percent);
+bool tbox_style_parse_shadow(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, int max_lengths, double out_lengths[4], tbox_css_rgba *out_color, bool *out_inset);
+bool tbox_style_is(tbox_string_view value, const char *keyword);
+size_t tbox_style_split_top_level(tbox_string_view text, char separator, tbox_string_view *parts, size_t max);
+size_t tbox_style_tokens(tbox_string_view text, tbox_string_view *tokens, size_t max);
+bool tbox_style_parse_easing(tbox_string_view token, tbox_style_easing *out);
+bool tbox_style_function_args(tbox_string_view token, const char *name, tbox_string_view *args);
+bool tbox_style_parse_integer(tbox_string_view raw, int *out);
+bool tbox_style_parse_angle_literal(tbox_string_view raw, double *out);
+bool tbox_style_parse_angle(tbox_string_view raw, const tbox_style_units *units, double *out);
+bool tbox_style_parse_url(tbox_string_view token, char *out, size_t capacity);
+bool tbox_style_parse_position(const tbox_string_view *tokens, size_t count, const tbox_style_units *units, tbox_style_length out[2]);
+void tbox_style_init_gradient(tbox_style_gradient *gradient);
+bool tbox_style_parse_gradient(tbox_string_view token, const tbox_style_units *units, tbox_css_rgba current_color, tbox_style_gradient *out);
+bool tbox_style_parse_radius_list(const tbox_string_view *tokens, size_t count, const tbox_style_units *units, double px[4], double percent[4]);
+bool tbox_style_parse_transform(tbox_string_view raw, const tbox_style_units *units, tbox_style_length *out_x, tbox_style_length *out_y);
+void tbox_style_matrix_identity(double m[20]);
+bool tbox_style_parse_filter(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, tbox_style_filter_list *out_list);
+bool tbox_style_filter_matrix_of(const tbox_style_filter_list *list, double out[20]);
+void tbox_style_parse_clip_rect(tbox_string_view raw, const tbox_style_units *units, tbox_style_clip_path *out);
+bool tbox_style_parse_clip_path(tbox_string_view raw, const tbox_style_units *units, tbox_style_clip_path *out);
+
 /* CSS-wide keywords (`inherit`, `initial`, `unset`), see
  * tbox_style_keywords.c. Resolution runs in two passes: the declarations
  * carrying a keyword are taken out of the cascade result

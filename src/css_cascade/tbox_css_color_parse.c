@@ -201,7 +201,10 @@ static bool tbox_css_color_parse_hue(tbox_string_view text, double *out) {
         const char *unit;
         double degrees;
     } units[] = {
-        { "deg", 1.0 }, { "grad", 0.9 }, { "rad", 57.29577951308232 }, { "turn", 360.0 },
+        { "deg",  1.0               },
+        { "grad", 0.9               },
+        { "rad",  57.29577951308232 },
+        { "turn", 360.0             },
     };
     for (size_t i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
         size_t length = strlen(units[i].unit);
@@ -389,16 +392,54 @@ static bool tbox_css_color_lab_component(tbox_string_view text, double percent_s
 
 static bool tbox_css_color_parse_function(tbox_string_view value, tbox_css_rgba *out_color);
 
+/* color(srgb|srgb-linear r g b [/ alpha]), using explicit numeric or
+ * percentage components. RGBA8 output clips channels to the sRGB gamut. */
+static bool tbox_css_color_parse_srgb(tbox_string_view args, tbox_css_rgba *out_color) {
+    args       = tbox_css_color_trim(args);
+    size_t end = 0;
+    while (end < args.size && !tbox_css_color_is_space(args.data[end]))
+        end++;
+    tbox_string_view space = tbox_string_view_make(args.data, end);
+    bool linear            = tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("srgb-linear"));
+    if (!linear && !tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("srgb")))
+        return false;
+    args = tbox_css_color_trim(tbox_string_view_make(args.data + end, args.size - end));
+    if (memchr(args.data, ',', args.size) != NULL)
+        return false;
+    tbox_string_view components[4];
+    bool has_alpha;
+    if (tbox_css_color_components(args, components, 3, &has_alpha) == 0)
+        return false;
+    double channels[3], alpha = 1.0;
+    for (size_t i = 0; i < 3; i++) {
+        bool percentage;
+        if (!tbox_css_color_parse_number(components[i], &channels[i], &percentage) || !isfinite(channels[i]))
+            return false;
+        if (percentage)
+            channels[i] /= 100.0;
+    }
+    if (has_alpha) {
+        bool percentage;
+        double number;
+        if (!tbox_css_color_parse_number(components[3], &number, &percentage) || !isfinite(number) || !tbox_css_color_parse_alpha(components[3], &alpha))
+            return false;
+    }
+    *out_color = linear ? tbox_css_linear_to_rgba((tbox_css_linear_color){ channels[0], channels[1], channels[2], alpha }) : (tbox_css_rgba){ tbox_css_color_byte(channels[0] * 255.0), tbox_css_color_byte(channels[1] * 255.0), tbox_css_color_byte(channels[2] * 255.0), tbox_css_color_byte(alpha * 255.0) };
+    return true;
+}
+
 static bool tbox_css_color_parse_space(tbox_string_view value, tbox_css_rgba *out_color) {
+    static const char *const color[] = { "color(" };
     static const char *const hwb[] = { "hwb(" }, *const lab[] = { "lab(" }, *const lch[] = { "lch(" }, *const oklab[] = { "oklab(" }, *const oklch[] = { "oklch(" };
     tbox_string_view args, c[4];
     bool has_alpha;
     double alpha = 1.0;
+    if (tbox_css_color_extract_call(value, color, 1, &args))
+        return tbox_css_color_parse_srgb(args, out_color);
     if (tbox_css_color_extract_call(value, hwb, 1, &args)) {
         double h, w, b;
         bool wp, bp;
-        if (tbox_css_color_components(args, c, 3, &has_alpha) == 0 || !tbox_css_color_parse_hue(c[0], &h) ||
-            !tbox_css_color_parse_number(c[1], &w, &wp) || !tbox_css_color_parse_number(c[2], &b, &bp) || (has_alpha && !tbox_css_color_parse_alpha(c[3], &alpha)))
+        if (tbox_css_color_components(args, c, 3, &has_alpha) == 0 || !tbox_css_color_parse_hue(c[0], &h) || !tbox_css_color_parse_number(c[1], &w, &wp) || !tbox_css_color_parse_number(c[2], &b, &bp) || (has_alpha && !tbox_css_color_parse_alpha(c[3], &alpha)))
             return false;
         w /= 100.0, b /= 100.0;
         if (w + b >= 1.0) {
@@ -461,15 +502,18 @@ static size_t tbox_css_color_split_nested(tbox_string_view args, tbox_string_vie
 
 /* "<color> [<percentage>]" of color-mix(). */
 static bool tbox_css_color_mix_operand(tbox_string_view text, tbox_css_rgba *color, double *percent, bool *has_percent) {
-    text          = tbox_css_color_trim(text);
-    *has_percent  = false;
-    size_t split  = text.size;
-    int depth     = 0;
+    text              = tbox_css_color_trim(text);
+    *has_percent      = false;
+    size_t split      = text.size;
+    int depth         = 0;
     size_t last_space = text.size;
     for (size_t i = 0; i < text.size; i++) {
-        if (text.data[i] == '(') depth++;
-        else if (text.data[i] == ')') depth--;
-        else if (depth == 0 && tbox_css_color_is_space(text.data[i])) last_space = i;
+        if (text.data[i] == '(')
+            depth++;
+        else if (text.data[i] == ')')
+            depth--;
+        else if (depth == 0 && tbox_css_color_is_space(text.data[i]))
+            last_space = i;
     }
     if (last_space < text.size && text.data[text.size - 1] == '%') {
         bool is_percent;
@@ -501,23 +545,81 @@ static bool tbox_css_color_parse_function(tbox_string_view value, tbox_css_rgba 
     if (!tbox_css_color_extract_call(value, mix, 1, &args) || tbox_css_color_split_nested(args, parts, 3) != 3)
         return false;
     tbox_string_view space = parts[0];
-    if (space.size < 3 || !tbox_string_view_equal_ascii_ci(tbox_string_view_make(space.data, 3), tbox_string_view_from_cstr("in ")))
+    if (space.size < 3 || !tbox_string_view_equal_ascii_ci(tbox_string_view_make(space.data, 2), tbox_string_view_from_cstr("in")) || !tbox_css_color_is_space(space.data[2]))
         return false;
-    space = tbox_css_color_trim(tbox_string_view_make(space.data + 3, space.size - 3));
+    space       = tbox_css_color_trim(tbox_string_view_make(space.data + 2, space.size - 2));
     size_t word = 0;
     while (word < space.size && !tbox_css_color_is_space(space.data[word]))
         word++;
-    space = tbox_string_view_make(space.data, word);
+    tbox_string_view method = tbox_css_color_trim(tbox_string_view_make(space.data + word, space.size - word));
+    space                   = tbox_string_view_make(space.data, word);
+    /* Keep the existing approximation for known spaces, but do not
+     * silently map misspelled/custom space names to OKLab. */
+    static const char *const spaces[] = {
+        "srgb",
+        "srgb-linear",
+        "display-p3",
+        "display-p3-linear",
+        "a98-rgb",
+        "prophoto-rgb",
+        "rec2020",
+        "lab",
+        "oklab",
+        "lch",
+        "oklch",
+        "hsl",
+        "hwb",
+        "xyz",
+        "xyz-d50",
+        "xyz-d65",
+    };
+    bool known = false;
+    for (size_t i = 0; i < sizeof(spaces) / sizeof(spaces[0]); i++)
+        known |= tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr(spaces[i]));
+    if (!known)
+        return false;
+    enum {
+        HUE_SHORTER,
+        HUE_LONGER,
+        HUE_INCREASING,
+        HUE_DECREASING
+    } hue_method = HUE_SHORTER;
+    if (method.size > 0) {
+        /* Hue methods are valid only in polar spaces. LCH/HSL retain the
+         * existing OKLCH approximation; OKLCH uses its actual space. */
+        if (!tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("oklch")) && !tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("lch")) && !tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("hsl")))
+            return false;
+        size_t end = 0;
+        while (end < method.size && !tbox_css_color_is_space(method.data[end]))
+            end++;
+        tbox_string_view keyword = tbox_string_view_make(method.data, end);
+        tbox_string_view suffix  = tbox_css_color_trim(tbox_string_view_make(method.data + end, method.size - end));
+        if (!tbox_string_view_equal_ascii_ci(suffix, tbox_string_view_from_cstr("hue")))
+            return false;
+        if (tbox_string_view_equal_ascii_ci(keyword, tbox_string_view_from_cstr("shorter")))
+            hue_method = HUE_SHORTER;
+        else if (tbox_string_view_equal_ascii_ci(keyword, tbox_string_view_from_cstr("longer")))
+            hue_method = HUE_LONGER;
+        else if (tbox_string_view_equal_ascii_ci(keyword, tbox_string_view_from_cstr("increasing")))
+            hue_method = HUE_INCREASING;
+        else if (tbox_string_view_equal_ascii_ci(keyword, tbox_string_view_from_cstr("decreasing")))
+            hue_method = HUE_DECREASING;
+        else
+            return false;
+    }
 
     tbox_css_rgba colors[2];
     double percents[2];
     bool has[2];
     for (int i = 0; i < 2; i++)
-        if (!tbox_css_color_mix_operand(parts[i + 1], &colors[i], &percents[i], &has[i]))
+        if (!tbox_css_color_mix_operand(parts[i + 1], &colors[i], &percents[i], &has[i]) || (has[i] && (!isfinite(percents[i]) || percents[i] < 0.0 || percents[i] > 100.0)))
             return false;
-    if (!has[0] && !has[1]) percents[0] = percents[1] = 50.0;
-    else if (!has[0]) percents[0] = 100.0 - percents[1];
-    else if (!has[1]) percents[1] = 100.0 - percents[0];
+    if (!has[0] && !has[1])
+        percents[0] = percents[1] = 50.0;
+    else if (!has[0])
+        percents[0] = 100.0 - percents[1];
+    else if (!has[1])
+        percents[1] = 100.0 - percents[0];
     double total = percents[0] + percents[1];
     if (total <= 0.0)
         return false;
@@ -525,7 +627,7 @@ static bool tbox_css_color_parse_function(tbox_string_view value, tbox_css_rgba 
     double w1 = percents[1] / total, w0 = 1.0 - w1;
 
     tbox_css_linear_color a = tbox_css_rgba_to_linear(colors[0]), b = tbox_css_rgba_to_linear(colors[1]);
-    double alpha            = a.a * w0 + b.a * w1;
+    double alpha = a.a * w0 + b.a * w1;
     tbox_css_linear_color result;
     if (tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("srgb"))) {
         double ca[3] = { colors[0].r / 255.0 * a.a, colors[0].g / 255.0 * a.a, colors[0].b / 255.0 * a.a };
@@ -541,14 +643,30 @@ static bool tbox_css_color_parse_function(tbox_string_view value, tbox_css_rgba 
         tbox_css_linear_to_oklab(a, la);
         tbox_css_linear_to_oklab(b, lb);
         if (tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("oklch")) || tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("lch")) || tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("hsl"))) {
-            /* Polar: chroma and the shorter hue arc interpolate. */
+            /* Hue is not premultiplied by alpha; L and C are. */
             double ca = hypot(la[1], la[2]), cb = hypot(lb[1], lb[2]);
             double ha = atan2(la[2], la[1]), hb = atan2(lb[2], lb[1]);
-            if (ca < 1e-6) ha = hb;
-            if (cb < 1e-6) hb = ha;
-            double dh = hb - ha;
-            if (dh > 3.141592653589793) dh -= 2.0 * 3.141592653589793;
-            if (dh < -3.141592653589793) dh += 2.0 * 3.141592653589793;
+            if (ca < 1e-6)
+                ha = hb;
+            if (cb < 1e-6)
+                hb = ha;
+            double dh       = hb - ha;
+            const double pi = 3.141592653589793, turn = 2.0 * pi;
+            if (hue_method == HUE_SHORTER) {
+                if (dh > pi)
+                    dh -= turn;
+                if (dh < -pi)
+                    dh += turn;
+            } else if (hue_method == HUE_LONGER) {
+                if (dh > 0.0 && dh < pi)
+                    dh -= turn;
+                else if (dh <= 0.0 && dh > -pi)
+                    dh += turn;
+            } else if (hue_method == HUE_INCREASING) {
+                if (dh < 0.0)
+                    dh += turn;
+            } else if (dh > 0.0)
+                dh -= turn;
             double l = alpha > 0.0 ? (la[0] * a.a * w0 + lb[0] * b.a * w1) / alpha : 0.0;
             double c = alpha > 0.0 ? (ca * a.a * w0 + cb * b.a * w1) / alpha : 0.0;
             double h = ha + dh * w1;

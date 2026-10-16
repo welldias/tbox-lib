@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <title>Cores sRGB, rect e funções exponenciais</title>
+  <style>
+    body {
+      font: 16px sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #edf1f7;
+      color: #172033;
+    }
+
+    h1 {
+      font-size: 22px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin: 22px 0 10px;
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+    }
+
+    .swatch {
+      width: 160px;
+      height: 65px;
+      border-radius: 8px;
+    }
+
+    .srgb {
+      background: color(srgb .5 0 0);
+    }
+
+    .linear {
+      background: color(srgb-linear .5 0 0);
+    }
+
+    .rgb {
+      background: rgb(188 0 0);
+    }
+
+    .frame {
+      width: 160px;
+      height: 80px;
+      background: #d6deea;
+    }
+
+    .shape {
+      width: 160px;
+      height: 80px;
+      background: color(srgb 0 .4 1);
+    }
+
+    .rect {
+      clip-path: rect(10px 140px 70px 20px round 10% / 20%);
+    }
+
+    .inset {
+      clip-path: inset(10px 20px round 10% / 20%);
+    }
+
+    .auto {
+      clip-path: rect(auto auto auto 20px round 12px);
+    }
+
+    .track {
+      width: 320px;
+      background: white;
+      margin: 6px 0;
+    }
+
+    .bar {
+      height: 18px;
+      background: color(srgb .1 .4 .9);
+    }
+
+    .pow {
+      width: calc(pow(2, 3) * 20px);
+    }
+
+    .sqrt {
+      width: calc(sqrt(16) * 40px);
+    }
+
+    .exp {
+      width: calc(exp(0) * 160px);
+    }
+
+    .log {
+      width: calc(log(8, 2) * 40px);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Cores, recortes e cálculos</h1>
+  <h2>sRGB linear: 0.5 equivale a rgb(188 0 0)</h2>
+  <div class="row">
+    <div>
+      <p>srgb: 0.5</p>
+      <div class="swatch srgb"></div>
+    </div>
+    <div>
+      <p>srgb-linear: 0.5</p>
+      <div class="swatch linear"></div>
+    </div>
+    <div>
+      <p>rgb: 188</p>
+      <div class="swatch rgb"></div>
+    </div>
+  </div>
+  <h2>rect e inset equivalentes; auto preserva a borda</h2>
+  <div class="row">
+    <div>
+      <p>rect()</p>
+      <div class="frame">
+        <div class="shape rect"></div>
+      </div>
+    </div>
+    <div>
+      <p>inset()</p>
+      <div class="frame">
+        <div class="shape inset"></div>
+      </div>
+    </div>
+    <div>
+      <p>rect(auto ...)</p>
+      <div class="frame">
+        <div class="shape auto"></div>
+      </div>
+    </div>
+  </div>
+  <h2>Comprimentos calculados em uma caixa de 320px</h2>
+  <p>pow(2, 3) * 20px = 160px</p>
+  <div class="track">
+    <div class="bar pow"></div>
+  </div>
+  <p>sqrt(16) * 40px = 160px</p>
+  <div class="track">
+    <div class="bar sqrt"></div>
+  </div>
+  <p>exp(0) * 160px = 160px</p>
+  <div class="track">
+    <div class="bar exp"></div>
+  </div>
+  <p>log(8, 2) * 40px = 120px</p>
+  <div class="track">
+    <div class="bar log"></div>
+  </div>
+</body>
+
+</html>

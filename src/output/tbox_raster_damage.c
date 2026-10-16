@@ -208,6 +208,8 @@ static uint64_t tbox_damage_mix_gradient(uint64_t hash, const tbox_style_gradien
     hash = tbox_damage_mix_int(hash, (long long)g->extent);
     hash = tbox_damage_mix_length(hash, g->center[0]);
     hash = tbox_damage_mix_length(hash, g->center[1]);
+    hash = tbox_damage_mix_length(hash, g->radius[0]);
+    hash = tbox_damage_mix_length(hash, g->radius[1]);
     hash = tbox_damage_mix_int(hash, (long long)g->stop_count);
     for (size_t i = 0; i < g->stop_count && i < TBOX_STYLE_MAX_GRADIENT_STOPS; i++) {
         hash = tbox_damage_mix_color(hash, g->stops[i].color);
@@ -262,6 +264,15 @@ static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
         hash = tbox_damage_mix_rect(hash, op->rounded_clip);
         hash = tbox_damage_mix_doubles(hash, op->rounded_clip_radii, 4);
         hash = tbox_damage_mix_doubles(hash, op->rounded_clip_radii_y, 4);
+    }
+    hash = tbox_damage_mix_int(hash, op->polygon_clip != NULL);
+    if (op->polygon_clip != NULL) {
+        const tbox_paint_polygon *polygon = op->polygon_clip;
+        hash = tbox_damage_mix_doubles(hash, op->polygon_clip_origin, 2);
+        hash = tbox_damage_mix_int(hash, (long long)polygon->count);
+        hash = tbox_damage_mix_int(hash, polygon->evenodd);
+        for (size_t i = 0; i < polygon->count && i < TBOX_STYLE_MAX_POLYGON_POINTS; i++)
+            hash = tbox_damage_mix_doubles(hash, polygon->points[i], 2);
     }
     return hash;
 }

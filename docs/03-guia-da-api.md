@@ -28,6 +28,25 @@ borda, NULL, vida dos ponteiros) está no comentário dela no header.
 - **Uma thread.** Nada é thread-safe; use a biblioteca a partir da thread da
   aplicação.
 
+A estrutura `tbox_style_clip_path` preserva os raios de `round` em pixels
+(`round_h`/`round_v`) e percentuais (`round_h_percent`/`round_v_percent`).
+Inicialize a estrutura inteira com zero antes de preencher campos diretamente.
+A adição dos campos percentuais altera o tamanho de `tbox_style_clip_path` e
+`tbox_style`: consumidores binários devem ser recompilados com o novo header.
+
+`tbox_style_gradient.radius[2]` preserva os raios explícitos de gradientes
+radiais. Inicializados com zero, ficam `AUTO`, mantendo o tamanho por extensão.
+Círculos usam `radius[0]`; elipses usam os dois eixos. Esse acréscimo altera o
+tamanho de `tbox_style_gradient` e das estruturas que o contêm, incluindo
+`tbox_style`; consumidores binários devem ser recompilados.
+
+`tbox_style_clip_path` agora guarda até 32 pares em `points`, `point_count`
+e `evenodd` para `polygon()`. `tbox_paint_op` recebe `polygon_clip` (ponteiro
+emprestado para `tbox_paint_polygon` na arena de frame) e origem local separada.
+Esses campos alteram o tamanho das estruturas públicas: recompile consumidores.
+O tipo `TBOX_STYLE_GRADIENT_CONIC` reutiliza `angle`/`center`; posições explícitas
+dos stops são percentuais de uma volta. Inicialize as estruturas com zero.
+
 ## 1. Aplicação com janela — `app.h`
 
 | Função | Uso |

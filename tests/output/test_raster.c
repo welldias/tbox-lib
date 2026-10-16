@@ -1493,6 +1493,165 @@ static void tbox_test_raster_layer_damage(int *failures_ptr) {
     tbox_test_damage_expect_equivalent(failures_ptr, &le, &lf, w, h, "content moving under a blurred backdrop");
 }
 
+/* Explicit radii change pixels and must invalidate even when no other
+ * field of the gradient/display op changes. */
+static void tbox_test_raster_explicit_radial(int *failures_ptr) {
+    int failures = *failures_ptr;
+    tbox_style_gradient a = {0};
+    a.kind = TBOX_STYLE_GRADIENT_RADIAL;
+    a.circle = true;
+    a.center[0] = a.center[1] = (tbox_style_length){TBOX_STYLE_LENGTH_PX, 10.5, 0, 0, 0, 0};
+    a.radius[0] = a.radius[1] = (tbox_style_length){TBOX_STYLE_LENGTH_PX, 8, 0, 0, 0, 0};
+    a.stop_count = 2;
+    a.stops[0] = (tbox_style_gradient_stop){{255, 0, 0, 255}, {TBOX_STYLE_LENGTH_PERCENT, 0, 0, 0, 0, 0}};
+    a.stops[1] = (tbox_style_gradient_stop){{0, 0, 255, 255}, {TBOX_STYLE_LENGTH_PERCENT, 100, 0, 0, 0, 0}};
+    tbox_paint_op op = {0};
+    op.kind = TBOX_PAINT_GRADIENT;
+    op.rect = (tbox_rect){0, 0, 40, 24};
+    op.color = (tbox_css_rgba){0, 0, 0, 255};
+    op.gradient = &a;
+    tbox_display_list list = {&op, 1};
+    uint32_t pixels[40 * 24];
+    for (size_t i = 0; i < 40 * 24; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_raster_display_list(pixels, 40, 24, &list);
+    TBOX_TEST_ASSERT(pixels[10 * 40 + 10] == 0xFFFF0000u);
+    TBOX_TEST_ASSERT(pixels[10 * 40 + 14] == 0xFF800080u);
+    TBOX_TEST_ASSERT(pixels[10 * 40 + 18] == 0xFF0000FFu);
+    a.circle = false;
+    a.radius[0] = (tbox_style_length){TBOX_STYLE_LENGTH_PERCENT, 50, 0, 0, 0, 0};
+    a.radius[1] = (tbox_style_length){TBOX_STYLE_LENGTH_PERCENT, 25, 0, 0, 0, 0};
+    tbox_raster_display_list(pixels, 40, 24, &list);
+    TBOX_TEST_ASSERT(pixels[10 * 40 + 20] == 0xFF800080u); /* rx = 20 */
+    TBOX_TEST_ASSERT(pixels[13 * 40 + 10] == 0xFF800080u); /* ry = 6 */
+    a.repeating = true;
+    tbox_raster_display_list(pixels, 40, 24, &list);
+    TBOX_TEST_ASSERT(pixels[10 * 40 + 30] == 0xFFFF0000u);
+    a.repeating = false;
+    tbox_style_gradient b = a;
+    tbox_paint_op other = op;
+    other.gradient = &b;
+    tbox_display_list changed = {&other, 1};
+    b.radius[0].value = 40;
+    tbox_test_damage_expect_equivalent(&failures, &list, &changed, 120, 100, "explicit radial rx change");
+    b = a;
+    b.radius[1].value = 50;
+    tbox_test_damage_expect_equivalent(&failures, &list, &changed, 120, 100, "explicit radial ry change");
+    b = a;
+    b.radius[0].kind = b.radius[1].kind = TBOX_STYLE_LENGTH_AUTO;
+    tbox_test_damage_expect_equivalent(&failures, &list, &changed, 120, 100, "explicit radial to automatic");
+    *failures_ptr = failures;
+}
+
+static void tbox_test_raster_conic_polygon(int *failures_ptr) {
+    int failures = *failures_ptr;
+    tbox_style_gradient g = {0};
+    g.kind = TBOX_STYLE_GRADIENT_CONIC;
+    g.center[0] = g.center[1] = (tbox_style_length){TBOX_STYLE_LENGTH_PX, 20.5, 0, 0, 0, 0};
+    g.stop_count = 2;
+    g.stops[0] = (tbox_style_gradient_stop){{255, 0, 0, 255}, {TBOX_STYLE_LENGTH_PERCENT, 0, 0, 0, 0, 0}};
+    g.stops[1] = (tbox_style_gradient_stop){{0, 0, 255, 255}, {TBOX_STYLE_LENGTH_PERCENT, 100, 0, 0, 0, 0}};
+    tbox_paint_op op = {0};
+    op.kind = TBOX_PAINT_GRADIENT;
+    op.rect = (tbox_rect){0, 0, 42, 42};
+    op.color.a = 255;
+    op.gradient = &g;
+    tbox_display_list list = {&op, 1};
+    uint32_t pixels[42 * 42];
+    for (size_t i = 0; i < 42 * 42; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_raster_display_list(pixels, 42, 42, &list);
+    TBOX_TEST_ASSERT(pixels[5 * 42 + 20] == 0xFFFF0000u); /* top: 0 */
+    TBOX_TEST_ASSERT(pixels[20 * 42 + 35] == 0xFFBF0040u); /* right: .25 */
+    TBOX_TEST_ASSERT(pixels[35 * 42 + 20] == 0xFF800080u); /* bottom: .5 */
+    TBOX_TEST_ASSERT(pixels[20 * 42 + 5] == 0xFF4000BFu); /* left: .75 */
+    g.angle = 90;
+    tbox_raster_display_list(pixels, 42, 42, &list);
+    TBOX_TEST_ASSERT(pixels[20 * 42 + 35] == 0xFFFF0000u);
+    g.angle = 0;
+    g.repeating = true;
+    g.stops[1].position.value = 25;
+    tbox_raster_display_list(pixels, 42, 42, &list);
+    TBOX_TEST_ASSERT(pixels[20 * 42 + 35] == 0xFFFF0000u && pixels[35 * 42 + 20] == 0xFFFF0000u);
+    TBOX_TEST_ASSERT(pixels[5 * 42 + 35] == pixels[35 * 42 + 35]); /* .125 and .375 */
+    g.repeating = false;
+    g.stops[1].position.value = 100;
+    g.stops[0].color = (tbox_css_rgba){255, 0, 0, 0};
+    for (size_t i = 0; i < 42 * 42; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_raster_display_list(pixels, 42, 42, &list);
+    /* Halfway from transparent red to blue has no red contribution. */
+    TBOX_TEST_ASSERT(pixels[35 * 42 + 20] == 0xFF7F7FFFu);
+    g.stops[0].color.a = 255;
+    tbox_style_gradient other_gradient = g;
+    tbox_paint_op other = op;
+    other.gradient = &other_gradient;
+    tbox_display_list changed = {&other, 1};
+    other_gradient.angle = 60;
+    tbox_test_damage_expect_equivalent(&failures, &list, &changed, 150, 120, "conic from angle");
+    other_gradient = g;
+    other_gradient.center[0].value = 10;
+    tbox_test_damage_expect_equivalent(&failures, &list, &changed, 150, 120, "conic center");
+    other_gradient = g;
+    other_gradient.stops[1].position.value = 25;
+    other_gradient.repeating = true;
+    tbox_test_damage_expect_equivalent(&failures, &list, &changed, 150, 120, "conic repetition and stops");
+
+    /* Fix-up compares against the last explicit stop across omitted ones. */
+    {
+        tbox_style_gradient automatic = g, explicit = g;
+        automatic.stop_count = explicit.stop_count = 4;
+        const tbox_css_rgba colors[4] = {{255, 0, 0, 255}, {0, 255, 0, 255}, {0, 0, 255, 255}, {255, 255, 255, 255}};
+        const double positions[4] = {80, 0, 20, 100};
+        for (size_t i = 0; i < 4; i++) {
+            automatic.stops[i] = (tbox_style_gradient_stop){colors[i], {i == 1 ? TBOX_STYLE_LENGTH_AUTO : TBOX_STYLE_LENGTH_PERCENT, positions[i], 0, 0, 0, 0}};
+            explicit.stops[i] = (tbox_style_gradient_stop){colors[i], {TBOX_STYLE_LENGTH_PERCENT, i < 3 ? 80 : 100, 0, 0, 0, 0}};
+        }
+        uint32_t expected[42 * 42];
+        for (size_t i = 0; i < 42 * 42; i++) pixels[i] = expected[i] = 0xFFFFFFFFu;
+        op.gradient = &automatic;
+        tbox_raster_display_list(pixels, 42, 42, &list);
+        op.gradient = &explicit;
+        tbox_raster_display_list(expected, 42, 42, &list);
+        TBOX_TEST_ASSERT(memcmp(pixels, expected, sizeof(pixels)) == 0);
+        op.gradient = &g;
+    }
+
+    /* A twice-wound square is filled by nonzero and empty by evenodd. */
+    tbox_paint_polygon polygon = { .points = {{0, 0}, {30, 0}, {30, 30}, {0, 30}, {0, 0}, {30, 0}, {30, 30}, {0, 30}}, .count = 8 };
+    tbox_paint_op ops[3] = {0};
+    ops[0].kind = TBOX_PAINT_LAYER_BEGIN;
+    ops[0].color.a = 255;
+    ops[0].polygon_clip = &polygon;
+    ops[0].polygon_clip_origin[0] = ops[0].polygon_clip_origin[1] = 10;
+    ops[1].kind = TBOX_PAINT_FILL_RECT;
+    ops[1].rect = (tbox_rect){10, 10, 40, 40};
+    ops[1].color = (tbox_css_rgba){255, 0, 0, 255};
+    ops[2].kind = TBOX_PAINT_LAYER_END;
+    tbox_display_list polygon_list = {ops, 3};
+    for (size_t i = 0; i < 42 * 42; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_raster_display_list(pixels, 42, 42, &polygon_list);
+    TBOX_TEST_ASSERT(pixels[20 * 42 + 20] == 0xFFFF0000u && pixels[41 * 42 + 41] == 0xFFFFFFFFu);
+    tbox_paint_polygon second = polygon;
+    tbox_paint_op second_ops[3];
+    memcpy(second_ops, ops, sizeof(ops));
+    second_ops[0].polygon_clip = &second;
+    tbox_display_list second_list = {second_ops, 3};
+    second.evenodd = true;
+    tbox_test_damage_expect_equivalent(&failures, &polygon_list, &second_list, 150, 120, "polygon fill rule");
+    second = polygon;
+    second.points[1][0] = 15;
+    tbox_test_damage_expect_equivalent(&failures, &polygon_list, &second_list, 150, 120, "polygon changed vertex");
+    second = polygon;
+    second.count = 3;
+    tbox_test_damage_expect_equivalent(&failures, &polygon_list, &second_list, 150, 120, "polygon vertex count");
+    second = polygon;
+    second_ops[0].polygon_clip_origin[0] = 20;
+    tbox_test_damage_expect_equivalent(&failures, &polygon_list, &second_list, 150, 120, "polygon origin");
+    polygon.evenodd = true;
+    for (size_t i = 0; i < 42 * 42; i++) pixels[i] = 0xFFFFFFFFu;
+    tbox_raster_display_list(pixels, 42, 42, &polygon_list);
+    TBOX_TEST_ASSERT(pixels[20 * 42 + 20] == 0xFFFFFFFFu);
+    *failures_ptr = failures;
+}
+
 int tbox_test_output_raster_run(void) {
     int failures = 0;
 
@@ -1518,6 +1677,8 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_individual_corners(&failures);
     tbox_test_raster_wavy_line(&failures);
     tbox_test_raster_gradient(&failures);
+    tbox_test_raster_explicit_radial(&failures);
+    tbox_test_raster_conic_polygon(&failures);
     tbox_test_raster_elliptical_corners(&failures);
     tbox_test_raster_write_png_round_trip(&failures);
     tbox_test_raster_write_png_invalid_args(&failures);

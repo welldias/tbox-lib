@@ -4680,6 +4680,200 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* New functions reach layout and pixels: linear sRGB, exponential
+     * sizing, rounded modern rect(), and a crossed rect with no area. */
+    {
+        tbox_context *ctx = open_cstr(
+            "<body><div id='tile'></div><div id='empty'></div></body>",
+            "body { margin: 0; background: white; }"
+            "#tile { position: absolute; left: 0; top: 0; width: calc(sqrt(16) * 10px); height: calc(log(8, 2) * 10px);"
+            " background: color(srgb-linear .5 0 0); clip-path: rect(5px 35px 25px 5px round 4px); }"
+            "#empty { position: absolute; left: 0; top: 40px; width: 40px; height: 20px;"
+            " background: color(srgb 0 1 0); clip-path: rect(10px 0 0 20px); }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 64, 64, &list);
+            uint32_t pixels[64 * 64];
+            for (size_t i = 0; i < 64 * 64; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_raster_display_list(pixels, 64, 64, &list);
+            TBOX_TEST_ASSERT(pixels[10 * 64 + 10] == 0xFFBC0000u);
+            TBOX_TEST_ASSERT(pixels[10 * 64 + 1] == 0xFFFFFFFFu && pixels[10 * 64 + 37] == 0xFFFFFFFFu);
+            TBOX_TEST_ASSERT(pixels[27 * 64 + 10] == 0xFFFFFFFFu && pixels[5 * 64 + 5] == 0xFFFFFFFFu);
+            TBOX_TEST_ASSERT(pixels[50 * 64 + 20] == 0xFFFFFFFFu);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Numeric opacity and typed length functions reach composited pixels. */
+    {
+        tbox_context *ctx = open_cstr("<body><div></div></body>",
+            "body { margin: 0; background: white; }"
+            "div { width: hypot(30px, 40px); height: abs(-20px); background: red; opacity: calc(pow(.5, 2)); }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 64, 32, &list);
+            uint32_t pixels[64 * 32];
+            for (size_t i = 0; i < 64 * 32; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_raster_display_list(pixels, 64, 32, &list);
+            uint32_t inside = pixels[10 * 64 + 25];
+            TBOX_TEST_ASSERT(((inside >> 16) & 255u) == 255u);
+            TBOX_TEST_ASSERT(((inside >> 8) & 255u) >= 190u && ((inside >> 8) & 255u) <= 192u);
+            TBOX_TEST_ASSERT((inside & 255u) == ((inside >> 8) & 255u));
+            TBOX_TEST_ASSERT(pixels[10 * 64 + 55] == 0xFFFFFFFFu && pixels[25 * 64 + 25] == 0xFFFFFFFFu);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Angular expressions must paint exactly like their literal results,
+     * including gradients, filters, numeric opacity and layout dimensions. */
+    {
+        static const struct { const char *expression; const char *literal; } cases[] = {
+            { "background: linear-gradient(asin(1), red, blue);", "background: linear-gradient(90deg, red, blue);" },
+            { "background: linear-gradient(atan2(-1, -1), red, blue);", "background: linear-gradient(-135deg, red, blue);" },
+            { "background: red; filter: hue-rotate(acos(0));", "background: red; filter: hue-rotate(90deg);" },
+            { "background: red; opacity: sin(asin(.5)); width: calc(sin(atan2(3px, 4px)) * 50px);", "background: red; opacity: .5; width: 30px;" },
+        };
+        for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+            uint32_t pixels[2][64 * 32];
+            bool rendered[2] = { false, false };
+            for (int variant = 0; variant < 2; variant++) {
+                char css[512];
+                snprintf(css, sizeof(css), "body { margin: 0; background: white; } div { width: 48px; height: 24px; %s }",
+                    variant == 0 ? cases[c].expression : cases[c].literal);
+                tbox_context *ctx = open_cstr("<body><div></div></body>", css, fonts);
+                TBOX_TEST_ASSERT(ctx != NULL);
+                if (ctx != NULL) {
+                    tbox_display_list list;
+                    tbox_context_run_frame(ctx, 64, 32, &list);
+                    for (size_t i = 0; i < 64 * 32; i++) pixels[variant][i] = 0xFFFFFFFFu;
+                    tbox_raster_display_list(pixels[variant], 64, 32, &list);
+                    rendered[variant] = true;
+                    tbox_context_close(ctx);
+                }
+            }
+            if (rendered[0] && rendered[1]) {
+                TBOX_TEST_ASSERT_MSG(memcmp(pixels[0], pixels[1], sizeof(pixels[0])) == 0, cases[c].expression);
+                TBOX_TEST_ASSERT(pixels[0][10 * 64 + 10] != 0xFFFFFFFFu);
+                TBOX_TEST_ASSERT(pixels[0][30 * 64 + 60] == 0xFFFFFFFFu);
+            }
+        }
+    }
+
+    /* Polygon clips remove descendant pixels and pointer targets, even
+     * with nonzero layer origins and nested clip-path stacking contexts. */
+    {
+        tbox_context *ctx = open_cstr("<body><div id='host'><div id='child'></div></div></body>",
+            "body { margin: 0; background: white; }"
+            "#host { position: absolute; left: 20px; top: 10px; width: 40px; height: 40px; clip-path: polygon(0 0, 100% 0, 0 100%); }"
+            "#child { width: 40px; height: 40px; background: red; cursor: crosshair; clip-path: polygon(0 0, 100% 0, 100% 100%); }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 80, 70, &list);
+            uint32_t pixels[80 * 70];
+            for (size_t i = 0; i < 80 * 70; i++) pixels[i] = 0xFFFFFFFFu;
+            tbox_raster_display_list(pixels, 80, 70, &list);
+            TBOX_TEST_ASSERT(pixels[15 * 80 + 35] == 0xFFFF0000u); /* inside both */
+            TBOX_TEST_ASSERT(pixels[25 * 80 + 25] == 0xFFFFFFFFu); /* outside child */
+            TBOX_TEST_ASSERT(pixels[25 * 80 + 55] == 0xFFFFFFFFu); /* outside parent */
+            const tbox_layout_box *hit = tbox_context_hit_test(ctx, 35, 15);
+            const tbox_html_attribute *id = hit != NULL && hit->node != NULL ? tbox_html_node_get_attribute(hit->node, tbox_string_view_from_cstr("id")) : NULL;
+            TBOX_TEST_ASSERT(id != NULL && string_view_equal_cstr(id->value, "child"));
+            hit = tbox_context_hit_test(ctx, 55, 25);
+            TBOX_TEST_ASSERT(hit == NULL || hit->style == NULL || hit->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_POLYGON);
+            hit = tbox_context_hit_test(ctx, 25, 25);
+            id = hit != NULL && hit->node != NULL ? tbox_html_node_get_attribute(hit->node, tbox_string_view_from_cstr("id")) : NULL;
+            TBOX_TEST_ASSERT(id != NULL && string_view_equal_cstr(id->value, "host"));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Concavity and winding rules must agree in raster and hit-test. */
+    {
+        static const struct { const char *shape; bool center; } cases[] = {
+            { "polygon(0 0, 100% 0, 100% 30%, 30% 30%, 30% 100%, 0 100%)", false },
+            { "polygon(nonzero, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, 100% 0, 100% 100%, 0 100%)", true },
+            { "polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, 100% 0, 100% 100%, 0 100%)", false },
+        };
+        for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+            char css[512];
+            snprintf(css, sizeof(css), "body { margin: 0; background: white; } div { position: absolute; left: 10px; top: 10px; width: 40px; height: 40px; background: red; clip-path: %s; }", cases[c].shape);
+            tbox_context *ctx = open_cstr("<body><div id='shape'></div></body>", css, fonts);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx != NULL) {
+                tbox_display_list list;
+                tbox_context_run_frame(ctx, 60, 60, &list);
+                uint32_t pixels[60 * 60];
+                for (size_t i = 0; i < 60 * 60; i++) pixels[i] = 0xFFFFFFFFu;
+                tbox_raster_display_list(pixels, 60, 60, &list);
+                TBOX_TEST_ASSERT_MSG(pixels[35 * 60 + 35] == (cases[c].center ? 0xFFFF0000u : 0xFFFFFFFFu), cases[c].shape);
+                const tbox_layout_box *hit = tbox_context_hit_test(ctx, 35, 35);
+                bool target = hit != NULL && hit->style != NULL && hit->style->clip_path.kind == TBOX_STYLE_CLIP_PATH_POLYGON;
+                TBOX_TEST_ASSERT(target == cases[c].center);
+                if (c == 0) TBOX_TEST_ASSERT(pixels[15 * 60 + 35] == 0xFFFF0000u && pixels[35 * 60 + 15] == 0xFFFF0000u);
+                tbox_context_close(ctx);
+            }
+        }
+    }
+
+    /* Compare new shapes/gradients with independent existing equivalents,
+     * including text, opacity, blur, rounded backgrounds, tiling and masks. */
+    {
+        static const struct { const char *computed; const char *reference; } cases[] = {
+            { "clip-path: polygon(0 0, 50% 0, 50% 100%, 0 100%);", "clip-path: inset(0 50% 0 0);" },
+            { "clip-path: polygon(0 0, 50% 0, 50% 100%, 0 100%); filter: blur(2px);", "clip-path: inset(0 50% 0 0); filter: blur(2px);" },
+            { "mask-image: conic-gradient(black 0 180deg, transparent 180deg 360deg);", "mask-image: linear-gradient(90deg, transparent 50%, black 50%);" },
+            { "background: conic-gradient(from asin(1), red 0deg, blue 1turn); background-size: 20px 20px;", "background: conic-gradient(from 90deg, red 0%, blue 100%); background-size: 20px 20px;" },
+        };
+        for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+            uint32_t pixels[2][90 * 70];
+            bool rendered[2] = { false, false };
+            for (int variant = 0; variant < 2; variant++) {
+                char css[768];
+                snprintf(css, sizeof(css), "body { margin: 0; background: white; } div { position: absolute; left: 17px; top: 13px; width: 50px; height: 40px; background: red; border-radius: 8px; opacity: .75; %s } p { margin: 0; color: black; font-size: 12px; }",
+                    variant == 0 ? cases[c].computed : cases[c].reference);
+                tbox_context *ctx = open_cstr("<body><div><p>ABC</p></div></body>", css, fonts);
+                TBOX_TEST_ASSERT(ctx != NULL);
+                if (ctx != NULL) {
+                    tbox_display_list list;
+                    tbox_context_run_frame(ctx, 90, 70, &list);
+                    for (size_t i = 0; i < 90 * 70; i++) pixels[variant][i] = 0xFFFFFFFFu;
+                    tbox_raster_display_list(pixels[variant], 90, 70, &list);
+                    rendered[variant] = true;
+                    tbox_context_close(ctx);
+                }
+            }
+            if (rendered[0] && rendered[1])
+                TBOX_TEST_ASSERT_MSG(memcmp(pixels[0], pixels[1], sizeof(pixels[0])) == 0, cases[c].computed);
+        }
+    }
+
+    /* Appended scrollbars obey both own and ancestor polygon clips. */
+    {
+        static const char *const parent_shapes[] = {"none", "polygon(0 0, 50% 0, 50% 100%, 0 100%)"};
+        for (size_t c = 0; c < 2; c++) {
+            char css[768];
+            snprintf(css, sizeof(css), "body { margin: 0; background: white; } #host { position: absolute; left: 10px; top: 10px; width: 60px; height: 40px; clip-path: %s; } #scroll { width: 60px; height: 40px; overflow-y: auto; clip-path: polygon(0 0, 100%% 0, 100%% 50%%, 0 50%%); } #content { height: 120px; background: red; }", parent_shapes[c]);
+            tbox_context *ctx = open_cstr("<body><div id='host'><div id='scroll'><div id='content'></div></div></div></body>", css, fonts);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx != NULL) {
+                tbox_display_list list;
+                tbox_context_run_frame(ctx, 90, 70, &list);
+                uint32_t pixels[90 * 70];
+                for (size_t i = 0; i < 90 * 70; i++) pixels[i] = 0xFFFFFFFFu;
+                tbox_raster_display_list(pixels, 90, 70, &list);
+                TBOX_TEST_ASSERT(pixels[45 * 90 + 65] == 0xFFFFFFFFu);
+                TBOX_TEST_ASSERT(!tbox_context_scrollbar_press(ctx, 65, 45));
+                TBOX_TEST_ASSERT(pixels[15 * 90 + 65] == (c == 0 ? 0xFF646E7Au : 0xFFFFFFFFu));
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_press(ctx, 65, 15) == (c == 0));
+                tbox_context_scrollbar_release(ctx);
+                tbox_context_close(ctx);
+            }
+        }
+    }
+
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

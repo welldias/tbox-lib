@@ -1,5 +1,7 @@
 #include <tbox/output.h>
 
+#include "base/tbox_polygon.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -246,8 +248,11 @@ static tbox_css_rgba tbox_raster_filter(const double *m, tbox_css_rgba c) {
     return (tbox_css_rgba){ (unsigned char)(out[0] * 255.0 + 0.5), (unsigned char)(out[1] * 255.0 + 0.5), (unsigned char)(out[2] * 255.0 + 0.5), (unsigned char)(out[3] * 255.0 + 0.5) };
 }
 
-static bool tbox_raster_in_rounded_clip(const tbox_paint_op *op, double x, double y) {
-    return !op->has_rounded_clip || tbox_raster_point_in_shape(x, y, op->rounded_clip, op->rounded_clip_radii, op->rounded_clip_radii_y);
+static bool tbox_raster_in_shape_clip(const tbox_paint_op *op, double x, double y) {
+    if (op->has_rounded_clip && !tbox_raster_point_in_shape(x, y, op->rounded_clip, op->rounded_clip_radii, op->rounded_clip_radii_y)) return false;
+    if (op->polygon_clip != NULL && op->polygon_clip->count > TBOX_STYLE_MAX_POLYGON_POINTS) return false;
+    return op->polygon_clip == NULL || tbox_polygon_contains(op->polygon_clip->points, op->polygon_clip->count,
+        op->polygon_clip->evenodd, x - op->polygon_clip_origin[0], y - op->polygon_clip_origin[1]);
 }
 
 /* FILL_RECT with elliptical corners and/or a rounded clip. */
@@ -264,7 +269,7 @@ static void tbox_raster_fill_shape(uint32_t *pixels, int32_t width, int32_t heig
         uint32_t *row = pixels + (size_t)y * (size_t)width;
         for (int32_t x = x0; x < x1; x++) {
             double px = (double)x + 0.5, py = (double)y + 0.5;
-            if (tbox_raster_point_in_shape(px, py, op->rect, hr, vr) && tbox_raster_in_rounded_clip(op, px, py))
+            if (tbox_raster_point_in_shape(px, py, op->rect, hr, vr) && tbox_raster_in_shape_clip(op, px, py))
                 row[x] = tbox_raster_blend_pixel(row[x], op->color, alpha);
         }
     }
@@ -387,8 +392,12 @@ static size_t tbox_raster_resolve_stops(const tbox_style_gradient *gradient, dou
     }
     if (!known[0]) out[0].position = 0.0, known[0] = true;
     if (!known[count - 1]) out[count - 1].position = 1.0, known[count - 1] = true;
-    for (size_t i = 1; i < count; i++)
-        if (out[i].position < out[i - 1].position && known[i]) out[i].position = out[i - 1].position;
+    double previous = out[0].position;
+    for (size_t i = 1; i < count; i++) {
+        if (!known[i]) continue;
+        if (out[i].position < previous) out[i].position = previous;
+        previous = out[i].position;
+    }
     for (size_t i = 1; i < count; i++) {
         if (known[i]) continue;
         size_t next = i;
@@ -459,6 +468,10 @@ static void tbox_raster_gradient(uint32_t *pixels, int32_t width, int32_t height
             dx = sin(radians), dy = -cos(radians);
         }
         length = fabs(w * dx) + fabs(h * dy);
+    } else if (gradient->kind == TBOX_STYLE_GRADIENT_CONIC) {
+        cx = tbox_raster_resolve_center(gradient->center[0], w);
+        cy = tbox_raster_resolve_center(gradient->center[1], h);
+        length = 1.0; /* conic positions are percentages of a turn */
     } else {
         cx = tbox_raster_resolve_center(gradient->center[0], w);
         cy = tbox_raster_resolve_center(gradient->center[1], h);
@@ -467,7 +480,10 @@ static void tbox_raster_gradient(uint32_t *pixels, int32_t width, int32_t height
         bool closest = gradient->extent == TBOX_STYLE_GRADIENT_CLOSEST_SIDE || gradient->extent == TBOX_STYLE_GRADIENT_CLOSEST_CORNER;
         bool corner  = gradient->extent == TBOX_STYLE_GRADIENT_CLOSEST_CORNER || gradient->extent == TBOX_STYLE_GRADIENT_FARTHEST_CORNER;
         double sx = closest ? near_x : far_x, sy = closest ? near_y : far_y;
-        if (gradient->circle) {
+        if (gradient->radius[0].kind != TBOX_STYLE_LENGTH_AUTO) {
+            rx = fmax(0.0, tbox_style_length_resolve(gradient->radius[0], w));
+            ry = gradient->circle ? rx : fmax(0.0, tbox_style_length_resolve(gradient->radius[1], h));
+        } else if (gradient->circle) {
             double r = corner ? sqrt(sx * sx + sy * sy) : closest ? fmin(sx, sy) : fmax(sx, sy);
             rx = ry = r;
         } else if (corner) {
@@ -475,11 +491,13 @@ static void tbox_raster_gradient(uint32_t *pixels, int32_t width, int32_t height
         } else {
             rx = sx, ry = sy;
         }
+        if (!isfinite(rx) || !isfinite(ry)) return;
         if (rx <= 0.0) rx = 1e-6;
         if (ry <= 0.0) ry = 1e-6;
         length = rx;
     }
 
+    if (!isfinite(cx) || !isfinite(cy) || !isfinite(gradient->angle)) return;
     tbox_raster_stop stops[TBOX_STYLE_MAX_GRADIENT_STOPS];
     size_t count = tbox_raster_resolve_stops(gradient, length, stops);
     for (int32_t y = y0; y < y1; y++) {
@@ -487,10 +505,13 @@ static void tbox_raster_gradient(uint32_t *pixels, int32_t width, int32_t height
         double py     = (double)y + 0.5 - rect.y;
         for (int32_t x = x0; x < x1; x++) {
             double px = (double)x + 0.5 - rect.x;
-            if (!tbox_raster_in_rounded_clip(op, px + rect.x, py + rect.y)) continue;
+            if (!tbox_raster_in_shape_clip(op, px + rect.x, py + rect.y)) continue;
             double t;
             if (gradient->kind == TBOX_STYLE_GRADIENT_LINEAR) {
                 t = length > 0.0 ? ((px - w / 2.0) * dx + (py - h / 2.0) * dy) / length + 0.5 : 0.0;
+            } else if (gradient->kind == TBOX_STYLE_GRADIENT_CONIC) {
+                t = atan2(px - cx, -(py - cy)) / (2.0 * 3.14159265358979323846) - fmod(gradient->angle, 360.0) / 360.0;
+                t -= floor(t);
             } else {
                 double ex = (px - cx) / rx, ey = (py - cy) / ry;
                 t = sqrt(ex * ex + ey * ey);
@@ -524,7 +545,7 @@ static void tbox_raster_fill_ring_clipped(uint32_t *pixels, int32_t width, int32
             double px = (double)x + 0.5, py = (double)y + 0.5;
             if (tbox_raster_point_in_shape(px, py, op->rect, op->corner_radii, op->elliptical ? op->corner_radii_y : op->corner_radii) &&
                 !tbox_raster_point_in_shape(px, py, op->inner_rect, op->inner_corner_radii, op->elliptical ? op->inner_corner_radii_y : op->inner_corner_radii) &&
-                tbox_raster_in_rounded_clip(op, px, py))
+                tbox_raster_in_shape_clip(op, px, py))
                 row[x] = tbox_raster_blend_pixel(row[x], op->color, alpha);
         }
     }
@@ -589,7 +610,7 @@ static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width,
                     }
 
                     unsigned char glyph_alpha = glyph_row[gx];
-                    if (glyph_alpha == 0 || (rounded != NULL && !tbox_raster_in_rounded_clip(rounded, (double)px + 0.5, (double)py + 0.5))) {
+                    if (glyph_alpha == 0 || (rounded != NULL && !tbox_raster_in_shape_clip(rounded, (double)px + 0.5, (double)py + 0.5))) {
                         continue;
                     }
 
@@ -698,7 +719,7 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
             int32_t source_x = nearest ? (int32_t)((int64_t)(x - origin_x) * image->width / dest_width) : x - origin_x;
             const unsigned char *source_pixel = source_row + (size_t)source_x * 4;
             unsigned char source_alpha        = source_pixel[3];
-            if (source_alpha == 0 || (rounded != NULL && !tbox_raster_in_rounded_clip(rounded, (double)x + 0.5, (double)y + 0.5))) {
+            if (source_alpha == 0 || (rounded != NULL && !tbox_raster_in_shape_clip(rounded, (double)x + 0.5, (double)y + 0.5))) {
                 continue;
             }
 
@@ -724,7 +745,7 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
         tbox_raster_gradient(pixels, buffer_width, buffer_height, op);
         break;
     case TBOX_PAINT_FILL_RECT:
-        if (op->elliptical || op->has_rounded_clip) {
+        if (op->elliptical || op->has_rounded_clip || op->polygon_clip != NULL) {
             tbox_raster_fill_shape(pixels, buffer_width, buffer_height, op);
         } else if (op->corner_radii[0] > 0.0 || op->corner_radii[1] > 0.0 ||
             op->corner_radii[2] > 0.0 || op->corner_radii[3] > 0.0 || op->radius > 0.0) {
@@ -747,7 +768,7 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
         }
         break;
     case TBOX_PAINT_TEXT_RUN:
-        tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0}, op->has_rounded_clip ? op : NULL);
+        tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0}, (op->has_rounded_clip || op->polygon_clip != NULL) ? op : NULL);
         break;
     case TBOX_PAINT_IMAGE:
         if (op->has_rounded_clip) {
@@ -759,7 +780,7 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
             }
             tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, true, clip, op->image_pixelated, op, op->color_filter, op->blend_mode);
         } else {
-            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated, NULL, op->color_filter, op->blend_mode);
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated, op->polygon_clip != NULL ? op : NULL, op->color_filter, op->blend_mode);
         }
         break;
     case TBOX_PAINT_FILL_RING:
@@ -845,6 +866,7 @@ static void tbox_raster_paint_into(const tbox_raster_target *t, const tbox_paint
         shifted.inner_rect.x += dx, shifted.inner_rect.y += dy;
         shifted.clip.x += dx, shifted.clip.y += dy;
         shifted.rounded_clip.x += dx, shifted.rounded_clip.y += dy;
+        shifted.polygon_clip_origin[0] += dx, shifted.polygon_clip_origin[1] += dy;
     }
     tbox_raster_paint_op(t->pixels, t->width, t->height, &shifted);
 }
@@ -999,7 +1021,7 @@ static void tbox_raster_backdrop(const tbox_raster_target *t, const tbox_paint_o
         uint32_t *row = t->pixels + (size_t)(y - t->y) * (size_t)t->width;
         for (int32_t x = (int32_t)out.x; x < (int32_t)(out.x + out.width); x++) {
             double px = (double)x + 0.5, py = (double)y + 0.5;
-            if (!tbox_raster_point_in_shape(px, py, op->rect, op->corner_radii, op->corner_radii_y) || !tbox_raster_in_rounded_clip(op, px, py))
+            if (!tbox_raster_point_in_shape(px, py, op->rect, op->corner_radii, op->corner_radii_y) || !tbox_raster_in_shape_clip(op, px, py))
                 continue;
             uint32_t original = row[x - t->x], filtered = copy[(size_t)(y - sy) * (size_t)sw + (size_t)(x - sx)];
             unsigned fa = filtered >> 24;
@@ -1068,7 +1090,7 @@ static size_t tbox_raster_paint_layer(const tbox_raster_target *t, const tbox_di
         uint32_t *row = t->pixels + (size_t)(y - t->y) * (size_t)t->width;
         for (int32_t x = (int32_t)out.x; x < (int32_t)(out.x + out.width); x++) {
             uint32_t p = source[x - layer.x];
-            if ((p >> 24) == 0 || !tbox_raster_in_rounded_clip(op, (double)x + 0.5, (double)y + 0.5))
+            if ((p >> 24) == 0 || !tbox_raster_in_shape_clip(op, (double)x + 0.5, (double)y + 0.5))
                 continue;
             tbox_css_rgba color = tbox_raster_unpack(p);
             row[x - t->x] = tbox_raster_blend_mode_pixel(row[x - t->x], color, color.a / 255.0 * opacity, op->blend_mode);
