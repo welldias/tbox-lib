@@ -358,3 +358,21 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   também não existe (decisão, não débito).
 - **Quando revisitar:** só se um caso real depender disso.
 - **Toca:** `src/html_parser/tbox_html_entities.c`.
+
+## Controles de formulário
+
+### Pseudo-elementos com prefixo de navegador
+
+- **O que é:** as partes dos controles só respondem aos nomes do rascunho
+  W3C (`::slider-thumb`, `::step-up`…). CSS escrito para Firefox
+  (`::-moz-range-thumb`) ou Chrome/Safari (`::-webkit-slider-thumb`) é
+  ignorado. A equivalência está em
+  [Formulários e controles](../10-formularios-e-controles.md#equivalentes-em-outros-navegadores).
+- **Por que importa:** CSS existente não estiliza os controles do tbox sem
+  ser reescrito; e o PNG de referência de um fixture capturado no Firefox
+  não mostra as partes com os nomes do rascunho.
+- **Quando revisitar:** quando houver CSS real a portar. Seria uma tabela
+  de apelidos na resolução das partes (`src/style/tbox_style_parts.c`),
+  com cuidado onde não há correspondência 1:1 (o spin button único do
+  Chrome; as três cores do meter).
+- **Toca:** `src/style/tbox_style_parts.c`, `docs/10-formularios-e-controles.md`.

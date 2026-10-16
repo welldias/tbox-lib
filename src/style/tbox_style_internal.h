@@ -147,4 +147,9 @@ tbox_html_node *tbox_style_generated_node(tbox_style_generated *generated, const
 /* Leaving `element`: drops the counters its children created. */
 void tbox_style_generated_leave(tbox_style_generated *generated, const tbox_html_node *element);
 
+/* Resolves the control parts `node` has (::slider-thumb, ::selection...)
+ * against its own already-resolved `style` and stores them, allocated in
+ * `arena`, in style->parts. See tbox_style_part. */
+void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena);
+
 #endif /* TBOX_STYLE_INTERNAL_H */

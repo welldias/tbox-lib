@@ -156,7 +156,7 @@ do CSS e emite comandos (`tbox_paint_op`):
 | `TEXT_RUN` | Um trecho de texto com uma face, uma cor e seus [glifos posicionados](#texto-como-glifos-posicionados) |
 | `IMAGE` | Imagens e `background-image` |
 | `GRADIENT` | Gradientes lineares/radiais/cônicos (e `repeating-`) |
-| `FILL_RING` | Retângulo arredondado menos outro (bordas e contornos arredondados, sombras `inset`) |
+| `FILL_RING` | Retângulo arredondado menos outro (bordas e contornos arredondados, sombras `inset`). Um `outline` sólido numa caixa com `border-radius` circular vira um anel que acompanha os cantos (raio da borda + `outline-offset`, mais a largura por fora); com cantos elípticos ou outros estilos, segue reto |
 | `WAVY_LINE` | `text-decoration-style: wavy` |
 | `BACKDROP_FILTER` | `backdrop-filter`: aplica a lista de `filters` aos pixels já pintados na forma |
 | `LAYER_BEGIN` / `LAYER_MASK` / `LAYER_END` | [camada de composição](#camadas-de-composição) |

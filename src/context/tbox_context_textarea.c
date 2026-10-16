@@ -18,23 +18,36 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
                 if (lines != NULL && runs != NULL) {
                     double line_height = tbox_context_style_line_height(style, face);
                     /* Each paragraph (up to a '\n') is shaped from the start
-                     * of the current line; a line breaks before the
-                     * codepoint that would overflow it, and the rest of the
-                     * paragraph is shaped again from there. */
+                     * of the current line. Like a browser's soft wrap, a
+                     * line that overflows breaks after its last space (the
+                     * spaces hang at the line end and never overflow it);
+                     * only a word wider than the line breaks before the
+                     * codepoint that overflows. The rest of the paragraph
+                     * is shaped again from the break. */
                     size_t count = 0, start = 0;
                     for (;;) {
                         size_t end = start;
                         while (end < field->length && field->value[end] != '\n') end++;
                         size_t line_start = start;
+                        size_t space_end = 0; /* past the line's last space run; 0 = none */
+                        double space_end_width = 0.0;
                         tbox_text_measurer line;
                         tbox_text_measurer_init(&line, face, style->letter_spacing, field->value + line_start, end - line_start);
                         while (line.at < line.length) {
                             size_t before       = line.at;
                             double before_width = line.width;
+                            char c              = line.data[before];
+                            bool space          = c == ' ' || c == '\t';
                             tbox_text_measurer_step(&line);
-                            if (line.width > box->content_box.width && before > 0) {
-                                lines[count++] = (tbox_text_line){line_start, line_start + before, before_width};
-                                line_start += before;
+                            if (space) {
+                                space_end       = line.at;
+                                space_end_width = line.width;
+                            } else if (line.width > box->content_box.width && before > 0) {
+                                size_t at   = space_end > 0 ? space_end : before;
+                                double used = space_end > 0 ? space_end_width : before_width;
+                                lines[count++] = (tbox_text_line){line_start, line_start + at, used};
+                                line_start += at;
+                                space_end = 0;
                                 tbox_text_measurer_finish(&line);
                                 tbox_text_measurer_init(&line, face, style->letter_spacing, field->value + line_start, end - line_start);
                             }
@@ -96,15 +109,18 @@ void tbox_context_paint_textarea_caret(tbox_context *ctx, tbox_display_list *out
                 for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                     if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                         clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
+                /* ::selection, as in tbox_context_paint_text_input_caret. */
+                const tbox_style_part_style *selection = tbox_context_part(style, TBOX_STYLE_PART_SELECTION);
                 tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena,
-                    (out_list->count + field->line_count + 1) * sizeof(*items));
+                    (out_list->count + 2 * field->line_count + 1) * sizeof(*items));
                 if (items != NULL) {
                     size_t count = 0;
                     size_t start = field->anchor < field->cursor ? field->anchor : field->cursor;
                     size_t end = field->anchor > field->cursor ? field->anchor : field->cursor;
                     for (size_t i = 0; i < out_list->count; i++) {
                         tbox_paint_op op = out_list->items[i];
-                        bool own_text = false;
+                        bool own_text = false, selected_text = false;
+                        tbox_rect selected = {0};
                         if (op.kind == TBOX_PAINT_TEXT_RUN)
                             for (size_t run = 0; run < box->text_run_count; run++)
                                 if (op.text.data == box->text_runs[run].text.data &&
@@ -118,12 +134,22 @@ void tbox_context_paint_textarea_caret(tbox_context *ctx, tbox_display_list *out
                                 tbox_string_view text = tbox_string_view_make(field->value + line_start, line_end - line_start);
                                 double left = box->content_box.x + tbox_text_prefix_width(face, style->letter_spacing, text, a - line_start);
                                 double right = box->content_box.x + tbox_text_prefix_width(face, style->letter_spacing, text, b - line_start);
+                                selected = (tbox_rect){left, op.rect.y, right - left, line_height};
+                                selected_text = selection->color_declared;
                                 items[count++] = (tbox_paint_op){.kind = TBOX_PAINT_FILL_RECT,
-                                    .rect = {left, op.rect.y, right - left, line_height},
-                                    .color = {130, 175, 235, 255}, .has_clip = true, .clip = clip};
+                                    .rect = selected,
+                                    .color = selection->background_declared ? selection->background_color :
+                                             (tbox_css_rgba){130, 175, 235, 255},
+                                    .has_clip = true, .clip = clip};
                             }
                         }
                         items[count++] = op;
+                        if (selected_text) {
+                            op.color = selection->color;
+                            op.clip  = op.has_clip ? tbox_context_rect_intersection(op.clip, selected) : selected;
+                            op.has_clip = true;
+                            items[count++] = op;
+                        }
                     }
                     size_t row = 0;
                     for (size_t i = 0; i < field->line_count; i++)

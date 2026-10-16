@@ -3,10 +3,28 @@
 static double tbox_context_range_clamp_snap(double value, double min, double max,
                                             double step, bool any_step);
 
+#define TBOX_RANGE_THUMB 14.0
+#define TBOX_RANGE_TRACK 4.0
+static const tbox_css_rgba tbox_range_track_color = {205, 210, 216, 255};
+
+/* The span the thumb's center travels: the content box inset by half the
+ * thumb on each side. Painting and pointer input share it. */
+static bool tbox_context_range_span(const tbox_layout_box *box, double *left, double *width) {
+    const tbox_style_part_style *thumb = tbox_context_part(box->style, TBOX_STYLE_PART_SLIDER_THUMB);
+    double thumb_width = tbox_context_part_size(thumb->width, box->content_box.width, TBOX_RANGE_THUMB);
+    *left  = box->content_box.x + thumb_width / 2.0;
+    *width = box->content_box.width - thumb_width;
+    return *width > 0.0;
+}
+
+/* Track, fill and thumb are the ::slider-track/-fill/-thumb parts; the
+ * fill and thumb default to accent-color. They may overflow the input's
+ * box (a thumb taller than it), clipped only by scrolling ancestors. */
 void tbox_context_paint_ranges(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
+        double left, width;
         if (tbox_context_is_range_input(box->node) && box->style != NULL && !box->style->visibility_hidden &&
-            box->content_box.width >= 16.0 && box->content_box.height >= 14.0) {
+            box->content_box.height > 0.0 && tbox_context_range_span(box, &left, &width)) {
             double min, max, step, value;
             bool any_step;
             tbox_context_range_limits(box->node, &min, &max, &step, &any_step);
@@ -14,22 +32,24 @@ void tbox_context_paint_ranges(const tbox_layout_box *box, tbox_vector *items) {
             double progress = max > min ? (value - min) / (max - min) : 0.0;
             if (progress < 0.0) progress = 0.0;
             if (progress > 1.0) progress = 1.0;
-            tbox_rect clip = box->content_box;
-            for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
-                    clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
-            double left = box->content_box.x + 8.0;
-            double width = box->content_box.width - 16.0;
-            double center_y = box->content_box.y + box->content_box.height / 2.0;
-            tbox_context_push_fill(items, (tbox_rect){left, center_y - 2.0, width, 4.0},
-                (tbox_css_rgba){205, 210, 216, 255}, true, clip);
-            tbox_context_push_fill(items, (tbox_rect){left, center_y - 2.0, width * progress, 4.0},
-                (tbox_css_rgba){65, 115, 195, 255}, true, clip);
-            tbox_paint_op *thumb = tbox_vector_push(items);
-            *thumb = (tbox_paint_op){.kind = TBOX_PAINT_FILL_RECT,
-                .rect = {left + width * progress - 7.0, center_y - 7.0, 14.0, 14.0},
-                .color = {65, 115, 195, 255}, .radius = 7.0,
-                .has_clip = true, .clip = clip};
+            tbox_rect clip = {0};
+            bool has_clip = tbox_context_ancestor_clip(box, &clip);
+            const tbox_style_part_style *track = tbox_context_part(box->style, TBOX_STYLE_PART_SLIDER_TRACK);
+            const tbox_style_part_style *fill  = tbox_context_part(box->style, TBOX_STYLE_PART_SLIDER_FILL);
+            const tbox_style_part_style *thumb = tbox_context_part(box->style, TBOX_STYLE_PART_SLIDER_THUMB);
+            double height        = box->content_box.height;
+            double center_y      = box->content_box.y + height / 2.0;
+            double track_height  = tbox_context_part_size(track->height, height, TBOX_RANGE_TRACK);
+            double fill_height   = tbox_context_part_size(fill->height, height, track_height);
+            double thumb_width   = tbox_context_part_size(thumb->width, box->content_box.width, TBOX_RANGE_THUMB);
+            double thumb_height  = tbox_context_part_size(thumb->height, height, TBOX_RANGE_THUMB);
+            tbox_css_rgba accent = tbox_context_accent_color(box->style);
+            tbox_context_paint_part(items, (tbox_rect){left, center_y - track_height / 2.0, width, track_height},
+                track, tbox_range_track_color, has_clip, clip);
+            tbox_context_paint_part(items, (tbox_rect){left, center_y - fill_height / 2.0, width * progress, fill_height},
+                fill, accent, has_clip, clip);
+            tbox_context_paint_part(items, (tbox_rect){left + width * progress - thumb_width / 2.0,
+                center_y - thumb_height / 2.0, thumb_width, thumb_height}, thumb, accent, has_clip, clip);
         }
         tbox_context_paint_ranges(box->first_child, items);
     }
@@ -37,7 +57,10 @@ void tbox_context_paint_ranges(const tbox_layout_box *box, tbox_vector *items) {
 
 /* Passive gauges share the range control's rectangle painter but have no
  * thumb, focus handling, or input events. Their fallback text stays in the
- * DOM and is suppressed by Layout while the visual gauge is available. */
+ * DOM and is suppressed by Layout while the visual gauge is available.
+ * ::slider-track is the whole content box and ::slider-fill the value's
+ * share of the inside of its border; an undeclared fill is accent-color (progress) or the
+ * meter's low/high/optimum color. */
 void tbox_context_paint_gauges(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
         bool progress = box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT &&
@@ -56,7 +79,7 @@ void tbox_context_paint_gauges(const tbox_layout_box *box, tbox_vector *items) {
             double fraction = max > min ? (value - min) / (max - min) : 0.0;
             if (!determinate && meter) fraction = 0.0;
 
-            tbox_css_rgba fill = progress ? (tbox_css_rgba){65, 115, 195, 255} :
+            tbox_css_rgba fill = progress ? tbox_context_accent_color(box->style) :
                 (tbox_css_rgba){46, 145, 83, 255};
             if (meter) {
                 double low = min, high = max, optimum = (min + max) / 2.0;
@@ -81,9 +104,12 @@ void tbox_context_paint_gauges(const tbox_layout_box *box, tbox_vector *items) {
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
-            tbox_context_push_fill(items, box->content_box,
-                (tbox_css_rgba){205, 210, 216, 255}, true, clip);
-            tbox_rect filled = box->content_box;
+            const tbox_style_part_style *track = tbox_context_part(box->style, TBOX_STYLE_PART_SLIDER_TRACK);
+            tbox_context_paint_part(items, box->content_box, track, tbox_range_track_color, true, clip);
+            /* The fill runs inside the track's border. */
+            tbox_rect filled = {box->content_box.x + track->border_widths[3], box->content_box.y + track->border_widths[0],
+                box->content_box.width - track->border_widths[1] - track->border_widths[3],
+                box->content_box.height - track->border_widths[0] - track->border_widths[2]};
             if (progress && !determinate) {
                 filled.x += filled.width * 0.35;
                 filled.width *= 0.30;
@@ -91,7 +117,8 @@ void tbox_context_paint_gauges(const tbox_layout_box *box, tbox_vector *items) {
                 filled.width *= fraction;
             }
             if (filled.width > 0.0)
-                tbox_context_push_fill(items, filled, fill, true, clip);
+                tbox_context_paint_part(items, filled, tbox_context_part(box->style, TBOX_STYLE_PART_SLIDER_FILL),
+                    fill, true, clip);
         }
         tbox_context_paint_gauges(box->first_child, items);
     }
@@ -166,10 +193,9 @@ bool tbox_context_range_commit(tbox_context *ctx, const tbox_html_node *node, do
 
 bool tbox_context_range_choose_x(tbox_context *ctx, const tbox_html_node *node, double x) {
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, node);
-    if (box == NULL) return false;
-    double width = box->content_box.width - 16.0;
-    if (width <= 0.0) return false;
-    double position = (x - box->content_box.x - 8.0) / width;
+    double left, width;
+    if (box == NULL || box->style == NULL || !tbox_context_range_span(box, &left, &width)) return false;
+    double position = (x - left) / width;
     if (position < 0.0) position = 0.0;
     if (position > 1.0) position = 1.0;
     double min, max, step;

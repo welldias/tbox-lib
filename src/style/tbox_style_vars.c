@@ -88,8 +88,8 @@ static bool tbox_style_vars_substitute_text(tbox_arena *arena, tbox_string_view 
             }
             if (j >= text.size)
                 return false; /* unterminated var( */
-            size_t name_end        = comma != 0 ? comma : j;
-            tbox_string_view name  = tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data + i + 4, name_end - i - 4));
+            size_t name_end       = comma != 0 ? comma : j;
+            tbox_string_view name = tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data + i + 4, name_end - i - 4));
             tbox_string_view value;
             if (!tbox_style_vars_is_custom(name))
                 return false;
@@ -150,7 +150,7 @@ tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style
             }
             continue;
         }
-        result.items[result.count]       = *decl;
+        result.items[result.count] = *decl;
         /* Invalid at computed-value time: the property behaves as unset. */
         result.items[result.count].value = valid ? value : tbox_string_view_from_cstr("unset");
         result.count++;
@@ -202,11 +202,15 @@ static bool tbox_style_light_dark_text(tbox_arena *arena, tbox_string_view text,
         int nesting = 0;
         for (size_t i = open; i < text.size && close == 0; i++) {
             char c = text.data[i];
-            if (c == '(') nesting++;
-            else if (c == ')' && nesting > 0) nesting--;
-            else if (c == ')') close = i;
+            if (c == '(')
+                nesting++;
+            else if (c == ')' && nesting > 0)
+                nesting--;
+            else if (c == ')')
+                close = i;
             else if (c == ',' && nesting == 0) {
-                if (comma != 0) return false; /* more than two arguments */
+                if (comma != 0)
+                    return false; /* more than two arguments */
                 comma = i;
             }
         }

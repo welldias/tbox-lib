@@ -337,6 +337,10 @@ bool tbox_context_is_search_input(const tbox_html_node *node);
  * within the shaping of the whole value. */
 double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face, tbox_string_view value, size_t offset, double letter_spacing);
 bool tbox_context_is_number_input(const tbox_html_node *node);
+/* The number input's ::step-control column, or a non-empty search input's
+ * ::clear-icon column, at the content box's right edge (16px wide by
+ * default). False when the input has none or is too small for it. */
+bool tbox_context_input_control_rect(const tbox_layout_box *box, tbox_rect *out);
 bool tbox_context_is_range_input(const tbox_html_node *node);
 bool tbox_context_number_syntax(tbox_string_view value, bool complete);
 bool tbox_context_number_attribute(const tbox_html_node *node, const char *name, double *out);
@@ -367,6 +371,21 @@ const char *tbox_context_default_control_css(void);
 tbox_style tbox_context_control_style(tbox_context *ctx, const tbox_html_node *owner, const char *part, const char *state);
 double tbox_context_control_size(tbox_style_length length, double fallback);
 void tbox_context_paint_control_box(tbox_vector *items, tbox_rect rect, const tbox_style *style, bool has_clip, tbox_rect clip);
+/* Control parts (docs/10-formularios-e-controles.md, "Partes dos
+ * controles"). tbox_context_part never returns NULL: a style without the
+ * part gives an empty one (no size, colors undeclared). */
+const tbox_style_part_style *tbox_context_part(const tbox_style *style, tbox_style_part part);
+/* AUTO -> fallback; px or % of `base` otherwise. */
+double tbox_context_part_size(tbox_style_length length, double base, double fallback);
+/* accent-color, or the built-in blue for auto. */
+tbox_css_rgba tbox_context_accent_color(const tbox_style *style);
+/* `part`'s border and radii around `rect`, filled with its declared
+ * background or else `background`. */
+void tbox_context_paint_part(tbox_vector *items, tbox_rect rect, const tbox_style_part_style *part,
+                             tbox_css_rgba background, bool has_clip, tbox_rect clip);
+/* Intersection of the padding boxes of `box`'s clipping ancestors; false
+ * when none clips. */
+bool tbox_context_ancestor_clip(const tbox_layout_box *box, tbox_rect *clip);
 const tbox_font_face *tbox_context_control_font(tbox_context *ctx, const tbox_style *style);
 
 #endif /* TBOX_CONTEXT_INTERNAL_H */

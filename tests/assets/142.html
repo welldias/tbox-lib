@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* accent-color nos controles (docs/10-formularios-e-controles.md, "Cor
+     * de destaque"): marca do checkbox, ponto do radio, preenchimento e
+     * polegar do range e barra do progress. O trilho e as cores do meter
+     * não mudam. */
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    section {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+    }
+
+    p {
+      margin: 6px 0;
+    }
+
+    progress,
+    meter {
+      width: 200px;
+    }
+
+    /* Herdada: definida no contêiner, vale para os controles dentro dele. */
+    .magenta {
+      accent-color: #c81e78;
+    }
+
+    /* Por controle, inclusive por var(). */
+    :root {
+      --envio: #0e9488;
+    }
+
+    #volume {
+      accent-color: #e67e22;
+    }
+
+    #brilho {
+      accent-color: #7c3aed;
+    }
+
+    #upload {
+      accent-color: var(--envio);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>accent-color nos controles</h1>
+
+  <section>
+    <h2>Padrão (auto)</h2>
+    <p><input type="range" value="60"> <progress value="60" max="100"></progress></p>
+    <p><input type="checkbox" checked> Checkbox <input type="radio" checked> Radio</p>
+  </section>
+
+  <section class="magenta">
+    <h2>Herdada do contêiner</h2>
+    <p><input type="range" value="60"> <progress value="60" max="100"></progress></p>
+    <p><input type="checkbox" checked> Checkbox <input type="radio" checked> Radio</p>
+  </section>
+
+  <section>
+    <h2>Por controle</h2>
+    <p>Volume <input id="volume" type="range" value="30"></p>
+    <p>Brilho <input id="brilho" type="range" value="80"></p>
+    <p>Envio <progress id="upload" value="45" max="100"></progress></p>
+  </section>
+
+  <section class="magenta">
+    <h2>meter ignora o destaque</h2>
+    <p>Bom <meter min="0" max="100" low="40" high="70" optimum="55" value="55"></meter></p>
+    <p>Atenção <meter min="0" max="100" low="40" high="70" optimum="55" value="85"></meter></p>
+    <p>Ruim <meter min="0" max="100" low="40" high="70" optimum="20" value="90"></meter></p>
+  </section>
+</body>
+
+</html>

@@ -1611,8 +1611,14 @@ int tbox_test_context_run(void) {
 
             tbox_css_selector_set_focus_context(input);
             computed                                    = tbox_css_cascade_resolve_stylesheet(ua_sheet, input);
-            const tbox_css_resolved_declaration *border = tbox_css_computed_style_find(&computed, tbox_string_view_make("border", 6));
-            TBOX_TEST_ASSERT_MSG(border != NULL && string_view_equal_cstr(border->value, "2px solid #0000ff"), "focused input border must override the generic UA border");
+            /* Focus is an outline over the 1px border: the border (and so
+             * the layout) stays the unfocused one. */
+            const tbox_css_resolved_declaration *border  = tbox_css_computed_style_find(&computed, tbox_string_view_make("border", 6));
+            const tbox_css_resolved_declaration *outline = tbox_css_computed_style_find(&computed, tbox_string_view_make("outline", 7));
+            const tbox_css_resolved_declaration *offset  = tbox_css_computed_style_find(&computed, tbox_string_view_make("outline-offset", 14));
+            TBOX_TEST_ASSERT_MSG(border != NULL && string_view_equal_cstr(border->value, "1px solid #808080"), "focus must keep the generic UA border");
+            TBOX_TEST_ASSERT_MSG(outline != NULL && string_view_equal_cstr(outline->value, "2px solid #0000ff"), "focused input must get the UA focus ring");
+            TBOX_TEST_ASSERT_MSG(offset != NULL && string_view_equal_cstr(offset->value, "-1px"), "the focus ring covers the 1px border");
             tbox_css_computed_style_destroy(&computed);
             tbox_css_selector_set_focus_context(NULL);
 
@@ -3180,7 +3186,7 @@ int tbox_test_context_run(void) {
                 double spinner_y     = required_box->content_box.y + required_box->content_box.height / 4.0;
                 bool painted_spinner = false;
                 for (size_t i = 0; i < list.count; i++)
-                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].color.r == 238 && list.items[i].rect.x == required_box->content_box.x + required_box->content_box.width - 16.0)
+                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].color.r == 238 && list.items[i].rect.x == required_box->content_box.x + required_box->content_box.width - 15.0) /* inside the 1px border-left */
                         painted_spinner = true;
                 TBOX_TEST_ASSERT(painted_spinner);
                 TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, spinner_x, spinner_y));
@@ -3752,6 +3758,223 @@ int tbox_test_context_run(void) {
             const tbox_layout_box *box = tbox_context_hit_test(ctx, 10.0, 10.0);
             TBOX_TEST_ASSERT(box != NULL && box->content_box.width == 90.0 && box->content_box.height == 35.0);
             tbox_context_close(ctx);
+        }
+    }
+
+    /* Control parts paint from the document's pseudo-elements: sizes,
+     * backgrounds, borders and colors, with pointer input following the
+     * new geometry (thumb span, step-control width). */
+    {
+        const char *html = "<div><input type='range' value='50'><progress value='50' max='100'></progress>"
+            "<meter min='0' max='100' value='90' low='20' high='80'></meter><select><option>A</option></select>"
+            "<input type='number' value='1'><input type='search' value='x'><input type='file'>"
+            "<input type='radio' checked><input type='color' value='#00ff00'></div>";
+        const char *css = "input[type=range]::slider-thumb { width: 20px; background-color: rgb(1, 2, 3); }"
+            "progress::slider-track { border: 2px solid rgb(4, 5, 6); } progress::slider-fill { background-color: rgb(7, 8, 9); }"
+            "meter::slider-fill { background-color: rgb(10, 11, 12); }"
+            "select::picker-icon { color: rgb(13, 14, 15); }"
+            "input[type=number]::step-control { width: 24px; background-color: rgb(16, 17, 18); }"
+            "input[type=search]::clear-icon { color: rgb(19, 20, 21); }"
+            "input[type=file]::file-selector-button { width: 50px; background-color: rgb(22, 23, 24); }"
+            "input[type=radio]::checkmark { color: rgb(25, 26, 27); }"
+            "input[type=color]::color-swatch { border: 3px solid rgb(28, 29, 30); }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 900.0, 300.0, &list);
+            tbox_html_node *root = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            const tbox_html_node *range = root->first_child, *progress = range->next_sibling;
+            const tbox_html_node *number = progress->next_sibling->next_sibling->next_sibling;
+            const tbox_layout_box *range_box = find_context_box(ctx, range), *progress_box = find_context_box(ctx, progress);
+            const tbox_layout_box *number_box = find_context_box(ctx, number);
+            TBOX_TEST_ASSERT(range_box != NULL && progress_box != NULL && number_box != NULL);
+            bool thumb = false, track = false, fill = false, meter = false, arrow = false, column = false;
+            bool clear = false, button = false, dot = false, swatch = false;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                tbox_css_rgba c = op->color;
+                if (op->kind == TBOX_PAINT_FILL_RING) {
+                    if (c.r == 28 && c.g == 29 && c.b == 30) swatch = true;
+                    continue;
+                }
+                if (op->kind != TBOX_PAINT_FILL_RECT) continue;
+                if (c.r == 1 && c.g == 2 && c.b == 3 && op->rect.width == 20.0) thumb = true;
+                if (c.r == 4 && c.g == 5 && c.b == 6) track = true;
+                if (c.r == 7 && c.g == 8 && c.b == 9 && progress_box != NULL && op->rect.x == progress_box->content_box.x + 2.0 &&
+                    op->rect.width == (progress_box->content_box.width - 4.0) * 0.5)
+                    fill = true;
+                if (c.r == 10 && c.g == 11 && c.b == 12) meter = true;
+                if (c.r == 13 && c.g == 14 && c.b == 15) arrow = true;
+                if (c.r == 16 && c.g == 17 && c.b == 18 && op->rect.width == 23.0) column = true; /* inside the 1px border-left */
+                if (c.r == 19 && c.g == 20 && c.b == 21) clear = true;
+                if (c.r == 22 && c.g == 23 && c.b == 24 && op->rect.width == 48.0) button = true; /* inside the 1px border */
+                if (c.r == 25 && c.g == 26 && c.b == 27) dot = true;
+            }
+            TBOX_TEST_ASSERT(thumb && track && fill && meter && arrow && column);
+            TBOX_TEST_ASSERT(clear && button && dot && swatch);
+            /* The thumb's center travels a span inset by half its width. */
+            if (range_box != NULL) {
+                double y = range_box->content_box.y + range_box->content_box.height / 2.0;
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, range_box->content_box.x + 10.0, y));
+                const tbox_html_attribute *value = tbox_html_node_get_attribute(range, tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "0"));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, range_box->content_box.x + range_box->content_box.width - 10.0, y));
+                value = tbox_html_node_get_attribute(range, tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "100"));
+            }
+            /* A click 20px from the right edge is inside the 24px column. */
+            if (number_box != NULL) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, number_box->content_box.x + number_box->content_box.width - 20.0,
+                    number_box->content_box.y + 2.0));
+                const tbox_html_attribute *value = tbox_html_node_get_attribute(number, tbox_string_view_make("value", 5));
+                TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "2"));
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Focus is a ring (outline), not a thicker border: focusing a control
+     * moves neither it, its content, nor what follows it. */
+    {
+        const char *html = "<div><input value='a'><span>t</span><button>b</button><span>t</span>"
+            "<select><option>o</option></select><span>t</span><textarea>x</textarea><span>t</span>"
+            "<input type='checkbox'><span>t</span></div>";
+        tbox_context *ctx = open_cstr(html, "span { display: inline-block; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 900.0, 300.0, &list);
+            const tbox_html_node *root = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            tbox_rect before[10], content[10];
+            size_t count = 0;
+            for (const tbox_html_node *node = root->first_child; node != NULL && count < 10; node = node->next_sibling, count++) {
+                const tbox_layout_box *box = find_context_box(ctx, node);
+                TBOX_TEST_ASSERT(box != NULL);
+                before[count]  = box != NULL ? box->border_box : (tbox_rect){0};
+                content[count] = box != NULL ? box->content_box : (tbox_rect){0};
+            }
+            for (size_t control = 0; control < count; control += 2) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                tbox_context_run_frame(ctx, 900.0, 300.0, &list);
+                size_t i = 0;
+                for (const tbox_html_node *node = root->first_child; node != NULL && i < count; node = node->next_sibling, i++) {
+                    const tbox_layout_box *box = find_context_box(ctx, node);
+                    if (i == control) TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == node);
+                    TBOX_TEST_ASSERT(box != NULL && memcmp(&box->border_box, &before[i], sizeof(tbox_rect)) == 0 &&
+                                     memcmp(&box->content_box, &content[i], sizeof(tbox_rect)) == 0);
+                }
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Range and image inputs show no focus ring (their UA rule clears it,
+     * as it cleared the old focus border); checking a checkbox or radio
+     * moves neither it nor the text beside it. */
+    {
+        const char *html = "<p><input type='range'><input type='checkbox'>Aceito <input type='radio'>Sim</p>";
+        tbox_context *ctx = open_cstr(html, "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            const tbox_html_node *p        = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            const tbox_html_node *range    = p->first_child;
+            const tbox_html_node *checkbox = range->next_sibling;
+            const tbox_html_node *radio    = checkbox->next_sibling->next_sibling;
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == range);
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            double x, y;
+            const tbox_layout_box *range_box = hit_point_for(ctx, range, 600.0, 200.0, &x, &y) ? tbox_context_hit_test(ctx, x, y) : NULL;
+            TBOX_TEST_ASSERT(range_box != NULL && range_box->style->outline_width == 0.0);
+            const tbox_html_node *toggles[2] = { checkbox, radio };
+            for (size_t t = 0; t < 2; t++) {
+                const tbox_layout_box *box = hit_point_for(ctx, toggles[t], 600.0, 200.0, &x, &y) ? tbox_context_hit_test(ctx, x, y) : NULL;
+                TBOX_TEST_ASSERT(box != NULL);
+                if (box == NULL) continue;
+                tbox_rect before = box->border_box;
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, y));
+                tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+                box = tbox_context_hit_test(ctx, x, y);
+                TBOX_TEST_ASSERT(tbox_html_node_get_attribute(toggles[t], tbox_string_view_make("checked", 7)) != NULL);
+                TBOX_TEST_ASSERT(box != NULL && box->node == toggles[t] && memcmp(&box->border_box, &before, sizeof(tbox_rect)) == 0);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* ::selection: its background behind the selection and its color on
+     * the selected text; without it, the built-in blue. */
+    {
+        const char *html = "<div><input value='hello'><textarea>world</textarea></div>";
+        tbox_context *ctx = open_cstr(html, "input::selection { background-color: rgb(31, 32, 33); color: rgb(34, 35, 36); }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            for (int field = 0; field < 2; field++) {
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
+                tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+                bool background = false, text = false, builtin = false;
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    tbox_css_rgba c = op->color;
+                    if (op->kind == TBOX_PAINT_FILL_RECT && c.r == 31 && c.g == 32 && c.b == 33) background = true;
+                    if (op->kind == TBOX_PAINT_FILL_RECT && c.r == 130 && c.g == 175 && c.b == 235) builtin = true;
+                    if (op->kind == TBOX_PAINT_TEXT_RUN && c.r == 34 && c.g == 35 && c.b == 36 &&
+                        string_view_equal_cstr(op->text, "hello")) text = true;
+                }
+                if (field == 0) TBOX_TEST_ASSERT(background && text && !builtin);
+                else TBOX_TEST_ASSERT(builtin && !background && !text);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Textarea soft wrap breaks after spaces (which hang at the line end),
+     * and inside a word only when the word alone is wider than the line. */
+    {
+        const tbox_font_face *face = NULL;
+        tbox_context *ctx          = open_cstr("<textarea>x</textarea>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 300.0, 160.0, &list);
+            const tbox_layout_box *box = tbox_context_hit_test(ctx, 10.0, 10.0);
+            if (box != NULL)
+                face = tbox_font_face_cache_get(fonts, tbox_string_view_make(box->style->font_family, strlen(box->style->font_family)), box->style->font_weight_bold, box->style->font_italic, box->style->font_size);
+            tbox_context_close(ctx);
+        }
+        TBOX_TEST_ASSERT(face != NULL);
+        if (face != NULL) {
+            /* Room for "aaa bbb" plus a bit, not for "aaa bbb c". */
+            double width = tbox_font_measure_text(face, tbox_string_view_make("aaa bbb", 7)) + 1.0;
+            char css[96];
+            snprintf(css, sizeof(css), "textarea { width: %.2fpx; padding: 0; }", width);
+            ctx = open_cstr("<textarea>aaa bbb   ccc abcdefghijklmnopqrstuvwxyz</textarea>", css, fonts);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx != NULL) {
+                tbox_display_list list;
+                tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+                const tbox_layout_box *box = tbox_context_hit_test(ctx, 10.0, 10.0);
+                TBOX_TEST_ASSERT(box != NULL && box->text_run_count >= 4);
+                if (box != NULL && box->text_run_count >= 4) {
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[0].text, "aaa bbb   "));
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(box->text_runs[1].text, "ccc "));
+                    /* The long word fills whole lines, then the rest. */
+                    for (size_t i = 2; i < box->text_run_count; i++) {
+                        TBOX_TEST_ASSERT(box->text_runs[i].text.size > 1 && memchr(box->text_runs[i].text.data, ' ', box->text_runs[i].text.size) == NULL);
+                        if (i + 1 < box->text_run_count)
+                            TBOX_TEST_ASSERT(box->text_runs[i].rect.width <= box->content_box.width);
+                    }
+                    const tbox_layout_text_run *last = &box->text_runs[box->text_run_count - 1];
+                    TBOX_TEST_ASSERT(last->text.data[last->text.size - 1] == 'z');
+                }
+                tbox_context_close(ctx);
+            }
         }
     }
 
@@ -4622,6 +4845,47 @@ int tbox_test_context_run(void) {
                     updated_fill = true;
             }
             TBOX_TEST_ASSERT(updated_text && updated_fill);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* accent-color (inherited) paints the range fill and thumb and the
+     * progress bar; auto keeps the built-in blue and meter stays semantic. */
+    {
+        const char *html = "<div><input id='plain' type='range' value='50'>"
+            "<p class='accent'><input type='range' value='50'><progress value='50' max='100'></progress>"
+            "<meter min='0' max='100' value='90' low='20' high='80'></meter></p></div>";
+        tbox_context *ctx = open_cstr(html, ".accent { accent-color: rgb(200, 30, 120); }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            tbox_html_node *root = (tbox_html_node *)tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            const tbox_html_node *plain = root->first_child;
+            const tbox_html_node *range = plain->next_sibling->first_child;
+            const tbox_html_node *progress = range->next_sibling;
+            const tbox_html_node *meter = progress->next_sibling;
+            const tbox_layout_box *boxes[4] = {find_context_box(ctx, plain), find_context_box(ctx, range),
+                find_context_box(ctx, progress), find_context_box(ctx, meter)};
+            TBOX_TEST_ASSERT(boxes[0] != NULL && boxes[1] != NULL && boxes[2] != NULL && boxes[3] != NULL);
+            /* Per box: fills whose color is the accent, and fills in the old blue. */
+            int accent[4] = {0}, blue[4] = {0};
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind != TBOX_PAINT_FILL_RECT) continue;
+                for (size_t b = 0; b < 4; b++) {
+                    if (boxes[b] == NULL || op->rect.y < boxes[b]->border_box.y - 1.0 ||
+                        op->rect.y + op->rect.height > boxes[b]->border_box.y + boxes[b]->border_box.height + 1.0 ||
+                        op->rect.x < boxes[b]->border_box.x - 8.0 ||
+                        op->rect.x >= boxes[b]->border_box.x + boxes[b]->border_box.width) continue;
+                    if (op->color.r == 200 && op->color.g == 30 && op->color.b == 120) accent[b]++;
+                    if (op->color.r == 65 && op->color.g == 115 && op->color.b == 195) blue[b]++;
+                }
+            }
+            TBOX_TEST_ASSERT(blue[0] == 2 && accent[0] == 0);  /* fill + thumb */
+            TBOX_TEST_ASSERT(accent[1] == 2 && blue[1] == 0);
+            TBOX_TEST_ASSERT(accent[2] == 1 && blue[2] == 0);
+            TBOX_TEST_ASSERT(accent[3] == 0);
             tbox_context_close(ctx);
         }
     }

@@ -262,11 +262,8 @@ void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *o
         if (field != NULL && box->style != NULL && !box->style->visibility_hidden && box->content_box.width > 0) {
             const tbox_style *style = box->style;
             tbox_rect input_clip = box->content_box;
-            const tbox_html_attribute *search_value = tbox_context_is_search_input(box->node) ?
-                tbox_html_node_get_attribute(box->node, tbox_string_view_make("value", 5)) : NULL;
-            double control_width = box->content_box.width >= 20.0 &&
-                (tbox_context_is_number_input(box->node) ||
-                 (search_value != NULL && search_value->value.size > 0)) ? 16.0 : 0.0;
+            tbox_rect control;
+            double control_width = tbox_context_input_control_rect(box, &control) ? control.width : 0.0;
             input_clip.width -= control_width;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
@@ -287,8 +284,12 @@ void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *o
                 double x = box->content_box.x + cursor_x - field->scroll_x;
                 double height = tbox_context_style_line_height(style, face);
                 if (height > box->content_box.height) height = box->content_box.height;
+                /* ::selection: its background behind the selected text and,
+                 * when it declares a color, the text again in that color
+                 * clipped to the selection. */
+                const tbox_style_part_style *selection = tbox_context_part(style, TBOX_STYLE_PART_SELECTION);
                 tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena,
-                    (out_list->count + 2) * sizeof(*items));
+                    (out_list->count + 3) * sizeof(*items));
                 if (items != NULL) {
                     size_t count = 0;
                     for (size_t i = 0; i < out_list->count; i++) {
@@ -297,6 +298,8 @@ void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *o
                             op.has_clip &&
                             op.text.data != NULL && box->text_run_count > 0 &&
                             op.text.data == box->text_runs[0].text.data;
+                        bool selected_text = false;
+                        tbox_rect selected = {0};
                         if (input_text) {
                             op.rect.x -= field->scroll_x;
                             op.clip = input_clip;
@@ -310,15 +313,25 @@ void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *o
                                 if (left < box->content_box.x) left = box->content_box.x;
                                 if (right > box->content_box.x + box->content_box.width - control_width)
                                     right = box->content_box.x + box->content_box.width - control_width;
-                                if (right > left) items[count++] = (tbox_paint_op){
-                                    .kind = TBOX_PAINT_FILL_RECT,
-                                    .rect = { left, box->content_box.y, right - left, height },
-                                    .color = { 130, 175, 235, 255 },
-                                    .has_clip = true, .clip = input_clip,
-                                };
+                                if (right > left) {
+                                    selected = (tbox_rect){ left, box->content_box.y, right - left, height };
+                                    selected_text = selection->color_declared;
+                                    items[count++] = (tbox_paint_op){
+                                        .kind = TBOX_PAINT_FILL_RECT,
+                                        .rect = selected,
+                                        .color = selection->background_declared ? selection->background_color :
+                                                 (tbox_css_rgba){ 130, 175, 235, 255 },
+                                        .has_clip = true, .clip = input_clip,
+                                    };
+                                }
                             }
                         }
                         items[count++] = op;
+                        if (selected_text) {
+                            op.color = selection->color;
+                            op.clip  = tbox_context_rect_intersection(input_clip, selected);
+                            items[count++] = op;
+                        }
                     }
                     double caret_width = box->content_box.width < 1.0 ? box->content_box.width : 1.0;
                     items[count++] = (tbox_paint_op){

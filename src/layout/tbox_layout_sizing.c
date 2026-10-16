@@ -298,8 +298,11 @@ void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node,
     tbox_layout_positioned_context context = { origin, origin };
     tbox_layout_box *box                   = tbox_layout_build_element_sized(arena, node, styles, fonts, images, container, 0.0, context, NULL, 0, forced.has_width ? &forced : NULL);
 
+    /* A checkbox's checkmark run is decoration, not a line of content: the
+     * box keeps its bottom-edge baseline whether checked or not, or
+     * checking it would move it vertically. */
     double best_y = -1e300, baseline = box->margin_box.y + box->margin_box.height;
-    if (node_style->overflow_y == TBOX_STYLE_OVERFLOW_Y_VISIBLE)
+    if (node_style->overflow_y == TBOX_STYLE_OVERFLOW_Y_VISIBLE && !tbox_layout_is_checkbox(node))
         tbox_layout_last_baseline(box, &best_y, &baseline);
     word->atomic                  = box;
     word->atomic_node             = node;

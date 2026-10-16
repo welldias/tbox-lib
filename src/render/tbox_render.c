@@ -45,6 +45,12 @@ static tbox_css_rgba tbox_render_accent_color(const tbox_style *style) {
     return style->accent_color.a != 0 ? style->accent_color : style->color;
 }
 
+/* ::checkmark: a declared `color` wins over accent-color. */
+static tbox_css_rgba tbox_render_mark_color(const tbox_style *style) {
+    const tbox_style_part_style *mark = tbox_style_part_find(style, TBOX_STYLE_PART_CHECKMARK);
+    return mark != NULL && mark->color_declared ? mark->color : tbox_render_accent_color(style);
+}
+
 static bool tbox_render_checked_radio(const tbox_html_node *node) {
     if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT || !tbox_string_view_equal_cstr(node->element.tag_name, "input"))
         return false;
@@ -1288,7 +1294,21 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
             offset = min_offset;
         tbox_rect inner            = { b.x - offset, b.y - offset, b.width + 2.0 * offset, b.height + 2.0 * offset };
         tbox_style_border_style st = box->style->outline_style;
-        if (st == TBOX_STYLE_BORDER_STYLE_DOUBLE && w >= 3.0) {
+        /* A solid outline follows a rounded border box (as in current
+         * browsers): its edge radii are the border's grown by the offset,
+         * then by the outline's width. Elliptical corners stay square. */
+        double h[4], v[4];
+        bool rounded = st == TBOX_STYLE_BORDER_STYLE_SOLID && !tbox_render_style_corners(box->style, b, h, v) &&
+                       tbox_render_has_corners(h);
+        if (rounded) {
+            double inner_corners[4], outer_corners[4];
+            for (size_t i = 0; i < 4; i++) {
+                inner_corners[i] = h[i] > 0.0 && h[i] + offset > 0.0 ? h[i] + offset : 0.0;
+                outer_corners[i] = h[i] > 0.0 ? inner_corners[i] + w : 0.0;
+            }
+            tbox_rect outer = { inner.x - w, inner.y - w, inner.width + 2.0 * w, inner.height + 2.0 * w };
+            tbox_render_push_fill_ring(items, outer, outer_corners, inner, inner_corners, c);
+        } else if (st == TBOX_STYLE_BORDER_STYLE_DOUBLE && w >= 3.0) {
             const double widths[4] = { w, w, w, w };
             const bool doubles[4]  = { true, true, true, true };
             tbox_rect outer        = { inner.x - w, inner.y - w, inner.width + 2.0 * w, inner.height + 2.0 * w };
@@ -1312,17 +1332,44 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         }
     }
 
+    /* ::color-swatch: the value's color over the content box, with the
+     * part's radii and border (one ring in the top side's color). */
     tbox_css_rgba input_color;
-    if (visible && tbox_render_color_input(box->node, &input_color))
-        tbox_render_push_fill_rect(items, box->content_box, input_color);
+    if (visible && tbox_render_color_input(box->node, &input_color)) {
+        const tbox_style_part_style *swatch = tbox_style_part_find(box->style, TBOX_STYLE_PART_COLOR_SWATCH);
+        tbox_rect rect = box->content_box;
+        double corners[4] = { 0.0, 0.0, 0.0, 0.0 };
+        if (swatch != NULL) {
+            double base = rect.width < rect.height ? rect.width : rect.height;
+            for (size_t i = 0; i < 4; i++)
+                corners[i] = swatch->border_radii[i] + swatch->border_radii_percent[i] * base / 100.0;
+            if (swatch->border_widths[0] > 0.0 || swatch->border_widths[1] > 0.0 || swatch->border_widths[2] > 0.0 || swatch->border_widths[3] > 0.0) {
+                tbox_rect inner = { rect.x + swatch->border_widths[3], rect.y + swatch->border_widths[0],
+                                    rect.width - swatch->border_widths[1] - swatch->border_widths[3],
+                                    rect.height - swatch->border_widths[0] - swatch->border_widths[2] };
+                double inner_corners[4];
+                tbox_render_inset_corners(corners, rect, inner, inner_corners);
+                tbox_render_push_fill_ring(items, rect, corners, inner, inner_corners, swatch->border_colors[0]);
+                rect = inner;
+                memcpy(corners, inner_corners, sizeof(corners));
+            }
+        }
+        if (rect.width > 0.0 && rect.height > 0.0)
+            tbox_render_push_fill_rect_corners(items, rect, corners, input_color);
+    }
 
     if (visible && box->style != NULL && tbox_render_checked_radio(box->node)) {
         tbox_rect content = box->content_box;
         double side       = content.width < content.height ? content.width : content.height;
-        side *= 0.5;
+        /* ::checkmark width sizes the dot; half the box by default. */
+        const tbox_style_part_style *mark = tbox_style_part_find(box->style, TBOX_STYLE_PART_CHECKMARK);
+        double dot_side   = side * 0.5;
+        if (mark != NULL && mark->width.kind != TBOX_STYLE_LENGTH_AUTO)
+            dot_side = tbox_style_length_resolve(mark->width, side);
+        side = dot_side < side ? dot_side : side;
         if (side > 0.0) {
             tbox_rect dot = { content.x + (content.width - side) / 2.0, content.y + (content.height - side) / 2.0, side, side };
-            tbox_render_push_fill_rect_rounded(items, dot, side / 2.0, tbox_render_accent_color(box->style));
+            tbox_render_push_fill_rect_rounded(items, dot, side / 2.0, tbox_render_mark_color(box->style));
         }
     }
 
@@ -1344,7 +1391,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
                 { 6, 3 }
             };
             for (size_t i = 0; i < sizeof(pixels) / sizeof(pixels[0]); i++)
-                tbox_render_push_fill_rect(items, (tbox_rect){ x + pixels[i][0] * unit, y + pixels[i][1] * unit, unit, unit }, tbox_render_accent_color(box->style));
+                tbox_render_push_fill_rect(items, (tbox_rect){ x + pixels[i][0] * unit, y + pixels[i][1] * unit, unit, unit }, tbox_render_mark_color(box->style));
         }
     }
 
@@ -1446,7 +1493,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         *op                = (tbox_paint_op){ 0 };
         op->kind           = TBOX_PAINT_TEXT_RUN;
         op->rect           = run->rect;
-        op->color          = tbox_render_checked_checkbox(box->node) ? tbox_render_accent_color(run->style) : run->style->color; /* per-run color (run->style, never NULL), replacing the one shared box->style->color -- see docs/dev/historico.md's "v13" section */
+        op->color          = tbox_render_checked_checkbox(box->node) ? tbox_render_mark_color(run->style) : run->style->color; /* per-run color (run->style, never NULL), replacing the one shared box->style->color -- see docs/dev/historico.md's "v13" section */
         op->text           = run->text;
         op->face           = run->font;
         op->letter_spacing = run->style->letter_spacing;

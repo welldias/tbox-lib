@@ -76,6 +76,9 @@ typedef enum tbox_ua_property {
     TBOX_UA_PROP_TEXT_DECORATION,
     TBOX_UA_PROP_VERTICAL_ALIGN,
     TBOX_UA_PROP_TEXT_ALIGN,
+    TBOX_UA_PROP_BORDER_LEFT,
+    TBOX_UA_PROP_OUTLINE,
+    TBOX_UA_PROP_OUTLINE_OFFSET,
 } tbox_ua_property;
 
 typedef enum tbox_ua_value_kind {
@@ -107,7 +110,9 @@ typedef enum tbox_ua_qualifier {
 typedef struct tbox_ua_selector {
     const char *tag;
     tbox_ua_qualifier qualifier;
-    const char *input_type; /* only for INPUT_TYPE */
+    const char *input_type;     /* only for INPUT_TYPE */
+    const char *pseudo_class;   /* NULL, or a pseudo-class after the qualifier ("disabled") */
+    const char *pseudo_element; /* NULL, or a control part ("slider-thumb") */
 } tbox_ua_selector;
 
 typedef struct tbox_ua_rule {
@@ -155,6 +160,12 @@ static const char *tbox_ua_property_name(tbox_ua_property property) {
         return "vertical-align";
     case TBOX_UA_PROP_TEXT_ALIGN:
         return "text-align";
+    case TBOX_UA_PROP_BORDER_LEFT:
+        return "border-left";
+    case TBOX_UA_PROP_OUTLINE:
+        return "outline";
+    case TBOX_UA_PROP_OUTLINE_OFFSET:
+        return "outline-offset";
     }
     return NULL;
 }
@@ -204,8 +215,11 @@ static tbox_ua_value_kind tbox_ua_expected_kind(tbox_ua_property property) {
     case TBOX_UA_PROP_WIDTH:
     case TBOX_UA_PROP_HEIGHT:
     case TBOX_UA_PROP_BORDER_RADIUS:
+    case TBOX_UA_PROP_OUTLINE_OFFSET:
         return TBOX_UA_VALUE_LENGTH;
     case TBOX_UA_PROP_BORDER:
+    case TBOX_UA_PROP_BORDER_LEFT:
+    case TBOX_UA_PROP_OUTLINE:
         return TBOX_UA_VALUE_BORDER;
     case TBOX_UA_PROP_COLOR:
     case TBOX_UA_PROP_BACKGROUND_COLOR:
@@ -330,7 +344,8 @@ static bool tbox_ua_copy_string(tbox_arena *arena, const char *source, tbox_stri
 }
 
 static bool tbox_ua_build_selector(tbox_arena *arena, const tbox_ua_selector *definition, tbox_css_selector *selector) {
-    size_t part_count          = definition->qualifier == TBOX_UA_QUALIFIER_NONE ? 1 : 2;
+    size_t part_count = 1 + (definition->qualifier != TBOX_UA_QUALIFIER_NONE) + (definition->pseudo_class != NULL) +
+                        (definition->pseudo_element != NULL);
     selector->simple_selectors = tbox_arena_alloc_zero(arena, part_count * sizeof(tbox_css_simple_selector));
     if (selector->simple_selectors == NULL)
         return false;
@@ -342,20 +357,41 @@ static bool tbox_ua_build_selector(tbox_arena *arena, const tbox_ua_selector *de
     if (!tbox_ua_copy_string(arena, definition->tag, &tag->name))
         return false;
 
-    if (part_count == 1)
-        return true;
-    tbox_css_simple_selector *qualifier = &selector->simple_selectors[1];
-    qualifier->combinator_before        = TBOX_CSS_COMBINATOR_NONE;
-    if (definition->qualifier == TBOX_UA_QUALIFIER_FOCUS) {
-        qualifier->kind = TBOX_CSS_SIMPLE_SELECTOR_PSEUDO;
-        return tbox_ua_copy_string(arena, "focus", &qualifier->name);
+    size_t next = 1;
+    if (definition->qualifier != TBOX_UA_QUALIFIER_NONE) {
+        tbox_css_simple_selector *qualifier = &selector->simple_selectors[next++];
+        qualifier->combinator_before        = TBOX_CSS_COMBINATOR_NONE;
+        if (definition->qualifier == TBOX_UA_QUALIFIER_FOCUS) {
+            qualifier->kind = TBOX_CSS_SIMPLE_SELECTOR_PSEUDO;
+            if (!tbox_ua_copy_string(arena, "focus", &qualifier->name))
+                return false;
+        } else if (definition->qualifier == TBOX_UA_QUALIFIER_INPUT_TYPE && definition->input_type != NULL) {
+            qualifier->kind               = TBOX_CSS_SIMPLE_SELECTOR_ATTRIBUTE;
+            qualifier->attribute_operator = TBOX_CSS_ATTR_EQUALS;
+            if (!tbox_ua_copy_string(arena, "type", &qualifier->name) || !tbox_ua_copy_string(arena, definition->input_type, &qualifier->attribute_value))
+                return false;
+        } else {
+            return false;
+        }
     }
-    if (definition->qualifier == TBOX_UA_QUALIFIER_INPUT_TYPE && definition->input_type != NULL) {
-        qualifier->kind               = TBOX_CSS_SIMPLE_SELECTOR_ATTRIBUTE;
-        qualifier->attribute_operator = TBOX_CSS_ATTR_EQUALS;
-        return tbox_ua_copy_string(arena, "type", &qualifier->name) && tbox_ua_copy_string(arena, definition->input_type, &qualifier->attribute_value);
+    if (definition->pseudo_class != NULL) {
+        tbox_css_simple_selector *pseudo = &selector->simple_selectors[next++];
+        pseudo->kind                     = TBOX_CSS_SIMPLE_SELECTOR_PSEUDO;
+        pseudo->combinator_before        = TBOX_CSS_COMBINATOR_NONE;
+        if (!tbox_ua_copy_string(arena, definition->pseudo_class, &pseudo->name))
+            return false;
     }
-    return false;
+    if (definition->pseudo_element != NULL) {
+        /* Named with its "::" prefix, as the CSS parser stores it. */
+        char name[64];
+        int length = snprintf(name, sizeof(name), "::%s", definition->pseudo_element);
+        tbox_css_simple_selector *pseudo = &selector->simple_selectors[next++];
+        pseudo->kind                     = TBOX_CSS_SIMPLE_SELECTOR_PSEUDO;
+        pseudo->combinator_before        = TBOX_CSS_COMBINATOR_NONE;
+        if (length < 0 || (size_t)length >= sizeof(name) || !tbox_ua_copy_string(arena, name, &pseudo->name))
+            return false;
+    }
+    return true;
 }
 
 static tbox_css_stylesheet *tbox_ua_build_stylesheet(const tbox_ua_rule *rules, size_t rule_count) {
@@ -469,34 +505,46 @@ tbox_ua_style_config tbox_ua_style_config_default(void) {
         __VA_ARGS__                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            \
     }
 #define UA_DECLARATION_COUNT(...) (sizeof(UA_DECLARATIONS(__VA_ARGS__)) / sizeof(tbox_ua_declaration))
-#define UA_RULE_1(tag, ...) { (const tbox_ua_selector[]){ { (tag), TBOX_UA_QUALIFIER_NONE, NULL } }, 1, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
+#define UA_RULE_1(tag, ...) { (const tbox_ua_selector[]){ { (tag), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL } }, 1, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
 #define UA_RULE_2(tag_a, tag_b, ...)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           \
     {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          \
-        (const tbox_ua_selector[]){ { (tag_a), TBOX_UA_QUALIFIER_NONE, NULL }, { (tag_b), TBOX_UA_QUALIFIER_NONE, NULL } }, \
+        (const tbox_ua_selector[]){ { (tag_a), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (tag_b), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL } }, \
          2, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 \
             }
 #define UA_RULE_3(a, b, c, ...) \
     { \
-        (const tbox_ua_selector[]){ { (a), TBOX_UA_QUALIFIER_NONE, NULL }, { (b), TBOX_UA_QUALIFIER_NONE, NULL }, { (c), TBOX_UA_QUALIFIER_NONE, NULL } }, \
+        (const tbox_ua_selector[]){ { (a), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (b), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (c), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL } }, \
         3, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) \
     }
 #define UA_RULE_4(a, b, c, d, ...) \
     { \
-        (const tbox_ua_selector[]){ { (a), TBOX_UA_QUALIFIER_NONE, NULL }, { (b), TBOX_UA_QUALIFIER_NONE, NULL }, { (c), TBOX_UA_QUALIFIER_NONE, NULL }, { (d), TBOX_UA_QUALIFIER_NONE, NULL } }, \
+        (const tbox_ua_selector[]){ { (a), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (b), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (c), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (d), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL } }, \
         4, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) \
     }
 #define UA_RULE_5(a, b, c, d, e, ...) \
     { \
-        (const tbox_ua_selector[]){ { (a), TBOX_UA_QUALIFIER_NONE, NULL }, { (b), TBOX_UA_QUALIFIER_NONE, NULL }, { (c), TBOX_UA_QUALIFIER_NONE, NULL }, { (d), TBOX_UA_QUALIFIER_NONE, NULL }, { (e), TBOX_UA_QUALIFIER_NONE, NULL } }, \
+        (const tbox_ua_selector[]){ { (a), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (b), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (c), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (d), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (e), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL } }, \
         5, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) \
     }
 #define UA_RULE_6(a, b, c, d, e, f, ...)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       \
     {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          \
-        (const tbox_ua_selector[]){ { (a), TBOX_UA_QUALIFIER_NONE, NULL }, { (b), TBOX_UA_QUALIFIER_NONE, NULL }, { (c), TBOX_UA_QUALIFIER_NONE, NULL }, { (d), TBOX_UA_QUALIFIER_NONE, NULL }, { (e), TBOX_UA_QUALIFIER_NONE, NULL }, { (f), TBOX_UA_QUALIFIER_NONE, NULL } }, \
+        (const tbox_ua_selector[]){ { (a), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (b), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (c), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (d), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (e), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL }, { (f), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL } }, \
          6, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             \
     }
-#define UA_RULE_FOCUS(tag, ...) { (const tbox_ua_selector[]){ { (tag), TBOX_UA_QUALIFIER_FOCUS, NULL } }, 1, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
-#define UA_RULE_INPUT_TYPE(input_type, ...) { (const tbox_ua_selector[]){ { "input", TBOX_UA_QUALIFIER_INPUT_TYPE, (input_type) } }, 1, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
+#define UA_RULE_FOCUS(tag, ...) { (const tbox_ua_selector[]){ { (tag), TBOX_UA_QUALIFIER_FOCUS, NULL, NULL, NULL } }, 1, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
+#define UA_RULE_INPUT_TYPE(input_type, ...) { (const tbox_ua_selector[]){ { "input", TBOX_UA_QUALIFIER_INPUT_TYPE, (input_type), NULL, NULL } }, 1, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
+/* Control parts: `tag::part`, `input[type=t]::part`, `input[type=t]:state::part`. */
+#define UA_RULE_TAG_PART(tag, part, ...) { (const tbox_ua_selector[]){ { (tag), TBOX_UA_QUALIFIER_NONE, NULL, NULL, (part) } }, 1, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
+#define UA_RULE_INPUT_PART(input_type, state, part, ...) { (const tbox_ua_selector[]){ { "input", TBOX_UA_QUALIFIER_INPUT_TYPE, (input_type), (state), (part) } }, 1, UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
+#define UA_BORDER_SIDE(property, width, red, green, blue) { (property), TBOX_UA_VALUE_BORDER, { .border = { { (width), TBOX_UA_UNIT_PX }, TBOX_UA_BORDER_SOLID, { (red), (green), (blue), 255 } } } }
+
+/* Focus ring: an outline over the 1px border and 1px beyond it. An outline
+ * takes no layout space, so focusing a control moves nothing (a thicker
+ * border would grow the box and shift its content and neighbors). */
+#define UA_FOCUS_RING UA_BORDER_SIDE(TBOX_UA_PROP_OUTLINE, 2, 0, 0, 255), UA_LEN(TBOX_UA_PROP_OUTLINE_OFFSET, -1, TBOX_UA_UNIT_PX)
+/* Range and image inputs never showed focus (their `border: 0` used to
+ * override the focus border); a zero-width outline keeps that. */
+#define UA_NO_FOCUS_RING UA_BORDER_SIDE(TBOX_UA_PROP_OUTLINE, 0, 0, 0, 255)
 
 tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
     /* One rule per original ruleset, in the original order. Keeping a
@@ -523,9 +571,9 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         UA_RULE_1("ol", UA_KW(TBOX_UA_PROP_LIST_STYLE_TYPE, TBOX_UA_KW_DECIMAL)),
         UA_RULE_1("li", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK)),
         UA_RULE_1("button", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_BORDER(1, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_PADDING, 4, 4, 4, 4)),
-        UA_RULE_FOCUS("button", UA_BORDER(2, 0, 0, 255)),
+        UA_RULE_FOCUS("button", UA_FOCUS_RING),
         UA_RULE_1("input", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_LEN(TBOX_UA_PROP_WIDTH, 240, TBOX_UA_UNIT_PX), UA_BORDER(1, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_PADDING, 4, 4, 4, 4)),
-        UA_RULE_FOCUS("input", UA_BORDER(2, 0, 0, 255)),
+        UA_RULE_FOCUS("input", UA_FOCUS_RING),
         UA_RULE_INPUT_TYPE("checkbox", UA_LEN(TBOX_UA_PROP_WIDTH, 12, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 12, TBOX_UA_UNIT_PX), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 0, 0, 0), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_INPUT_TYPE("color", UA_LEN(TBOX_UA_PROP_WIDTH, 48, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 24, TBOX_UA_UNIT_PX), UA_QUAD(TBOX_UA_PROP_PADDING, 2, 2, 2, 2), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_INPUT_TYPE("date", UA_LEN(TBOX_UA_PROP_WIDTH, 120, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
@@ -534,18 +582,18 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         UA_RULE_INPUT_TYPE("week", UA_LEN(TBOX_UA_PROP_WIDTH, 105, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_INPUT_TYPE("file", UA_LEN(TBOX_UA_PROP_WIDTH, 240, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 24, TBOX_UA_UNIT_PX), UA_QUAD(TBOX_UA_PROP_PADDING, 2, 2, 2, 2), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_INPUT_TYPE("hidden", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_NONE)),
-        UA_RULE_INPUT_TYPE("image", UA_LEN(TBOX_UA_PROP_WIDTH, 0, TBOX_UA_UNIT_AUTO), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 0, 0, 0), UA_BORDER(0, 128, 128, 128)),
+        UA_RULE_INPUT_TYPE("image", UA_LEN(TBOX_UA_PROP_WIDTH, 0, TBOX_UA_UNIT_AUTO), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 0, 0, 0), UA_BORDER(0, 128, 128, 128), UA_NO_FOCUS_RING),
         UA_RULE_INPUT_TYPE("month", UA_LEN(TBOX_UA_PROP_WIDTH, 100, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_INPUT_TYPE("number", UA_LEN(TBOX_UA_PROP_WIDTH, 120, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_INPUT_TYPE("radio", UA_LEN(TBOX_UA_PROP_WIDTH, 12, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 12, TBOX_UA_UNIT_PX), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 0, 0, 0), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255), UA_LEN(TBOX_UA_PROP_BORDER_RADIUS, 7, TBOX_UA_UNIT_PX)),
-        UA_RULE_INPUT_TYPE("range", UA_LEN(TBOX_UA_PROP_WIDTH, 160, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 20, TBOX_UA_UNIT_PX), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 0, 0, 0), UA_BORDER(0, 128, 128, 128)),
+        UA_RULE_INPUT_TYPE("range", UA_LEN(TBOX_UA_PROP_WIDTH, 160, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 20, TBOX_UA_UNIT_PX), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 0, 0, 0), UA_BORDER(0, 128, 128, 128), UA_NO_FOCUS_RING),
         UA_RULE_INPUT_TYPE("reset", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_INPUT_TYPE("search", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_INPUT_TYPE("submit", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_1("select", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_LEN(TBOX_UA_PROP_WIDTH, 240, TBOX_UA_UNIT_PX), UA_BORDER(1, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_PADDING, 4, 4, 4, 4), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
-        UA_RULE_FOCUS("select", UA_BORDER(2, 0, 0, 255)),
+        UA_RULE_FOCUS("select", UA_FOCUS_RING),
         UA_RULE_1("textarea", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_BORDER(1, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_PADDING, 4, 4, 4, 4), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
-        UA_RULE_FOCUS("textarea", UA_BORDER(2, 0, 0, 255)),
+        UA_RULE_FOCUS("textarea", UA_FOCUS_RING),
         UA_RULE_2("progress", "meter", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_LEN(TBOX_UA_PROP_WIDTH, 160, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 16, TBOX_UA_UNIT_PX)),
         UA_RULE_1("hr", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_LEN(TBOX_UA_PROP_HEIGHT, config.hr_height_px, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_MARGIN, config.margin.hr_px, 0, config.margin.hr_px, 0)),
         UA_RULE_1("pre", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_KW(TBOX_UA_PROP_FONT_FAMILY, TBOX_UA_KW_MONOSPACE), UA_KW(TBOX_UA_PROP_WHITE_SPACE, TBOX_UA_KW_PRE)),
@@ -573,6 +621,20 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         UA_RULE_1("caption", UA_KW(TBOX_UA_PROP_TEXT_ALIGN, TBOX_UA_KW_CENTER)),
         UA_RULE_1("th", UA_KW(TBOX_UA_PROP_FONT_WEIGHT, TBOX_UA_KW_BOLD), UA_KW(TBOX_UA_PROP_TEXT_ALIGN, TBOX_UA_KW_CENTER)),
         UA_RULE_2("td", "th", UA_QUAD(TBOX_UA_PROP_PADDING, 4, 4, 4, 4)),
+        /* Control parts (docs/10-formularios-e-controles.md, "Partes dos
+         * controles"). Fills, thumbs and marks declare no color: they
+         * default to accent-color in the painters. */
+        UA_RULE_INPUT_PART("range", NULL, "slider-track", UA_LEN(TBOX_UA_PROP_HEIGHT, 4, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 205, 210, 216)),
+        UA_RULE_INPUT_PART("range", NULL, "slider-thumb", UA_LEN(TBOX_UA_PROP_WIDTH, 14, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 14, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_BORDER_RADIUS, 50, TBOX_UA_UNIT_PERCENT)),
+        UA_RULE_TAG_PART("progress", "slider-track", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 205, 210, 216)),
+        UA_RULE_TAG_PART("meter", "slider-track", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 205, 210, 216)),
+        UA_RULE_TAG_PART("select", "picker-icon", UA_LEN(TBOX_UA_PROP_WIDTH, 10, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 6, TBOX_UA_UNIT_PX)),
+        UA_RULE_INPUT_PART("number", NULL, "step-control", UA_LEN(TBOX_UA_PROP_WIDTH, 16, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 238, 240, 243), UA_BORDER_SIDE(TBOX_UA_PROP_BORDER_LEFT, 1, 175, 180, 188)),
+        UA_RULE_INPUT_PART("search", NULL, "clear-icon", UA_LEN(TBOX_UA_PROP_WIDTH, 16, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 245, 246, 248)),
+        UA_RULE_INPUT_PART("file", NULL, "file-selector-button", UA_LEN(TBOX_UA_PROP_WIDTH, 88, TBOX_UA_UNIT_PX), UA_BORDER(1, 118, 124, 134), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 240, 242, 246), UA_COLOR(TBOX_UA_PROP_COLOR, 25, 25, 25)),
+        UA_RULE_INPUT_PART("file", "disabled", "file-selector-button", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 232, 232, 232), UA_COLOR(TBOX_UA_PROP_COLOR, 140, 140, 140)),
+        UA_RULE_TAG_PART("input", "selection", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 130, 175, 235)),
+        UA_RULE_TAG_PART("textarea", "selection", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 130, 175, 235)),
     };
 
     return tbox_ua_build_stylesheet(rules, sizeof(rules) / sizeof(rules[0]));
@@ -593,3 +655,8 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
 #undef UA_RULE_6
 #undef UA_RULE_FOCUS
 #undef UA_RULE_INPUT_TYPE
+#undef UA_RULE_TAG_PART
+#undef UA_RULE_INPUT_PART
+#undef UA_BORDER_SIDE
+#undef UA_FOCUS_RING
+#undef UA_NO_FOCUS_RING

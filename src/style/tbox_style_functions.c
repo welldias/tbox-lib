@@ -53,8 +53,8 @@ static bool tbox_style_calc_operand(tbox_style_calc_parser *p, tbox_style_calc_v
     tbox_style_calc_skip_space(p);
     if (p->pos >= p->text.size || p->depth > 16)
         return false;
-    const char *rest = p->text.data + p->pos;
-    size_t left      = p->text.size - p->pos;
+    const char *rest                         = p->text.data + p->pos;
+    size_t left                              = p->text.size - p->pos;
     static const char *const trigonometric[] = { "sin(", "cos(", "tan(" };
     for (size_t f = 0; f < sizeof(trigonometric) / sizeof(trigonometric[0]); f++) {
         size_t length = strlen(trigonometric[f]);
@@ -64,24 +64,28 @@ static bool tbox_style_calc_operand(tbox_style_calc_parser *p, tbox_style_calc_v
         const double pi = 3.14159265358979323846;
         tbox_style_calc_value arg;
         size_t count;
-        if (!tbox_style_calc_arguments(p, &arg, 1, &count) ||
-            (!arg.number && !arg.angle) || arg.bounds != 0 || arg.percent != 0.0 || !isfinite(arg.px))
+        if (!tbox_style_calc_arguments(p, &arg, 1, &count) || (!arg.number && !arg.angle) || arg.bounds != 0 || arg.percent != 0.0 || !isfinite(arg.px))
             return false;
-        bool angle = arg.angle;
+        bool angle     = arg.angle;
         double degrees = angle ? fmod(arg.px, 360.0) : 0.0;
         double radians = angle ? degrees * (pi / 180.0) : arg.px;
         double result;
-        if (f == 2 && fabs(fmod(radians, pi)) == pi / 2.0) return false; /* non-finite poles */
+        if (f == 2 && fabs(fmod(radians, pi)) == pi / 2.0)
+            return false; /* non-finite poles */
         result = f == 0 ? sin(radians) : f == 1 ? cos(radians) : tan(radians);
         /* Exactly represented quarter turns should not create tiny nonzero
          * lengths due to conversion through radians. */
         if (angle && fmod(degrees, 90.0) == 0.0) {
             int quarter = (int)(degrees / 90.0);
-            if (f == 0) result = quarter % 2 == 0 ? copysign(0.0, degrees) : quarter == 1 || quarter == -3 ? 1.0 : -1.0;
-            else if (f == 1) result = quarter % 2 != 0 ? 0.0 : quarter == 0 ? 1.0 : -1.0;
-            else result = copysign(0.0, degrees);
+            if (f == 0)
+                result = quarter % 2 == 0 ? copysign(0.0, degrees) : quarter == 1 || quarter == -3 ? 1.0 : -1.0;
+            else if (f == 1)
+                result = quarter % 2 != 0 ? 0.0 : quarter == 0 ? 1.0 : -1.0;
+            else
+                result = copysign(0.0, degrees);
         }
-        if (!isfinite(result)) return false;
+        if (!isfinite(result))
+            return false;
         *out = (tbox_style_calc_value){ result, 0.0, true, 0, 0.0, 0.0, false };
         return true;
     }
@@ -98,8 +102,7 @@ static bool tbox_style_calc_operand(tbox_style_calc_parser *p, tbox_style_calc_v
         if (!tbox_style_calc_arguments(p, args, 2, &count) || count != (f == 3 ? 2u : 1u))
             return false;
         for (size_t i = 0; i < count; i++) {
-            if (args[i].bounds != 0 || args[i].percent != 0.0 || !isfinite(args[i].px) ||
-                (f != 3 && !args[i].number) || args[i].number != args[0].number || args[i].angle != args[0].angle)
+            if (args[i].bounds != 0 || args[i].percent != 0.0 || !isfinite(args[i].px) || (f != 3 && !args[i].number) || args[i].number != args[0].number || args[i].angle != args[0].angle)
                 return false;
         }
         double a = args[0].px;
@@ -487,8 +490,7 @@ bool tbox_style_parse_angle(tbox_string_view text, const tbox_style_units *units
     if (tbox_style_parse_angle_literal(text, out))
         return isfinite(*out);
     tbox_style_calc_value value;
-    if (!tbox_style_calc_evaluate(text, units, units->font_size, false, &value) ||
-        !value.angle || value.bounds != 0 || value.percent != 0.0)
+    if (!tbox_style_calc_evaluate(text, units, units->font_size, false, &value) || !value.angle || value.bounds != 0 || value.percent != 0.0)
         return false;
     *out = value.px;
     return true;
@@ -617,14 +619,14 @@ static bool tbox_style_parse_gradient_stop(tbox_string_view part, const tbox_sty
             double angle;
             if (tbox_style_parse_angle(tokens[i], units, &angle)) {
                 *position = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, angle / 3.6, 0.0, 0, 0.0, 0.0 };
-            } else if (!tbox_style_parse_spacing_length(tokens[i], units, position) ||
-                       position->kind != TBOX_STYLE_LENGTH_PERCENT || position->px_offset != 0.0 || position->bounds != 0) {
+            } else if (!tbox_style_parse_spacing_length(tokens[i], units, position) || position->kind != TBOX_STYLE_LENGTH_PERCENT || position->px_offset != 0.0 || position->bounds != 0) {
                 return false;
             }
         } else if (!tbox_style_parse_spacing_length(tokens[i], units, position) || position->kind == TBOX_STYLE_LENGTH_AUTO) {
             return false;
         }
-        if (!isfinite(position->value) || !isfinite(position->px_offset)) return false;
+        if (!isfinite(position->value) || !isfinite(position->px_offset))
+            return false;
         position_count++;
     }
     if (position_count == 0)
@@ -647,7 +649,7 @@ bool tbox_style_parse_gradient(tbox_string_view token, const tbox_style_units *u
     else if (tbox_style_function_args(token, "radial-gradient", &args) || (gradient.repeating = tbox_style_function_args(token, "repeating-radial-gradient", &args)))
         gradient.kind = TBOX_STYLE_GRADIENT_RADIAL;
     else if (tbox_style_function_args(token, "conic-gradient", &args) || (gradient.repeating = tbox_style_function_args(token, "repeating-conic-gradient", &args))) {
-        gradient.kind = TBOX_STYLE_GRADIENT_CONIC;
+        gradient.kind  = TBOX_STYLE_GRADIENT_CONIC;
         gradient.angle = 0.0;
     } else
         return false;
@@ -691,15 +693,18 @@ bool tbox_style_parse_gradient(tbox_string_view token, const tbox_style_units *u
     } else if (gradient.kind == TBOX_STYLE_GRADIENT_CONIC) {
         size_t i = 0;
         if (count > 0 && tbox_style_is(tokens[0], "from")) {
-            if (count < 2 || !tbox_style_parse_angle(tokens[1], units, &gradient.angle)) return false;
+            if (count < 2 || !tbox_style_parse_angle(tokens[1], units, &gradient.angle))
+                return false;
             i = 2;
         }
         if (i < count && tbox_style_is(tokens[i], "at")) {
-            if (!tbox_style_parse_position(tokens + i + 1, count - i - 1, units, gradient.center)) return false;
+            if (!tbox_style_parse_position(tokens + i + 1, count - i - 1, units, gradient.center))
+                return false;
             i = count;
         }
         if (i != 0) {
-            if (i != count) return false;
+            if (i != count)
+                return false;
             first_stop = 1;
         }
     } else {
@@ -708,39 +713,46 @@ bool tbox_style_parse_gradient(tbox_string_view token, const tbox_style_units *u
         size_t radius_count = 0, i = 0;
         while (i < count) {
             if (tbox_style_is(tokens[i], "circle") || tbox_style_is(tokens[i], "ellipse")) {
-                if (shape_set) return false;
+                if (shape_set)
+                    return false;
                 gradient.circle = tbox_style_is(tokens[i], "circle");
-                shape_set = true;
-            } else if (tbox_style_is(tokens[i], "farthest-corner") || tbox_style_is(tokens[i], "farthest-side") ||
-                       tbox_style_is(tokens[i], "closest-corner") || tbox_style_is(tokens[i], "closest-side")) {
-                if (extent_set || radius_count != 0) return false;
-                extent_set = true;
-                gradient.extent = tbox_style_is(tokens[i], "farthest-corner") ? TBOX_STYLE_GRADIENT_FARTHEST_CORNER :
-                                  tbox_style_is(tokens[i], "farthest-side") ? TBOX_STYLE_GRADIENT_FARTHEST_SIDE :
-                                  tbox_style_is(tokens[i], "closest-corner") ? TBOX_STYLE_GRADIENT_CLOSEST_CORNER : TBOX_STYLE_GRADIENT_CLOSEST_SIDE;
+                shape_set       = true;
+            } else if (tbox_style_is(tokens[i], "farthest-corner") || tbox_style_is(tokens[i], "farthest-side") || tbox_style_is(tokens[i], "closest-corner") || tbox_style_is(tokens[i], "closest-side")) {
+                if (extent_set || radius_count != 0)
+                    return false;
+                extent_set      = true;
+                gradient.extent = tbox_style_is(tokens[i], "farthest-corner") ? TBOX_STYLE_GRADIENT_FARTHEST_CORNER : tbox_style_is(tokens[i], "farthest-side") ? TBOX_STYLE_GRADIENT_FARTHEST_SIDE : tbox_style_is(tokens[i], "closest-corner") ? TBOX_STYLE_GRADIENT_CLOSEST_CORNER : TBOX_STYLE_GRADIENT_CLOSEST_SIDE;
             } else if (tbox_style_is(tokens[i], "at")) {
-                if (!tbox_style_parse_position(tokens + i + 1, count - i - 1, units, gradient.center)) return false;
-                i = count;
+                if (!tbox_style_parse_position(tokens + i + 1, count - i - 1, units, gradient.center))
+                    return false;
+                i          = count;
                 shape_part = true;
                 break;
             } else {
                 tbox_style_length radius;
-                if (!tbox_style_parse_spacing_length(tokens[i], units, &radius) || radius.kind == TBOX_STYLE_LENGTH_AUTO) break;
-                if (extent_set || radius_count == 2 || radius.bounds != 0 || !isfinite(radius.value) || !isfinite(radius.px_offset)) return false;
-                if (radius.value < 0.0 && memchr(tokens[i].data, '(', tokens[i].size) == NULL) return false;
+                if (!tbox_style_parse_spacing_length(tokens[i], units, &radius) || radius.kind == TBOX_STYLE_LENGTH_AUTO)
+                    break;
+                if (extent_set || radius_count == 2 || radius.bounds != 0 || !isfinite(radius.value) || !isfinite(radius.px_offset))
+                    return false;
+                if (radius.value < 0.0 && memchr(tokens[i].data, '(', tokens[i].size) == NULL)
+                    return false;
                 radii[radius_count++] = radius;
             }
             shape_part = true;
             i++;
         }
-        if (shape_part && i != count) return false;
+        if (shape_part && i != count)
+            return false;
         if (radius_count != 0) {
-            if (!shape_set) gradient.circle = radius_count == 1;
-            if (gradient.circle ? radius_count != 1 || radii[0].kind != TBOX_STYLE_LENGTH_PX : radius_count != 2) return false;
+            if (!shape_set)
+                gradient.circle = radius_count == 1;
+            if (gradient.circle ? radius_count != 1 || radii[0].kind != TBOX_STYLE_LENGTH_PX : radius_count != 2)
+                return false;
             gradient.radius[0] = radii[0];
             gradient.radius[1] = gradient.circle ? radii[0] : radii[1];
         }
-        if (shape_part) first_stop = 1;
+        if (shape_part)
+            first_stop = 1;
     }
 
     for (size_t p = first_stop; p < part_count; p++)
@@ -1043,25 +1055,28 @@ bool tbox_style_parse_clip_path(tbox_string_view raw, const tbox_style_units *un
     if (tbox_style_function_args(tokens[0], "polygon", &args)) {
         tbox_string_view vertices[TBOX_STYLE_MAX_POLYGON_POINTS + 1];
         size_t n = tbox_style_split_top_level(args, ',', vertices, TBOX_STYLE_MAX_POLYGON_POINTS + 1);
-        if (n == 0) return false;
+        if (n == 0)
+            return false;
         size_t first = 0;
         if (tbox_style_is(vertices[0], "evenodd") || tbox_style_is(vertices[0], "nonzero")) {
             clip.evenodd = tbox_style_is(vertices[0], "evenodd");
-            first = 1;
+            first        = 1;
         }
-        if (n - first < 3 || n - first > TBOX_STYLE_MAX_POLYGON_POINTS) return false;
+        if (n - first < 3 || n - first > TBOX_STYLE_MAX_POLYGON_POINTS)
+            return false;
         for (size_t i = first; i < n; i++) {
             tbox_string_view pair[2];
-            if (tbox_style_tokens(vertices[i], pair, 2) != 2) return false;
+            if (tbox_style_tokens(vertices[i], pair, 2) != 2)
+                return false;
             for (size_t axis = 0; axis < 2; axis++) {
                 tbox_style_length *value = &clip.points[i - first][axis];
-                if (!tbox_style_parse_spacing_length(pair[axis], units, value) || value->kind == TBOX_STYLE_LENGTH_AUTO ||
-                    !isfinite(value->value) || !isfinite(value->px_offset)) return false;
+                if (!tbox_style_parse_spacing_length(pair[axis], units, value) || value->kind == TBOX_STYLE_LENGTH_AUTO || !isfinite(value->value) || !isfinite(value->px_offset))
+                    return false;
             }
         }
-        clip.kind = TBOX_STYLE_CLIP_PATH_POLYGON;
+        clip.kind        = TBOX_STYLE_CLIP_PATH_POLYGON;
         clip.point_count = n - first;
-        *out = clip;
+        *out             = clip;
         return true;
     }
     bool xywh = tbox_style_function_args(tokens[0], "xywh", &args);

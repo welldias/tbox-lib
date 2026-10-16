@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* Quebra de linha do <textarea> (docs/10-formularios-e-controles.md):
+     * quebra depois dos espaços, que ficam pendurados no fim da linha; só
+     * uma palavra mais larga que a linha é cortada. Quebras de linha do
+     * próprio texto são mantidas. */
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    section {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+    }
+
+    textarea {
+      width: 220px;
+      height: 96px;
+      font-size: 16px;
+    }
+
+    .estreito {
+      width: 120px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Quebra de linha no textarea</h1>
+
+  <section>
+    <h2>Frase comum</h2>
+    <textarea>Ou este, numa área de texto que precisa quebrar entre as palavras.</textarea>
+  </section>
+
+  <section>
+    <h2>Espaços repetidos e quebras do texto</h2>
+    <textarea>Vários     espaços     seguidos
+Segunda linha
+Terceira</textarea>
+  </section>
+
+  <section>
+    <h2>Palavra maior que a linha</h2>
+    <textarea class="estreito">Veja https://exemplo.com.br/caminho/muito/longo aqui</textarea>
+  </section>
+</body>
+
+</html>

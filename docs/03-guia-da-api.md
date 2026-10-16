@@ -49,6 +49,12 @@ Esses campos alteram o tamanho das estruturas públicas: recompile consumidores.
 O tipo `TBOX_STYLE_GRADIENT_CONIC` reutiliza `angle`/`center`; posições explícitas
 dos stops são percentuais de uma volta. Inicialize as estruturas com zero.
 
+`tbox_style.parts` guarda ponteiros emprestados para os estilos das partes dos
+controles (`tbox_style_part_style`, na mesma arena da `tbox_style_table`);
+leia com `tbox_style_part_find`. `color_declared`/`background_declared`
+dizem se a folha declarou a cor (senão vale a cor embutida do controle). O
+campo altera o tamanho de `tbox_style`: recompile consumidores.
+
 ## 1. Aplicação com janela — `app.h`
 
 | Função | Uso |

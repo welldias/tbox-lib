@@ -222,8 +222,9 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
     bool toggled_details = tbox_context_toggle_details(ctx, focus);
     bool cleared_search = false;
     if (tbox_context_is_search_input(focus)) {
-        const tbox_layout_box *search_box = tbox_context_find_box(ctx->root, focus);
-        if (search_box != NULL && search_box->content_box.width >= 20.0 && search_box->content_box.height >= 14.0 && x >= search_box->content_box.x + search_box->content_box.width - 16.0 && x < search_box->content_box.x + search_box->content_box.width && y >= search_box->content_box.y && y < search_box->content_box.y + search_box->content_box.height)
+        tbox_rect clear;
+        if (tbox_context_input_control_rect(tbox_context_find_box(ctx->root, focus), &clear) &&
+            tbox_context_point_in_rect(clear, x, y))
             cleared_search = tbox_context_clear_search(ctx, focus);
     }
     bool changed_range = false;
@@ -233,9 +234,10 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
     }
     bool stepped = false;
     if (tbox_context_is_number_input(focus)) {
-        const tbox_layout_box *number_box = tbox_context_find_box(ctx->root, focus);
-        if (number_box != NULL && number_box->content_box.width >= 20.0 && number_box->content_box.height >= 14.0 && x >= number_box->content_box.x + number_box->content_box.width - 16.0 && x < number_box->content_box.x + number_box->content_box.width && y >= number_box->content_box.y && y < number_box->content_box.y + number_box->content_box.height)
-            stepped = tbox_context_number_step(ctx, focus, y < number_box->content_box.y + number_box->content_box.height / 2.0 ? 1 : -1, false);
+        tbox_rect column;
+        if (tbox_context_input_control_rect(tbox_context_find_box(ctx->root, focus), &column) &&
+            tbox_context_point_in_rect(column, x, y))
+            stepped = tbox_context_number_step(ctx, focus, y < column.y + column.height / 2.0 ? 1 : -1, false);
     }
     bool clicked   = tbox_context_dispatch_click_node(ctx, target);
     bool submitted = tbox_context_is_submit_input(box->node) && tbox_context_submit_form(ctx, box->node, box->node);

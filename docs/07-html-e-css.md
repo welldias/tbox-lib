@@ -168,6 +168,8 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
 - `:not()` com um seletor simples.
 - Pseudo-elementos: `::marker`, `::before` e `::after` (também na forma
   CSS2 `:before`/`:after`); pesam como seletor de tipo na especificidade.
+  As partes dos controles de formulário (`::slider-thumb`, `::selection`…)
+  estão em [Formulários e controles](10-formularios-e-controles.md).
 
 ### Conteúdo gerado (`::before`/`::after`)
 

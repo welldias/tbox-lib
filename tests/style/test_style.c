@@ -2453,6 +2453,68 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Control parts: pseudo-elements resolved like a child of the control
+     * (inheriting color, honoring var() and the control's own selectors),
+     * kept only for the elements that have each part. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div class=\"dark\"><input type=\"RANGE\"><input type=\"range\" disabled>"
+                                                  "<meter></meter><input><textarea></textarea><div></div></div>");
+        const tbox_html_node *div      = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *range    = div->first_child;
+        const tbox_html_node *disabled = range->next_sibling;
+        const tbox_html_node *meter    = disabled->next_sibling;
+        const tbox_html_node *text     = meter->next_sibling;
+        const tbox_html_node *textarea = text->next_sibling;
+        const tbox_html_node *plain    = textarea->next_sibling;
+        tbox_css_stylesheet *sheet     = parse_css_cstr(
+            ".dark { color: rgb(9 9 9); --thumb: rgb(200 30 120); }"
+            ".dark input::slider-thumb { width: 18px; height: 10px; background-color: var(--thumb); border: 2px solid red; border-radius: 4px; }"
+            "input[disabled]::slider-thumb { background-color: gray; }"
+            "input::slider-track { border-top-left-radius: 3px; border-bottom-right-radius: 50%; }"
+            "input::selection, textarea::selection { background-color: yellow; color: black; }"
+            "div::slider-thumb { width: 99px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const tbox_style *range_style  = tbox_style_table_find(&table, range);
+        const tbox_style *off_style    = tbox_style_table_find(&table, disabled);
+        const tbox_style *meter_style  = tbox_style_table_find(&table, meter);
+        const tbox_style *text_style   = tbox_style_table_find(&table, text);
+        const tbox_style *area_style   = tbox_style_table_find(&table, textarea);
+        const tbox_style *plain_style  = tbox_style_table_find(&table, plain);
+        TBOX_TEST_ASSERT(range_style != NULL && off_style != NULL && meter_style != NULL && text_style != NULL && area_style != NULL && plain_style != NULL);
+        if (range_style != NULL && off_style != NULL && meter_style != NULL && text_style != NULL && area_style != NULL && plain_style != NULL) {
+            const tbox_style_part_style *thumb = tbox_style_part_find(range_style, TBOX_STYLE_PART_SLIDER_THUMB);
+            const tbox_style_part_style *track = tbox_style_part_find(range_style, TBOX_STYLE_PART_SLIDER_TRACK);
+            const tbox_style_part_style *fill  = tbox_style_part_find(range_style, TBOX_STYLE_PART_SLIDER_FILL);
+            TBOX_TEST_ASSERT(thumb != NULL && track != NULL && fill != NULL);
+            if (thumb != NULL && track != NULL && fill != NULL) {
+                TBOX_TEST_ASSERT(thumb->width.kind == TBOX_STYLE_LENGTH_PX && thumb->width.value == 18.0 && thumb->height.value == 10.0);
+                TBOX_TEST_ASSERT(rgba_eq(thumb->background_color, (tbox_css_rgba){ 200, 30, 120, 255 }));
+                TBOX_TEST_ASSERT(thumb->border_widths[0] == 2.0 && thumb->border_widths[3] == 2.0 && rgba_eq(thumb->border_colors[1], (tbox_css_rgba){ 255, 0, 0, 255 }));
+                TBOX_TEST_ASSERT(thumb->border_radii[0] == 4.0 && thumb->border_radii[2] == 4.0 && thumb->border_radii_percent[0] == 0.0);
+                TBOX_TEST_ASSERT(track->border_radii[0] == 3.0 && track->border_radii[1] == 0.0 && track->border_radii_percent[2] == 50.0);
+                /* Unstyled: inherits color, transparent, no border, built-in size. */
+                TBOX_TEST_ASSERT(rgba_eq(fill->color, (tbox_css_rgba){ 9, 9, 9, 255 }) && fill->background_color.a == 0);
+                TBOX_TEST_ASSERT(fill->border_widths[0] == 0.0 && fill->width.kind == TBOX_STYLE_LENGTH_AUTO);
+            }
+            const tbox_style_part_style *off_thumb = tbox_style_part_find(off_style, TBOX_STYLE_PART_SLIDER_THUMB);
+            TBOX_TEST_ASSERT(off_thumb != NULL && rgba_eq(off_thumb->background_color, (tbox_css_rgba){ 128, 128, 128, 255 }) && off_thumb->width.value == 18.0);
+            TBOX_TEST_ASSERT(tbox_style_part_find(range_style, TBOX_STYLE_PART_SELECTION) == NULL);
+            TBOX_TEST_ASSERT(tbox_style_part_find(meter_style, TBOX_STYLE_PART_SLIDER_FILL) != NULL && tbox_style_part_find(meter_style, TBOX_STYLE_PART_SLIDER_THUMB) == NULL);
+            const tbox_style_part_style *selection = tbox_style_part_find(text_style, TBOX_STYLE_PART_SELECTION);
+            TBOX_TEST_ASSERT(selection != NULL && rgba_eq(selection->background_color, (tbox_css_rgba){ 255, 255, 0, 255 }) && rgba_eq(selection->color, (tbox_css_rgba){ 0, 0, 0, 255 }));
+            TBOX_TEST_ASSERT(tbox_style_part_find(text_style, TBOX_STYLE_PART_SLIDER_THUMB) == NULL);
+            TBOX_TEST_ASSERT(tbox_style_part_find(area_style, TBOX_STYLE_PART_SELECTION) != NULL);
+            for (int part = 0; part < TBOX_STYLE_PART_COUNT; part++)
+                TBOX_TEST_ASSERT(tbox_style_part_find(plain_style, (tbox_style_part)part) == NULL);
+            TBOX_TEST_ASSERT(tbox_style_part_find(range_style, TBOX_STYLE_PART_COUNT) == NULL && tbox_style_part_find(NULL, TBOX_STYLE_PART_SLIDER_THUMB) == NULL);
+        }
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* Small CSS additions reuse existing wrapping, positioning and radius paths. */
     {
         tbox_html_document *doc = parse_html_cstr("<div><p></p></div>");

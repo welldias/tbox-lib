@@ -272,16 +272,17 @@ void tbox_context_paint_file_controls(tbox_context *ctx, const tbox_layout_box *
             const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
                 tbox_string_view_from_cstr(box->style->font_family), false, false, 13.0);
             bool disabled = tbox_html_node_get_attribute(box->node, tbox_string_view_make("disabled", 8)) != NULL;
-            double button_width = box->content_box.width < 88.0 ? box->content_box.width : 88.0;
+            /* ::file-selector-button: width, background, border, radius and
+             * text color (the UA sheet has the disabled colors). */
+            const tbox_style_part_style *part = tbox_context_part(box->style, TBOX_STYLE_PART_FILE_SELECTOR_BUTTON);
+            double button_width = tbox_context_part_size(part->width, box->content_box.width, 88.0);
+            if (button_width > box->content_box.width) button_width = box->content_box.width;
             tbox_rect button = {box->content_box.x, box->content_box.y,
                 button_width, box->content_box.height};
-            tbox_context_push_fill(items, button, (tbox_css_rgba){118, 124, 134, 255}, true, clip);
-            if (button.width > 2.0 && button.height > 2.0)
-                tbox_context_push_fill(items, (tbox_rect){button.x + 1.0, button.y + 1.0,
-                    button.width - 2.0, button.height - 2.0},
-                    disabled ? (tbox_css_rgba){232, 232, 232, 255} : (tbox_css_rgba){240, 242, 246, 255},
-                    true, clip);
+            tbox_context_paint_part(items, button, part,
+                disabled ? (tbox_css_rgba){232, 232, 232, 255} : (tbox_css_rgba){240, 242, 246, 255}, true, clip);
             tbox_context_date_text(items, face, button, tbox_string_view_make("Choose file", 11),
+                part->color_declared ? part->color :
                 disabled ? (tbox_css_rgba){140, 140, 140, 255} : (tbox_css_rgba){25, 25, 25, 255});
             tbox_file_field *field = tbox_context_file_field(ctx, box->node, false);
             const char *name = field != NULL && field->path != NULL ? strrchr(field->path, '/') : NULL;

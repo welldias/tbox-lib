@@ -164,18 +164,23 @@ static bool tbox_style_generated_string(tbox_string_view *text, tbox_string_buil
  * matching ')', split at top-level commas (trimmed). */
 static size_t tbox_style_generated_arguments(tbox_string_view *text, tbox_string_view *args, size_t max) {
     size_t count = 0, start = 0, i = 0;
-    int depth    = 0;
-    char quote   = 0;
+    int depth  = 0;
+    char quote = 0;
     for (; i < text->size; i++) {
         char c = text->data[i];
         if (quote != 0) {
-            if (c == '\\') i++;
-            else if (c == quote) quote = 0;
+            if (c == '\\')
+                i++;
+            else if (c == quote)
+                quote = 0;
             continue;
         }
-        if (c == '"' || c == '\'') quote = c;
-        else if (c == '(') depth++;
-        else if (c == ')' && depth > 0) depth--;
+        if (c == '"' || c == '\'')
+            quote = c;
+        else if (c == '(')
+            depth++;
+        else if (c == ')' && depth > 0)
+            depth--;
         else if ((c == ')' || c == ',') && depth == 0) {
             tbox_string_view arg = tbox_string_view_make(text->data + start, i - start);
             arg                  = tbox_style_generated_skip_space(arg);
@@ -305,9 +310,23 @@ static void tbox_style_generated_format(tbox_string_builder *builder, long value
         tbox_string_builder_append_view(builder, tbox_string_view_from_cstr("\xE2\x96\xAA"));
         return;
     } else if ((tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("lower-roman")) || tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("upper-roman"))) && value > 0 && value < 4000) {
-        static const struct { int value; const char *text; } numerals[] = {
-            { 1000, "m" }, { 900, "cm" }, { 500, "d" }, { 400, "cd" }, { 100, "c" }, { 90, "xc" },
-            { 50, "l" }, { 40, "xl" }, { 10, "x" }, { 9, "ix" }, { 5, "v" }, { 4, "iv" }, { 1, "i" },
+        static const struct {
+            int value;
+            const char *text;
+        } numerals[] = {
+            { 1000, "m"  },
+            { 900,  "cm" },
+            { 500,  "d"  },
+            { 400,  "cd" },
+            { 100,  "c"  },
+            { 90,   "xc" },
+            { 50,   "l"  },
+            { 40,   "xl" },
+            { 10,   "x"  },
+            { 9,    "ix" },
+            { 5,    "v"  },
+            { 4,    "iv" },
+            { 1,    "i"  },
         };
         bool upper = style.data[0] == 'u' || style.data[0] == 'U';
         size_t n   = 0;
@@ -317,8 +336,7 @@ static void tbox_style_generated_format(tbox_string_builder *builder, long value
                 for (const char *c = numerals[i].text; *c != '\0' && n + 1 < sizeof(buffer); c++)
                     buffer[n++] = upper ? (char)(*c - 'a' + 'A') : *c;
         buffer[n] = '\0';
-    } else if ((tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("lower-alpha")) || tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("lower-latin")) ||
-                tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("upper-alpha")) || tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("upper-latin"))) && value > 0) {
+    } else if ((tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("lower-alpha")) || tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("lower-latin")) || tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("upper-alpha")) || tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("upper-latin"))) && value > 0) {
         char base = style.data[0] == 'u' || style.data[0] == 'U' ? 'A' : 'a';
         char reversed[32];
         size_t n = 0;
@@ -331,7 +349,8 @@ static void tbox_style_generated_format(tbox_string_builder *builder, long value
         /* alpha..omega, skipping final sigma (U+03C2). */
         unsigned long letters[24];
         for (int i = 0, cp = 0x3B1; i < 24; cp++)
-            if (cp != 0x3C2) letters[i++] = (unsigned long)cp;
+            if (cp != 0x3C2)
+                letters[i++] = (unsigned long)cp;
         unsigned long out[16];
         size_t n = 0;
         for (long rest = value; rest > 0 && n < 16; rest = (rest - 1) / 24)
@@ -414,8 +433,8 @@ bool tbox_style_generated_content(tbox_style_generated *generated, const tbox_ht
         bool function         = value.size > 0 && value.data[0] == '(';
         if (!function) {
             const tbox_style_quotes *quotes = generated->quotes;
-            bool open  = tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("open-quote"));
-            bool close = tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("close-quote"));
+            bool open                       = tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("open-quote"));
+            bool close                      = tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("close-quote"));
             if (open || tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("no-open-quote"))) {
                 if (open && quotes->pair_count > 0)
                     tbox_string_builder_append_view(&builder, quotes->open[(size_t)generated->quote_depth < quotes->pair_count ? (size_t)generated->quote_depth : quotes->pair_count - 1]);
@@ -438,7 +457,7 @@ bool tbox_style_generated_content(tbox_style_generated *generated, const tbox_ht
         if (tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("attr")) && count >= 1) {
             /* attr(name), attr(name type, fallback): the attribute's text,
              * else the fallback string, else nothing. */
-            size_t name_length = tbox_style_generated_ident_length(args[0]);
+            size_t name_length                   = tbox_style_generated_ident_length(args[0]);
             const tbox_html_attribute *attribute = tbox_html_node_get_attribute(element, tbox_string_view_make(args[0].data, name_length));
             if (attribute != NULL)
                 tbox_string_builder_append_view(&builder, attribute->value);
@@ -482,15 +501,15 @@ tbox_html_node *tbox_style_generated_node(tbox_style_generated *generated, const
     tbox_html_node *node = (tbox_html_node *)tbox_arena_alloc_zero(generated->arena, sizeof(tbox_html_node));
     if (node == NULL)
         return NULL;
-    node->type                  = TBOX_HTML_NODE_ELEMENT;
-    node->element.tag_name      = tbox_string_view_from_cstr(which == 0 ? "::before" : "::after");
-    node->parent                = (tbox_html_node *)element;
+    node->type             = TBOX_HTML_NODE_ELEMENT;
+    node->element.tag_name = tbox_string_view_from_cstr(which == 0 ? "::before" : "::after");
+    node->parent           = (tbox_html_node *)element;
     if (text.size > 0) {
         tbox_html_node *child = (tbox_html_node *)tbox_arena_alloc_zero(generated->arena, sizeof(tbox_html_node));
         if (child != NULL) {
-            child->type      = TBOX_HTML_NODE_TEXT;
-            child->text.text = text;
-            child->parent    = node;
+            child->type       = TBOX_HTML_NODE_TEXT;
+            child->text.text  = text;
+            child->parent     = node;
             node->first_child = node->last_child = child;
         }
     }

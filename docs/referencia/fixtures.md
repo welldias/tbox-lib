@@ -115,3 +115,7 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 139 | Gradientes cônicos: interpolação, setores, `from`/`at`, repetição angular, mosaico e máscara |
 | 140 | `polygon()`: triângulo, concavidade, `nonzero`/`evenodd`, interseção de recortes e filtros |
 | 141 | Shaping com HarfBuzz: ligaduras (e `letter-spacing` desligando-as), kerning GPOS com `font-kerning: none`, acentos combinantes e marcas empilhadas, formas contextuais árabes (isoladas com ZWNJ), hebraico com niqqud, frase árabe sem bidi; cursor dentro de ligadura em `<input>`/`<textarea>`. Sem HarfBuzz, as linhas "depois" saem iguais às "antes" |
+| 142 | `accent-color` em range, progress, checkbox e radio: padrão, herdada do contêiner, por controle (com `var()`), meter sem mudança |
+| 143 | Partes dos controles (`::slider-thumb`, `::slider-track`, `::slider-fill`, `::picker-icon`, `::checkmark`, `::file-selector-button`, `::step-*`, `::clear-icon`, `::color-swatch`, `::selection`), inclusive desabilitado, contêiner escuro com `var()` e raio por canto |
+| 144 | Quebra de linha do `<textarea>`: entre palavras, espaços repetidos pendurados, quebras do próprio texto, palavra maior que a linha |
+| 145 | Checkbox e radio marcados e desmarcados alinhados na mesma linha; `outline` como anel de foco em radio (redondo), checkbox, botão e campos com borda reta e arredondada |

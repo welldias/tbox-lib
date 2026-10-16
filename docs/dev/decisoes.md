@@ -125,6 +125,42 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   `input type=range`; o texto filho fica no DOM para fallback sem ocupar a
   caixa visual. Não há estado global nem valor duplicado fora do DOM.
 
+- **Partes dos controles por pseudo-elementos no CSS do documento**, não
+  no `control_css` dos popups: assim seguem o estado do controle (`:hover`,
+  `:focus`, `[disabled]`), `var()` e `light-dark()`. Nomes do rascunho W3C
+  *CSS Form Control Styling*, sem prefixo, para a migração ficar natural se
+  virarem padrão (escolha do mantenedor, 2026-10-16).
+- **Estilo de parte compacto (`tbox_style_part_style`)** em vez de um
+  `tbox_style` inteiro (16,7 KB) por parte e por frame: como no `::marker`,
+  só os campos que as partes usam são copiados. Cada propriedade nova
+  numa parte pede um campo. Só os elementos que pintam a parte a recebem
+  (2026-10-16).
+- **Padrões das partes na folha UA, cor de destaque no pintor.** Tamanhos,
+  fundos e bordas padrão são regras UA, para o autor substituí-los como
+  qualquer CSS (`border: 0` funciona). O tbox não tem a cor de sistema
+  `AccentColor`, então "use `accent-color`" é o pintor aplicando-a quando a
+  parte não declara cor; a resolução registra a declaração
+  (`background_declared`), e por isso `transparent` explícito vale
+  (2026-10-16).
+- **Foco por `outline`, não por borda**, como nos navegadores: o anel não
+  ocupa espaço, então o foco não refaz o layout. O `outline-offset: -1px`
+  mantém o desenho anterior (2px azuis sobre a borda), passando só 1px
+  para fora da caixa (2026-10-16).
+- **`outline` sólido acompanha `border-radius`**, como no Firefox e no
+  Chrome atuais (o CSS 2 desenhava reto). Cantos elípticos e estilos não
+  sólidos seguem retos (2026-10-16).
+- **A marca do checkbox não define a linha de base**: ela é decoração, e
+  usá-la faria o controle mudar de altura ao ser marcado (2026-10-16).
+- **O polegar do slider pode sair da caixa do input**, como nos navegadores;
+  só ancestrais com rolagem o recortam. A largura do polegar define o
+  percurso, para o clique cair sob o centro dele (2026-10-16).
+- **`accent-color` vale para range e progress, não para meter.** Como nos
+  navegadores, o destaque pinta o valor do range e a barra do progress. O
+  verde/amarelo/vermelho do meter comunica `low`/`high`/`optimum` e não
+  segue o destaque. Com `auto`, range e progress mantêm o azul embutido em
+  vez de cair em `color` como o checkbox: um preenchimento da cor do texto
+  ficaria pesado demais (2026-10-16).
+
 - **Style é uma camada própria entre Cascade e Layout.** A cascata resolve
   texto (`property: value` como `tbox_string_view`); o Layout precisa de
   valores tipados. Style tipa, herda, expande shorthand e aplica valores

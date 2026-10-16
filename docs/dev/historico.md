@@ -650,3 +650,85 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   demos abertos e fechados sob ASan sem vazamento.
 - Débito: sai "Callbacks para bindings"; entra "ABI das structs públicas"
   (campo de tamanho/versão antes da versão estável).
+
+## 2026-10-16 — `accent-color` no range e no progress
+
+- Primeira fase da personalização dos controles por CSS: o
+  preenchimento e o polegar do `input type=range` e a barra do `<progress>`
+  passam a usar `accent-color`. Com `auto`, o azul embutido continua; o
+  trilho e as cores do `<meter>` não mudam.
+- Teste: range padrão, range e progress herdando `accent-color` do pai, e
+  meter ignorando-a. Fixture `142`.
+
+## 2026-10-16 — Estilos das partes dos controles
+
+- Segunda fase da personalização dos controles: `tbox_style_resolve_tree`
+  resolve os pseudo-elementos das partes (`::slider-track`, `::slider-fill`,
+  `::slider-thumb`, `::picker-icon`, `::checkmark`, `::file-selector-button`,
+  `::clear-icon`, `::step-control`, `::step-up`, `::step-down`,
+  `::color-swatch`, `::selection`) para os elementos que as têm e guarda o
+  resultado em `tbox_style.parts`. Acesso público por
+  `tbox_style_part_find`. Os pintores ainda não os usam.
+- Código em `src/style/tbox_style_parts.c`; `tbox_style.c` só chama
+  `tbox_style_resolve_parts` ao lado de `::marker`.
+- Teste: herança de `color`, `var()`, seletor de ancestral e de atributo do
+  controle, raios por canto e em %, partes ausentes em elementos sem elas.
+  Fixture `143` com o CSS de cada parte.
+
+## 2026-10-16 — Quebra de linha do `<textarea>` entre palavras
+
+- O `<textarea>` quebrava antes do caractere que transbordava, cortando
+  palavras no meio ("t" / "exto"). Agora quebra depois do último espaço da
+  linha, como o soft wrap dos navegadores; os espaços ficam pendurados no
+  fim da linha. Uma palavra mais larga que a linha ainda é cortada.
+  Cursor, seleção, rolagem e clique usam as mesmas linhas.
+- Teste: quebra depois de espaços repetidos e palavra longa dividida em
+  linhas sem espaço. Fixture `144`.
+
+## 2026-10-16 — Controles pintam as partes
+
+- Terceira fase da personalização: range, progress, meter, select,
+  checkbox/radio, number, search, file, color e a seleção de texto pintam a
+  partir das partes (`tbox_context_part`, `tbox_context_paint_part`). O
+  pintor de caixa de `tbox_context_control_theme.c` passou a servir ao
+  tema dos popups e às partes.
+- Os padrões viraram regras da folha UA, que ganhou seletores com
+  pseudo-classe e pseudo-elemento (`input[type=file]:disabled::file-selector-button`)
+  e `border-left`. A aparência padrão não mudou (fixture `142` igual).
+- `tbox_style_part_style` ganhou `color_declared`/`background_declared`:
+  sem declaração, preenchimento, polegar e marca usam `accent-color`.
+- A largura do polegar define o percurso do clique e do arraste; a da
+  coluna do number e do X da busca, o clique e a área de texto
+  (`tbox_context_input_control_rect`). O polegar pode passar da caixa.
+- Testes: cada parte com cor/tamanho próprios, clique no percurso novo e
+  na coluna de 24px, `::selection` com fundo e cor do texto e o padrão no
+  `<textarea>`. Suíte limpa com ASan/UBSan.
+
+## 2026-10-16 — Foco sem deslocar o controle
+
+- O foco de `button`/`input`/`select`/`textarea` trocava a borda de 1px por
+  uma de 2px: a caixa crescia, o conteúdo e os vizinhos andavam 1px. Agora
+  a folha UA usa `outline: 2px solid #0000ff; outline-offset: -1px`, quase
+  o mesmo desenho, sem efeito no layout. A UA ganhou `outline` e
+  `outline-offset`.
+- Teste: posição e tamanho de cada controle e do texto ao lado iguais com e
+  sem foco. O teste do spinner do number (fase 3) esperava o fundo da
+  coluna em `direita − 16` e só passava por coincidência com o
+  deslocamento do foco; corrigido para `direita − 15`, dentro da borda.
+
+## 2026-10-16 — Efeitos colaterais do anel de foco; checkbox marcado
+
+- `input type=range` e `type=image` passaram a mostrar o anel de foco: a
+  regra UA deles zerava a borda e assim anulava a antiga borda de foco, mas
+  não anulava o `outline`. Agora zeram o `outline` também; o conjunto de
+  controles com destaque voltou a ser o de antes.
+- Um `outline` sólido acompanha o `border-radius` (anel `FILL_RING`), como
+  nos navegadores: o foco do radio voltou a ser redondo.
+- Marcar um checkbox o descia ~2px: a linha de texto do ✓ (U+2713) passava a
+  definir a linha de base do `inline-block`. A marca é decoração; o
+  checkbox mantém a linha de base na borda de baixo, marcado ou não
+  (`tbox_layout_is_checkbox` em `tbox_layout_push_atomic_word`).
+- Testes: range sem anel no foco; checkbox e radio parados ao marcar (a
+  fonte dos testes não tem o ✓, então o caso do glifo foi conferido com as
+  fontes do sistema); outline arredondado vira um anel com os raios certos.
+  Fixture `145`.

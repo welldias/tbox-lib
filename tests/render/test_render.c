@@ -1047,6 +1047,37 @@ int tbox_test_render_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* A solid outline follows the border radius (the radio's focus ring):
+     * one ring whose inner radii are the border's plus the offset and
+     * outer radii add the width; a square box keeps four straight sides. */
+    for (int rounded = 0; rounded < 2; rounded++) {
+        tbox_style style     = tbox_test_render_default_style();
+        style.outline_style  = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.outline_width  = 2.0;
+        style.outline_offset = -1.0;
+        style.outline_color  = (tbox_css_rgba){ 0, 0, 255, 255 };
+        style.border_radius  = rounded ? 7.0 : 0.0;
+        tbox_layout_box box  = tbox_test_render_default_box(&style);
+        box.border_box       = (tbox_rect){ 10, 10, 14, 14 };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        size_t rings = 0, sides = 0;
+        for (size_t i = 0; i < list.count; i++) {
+            const tbox_paint_op *op = &list.items[i];
+            if (op->color.b != 255 || op->color.r != 0) continue;
+            if (op->kind == TBOX_PAINT_FILL_RING) {
+                rings++;
+                TBOX_TEST_ASSERT(op->rect.x == 9.0 && op->rect.width == 16.0);         /* 1px outside the box */
+                TBOX_TEST_ASSERT(op->inner_rect.x == 11.0 && op->inner_rect.width == 12.0); /* 1px inside it */
+                TBOX_TEST_ASSERT(op->corner_radii[0] == 8.0 && op->inner_corner_radii[0] == 6.0);
+            } else if (op->kind == TBOX_PAINT_FILL_RECT) {
+                sides++;
+            }
+        }
+        TBOX_TEST_ASSERT(rounded ? rings == 1 && sides == 0 : rings == 0 && sides == 4);
+        tbox_arena_destroy(&arena);
+    }
+
     /* text-shadow: one offset copy in the shadow color before the text; a
      * blur paints a 3x3 grid of fainter copies instead. */
     for (int blurred = 0; blurred < 2; blurred++) {

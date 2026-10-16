@@ -125,54 +125,82 @@ void tbox_context_sanitize_inputs(tbox_context *ctx, tbox_html_node *node) {
     }
 }
 
+bool tbox_context_input_control_rect(const tbox_layout_box *box, tbox_rect *out) {
+    if (box == NULL || box->style == NULL) return false;
+    tbox_style_part part;
+    if (tbox_context_is_number_input(box->node)) {
+        part = TBOX_STYLE_PART_STEP_CONTROL;
+    } else {
+        const tbox_html_attribute *value = tbox_context_is_search_input(box->node) ?
+            tbox_html_node_get_attribute(box->node, tbox_string_view_make("value", 5)) : NULL;
+        if (value == NULL || value->value.size == 0) return false;
+        part = TBOX_STYLE_PART_CLEAR_ICON;
+    }
+    double width = tbox_context_part_size(tbox_context_part(box->style, part)->width, box->content_box.width, 16.0);
+    if (width <= 0.0 || box->content_box.width < width + 4.0 || box->content_box.height < 14.0) return false;
+    *out = (tbox_rect){box->content_box.x + box->content_box.width - width, box->content_box.y,
+                       width, box->content_box.height};
+    return true;
+}
+
+/* ::step-control is the column (its left border also draws the divider
+ * between the halves); ::step-up and ::step-down are the halves, whose
+ * `color` paints the arrows (the input's color by default). */
 void tbox_context_paint_number_steppers(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
-        if (tbox_context_is_number_input(box->node) && box->style != NULL && !box->style->visibility_hidden &&
-            box->content_box.width >= 20.0 && box->content_box.height >= 14.0) {
+        tbox_rect column;
+        if (tbox_context_is_number_input(box->node) && !box->style->visibility_hidden &&
+            tbox_context_input_control_rect(box, &column)) {
             tbox_rect clip = box->content_box;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
-            double x = box->content_box.x + box->content_box.width - 16.0;
-            double y = box->content_box.y;
-            double middle = y + box->content_box.height / 2.0;
-            tbox_context_push_fill(items, (tbox_rect){x, y, 16.0, box->content_box.height},
-                (tbox_css_rgba){238, 240, 243, 255}, true, clip);
-            tbox_context_push_fill(items, (tbox_rect){x, y, 1.0, box->content_box.height},
-                (tbox_css_rgba){175, 180, 188, 255}, true, clip);
-            tbox_context_push_fill(items, (tbox_rect){x, middle, 16.0, 1.0},
-                (tbox_css_rgba){175, 180, 188, 255}, true, clip);
-            tbox_css_rgba arrow = box->style->color;
+            const tbox_style_part_style *control = tbox_context_part(box->style, TBOX_STYLE_PART_STEP_CONTROL);
+            const tbox_style_part_style *up      = tbox_context_part(box->style, TBOX_STYLE_PART_STEP_UP);
+            const tbox_style_part_style *down    = tbox_context_part(box->style, TBOX_STYLE_PART_STEP_DOWN);
+            tbox_context_paint_part(items, column, control, (tbox_css_rgba){238, 240, 243, 255}, true, clip);
+            double inner_x = column.x + control->border_widths[3];
+            double inner_w = column.width - control->border_widths[3];
+            double middle  = column.y + column.height / 2.0;
+            tbox_context_paint_part(items, (tbox_rect){inner_x, column.y, inner_w, middle - column.y}, up,
+                (tbox_css_rgba){0, 0, 0, 0}, true, clip);
+            tbox_context_paint_part(items, (tbox_rect){inner_x, middle, inner_w, column.y + column.height - middle}, down,
+                (tbox_css_rgba){0, 0, 0, 0}, true, clip);
+            if (control->border_widths[3] > 0.0)
+                tbox_context_push_fill(items, (tbox_rect){inner_x, middle, inner_w, 1.0}, control->border_colors[3], true, clip);
+            tbox_css_rgba up_color   = up->color_declared ? up->color : box->style->color;
+            tbox_css_rgba down_color = down->color_declared ? down->color : box->style->color;
+            double center = column.x + column.width / 2.0;
             for (int row = 0; row < 3; row++) {
-                tbox_context_push_fill(items, (tbox_rect){x + 7.0 - row,
-                    y + 3.0 + row, 2.0 + 2.0 * row, 1.0}, arrow, true, clip);
-                tbox_context_push_fill(items, (tbox_rect){x + 5.0 + row,
-                    middle + 3.0 + row, 6.0 - 2.0 * row, 1.0}, arrow, true, clip);
+                tbox_context_push_fill(items, (tbox_rect){center - 1.0 - row,
+                    column.y + 3.0 + row, 2.0 + 2.0 * row, 1.0}, up_color, true, clip);
+                tbox_context_push_fill(items, (tbox_rect){center - 3.0 + row,
+                    middle + 3.0 + row, 6.0 - 2.0 * row, 1.0}, down_color, true, clip);
             }
         }
         tbox_context_paint_number_steppers(box->first_child, items);
     }
 }
 
+/* ::clear-icon: the column behind the X, which takes its `color` (the
+ * input's color by default). */
 void tbox_context_paint_search_clears(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
-        const tbox_html_attribute *value = tbox_context_is_search_input(box->node) ?
-            tbox_html_node_get_attribute(box->node, tbox_string_view_make("value", 5)) : NULL;
-        if (value != NULL && value->value.size > 0 && box->style != NULL && !box->style->visibility_hidden &&
-            box->content_box.width >= 20.0 && box->content_box.height >= 14.0) {
+        tbox_rect column;
+        if (tbox_context_is_search_input(box->node) && !box->style->visibility_hidden &&
+            tbox_context_input_control_rect(box, &column)) {
             tbox_rect clip = box->content_box;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
-            double x = box->content_box.x + box->content_box.width - 16.0;
-            double y = box->content_box.y + box->content_box.height / 2.0 - 5.0;
-            tbox_context_push_fill(items, (tbox_rect){x, box->content_box.y, 16.0,
-                box->content_box.height}, (tbox_css_rgba){245, 246, 248, 255}, true, clip);
+            const tbox_style_part_style *icon = tbox_context_part(box->style, TBOX_STYLE_PART_CLEAR_ICON);
+            tbox_context_paint_part(items, column, icon, (tbox_css_rgba){245, 246, 248, 255}, true, clip);
+            tbox_css_rgba color = icon->color_declared ? icon->color : box->style->color;
+            double x = column.x + (column.width - 16.0) / 2.0;
+            double y = column.y + column.height / 2.0 - 5.0;
             for (int i = 0; i < 5; i++) {
-                tbox_context_push_fill(items, (tbox_rect){x + 4.0 + i, y + i, 1.5, 1.5},
-                    box->style->color, true, clip);
-                tbox_context_push_fill(items, (tbox_rect){x + 8.0 - i, y + i, 1.5, 1.5},
-                    box->style->color, true, clip);
+                tbox_context_push_fill(items, (tbox_rect){x + 4.0 + i, y + i, 1.5, 1.5}, color, true, clip);
+                tbox_context_push_fill(items, (tbox_rect){x + 8.0 - i, y + i, 1.5, 1.5}, color, true, clip);
             }
         }
         tbox_context_paint_search_clears(box->first_child, items);

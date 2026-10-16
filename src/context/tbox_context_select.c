@@ -232,6 +232,9 @@ void tbox_context_popup_reveal_highlight(tbox_context *ctx) {
     else if (index >= ctx->popup_first + popup.visible) ctx->popup_first = index + 1 - popup.visible;
 }
 
+/* ::picker-icon: a downward triangle of 2px rows (10x6 by default), 4px
+ * from the content box's right edge; its box may take a background and
+ * border too. */
 void tbox_context_paint_select_arrows(const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
         if (tbox_context_is_select(box->node) && box->style != NULL && !box->style->visibility_hidden) {
@@ -239,11 +242,20 @@ void tbox_context_paint_select_arrows(const tbox_layout_box *box, tbox_vector *i
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
-            double x = box->content_box.x + box->content_box.width - 14.0;
-            double y = box->content_box.y + (box->content_box.height - 6.0) / 2.0;
-            for (int i = 0; i < 3; i++)
-                tbox_context_push_fill(items, (tbox_rect){x + 2.0 * i, y + 2.0 * i,
-                    10.0 - 4.0 * i, 2.0}, box->style->color, true, clip);
+            const tbox_style_part_style *icon = tbox_context_part(box->style, TBOX_STYLE_PART_PICKER_ICON);
+            double width  = tbox_context_part_size(icon->width, box->content_box.width, 10.0);
+            double height = tbox_context_part_size(icon->height, box->content_box.height, 6.0);
+            tbox_rect rect = {box->content_box.x + box->content_box.width - 4.0 - width,
+                              box->content_box.y + (box->content_box.height - height) / 2.0, width, height};
+            tbox_context_paint_part(items, rect, icon, (tbox_css_rgba){0, 0, 0, 0}, true, clip);
+            tbox_css_rgba color = icon->color_declared ? icon->color : box->style->color;
+            int rows = (int)(height / 2.0 + 0.5);
+            if (rows < 1) rows = 1;
+            double row_height = height / rows;
+            double narrowing  = rows > 1 ? (width - width / 5.0) / (rows - 1) : 0.0;
+            for (int i = 0; i < rows; i++)
+                tbox_context_push_fill(items, (tbox_rect){rect.x + narrowing * i / 2.0, rect.y + row_height * i,
+                    width - narrowing * i, row_height}, color, true, clip);
         }
         tbox_context_paint_select_arrows(box->first_child, items);
     }

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* Partes dos controles por pseudo-elementos (docs/10-formularios-e-
+     * controles.md, "Partes dos controles"). Firefox e Chrome não
+     * implementam a maioria destes nomes (ver "Equivalentes em outros
+     * navegadores" no mesmo capítulo). Cada seção usa um recurso da
+     * resolução: herança de color, var(), seletor de ancestral, estado do
+     * controle e raio por canto. */
+    :root {
+      --destaque: #c81e78;
+      --trilho: #f1d5e4;
+    }
+
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    section {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+    }
+
+    p {
+      margin: 6px 0;
+    }
+
+    /* Slider: trilho, preenchimento e polegar. */
+    input[type=range]::slider-track {
+      height: 6px;
+      background-color: var(--trilho);
+      border-radius: 3px;
+    }
+
+    input[type=range]::slider-fill {
+      background-color: var(--destaque);
+      border-radius: 3px;
+    }
+
+    input[type=range]::slider-thumb {
+      width: 18px;
+      height: 18px;
+      background-color: white;
+      border: 3px solid var(--destaque);
+      border-radius: 50%;
+    }
+
+    /* Estado do controle, não da parte. */
+    input[type=range][disabled]::slider-thumb {
+      border-color: #9aa3ae;
+    }
+
+    /* progress e meter: trilho e barra; raio só nos cantos da direita. */
+    progress::slider-track,
+    meter::slider-track {
+      background-color: #e2e8f0;
+      border: 1px solid #94a3b8;
+    }
+
+    progress::slider-fill {
+      background-color: #0e9488;
+      border-top-right-radius: 4px;
+      border-bottom-right-radius: 4px;
+    }
+
+    /* Seta do select herda color do controle. */
+    select {
+      color: #7c3aed;
+    }
+
+    select::picker-icon {
+      width: 12px;
+      height: 8px;
+    }
+
+    /* Checkbox e radio: a marca. */
+    input[type=checkbox]::checkmark,
+    input[type=radio]::checkmark {
+      color: #e67e22;
+    }
+
+    /* Botão do input de arquivo. */
+    input[type=file]::file-selector-button {
+      background-color: #263548;
+      color: white;
+      border: 0;
+      border-radius: 4px;
+    }
+
+    /* Botões do number e o de limpar da busca. */
+    input[type=number]::step-control {
+      background-color: #eef2ff;
+      border-left: 1px solid #a5b4fc;
+    }
+
+    input[type=number]::step-up,
+    input[type=number]::step-down {
+      color: #4338ca;
+    }
+
+    input[type=search]::clear-icon {
+      color: #be123c;
+    }
+
+    /* Amostra do input de cor. */
+    input[type=color]::color-swatch {
+      border: 1px solid #263548;
+      border-radius: 4px;
+    }
+
+    /* Seleção de texto (aparece ao selecionar com o mouse ou Shift+setas). */
+    input::selection,
+    textarea::selection {
+      background-color: #fde68a;
+      color: #78350f;
+    }
+
+    /* Tema escuro num contêiner: as partes seguem o ancestral. */
+    .escuro {
+      background: #1e293b;
+      color: #e2e8f0;
+      --destaque: #38bdf8;
+      --trilho: #334155;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Partes dos controles</h1>
+
+  <section>
+    <h2>Slider</h2>
+    <p><input type="range" value="60"> <input type="range" value="30" disabled></p>
+  </section>
+
+  <section class="escuro">
+    <h2>Slider num contêiner escuro</h2>
+    <p><input type="range" value="60"></p>
+  </section>
+
+  <section>
+    <h2>progress e meter</h2>
+    <p><progress value="60" max="100"></progress></p>
+    <p><meter min="0" max="100" low="40" high="70" optimum="55" value="55"></meter></p>
+  </section>
+
+  <section>
+    <h2>Outros controles</h2>
+    <p><select>
+        <option>Primeira opção</option>
+        <option>Segunda opção</option>
+      </select></p>
+    <p><input type="checkbox" checked> Checkbox <input type="radio" checked> Radio</p>
+    <p><input type="file"></p>
+    <p><input type="number" value="7"> <input type="search" value="busca"></p>
+    <p><input type="color" value="#c81e78"></p>
+    <p><input value="Selecione este texto"></p>
+    <p><textarea rows="2">Ou este, numa área de texto.</textarea></p>
+  </section>
+</body>
+
+</html>

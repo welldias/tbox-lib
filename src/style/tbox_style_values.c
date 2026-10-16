@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "base/tbox_string.h"
 #include "base/tbox_number.h"
+#include "base/tbox_string.h"
 #include "style/tbox_style_internal.h"
 
 /* Parses a plain number ("10", "-3.5") with tbox_number_parse
@@ -23,13 +23,13 @@ static bool tbox_style_unit_scale(tbox_string_view unit, const tbox_style_units 
         const char *name;
         double px;
     } absolute[] = {
-        { "px", 1.0           },
-        { "pt", 96.0 / 72.0   },
-        { "pc", 16.0          },
-        { "in", 96.0          },
-        { "cm", 96.0 / 2.54   },
-        { "mm", 96.0 / 25.4   },
-        { "q",  96.0 / 101.6  },
+        { "px", 1.0          },
+        { "pt", 96.0 / 72.0  },
+        { "pc", 16.0         },
+        { "in", 96.0         },
+        { "cm", 96.0 / 2.54  },
+        { "mm", 96.0 / 25.4  },
+        { "q",  96.0 / 101.6 },
     };
     for (size_t i = 0; i < sizeof(absolute) / sizeof(absolute[0]); i++) {
         if (tbox_string_view_equal_ascii_ci(unit, tbox_string_view_from_cstr(absolute[i].name))) {
@@ -43,22 +43,28 @@ static bool tbox_style_unit_scale(tbox_string_view unit, const tbox_style_units 
         double px;
         bool viewport;
     } relative[] = {
-        { "em",   em_base,                 false },
-        { "rem",  units->root_font_size,   false },
-        { "ex",   em_base * 0.5,           false },
-        { "ch",   em_base * 0.5,           false },
-        { "vw",   vw,                      true  },
-        { "vh",   vh,                      true  },
-        { "vmin", vw < vh ? vw : vh,       true  },
-        { "vmax", vw > vh ? vw : vh,       true  },
+        { "em",    em_base,               false },
+        { "rem",   units->root_font_size, false },
+        { "ex",    em_base * 0.5,         false },
+        { "ch",    em_base * 0.5,         false },
+        { "vw",    vw,                    true  },
+        { "vh",    vh,                    true  },
+        { "vmin",  vw < vh ? vw : vh,     true  },
+        { "vmax",  vw > vh ? vw : vh,     true  },
         /* A desktop window has no browser chrome: small, large and dynamic
          * viewports all have the same dimensions here. */
-        { "svw", vw, true }, { "svh", vh, true },
-        { "lvw", vw, true }, { "lvh", vh, true },
-        { "dvw", vw, true }, { "dvh", vh, true },
-        { "svmin", vw < vh ? vw : vh, true }, { "svmax", vw > vh ? vw : vh, true },
-        { "lvmin", vw < vh ? vw : vh, true }, { "lvmax", vw > vh ? vw : vh, true },
-        { "dvmin", vw < vh ? vw : vh, true }, { "dvmax", vw > vh ? vw : vh, true },
+        { "svw",   vw,                    true  },
+        { "svh",   vh,                    true  },
+        { "lvw",   vw,                    true  },
+        { "lvh",   vh,                    true  },
+        { "dvw",   vw,                    true  },
+        { "dvh",   vh,                    true  },
+        { "svmin", vw < vh ? vw : vh,     true  },
+        { "svmax", vw > vh ? vw : vh,     true  },
+        { "lvmin", vw < vh ? vw : vh,     true  },
+        { "lvmax", vw > vh ? vw : vh,     true  },
+        { "dvmin", vw < vh ? vw : vh,     true  },
+        { "dvmax", vw > vh ? vw : vh,     true  },
     };
     for (size_t i = 0; i < sizeof(relative) / sizeof(relative[0]); i++) {
         if (tbox_string_view_equal_ascii_ci(unit, tbox_string_view_from_cstr(relative[i].name))) {
@@ -81,8 +87,7 @@ bool tbox_style_parse_dimension(tbox_string_view text, const tbox_style_units *u
         return false;
     /* "1e3px": an exponent letter belongs to the number, not the unit. */
     double number, scale;
-    if (!tbox_style_parse_number(tbox_string_view_make(text.data, split), &number) ||
-        !tbox_style_unit_scale(tbox_string_view_make(text.data + split, text.size - split), units, em_base, &scale))
+    if (!tbox_style_parse_number(tbox_string_view_make(text.data, split), &number) || !tbox_style_unit_scale(tbox_string_view_make(text.data + split, text.size - split), units, em_base, &scale))
         return false;
     *out = number * scale;
     return true;
@@ -358,8 +363,7 @@ size_t tbox_style_tokens(tbox_string_view text, tbox_string_view *tokens, size_t
 /* `name(...)`: the arguments between the parentheses. */
 bool tbox_style_function_args(tbox_string_view token, const char *name, tbox_string_view *args) {
     size_t length = strlen(name);
-    if (token.size < length + 2 || token.data[length] != '(' || token.data[token.size - 1] != ')' ||
-        !tbox_string_view_equal_ascii_ci(tbox_string_view_make(token.data, length), tbox_string_view_make(name, length)))
+    if (token.size < length + 2 || token.data[length] != '(' || token.data[token.size - 1] != ')' || !tbox_string_view_equal_ascii_ci(tbox_string_view_make(token.data, length), tbox_string_view_make(name, length)))
         return false;
     *args = tbox_string_view_trim_ascii_space(tbox_string_view_make(token.data + length + 1, token.size - length - 2));
     return true;
@@ -380,10 +384,10 @@ bool tbox_style_parse_angle_literal(tbox_string_view raw, double *out) {
         const char *unit;
         double degrees;
     } units[] = {
-        { "deg",  1.0                   },
-        { "grad", 0.9                   },
-        { "rad",  57.29577951308232     },
-        { "turn", 360.0                 },
+        { "deg",  1.0               },
+        { "grad", 0.9               },
+        { "rad",  57.29577951308232 },
+        { "turn", 360.0             },
     };
     tbox_string_view text = tbox_string_view_trim_ascii_space(raw);
     if (text.size == 1 && text.data[0] == '0') {
@@ -393,8 +397,7 @@ bool tbox_style_parse_angle_literal(tbox_string_view raw, double *out) {
     for (size_t i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
         size_t length = strlen(units[i].unit);
         double value;
-        if (text.size > length && tbox_string_view_equal_ascii_ci(tbox_string_view_make(text.data + text.size - length, length), tbox_string_view_make(units[i].unit, length)) &&
-            tbox_style_parse_number(tbox_string_view_make(text.data, text.size - length), &value)) {
+        if (text.size > length && tbox_string_view_equal_ascii_ci(tbox_string_view_make(text.data + text.size - length, length), tbox_string_view_make(units[i].unit, length)) && tbox_style_parse_number(tbox_string_view_make(text.data, text.size - length), &value)) {
             *out = value * units[i].degrees;
             return true;
         }
@@ -416,8 +419,7 @@ bool tbox_style_parse_position(const tbox_string_view *tokens, size_t count, con
         if (count == 1) {
             if (!tbox_style_parse_object_position_component(pair[0], units, true, &x) && !tbox_style_parse_object_position_component(pair[0], units, false, &y))
                 return false;
-        } else if (!(tbox_style_parse_object_position_component(pair[0], units, true, &x) && tbox_style_parse_object_position_component(pair[1], units, false, &y)) &&
-                   !(tbox_style_parse_object_position_component(pair[0], units, false, &y) && tbox_style_parse_object_position_component(pair[1], units, true, &x))) {
+        } else if (!(tbox_style_parse_object_position_component(pair[0], units, true, &x) && tbox_style_parse_object_position_component(pair[1], units, false, &y)) && !(tbox_style_parse_object_position_component(pair[0], units, false, &y) && tbox_style_parse_object_position_component(pair[1], units, true, &x))) {
             return false;
         }
         out[0] = x;
@@ -485,4 +487,3 @@ bool tbox_style_parse_radius_list(const tbox_string_view *tokens, size_t count, 
     }
     return true;
 }
-

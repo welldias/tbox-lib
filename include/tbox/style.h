@@ -607,6 +607,45 @@ typedef struct tbox_style_background_layer {
 
 #define TBOX_STYLE_MAX_BACKGROUND_LAYERS 4
 
+/* Internal parts of form controls, styled from the document through
+ * pseudo-elements named after the CSS Form Control Styling draft
+ * (`input[type=range]::slider-thumb`, `select:focus::picker-icon`). The
+ * comment on each value lists the elements that have it. */
+typedef enum tbox_style_part {
+    TBOX_STYLE_PART_SLIDER_TRACK,         /* ::slider-track: range, progress, meter */
+    TBOX_STYLE_PART_SLIDER_FILL,          /* ::slider-fill: range, progress, meter */
+    TBOX_STYLE_PART_SLIDER_THUMB,         /* ::slider-thumb: range */
+    TBOX_STYLE_PART_PICKER_ICON,          /* ::picker-icon: select */
+    TBOX_STYLE_PART_CHECKMARK,            /* ::checkmark: checkbox, radio */
+    TBOX_STYLE_PART_FILE_SELECTOR_BUTTON, /* ::file-selector-button: file */
+    TBOX_STYLE_PART_CLEAR_ICON,           /* ::clear-icon: search */
+    TBOX_STYLE_PART_STEP_CONTROL,         /* ::step-control: number */
+    TBOX_STYLE_PART_STEP_UP,              /* ::step-up: number */
+    TBOX_STYLE_PART_STEP_DOWN,            /* ::step-down: number */
+    TBOX_STYLE_PART_COLOR_SWATCH,         /* ::color-swatch: color */
+    TBOX_STYLE_PART_SELECTION,            /* ::selection: text inputs, textarea */
+    TBOX_STYLE_PART_COUNT,
+} tbox_style_part;
+
+/* The properties a control part honors, resolved like a child element of
+ * the control (so `color` inherits from it). Like ::marker, only these
+ * fields are kept, not a whole tbox_style. */
+typedef struct tbox_style_part_style {
+    tbox_style_length width, height; /* AUTO: the control's built-in size */
+    tbox_css_rgba color;
+    tbox_css_rgba background_color;
+    double border_widths[4];         /* top right bottom left, px; 0 where border-style is none */
+    tbox_css_rgba border_colors[4];
+    double border_radii[4];          /* top-left top-right bottom-right bottom-left, px */
+    double border_radii_percent[4];  /* added to border_radii, % of the part's shorter side */
+    /* Whether a stylesheet (UA included) declared `color` /
+     * `background-color` for the part: undeclared ones fall back to the
+     * control's built-in color (accent-color for fills and marks), even
+     * when inherited `color` has a value. */
+    bool color_declared;
+    bool background_declared;
+} tbox_style_part_style;
+
 typedef enum tbox_style_caption_side {
     TBOX_STYLE_CAPTION_TOP,
     TBOX_STYLE_CAPTION_BOTTOM,
@@ -657,6 +696,9 @@ typedef struct tbox_style {
     char marker_font_family[64];
     bool marker_has_content;
     char marker_content[32];
+    /* Form-control parts, only through tbox_style_resolve_tree and only
+     * for the elements that have each part; NULL otherwise. */
+    const tbox_style_part_style *parts[TBOX_STYLE_PART_COUNT];
     tbox_style_user_select user_select;           /* not inheritable (CSS computes from the parent for auto) */
     tbox_style_cursor cursor;                     /* inheritable */
     double aspect_ratio;                          /* width / height; 0 is `auto` */
@@ -1172,6 +1214,10 @@ tbox_style_table tbox_style_resolve_tree_in_viewport_with_preferences(tbox_arena
  * implementation would gain an auxiliary index, not this signature).
  * Returns NULL if table == NULL, node == NULL, or no entry has that node. */
 const tbox_style *tbox_style_table_find(const tbox_style_table *table, const tbox_html_node *node);
+
+/* `style`'s resolved control `part`, or NULL when its element has no such
+ * part or the style didn't come from tbox_style_resolve_tree. */
+const tbox_style_part_style *tbox_style_part_find(const tbox_style *style, tbox_style_part part);
 
 #ifdef __cplusplus
 }
