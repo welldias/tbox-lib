@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "utf8.h"
+#include "base/tbox_string.h"
 
 struct tbox_font_face {
     FT_Face ft_face;
@@ -148,15 +148,12 @@ double tbox_font_measure_text_spaced(const tbox_font_face *face, tbox_string_vie
     }
 
     double total       = 0.0;
-    const char *cursor = text.data;
-    const char *end    = text.data + text.size;
-
     uint32_t previous = 0;
-    while (cursor < end) {
-        utf8_int32_t codepoint;
-        cursor = utf8codepoint(cursor, &codepoint);
-        total += tbox_font_face_kerning(face, previous, (uint32_t)codepoint);
-        previous = (uint32_t)codepoint;
+    for (size_t at = 0; at < text.size;) {
+        uint32_t codepoint;
+        at = tbox_utf8_decode(text.data, text.size, at, &codepoint);
+        total += tbox_font_face_kerning(face, previous, codepoint);
+        previous = codepoint;
 
         if (FT_Load_Char(face->ft_face, (FT_ULong)codepoint, FT_LOAD_DEFAULT) != 0) {
             total += letter_spacing;

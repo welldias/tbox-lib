@@ -165,8 +165,8 @@ typedef struct tbox_css_stylesheet tbox_css_stylesheet;
  * (a broken declaration is skipped up to its ';' or the block's '}'; a
  * broken ruleset -- including an invalid selector -- is skipped up to and
  * including its '{...}' block, or up to the next ';'/EOF if it never reaches
- * a block); the parser never fails on bad CSS. Returns NULL only on
- * allocation failure. */
+ * a block); the parser never fails on bad CSS. Malformed UTF-8 becomes
+ * U+FFFD. Returns NULL only on allocation failure. */
 tbox_css_stylesheet *tbox_css_parse(const char *input, size_t length);
 
 /* Both accessors accept NULL (e.g. a failed tbox_css_parse) and report an

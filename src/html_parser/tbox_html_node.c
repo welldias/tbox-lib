@@ -108,7 +108,12 @@ tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_
     return tbox_string_builder_finish(&builder);
 }
 
+/* Copies text set through the DOM API; malformed UTF-8 becomes U+FFFD,
+ * the same invariant tbox_html_parse keeps for parsed text. */
 static tbox_string_view tbox_html_node_copy_string(tbox_arena *arena, tbox_string_view view) {
+    tbox_string_view sanitized = tbox_utf8_sanitize(arena, view);
+    if (sanitized.data != view.data)
+        return sanitized;
     tbox_string_builder builder;
     tbox_string_builder_init(&builder, arena, view.size);
     tbox_string_builder_append_view(&builder, view);

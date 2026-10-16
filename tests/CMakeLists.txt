@@ -13,7 +13,7 @@ add_executable(tbox_tests ${TBOX_TEST_SOURCES})
 # without explicit export declarations for internal symbols may not expose
 # them on all platforms (notably Windows), whereas a static library always
 # does.
-target_include_directories(tbox_tests PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tests ${CMAKE_SOURCE_DIR}/external/utf8.h ${CMAKE_SOURCE_DIR}/external/stb_image)
+target_include_directories(tbox_tests PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tests ${CMAKE_SOURCE_DIR}/external/stb_image)
 
 # test_font.c loads the vendored Liberation Sans Regular by path (same
 # pattern as TBOX_EXAMPLE_HTML_PATH in example/CMakeLists.txt) rather than

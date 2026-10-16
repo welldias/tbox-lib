@@ -3,11 +3,11 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <tbox/string_view.h>
 
 #include "tbox_arena.h"
-#include "utf8.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,6 +22,43 @@ size_t tbox_string_view_codepoint_count(tbox_string_view view);
 
 /* True if view is well-formed UTF-8. */
 bool tbox_string_view_valid_utf8(tbox_string_view view);
+
+/* Every UTF-8 operation of the library lives here; tbox_string.c is the
+ * only file that includes the vendored utf8.h.
+ *
+ * The single UTF-8 decoder of the library: every loop that walks text
+ * codepoint by codepoint goes through these, never through utf8.h's
+ * utf8codepoint (which reads past the end of a view) or ad-hoc lead-byte
+ * scans. A malformed sequence decodes as one U+FFFD per maximal invalid
+ * subpart (WHATWG Encoding), so text already passed through
+ * tbox_utf8_sanitize decodes identically.
+ *
+ * Decodes the codepoint starting at data[at] (at < length) into
+ * *out_codepoint and returns the offset just past it -- always > at. */
+size_t tbox_utf8_decode(const char *data, size_t length, size_t at, uint32_t *out_codepoint);
+
+/* Offset of the codepoint after the one at `at`; `length` if at >= length. */
+size_t tbox_utf8_next(const char *data, size_t length, size_t at);
+
+/* Offset of the codepoint that ends at `at`; 0 if at == 0. */
+size_t tbox_utf8_previous(const char *data, size_t at);
+
+/* Returns `text` itself when it is valid UTF-8; otherwise a copy in
+ * `arena` with every malformed sequence replaced by U+FFFD. Entry points
+ * that accept text from outside (parsers, DOM setters, typed or pasted
+ * text) call this, so everything downstream may assume valid UTF-8. */
+tbox_string_view tbox_utf8_sanitize(tbox_arena *arena, tbox_string_view text);
+
+/* Writes `codepoint` as UTF-8 into out[0..capacity) and returns the bytes
+ * written (1..4), or 0 if it does not fit. Surrogates and values above
+ * U+10FFFF are written as U+FFFD. */
+size_t tbox_utf8_encode(char *out, size_t capacity, uint32_t codepoint);
+
+/* Simple (one-to-one) case mappings from utf8.h: no multi-codepoint
+ * expansions such as German sharp s. A codepoint without a mapping is
+ * returned unchanged. */
+uint32_t tbox_utf8_to_upper(uint32_t codepoint);
+uint32_t tbox_utf8_to_lower(uint32_t codepoint);
 
 /* Byte-wise, ASCII-only case-insensitive comparison (bytes >= 0x80 are
  * compared verbatim, never case-folded). Suitable for HTML tag/attribute
@@ -46,7 +83,9 @@ void tbox_string_builder_append_view(tbox_string_builder *builder, tbox_string_v
  * codepoints pass through untouched without needing to be decoded. */
 void tbox_string_builder_append_view_lower_ascii(tbox_string_builder *builder, tbox_string_view view);
 
-void tbox_string_builder_append_codepoint(tbox_string_builder *builder, utf8_int32_t codepoint);
+/* Appends `codepoint` encoded by tbox_utf8_encode (invalid values become
+ * U+FFFD). */
+void tbox_string_builder_append_codepoint(tbox_string_builder *builder, uint32_t codepoint);
 
 /* Packages the builder's current contents as a view. The backing bytes stay
  * owned by the arena; no copy is made. */

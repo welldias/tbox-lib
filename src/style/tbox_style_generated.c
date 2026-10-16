@@ -116,21 +116,9 @@ static size_t tbox_style_generated_ident_length(tbox_string_view text) {
     return n;
 }
 
+/* A CSS escape of U+0000 also becomes U+FFFD (CSS Syntax §4.3.7). */
 static void tbox_style_generated_append_codepoint(tbox_string_builder *builder, unsigned long cp) {
-    char buffer[4];
-    size_t n;
-    if (cp == 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
-        cp = 0xFFFD;
-    if (cp < 0x80) {
-        buffer[0] = (char)cp, n = 1;
-    } else if (cp < 0x800) {
-        buffer[0] = (char)(0xC0 | (cp >> 6)), buffer[1] = (char)(0x80 | (cp & 0x3F)), n = 2;
-    } else if (cp < 0x10000) {
-        buffer[0] = (char)(0xE0 | (cp >> 12)), buffer[1] = (char)(0x80 | ((cp >> 6) & 0x3F)), buffer[2] = (char)(0x80 | (cp & 0x3F)), n = 3;
-    } else {
-        buffer[0] = (char)(0xF0 | (cp >> 18)), buffer[1] = (char)(0x80 | ((cp >> 12) & 0x3F)), buffer[2] = (char)(0x80 | ((cp >> 6) & 0x3F)), buffer[3] = (char)(0x80 | (cp & 0x3F)), n = 4;
-    }
-    tbox_string_builder_append_view(builder, tbox_string_view_make(buffer, n));
+    tbox_string_builder_append_codepoint(builder, cp == 0 || cp > 0x10FFFF ? 0xFFFDu : (uint32_t)cp);
 }
 
 /* A quoted string at the start of `*text` (consumed), its CSS escapes

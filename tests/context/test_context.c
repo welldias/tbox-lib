@@ -3382,6 +3382,26 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* A malformed byte in the initial value arrives as U+FFFD: the caret
+     * steps over it as one character and Delete removes it whole. */
+    {
+        tbox_context *ctx = open_cstr("<input value='a\xff" "b'>", "input { width: 180px; }", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 180.0, &list);
+            const tbox_html_node *field = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == field);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_HOME, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_RIGHT, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DELETE, true, false, false }));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(field, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "ab"));
+            tbox_context_close(ctx);
+        }
+    }
+
     /* Text inputs share keyboard focus with buttons. Editing operates on
      * UTF-8 boundaries and updates both the DOM value and rendered text. */
     {

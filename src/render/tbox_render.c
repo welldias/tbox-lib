@@ -918,17 +918,10 @@ static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, size_t
 
 /* ---- text-emphasis ---- */
 
-/* The next UTF-8 codepoint of `text` at `*at` (a bad byte reads as itself). */
+/* The next UTF-8 codepoint of `text` at `*at`. */
 static uint32_t tbox_render_next_codepoint(tbox_string_view text, size_t *at) {
-    const unsigned char *p = (const unsigned char *)text.data + *at;
-    size_t left = text.size - *at;
-    uint32_t c = p[0];
-    size_t length = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 : (c >> 3) == 30 ? 4 : 1;
-    if (length > left) length = 1;
-    if (length == 2) c = ((c & 0x1Fu) << 6) | (p[1] & 0x3Fu);
-    else if (length == 3) c = ((c & 0x0Fu) << 12) | ((p[1] & 0x3Fu) << 6) | (p[2] & 0x3Fu);
-    else if (length == 4) c = ((c & 0x07u) << 18) | ((p[1] & 0x3Fu) << 12) | ((p[2] & 0x3Fu) << 6) | (p[3] & 0x3Fu);
-    *at += length;
+    uint32_t c;
+    *at = tbox_utf8_decode(text.data, text.size, *at, &c);
     return c;
 }
 

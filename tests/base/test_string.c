@@ -1,5 +1,7 @@
 #include "base/tbox_string.h"
 
+#include <string.h>
+
 #include "base/tbox_arena.h"
 #include "test_support.h"
 
@@ -159,6 +161,56 @@ int tbox_test_string_run(void) {
         tbox_string_view result =
             tbox_string_collapse_whitespace(&arena, tbox_string_view_from_cstr("   \t\n  "));
         TBOX_TEST_ASSERT(result.size == 0);
+        tbox_arena_destroy(&arena);
+    }
+
+    /* 16: tbox_utf8_decode -- valid sequences, then one U+FFFD per maximal
+     * invalid subpart, never reading past the view. */
+    {
+        const char text[] = "a\xc3\xa9\xe2\x82\xac\xf0\x9f\x98\x80";
+        size_t size       = sizeof(text) - 1;
+        uint32_t cp;
+        size_t at = tbox_utf8_decode(text, size, 0, &cp);
+        TBOX_TEST_ASSERT(at == 1 && cp == 'a');
+        at = tbox_utf8_decode(text, size, at, &cp);
+        TBOX_TEST_ASSERT(at == 3 && cp == 0xE9);
+        at = tbox_utf8_decode(text, size, at, &cp);
+        TBOX_TEST_ASSERT(at == 6 && cp == 0x20AC);
+        at = tbox_utf8_decode(text, size, at, &cp);
+        TBOX_TEST_ASSERT(at == 10 && cp == 0x1F600);
+
+        /* Truncated "€" at the end of the view: E2 82 is one error. */
+        TBOX_TEST_ASSERT(tbox_utf8_decode("\xe2\x82\xac", 2, 0, &cp) == 2 && cp == 0xFFFD);
+        TBOX_TEST_ASSERT(tbox_utf8_decode("\x80", 1, 0, &cp) == 1 && cp == 0xFFFD);
+        TBOX_TEST_ASSERT(tbox_utf8_decode("\xc0\xaf", 2, 0, &cp) == 1 && cp == 0xFFFD);  /* overlong */
+        TBOX_TEST_ASSERT(tbox_utf8_decode("\xed\xa0\x80", 3, 0, &cp) == 1 && cp == 0xFFFD); /* surrogate */
+        TBOX_TEST_ASSERT(tbox_utf8_decode("\xf4\x90\x80\x80", 4, 0, &cp) == 1 && cp == 0xFFFD); /* > U+10FFFF */
+    }
+
+    /* 17: tbox_utf8_next/previous always make progress, also on bad bytes. */
+    {
+        const char text[] = "a\xffz\xc3\xa9";
+        size_t size       = sizeof(text) - 1;
+        TBOX_TEST_ASSERT(tbox_utf8_next(text, size, 0) == 1);
+        TBOX_TEST_ASSERT(tbox_utf8_next(text, size, 1) == 2);
+        TBOX_TEST_ASSERT(tbox_utf8_next(text, size, 3) == 5);
+        TBOX_TEST_ASSERT(tbox_utf8_next(text, size, 5) == 5);
+        TBOX_TEST_ASSERT(tbox_utf8_previous(text, 5) == 3);
+        TBOX_TEST_ASSERT(tbox_utf8_previous(text, 3) == 2);
+        TBOX_TEST_ASSERT(tbox_utf8_previous(text, 2) == 1);
+        TBOX_TEST_ASSERT(tbox_utf8_previous(text, 0) == 0);
+        TBOX_TEST_ASSERT(tbox_string_view_codepoint_count(tbox_string_view_make(text, size)) == 4);
+    }
+
+    /* 18: tbox_utf8_sanitize -- valid text is returned as is (no copy);
+     * malformed sequences become U+FFFD. */
+    {
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_string_view valid = tbox_string_view_from_cstr("caf\xc3\xa9");
+        TBOX_TEST_ASSERT(tbox_utf8_sanitize(&arena, valid).data == valid.data);
+        tbox_string_view fixed = tbox_utf8_sanitize(&arena, tbox_string_view_make("a\xff" "b\xe2\x82", 5));
+        TBOX_TEST_ASSERT(fixed.size == 8 && memcmp(fixed.data, "a\xef\xbf\xbd" "b\xef\xbf\xbd", 8) == 0);
+        TBOX_TEST_ASSERT(tbox_string_view_valid_utf8(fixed));
         tbox_arena_destroy(&arena);
     }
 

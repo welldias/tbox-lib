@@ -5,9 +5,7 @@ static void tbox_context_bind_text_value(tbox_context *ctx, tbox_text_field *fie
 double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face,
                                          tbox_string_view text, double letter_spacing) {
     if (!tbox_context_is_password_input(node)) return tbox_font_measure_text_spaced(face, text, letter_spacing);
-    size_t characters = 0;
-    for (size_t i = 0; i < text.size; i++)
-        if (((unsigned char)text.data[i] & 0xc0) != 0x80) characters++;
+    size_t characters = tbox_string_view_codepoint_count(text);
     tbox_string_view glyph = tbox_font_face_has_glyph(face, 0x2022) ?
         tbox_string_view_make("\xe2\x80\xa2", 3) : tbox_string_view_make("*", 1);
     return characters * tbox_font_measure_text_spaced(face, glyph, letter_spacing);
@@ -93,31 +91,6 @@ void tbox_context_sync_text_value(tbox_context *ctx, tbox_text_field *field) {
      * allocation for every keystroke. */
     tbox_context_bind_text_value(ctx, field);
     tbox_context_emit_input(ctx, field->node, tbox_string_view_make(field->value, field->length));
-}
-
-size_t tbox_utf8_next(const char *data, size_t length, size_t at) {
-    if (at >= length) return length;
-    size_t width = (unsigned char)data[at] < 0x80 ? 1 :
-                   ((unsigned char)data[at] & 0xe0) == 0xc0 ? 2 :
-                   ((unsigned char)data[at] & 0xf0) == 0xe0 ? 3 :
-                   ((unsigned char)data[at] & 0xf8) == 0xf0 ? 4 : 0;
-    if (width == 0 || width > length - at) return at;
-    for (size_t i = 1; i < width; i++) {
-        if (((unsigned char)data[at + i] & 0xc0) != 0x80) return at;
-    }
-    unsigned char b = (unsigned char)data[at];
-    unsigned char b1 = width > 1 ? (unsigned char)data[at + 1] : 0;
-    if ((width == 2 && b < 0xc2) ||
-        (width == 3 && ((b == 0xe0 && b1 < 0xa0) || (b == 0xed && b1 >= 0xa0))) ||
-        (width == 4 && ((b == 0xf0 && b1 < 0x90) || (b == 0xf4 && b1 >= 0x90) || b > 0xf4))) return at;
-    return at + width;
-}
-
-size_t tbox_utf8_previous(const char *data, size_t at) {
-    if (at == 0) return 0;
-    at--;
-    while (at > 0 && ((unsigned char)data[at] & 0xc0) == 0x80) at--;
-    return at;
 }
 
 size_t tbox_context_cursor_at_x(const tbox_text_field *field, const tbox_layout_box *box,
@@ -216,10 +189,10 @@ bool tbox_context_dispatch_text(tbox_context *ctx, tbox_string_view text) {
     if (ctx == NULL || !tbox_context_is_text_control(ctx->focused_node) ||
         !tbox_context_node_attached(ctx, ctx->focused_node) ||
         !tbox_context_focusable(ctx, ctx->focused_node) ||
-        text.data == NULL || text.size == 0) return false;
+        text.data == NULL || text.size == 0 || !tbox_string_view_valid_utf8(text)) return false;
     for (size_t i = 0; i < text.size;) {
         size_t next = tbox_utf8_next(text.data, text.size, i);
-        if (next == i || ((unsigned char)text.data[i] < 0x20 &&
+        if (((unsigned char)text.data[i] < 0x20 &&
             !(tbox_context_is_textarea(ctx->focused_node) &&
               (text.data[i] == '\n' || text.data[i] == '\t'))) ||
             (unsigned char)text.data[i] == 0x7f ||

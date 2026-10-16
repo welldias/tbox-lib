@@ -63,7 +63,8 @@ typedef struct tbox_html_document tbox_html_document;
 /* Parses `length` bytes of UTF-8 HTML5 starting at `input` (need not be
  * NUL-terminated) and returns a document tree allocated entirely inside an
  * arena owned by the returned document. Malformed HTML is tolerated (the
- * parser never fails on bad markup); returns NULL only on allocation
+ * parser never fails on bad markup), and so is malformed UTF-8: each
+ * invalid sequence becomes U+FFFD. Returns NULL only on allocation
  * failure. */
 tbox_html_document *tbox_html_parse(const char *input, size_t length);
 
@@ -116,7 +117,8 @@ tbox_string_view tbox_html_node_text_content(tbox_arena *arena, const tbox_html_
  * and the existing entries copied into it -- the old array (if any) is left
  * orphaned in the arena; long-lived mutation grows the arena, an accepted
  * trade-off (see docs/dev/historico.md's "Árvore pública de mutação" design debt)
- * not addressed preemptively here. A no-op if `node` isn't an ELEMENT. */
+ * not addressed preemptively here. Malformed UTF-8 in `value` becomes
+ * U+FFFD. A no-op if `node` isn't an ELEMENT. */
 void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, tbox_string_view value);
 
 /* Removes an attribute by case-insensitive name. Returns true only when an
@@ -136,7 +138,8 @@ const tbox_html_attribute *tbox_html_node_get_attribute(const tbox_html_node *no
  * accepts for its old attributes array), then creates exactly one new
  * TEXT-type child (tbox_html_node_create with TBOX_HTML_NODE_TEXT) whose
  * text is `text` copied into `document`'s arena -- the caller doesn't need
- * to keep the original buffer alive after the call returns -- and appends
+ * to keep the original buffer alive after the call returns; malformed UTF-8
+ * becomes U+FFFD -- and appends
  * it via tbox_html_node_append_child. A no-op if `node` isn't an ELEMENT
  * (mutation-of-a-single-TEXT-node-in-place, e.g. editing one word inside
  * mixed text with a nested `<b>`, is out of scope -- this is "replace

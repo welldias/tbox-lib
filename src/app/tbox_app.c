@@ -16,6 +16,7 @@
 
 #include "base/tbox_mutex.h"
 #include "base/tbox_release.h"
+#include "base/tbox_string.h"
 #include "output/tbox_window_backend.h"
 
 #ifndef TBOX_HAS_WINDOW_BACKEND
@@ -781,8 +782,13 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
                         ch = ' ';
                     event.data.paste.utf8[output++] = ch;
                 }
-                if (tbox_context_dispatch_text(app->ctx, tbox_string_view_make(event.data.paste.utf8, output)))
+                /* Clipboard bytes come from another program: replace
+                 * malformed UTF-8 with U+FFFD instead of dropping the paste. */
+                tbox_arena scratch      = tbox_arena_create(0);
+                tbox_string_view pasted = tbox_utf8_sanitize(&scratch, tbox_string_view_make(event.data.paste.utf8, output));
+                if (tbox_context_dispatch_text(app->ctx, pasted))
                     dirty = true;
+                tbox_arena_destroy(&scratch);
             }
             app->paste_target = NULL;
             free(event.data.paste.utf8);

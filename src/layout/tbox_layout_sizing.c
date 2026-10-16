@@ -38,8 +38,7 @@ tbox_layout_intrinsic tbox_layout_measure_words(const tbox_layout_word *words, s
         if (anywhere) {
             min_width = 0.0;
             for (size_t start = 0; start < word->text.size;) {
-                size_t end = start + 1;
-                while (end < word->text.size && ((unsigned char)word->text.data[end] & 0xc0) == 0x80) end++;
+                size_t end = tbox_utf8_next(word->text.data, word->text.size, start);
                 double width = tbox_font_measure_text_spaced(word->face,
                     tbox_string_view_make(word->text.data + start, end - start), word->style->letter_spacing);
                 if (width > min_width) min_width = width;

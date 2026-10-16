@@ -867,5 +867,24 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Malformed UTF-8 in parsed text, attributes and DOM setters becomes
+     * U+FFFD, so later stages only ever see valid UTF-8. */
+    {
+        tbox_html_document *doc = parse_cstr("<p title='x\xff'>a\xc3</p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(p != NULL && p->first_child != NULL);
+        if (p != NULL && p->first_child != NULL) {
+            TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "a\xef\xbf\xbd"));
+            const tbox_html_attribute *title = tbox_html_node_get_attribute(p, tbox_string_view_make("title", 5));
+            TBOX_TEST_ASSERT(title != NULL && text_eq(title->value, "x\xef\xbf\xbd"));
+            tbox_html_node_set_attribute(doc, p, tbox_string_view_make("title", 5), tbox_string_view_make("\x80", 1));
+            title = tbox_html_node_get_attribute(p, tbox_string_view_make("title", 5));
+            TBOX_TEST_ASSERT(title != NULL && text_eq(title->value, "\xef\xbf\xbd"));
+            tbox_html_node_set_text_content(doc, p, tbox_string_view_make("\xe2\x82", 2));
+            TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "\xef\xbf\xbd"));
+        }
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

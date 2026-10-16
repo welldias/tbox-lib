@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include "tbox_raster_internal.h"
-#include "utf8.h"
+#include "base/tbox_string.h"
 
 /* stb_image_resize2 is third-party, vendored code (external/stb_image/, see
  * its own README.md) -- not held to this project's own -Wall -Wextra
@@ -578,17 +578,14 @@ static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width,
     double baseline_y  = origin.y + tbox_font_face_ascent(face);
     double color_alpha = color.a / 255.0;
 
-    const char *cursor = text.data;
-    const char *end    = text.data + text.size;
-
     uint32_t previous = 0;
-    while (cursor < end) {
-        utf8_int32_t codepoint;
-        cursor = utf8codepoint(cursor, &codepoint);
-        pen_x += tbox_font_face_kerning(face, previous, (uint32_t)codepoint);
-        previous = (uint32_t)codepoint;
+    for (size_t at = 0; at < text.size;) {
+        uint32_t codepoint;
+        at = tbox_utf8_decode(text.data, text.size, at, &codepoint);
+        pen_x += tbox_font_face_kerning(face, previous, codepoint);
+        previous = codepoint;
 
-        tbox_font_glyph_bitmap glyph = tbox_font_rasterize_glyph(mutable_face, (uint32_t)codepoint);
+        tbox_font_glyph_bitmap glyph = tbox_font_rasterize_glyph(mutable_face, codepoint);
 
         if (glyph.width > 0 && glyph.height > 0 && glyph.alpha != NULL) {
             int32_t glyph_x0 = (int32_t)floor(pen_x + glyph.bearing_x);

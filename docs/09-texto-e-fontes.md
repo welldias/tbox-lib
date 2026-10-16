@@ -78,6 +78,20 @@ negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
   `line-height` apertado, encostam na linha de cima. Veja
   `tests/assets/131.html`.
 - UTF-8 em todo o pipeline; glifos ausentes na fonte não quebram nada.
+  Texto vindo de fora (`tbox_html_parse`, `tbox_css_parse`,
+  `tbox_html_node_set_attribute`/`_set_text_content` e paste) passa por
+  `tbox_utf8_sanitize`: cada sequência malformada vira U+FFFD (subparte
+  máxima, como no WHATWG Encoding), então o resto do pipeline só vê UTF-8
+  válido. `tbox_context_dispatch_text` continua rejeitando UTF-8 inválido.
+  Toda iteração por codepoint (medição, raster, `text-transform`,
+  `break-all`, reticências, cursor, máscara de senha) usa o único
+  decodificador de `src/base/tbox_string.h` (`tbox_utf8_decode`/`_next`/
+  `_previous`), que respeita o fim da view; o `utf8codepoint` do utf8.h não
+  é usado porque lê além dela. Codificação (`tbox_utf8_encode`) e
+  maiúsculas/minúsculas (`tbox_utf8_to_upper`/`_to_lower`) também ficam
+  ali. `src/base/tbox_string.c` é o único arquivo que inclui
+  `external/utf8.h`: o CMake só dá o caminho dele a esse arquivo, então um
+  `#include "utf8.h"` em outro lugar não compila.
 - `<ruby>` desenha cada trecho de texto-base com seu `<rt>` centralizado
   acima. O `<rt>` usa metade do tamanho da fonte por padrão e `<rp>` fica
   oculto. A unidade ruby não quebra entre trechos. Veja
@@ -92,6 +106,10 @@ negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
   kerning). Não há ligaduras, nem reordenação, nem formas contextuais: texto
   árabe, hebraico, devanágari e similares não são exibidos corretamente.
   HarfBuzz seria a troca de implementação natural, atrás da mesma API.
+- **Unidade é o codepoint, não o grafema.** Cursor, backspace,
+  `break-all`, reticências e máscara de senha andam por codepoint: um "é"
+  decomposto (e + U+0301), emojis com modificador/ZWJ e bandeiras podem ser
+  partidos. Ver [Débito técnico](dev/debito-tecnico.md#segmentação-por-grafema).
 - **Sem fallback por glifo.** Cada trecho usa uma fonte; um caractere que
   não existe nela não é buscado em outra.
 - **Sem texto bidirecional** nem `writing-mode` vertical.

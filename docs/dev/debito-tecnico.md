@@ -305,6 +305,31 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   omitido. Mesmo mecanismo de truncar `open_elements` já usado para `<p>`.
 - **Toca:** `tbox_html_tree_builder_handle_start_tag`.
 
+### Segmentação por grafema
+
+- **O que é:** edição de texto, `break-all`/`overflow-wrap`, reticências e
+  máscara de senha trabalham por codepoint. Grafemas de vários codepoints
+  (acento combinante, emoji com modificador ou ZWJ, bandeiras) podem ser
+  partidos.
+- **Por que importa:** backspace num "é" decomposto apaga só o acento; o
+  cursor para no meio de 👨‍👩‍👧.
+- **Quando revisitar:** quando texto de usuário com emoji ou NFD for caso
+  real. Exige tabelas UAX #29 (libgrapheme ou utf8proc como dependência
+  opcional, ou tabela própria gerada).
+- **Toca:** `src/base/tbox_string.c` (um `tbox_grapheme_next/previous`),
+  `src/context/tbox_context_text.c`, `src/context/tbox_context_events.c`,
+  `src/layout/tbox_layout_inline.c`, `src/layout/tbox_layout_sizing.c`.
+
+### Números dependentes do locale
+
+- **O que é:** `strtod` e `snprintf("%g")` seguem `LC_NUMERIC`. Uma
+  aplicação que chama `setlocale(LC_ALL, "")` em pt_BR faz `1.5em` virar
+  `1` e valores gerados saírem com vírgula.
+- **Quando revisitar:** antes de bindings ou da primeira aplicação que
+  configure o locale.
+- **Toca:** `src/css_parser/`, `src/css_cascade/`, `src/style/`,
+  `src/context/` (usos de `strtod`/`snprintf`).
+
 ### Entidades: windows-1252, maiúsculas alternativas, multi-codepoint
 
 - **O que é:** referências numéricas em `0x80`–`0x9F` não são remapeadas para

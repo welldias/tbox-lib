@@ -92,9 +92,7 @@ void tbox_layout_input_push_value_word(tbox_arena *arena, const tbox_html_node *
         tbox_string_view display = label;
         if (tbox_layout_is_password_input(node)) {
             bool bullet = tbox_font_face_has_glyph(face, 0x2022);
-            size_t count = 0;
-            for (size_t i = 0; i < label.size; i++)
-                if (((unsigned char)label.data[i] & 0xc0) != 0x80) count++;
+            size_t count = tbox_string_view_codepoint_count(label);
             size_t unit = bullet ? 3 : 1;
             display = tbox_string_view_make(NULL, 0);
             char *masked = count <= SIZE_MAX / unit ? tbox_arena_alloc(arena, count * unit) : NULL;

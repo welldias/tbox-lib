@@ -353,8 +353,6 @@ tbox_text_field *tbox_context_text_field(tbox_context *ctx, const tbox_html_node
 void tbox_context_sync_text_value(tbox_context *ctx, tbox_text_field *field);
 bool tbox_context_clear_search(tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_number_step(tbox_context *ctx, const tbox_html_node *node, int direction, bool large);
-size_t tbox_utf8_next(const char *data, size_t length, size_t at);
-size_t tbox_utf8_previous(const char *data, size_t at);
 size_t tbox_context_cursor_at_x(const tbox_text_field *field, const tbox_layout_box *box, const tbox_font_face *face, double x);
 size_t tbox_context_cursor_at_point(const tbox_text_field *field, const tbox_layout_box *box, const tbox_font_face *face, double x, double y);
 bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node);

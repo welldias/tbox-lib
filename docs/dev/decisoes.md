@@ -297,6 +297,19 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   cache não depender de fontconfig nem precisar de `#ifdef` parcial (v12).
 - **Itálico real**: família vazia + itálico também passa pelo resolver (v13).
 - **Kerning ligado por padrão**, usado igualmente na medição e no raster (v19).
+- **UTF-8 saneado na entrada, não verificado em cada consumidor**:
+  `tbox_html_parse`, `tbox_css_parse`, setters do DOM e paste trocam cada
+  subparte máxima malformada por U+FFFD (mesma regra do WHATWG Encoding).
+  Alternativas descartadas: rejeitar o documento inteiro (contraria "parsing
+  nunca falha") e validar em cada laço (repete a regra em dezenas de
+  lugares). `tbox_context_dispatch_text` mantém o contrato de rejeitar
+  texto inválido: quem digita é o backend, que já entrega UTF-8; o paste,
+  vindo de outro programa, é saneado antes em `tbox_app`. Um só
+  decodificador (`src/base/tbox_string`) em vez de `utf8codepoint` do
+  utf8.h, que não recebe o fim do buffer. O utf8.h fica confinado a
+  `src/base/tbox_string.c` (caixa e codificação), imposto pelo CMake, para
+  que trocá-lo no futuro (por exemplo por utf8proc, para grafemas) toque um
+  só arquivo (após v20).
 
 ## Layout
 

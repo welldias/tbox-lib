@@ -18,6 +18,20 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — UTF-8 validado na entrada
+
+Texto que entra por `tbox_html_parse`, `tbox_css_parse`, setters do DOM e
+paste é saneado (`tbox_utf8_sanitize`: malformado vira U+FFFD). Um único
+decodificador limitado à view (`tbox_utf8_decode`/`_next`/`_previous` em
+`src/base/tbox_string`) substitui `utf8codepoint` do utf8.h e as varreduras
+`& 0xC0` espalhadas pelo layout, contexto e render. Corrige leitura além do
+fim de uma view com sequência truncada e o cursor que travava num byte
+inválido do `value` inicial. Depois, o resto do utf8.h (caixa e
+codificação) também foi para trás de `tbox_string.h`, e o caminho de include
+`external/utf8.h` passou a valer só para `src/base/tbox_string.c`; o
+codificador manual de `tbox_style_generated.c` foi removido. Testes em `tests/base/test_string.c`,
+`tests/html_parser/test_tree.c` e `tests/context/test_context.c`.
+
 ## Após v20 — Funções CSS de custo médio
 
 `conic-gradient()`/`repeating-conic-gradient()` com ângulo inicial, centro,

@@ -373,13 +373,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
 }
 
 static size_t tbox_layout_previous_codepoint(tbox_string_view text) {
-    size_t at = text.size;
-    if (at == 0)
-        return 0;
-    at--;
-    while (at > 0 && ((unsigned char)text.data[at] & 0xc0) == 0x80)
-        at--;
-    return at;
+    return tbox_utf8_previous(text.data, text.size);
 }
 
 /* Split only text words too wide for an empty line. Each piece is a UTF-8
@@ -402,9 +396,7 @@ void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, dou
         if ((word->style->word_break_all || word->style->line_break_anywhere) && !word->hard_break && word->image == NULL && word->atomic == NULL && word->text.size > 0) {
             size_t start = 0;
             while (start < word->text.size) {
-                size_t next = start + 1;
-                while (next < word->text.size && ((unsigned char)word->text.data[next] & 0xc0) == 0x80)
-                    next++;
+                size_t next = tbox_utf8_next(word->text.data, word->text.size, start);
                 tbox_layout_word *part = (tbox_layout_word *)tbox_vector_push(&expanded);
                 *part                  = *word;
                 part->text             = tbox_string_view_make(word->text.data + start, next - start);
@@ -425,9 +417,7 @@ void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, dou
             size_t end = start, best = start;
             double best_width = 0.0;
             while (end < word->text.size) {
-                size_t next = end + 1;
-                while (next < word->text.size && ((unsigned char)word->text.data[next] & 0xc0) == 0x80)
-                    next++;
+                size_t next = tbox_utf8_next(word->text.data, word->text.size, end);
                 tbox_string_view piece = tbox_string_view_make(word->text.data + start, next - start);
                 double measured        = tbox_font_measure_text_spaced(word->face, piece, word->style->letter_spacing);
                 if (measured > limit && best > start)

@@ -2,6 +2,7 @@
 
 #include <tbox/css_parser.h>
 
+#include "base/tbox_string.h"
 #include "tbox_css_parser.h"
 #include "tbox_css_stylesheet.h"
 
@@ -32,8 +33,11 @@ tbox_css_stylesheet *tbox_css_parse(const char *input, size_t length) {
         return NULL;
     }
 
+    /* Strings such as `content` and `text-overflow` reach the screen:
+     * malformed UTF-8 becomes U+FFFD here, as in tbox_html_parse. */
+    tbox_string_view source = tbox_utf8_sanitize(&stylesheet->arena, tbox_string_view_make(input, length));
     tbox_css_parser parser;
-    tbox_css_parser_init(&parser, input, length, &stylesheet->arena);
+    tbox_css_parser_init(&parser, source.data, source.size, &stylesheet->arena);
     tbox_css_parser_run(&parser, &stylesheet->rulesets, &stylesheet->ruleset_count, &stylesheet->font_faces, &stylesheet->font_face_count);
     stylesheet->keyframes       = parser.keyframes_out;
     stylesheet->keyframes_count = parser.keyframes_out_count;

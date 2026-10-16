@@ -52,15 +52,14 @@ void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapsed, cons
     }
 }
 
-/* Applies `text-transform` codepoint by codepoint (utf8.h's simple case
- * mappings, so no multi-codepoint expansions such as German sharp s).
+/* Applies `text-transform` codepoint by codepoint (simple case mappings, so no multi-codepoint expansions such as German sharp s).
  * `capitalize` uppercases the first letter after the start of `text` or a
  * whitespace byte -- word boundaries across inline elements are not
  * tracked. Returns `text` itself for NONE or on allocation failure. */
 tbox_string_view tbox_layout_transform_text(tbox_arena *arena, tbox_string_view text, tbox_style_text_transform transform) {
     if (transform == TBOX_STYLE_TEXT_TRANSFORM_NONE || text.size == 0 || text.size > SIZE_MAX / 2 - 4)
         return text;
-    size_t capacity = text.size * 2 + 4; /* utf8.h's mappings keep byte length; slack is defensive */
+    size_t capacity = text.size * 2 + 4; /* the mappings keep byte length; slack is defensive */
     char *out       = (char *)tbox_arena_alloc(arena, capacity);
     if (out == NULL)
         return text;
@@ -70,23 +69,19 @@ tbox_string_view tbox_layout_transform_text(tbox_arena *arena, tbox_string_view 
     const char *end  = text.data + text.size;
     bool word_start  = true;
     while (read < end) {
-        /* A truncated sequence at the end would read past the view: leave
-         * the text alone rather than decode it. */
-        if ((size_t)(end - read) < utf8codepointcalcsize((const utf8_int8_t *)read))
-            return text;
-        utf8_int32_t codepoint;
-        const char *next = (const char *)utf8codepoint((const utf8_int8_t *)read, &codepoint);
+        uint32_t codepoint;
+        const char *next = text.data + tbox_utf8_decode(text.data, text.size, (size_t)(read - text.data), &codepoint);
         bool space       = codepoint == ' ' || codepoint == '\t' || codepoint == '\n' || codepoint == '\r' || codepoint == '\f';
         if (transform == TBOX_STYLE_TEXT_TRANSFORM_UPPERCASE || (transform == TBOX_STYLE_TEXT_TRANSFORM_CAPITALIZE && word_start))
-            codepoint = utf8uprcodepoint(codepoint);
+            codepoint = tbox_utf8_to_upper(codepoint);
         else if (transform == TBOX_STYLE_TEXT_TRANSFORM_LOWERCASE)
-            codepoint = utf8lwrcodepoint(codepoint);
-        word_start           = space;
-        utf8_int8_t *written = utf8catcodepoint((utf8_int8_t *)write, codepoint, (size_t)(out + capacity - write));
-        if (written == NULL)
+            codepoint = tbox_utf8_to_lower(codepoint);
+        word_start     = space;
+        size_t written = tbox_utf8_encode(write, (size_t)(out + capacity - write), codepoint);
+        if (written == 0)
             return text;
-        write = (char *)written;
-        read  = next;
+        write += written;
+        read = next;
     }
     return tbox_string_view_make(out, (size_t)(write - out));
 }
@@ -203,20 +198,21 @@ tbox_string_view tbox_layout_expand_tabs(tbox_arena *arena, tbox_string_view tex
     if (out == NULL)
         return text;
     size_t length = 0, column = 0;
-    for (size_t i = 0; i < text.size; i++) {
+    for (size_t i = 0; i < text.size;) {
         char c = text.data[i];
         if (c == '\t') {
             size_t pad = columns == 0 ? 0 : columns - column % columns;
             memset(out + length, ' ', pad);
             length += pad;
             column += pad;
+            i++;
             continue;
         }
-        out[length++] = c;
-        if (c == '\n')
-            column = 0;
-        else if (((unsigned char)c & 0xC0u) != 0x80u)
-            column++; /* count codepoints, not continuation bytes */
+        size_t next = tbox_utf8_next(text.data, text.size, i);
+        memcpy(out + length, text.data + i, next - i);
+        length += next - i;
+        column = c == '\n' ? 0 : column + 1; /* codepoints, not bytes */
+        i      = next;
     }
     return tbox_string_view_make(out, length);
 }
@@ -362,13 +358,9 @@ static void tbox_layout_apply_small_caps(tbox_arena *arena, tbox_vector *words, 
             bool lower        = false;
             bool started      = false;
             while (read < end) {
-                if ((size_t)(end - read) < utf8codepointcalcsize((const utf8_int8_t *)read)) {
-                    read = end;
-                    break;
-                }
-                utf8_int32_t codepoint;
-                const char *next = (const char *)utf8codepoint((const utf8_int8_t *)read, &codepoint);
-                bool is_lower    = utf8uprcodepoint(codepoint) != codepoint;
+                uint32_t codepoint;
+                const char *next = word->text.data + tbox_utf8_decode(word->text.data, word->text.size, (size_t)(read - word->text.data), &codepoint);
+                bool is_lower    = tbox_utf8_to_upper(codepoint) != codepoint;
                 if (started && is_lower != lower)
                     break;
                 lower   = is_lower;
