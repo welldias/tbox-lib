@@ -150,11 +150,7 @@ int main(int argc, char **argv) {
     }
     showrun_announce(&state);
     tbox_app_on_key(app, showrun_on_key, &state);
-    while (!tbox_app_should_close(app)) {
-        tbox_app_step(app);
-        struct timespec delay = {.tv_sec = 0, .tv_nsec = 8L * 1000L * 1000L};
-        nanosleep(&delay, NULL);
-    }
+    tbox_app_run(app);
     tbox_app_close(app);
     showrun_destroy(&state);
     return 0;

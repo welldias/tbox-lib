@@ -170,6 +170,18 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
 /* Sets a monotonic time in seconds before run_frame. The application does
  * this automatically; callers rendering deterministic frames can supply it. */
 void tbox_context_set_animation_time(tbox_context *ctx, double seconds);
+
+/* After a run_frame: the earliest animation time (same clock as
+ * tbox_context_set_animation_time) at which another run_frame would look
+ * different with no new input -- a transition or animation in progress,
+ * the end of a transition-delay/animation-delay, a smooth scroll, a scroll
+ * snap waiting for the wheel to stop. -INFINITY (or any value not after
+ * the current time) means "the next frame"; INFINITY means idle: nothing
+ * changes until an event or a DOM mutation. A sleeping loop can wait until
+ * then. INFINITY for NULL. */
+double tbox_context_next_frame_time(const tbox_context *ctx);
+
+/* tbox_context_next_frame_time(ctx) < INFINITY. */
 bool tbox_context_animations_active(const tbox_context *ctx);
 
 /* Linear search, from the layout tree computed by the most recent

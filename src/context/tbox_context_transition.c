@@ -4,8 +4,12 @@ void tbox_context_set_animation_time(tbox_context *ctx, double seconds) {
     if (ctx != NULL && isfinite(seconds)) ctx->animation_time = seconds;
 }
 
+double tbox_context_next_frame_time(const tbox_context *ctx) {
+    return ctx != NULL ? ctx->next_frame_time : INFINITY;
+}
+
 bool tbox_context_animations_active(const tbox_context *ctx) {
-    return ctx != NULL && ctx->animations_active;
+    return ctx != NULL && ctx->next_frame_time < INFINITY;
 }
 
 /* The value `track` shows at `now`, heading for `target`. */
@@ -53,7 +57,7 @@ void tbox_context_free_transitions(tbox_context *ctx) {
 }
 
 void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height) {
-    ctx->animations_active = false;
+    ctx->next_frame_time = INFINITY;
     tbox_transition_state **link = &ctx->transitions;
     while (*link != NULL) {
         if (tbox_context_node_attached(ctx, (*link)->node)) link = &(*link)->next;
@@ -121,7 +125,8 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
                 double current[4];
                 tbox_transition_current(track, target, now, current);
                 tbox_style_animatable_write(&entry->style, property, current);
-                ctx->animations_active = true;
+                /* in its delay the value holds still until start_time */
+                tbox_context_wake_at(ctx, now < track->start_time ? track->start_time : -INFINITY);
             } else track->active = false;
         }
     }

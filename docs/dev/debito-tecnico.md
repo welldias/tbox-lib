@@ -63,33 +63,25 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   independentemente de como foram produzidas.
 - **Toca:** `tbox_context_run_frame`, Style, Layout, arenas.
 
-### Buffer duplo no backend Wayland
-
-- **O que é:** o backend escreve no mesmo buffer `wl_shm` que o compositor
-  pode ainda estar lendo, o que arrisca corrupção visual momentânea. Com dois
-  buffers alternados, só se escreve no que o compositor liberou
-  (`wl_buffer.release`).
-- **Atenção:** o buffer livre guarda o frame de *dois* presents atrás; antes de
-  repintar o dano atual é preciso copiar do outro buffer as regiões sujas do
-  frame anterior (ou acumular o dano dos dois últimos frames).
-- **Quando revisitar:** próximo passo natural de saída; escopo pequeno.
-- **Toca:** `src/output/tbox_backend_wayland.c`.
-
 ### Screenshot headless incremental
 
 - **O que é:** o caminho de captura (`tbox_app_screenshot_from_files`) sempre
   repinta tudo.
 - **Quando revisitar:** só se a captura passar a ser usada em loop.
 
-### Loop sem espera
+### Integração com loops externos
 
-- **O que é:** `tbox_app_step` chama o backend com timeout 0 e nunca bloqueia;
-  um `while (!tbox_app_should_close(app)) tbox_app_step(app);` gira sem pausa.
-  Não há agendamento por vsync (`wl_surface.frame`) nem espera por evento.
-- **Por que importa:** consumo de CPU com a janela ociosa.
-- **Quando revisitar:** junto com o contrato de invalidação explícita do
-  roadmap (item 1 em [Limitações e roadmap](../14-limitacoes-e-roadmap.md)).
-- **Toca:** `src/app/tbox_app.c`, `tbox_window_backend_poll`.
+- **O que é:** quem já tem um loop (glib, libuv, o executor de uma
+  linguagem) só integra chamando `tbox_app_wait` com o próprio prazo e
+  recebendo trabalho por `tbox_app_post`. Não há um fd + timeout exportado
+  para ser vigiado de fora, nem um modo em que o loop é do chamador e o tbox
+  só reage a callbacks (como o `SDL_AppIterate` do SDL3).
+- **Por que importa:** no Windows e no macOS o sistema prende o loop em
+  laços modais ao arrastar/redimensionar; com o loop do chamador, a janela
+  congela nesse intervalo.
+- **Quando revisitar:** junto do primeiro backend Windows/macOS, ou do
+  motor de script.
+- **Toca:** `src/app/tbox_app.c`, `tbox_window_backend.h`.
 
 ## API e modelo de documento
 
@@ -142,6 +134,16 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   terminou de carregar.
 - **Quando revisitar:** quando houver recursos remotos ou grandes.
 
+### Callbacks para bindings
+
+- **O que é:** handlers e tarefas recebem `userdata` sem um
+  `destroy_notify`; linguagens com GC precisam saber quando liberar o que
+  amarraram ao callback (ex.: uma tarefa descartada no `tbox_app_close`).
+  Algumas structs são passadas por valor (`tbox_context_options`,
+  `tbox_key_event` no handler de tecla), o que é incômodo em certas FFIs.
+- **Quando revisitar:** no primeiro binding para outra linguagem.
+- **Toca:** `include/tbox/app.h`, `include/tbox/context.h`.
+
 ## Build e empacotamento
 
 ### Consumo por outro projeto
@@ -159,8 +161,9 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 
 ## Thread-safety
 
-- **O que é:** a lib declara "não thread-safe, sem lock interno". Estado
-  compartilhado conhecido: arenas, os contextos globais de `:hover`/`:focus`/
+- **O que é:** a lib usa afinidade de thread: só `tbox_app_post` (fila por
+  instância, com mutex) pode ser chamada de outra thread. Estado
+  compartilhado conhecido no resto: arenas, os contextos globais de `:hover`/`:focus`/
   `:active` em `css_selector.c` (`tbox_css_selector_set_*_context`), caches de
   fonte e imagem.
 - **Por que importa:** decisão transversal; a estratégia (lock por estrutura,

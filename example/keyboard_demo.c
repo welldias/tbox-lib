@@ -232,9 +232,7 @@ int main(void) {
     tbox_context_on_input(tbox_app_context(app), on_input, NULL);
     tbox_context_on_submit(tbox_app_context(app), on_submit, NULL);
     tbox_context_on_select(tbox_app_context(app), on_select, NULL);
-    while (!tbox_app_should_close(app)) {
-        tbox_app_step(app);
-    }
+    tbox_app_run(app);
     tbox_app_close(app);
     return 0;
 }

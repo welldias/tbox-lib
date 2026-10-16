@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <time.h>
@@ -70,6 +71,24 @@ typedef struct tbox_clipboard_write {
     struct tbox_clipboard_write *next;
 } tbox_clipboard_write;
 
+/* One wl_shm buffer of the swap pair. The compositor may read a buffer
+ * until it sends wl_buffer.release, so only a released one is painted. */
+typedef struct tbox_wayland_slot {
+    struct tbox_backend_wayland *backend;
+    struct wl_buffer *buffer;
+    int fd;
+    void *data;
+    size_t size;
+    int32_t width; /* size this slot was allocated at */
+    int32_t height;
+    bool busy;          /* attached and not released yet */
+    tbox_damage stale;  /* what changed since this buffer was last painted */
+    tbox_rect outlines[TBOX_DAMAGE_MAX_RECTS]; /* debug outlines drawn into it, repainted away next time */
+    size_t outline_count;
+} tbox_wayland_slot;
+
+#define TBOX_WAYLAND_SLOTS 2
+
 struct tbox_backend_wayland {
     struct wl_display *display;
     struct wl_registry *registry;
@@ -92,17 +111,13 @@ struct tbox_backend_wayland {
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
 
-    int shm_fd;
-    void *shm_data;
-    size_t shm_size;
-    struct wl_buffer *buffer;
-    int32_t buffer_width; /* size the current shm buffer/pool was allocated at */
-    int32_t buffer_height;
-    tbox_damage_tracker *damage; /* what changed since the last present; the buffer keeps the previous frame */
+    tbox_wayland_slot slots[TBOX_WAYLAND_SLOTS];
+    int shown;                           /* slot on screen, -1 before the first frame or after a resize */
+    struct wl_callback *frame_callback;  /* pending wl_surface.frame: the compositor has not asked for the next frame yet */
+    int wake_fd;                         /* eventfd written by tbox_backend_wayland_wake, from any thread */
+    tbox_damage_tracker *damage; /* what changed since the last present */
     bool commit_pending;         /* a configure was acked and no commit followed yet */
     bool debug_damage;           /* outline each repainted region, see tbox_backend_wayland_set_debug_damage */
-    tbox_rect debug_outlines[TBOX_DAMAGE_MAX_RECTS]; /* last frame's outlined regions, repainted away next frame */
-    size_t debug_outline_count;
 
     struct xkb_context *xkb_context;
     struct xkb_keymap *xkb_keymap;
@@ -1000,6 +1015,18 @@ static const struct wl_registry_listener tbox_backend_wayland_registry_listener 
     .global_remove = tbox_backend_wayland_registry_global_remove,
 };
 
+static void tbox_backend_wayland_slot_free(tbox_wayland_slot *slot) {
+    if (slot->buffer != NULL) wl_buffer_destroy(slot->buffer);
+    if (slot->data != NULL) munmap(slot->data, slot->size);
+    if (slot->fd != -1) close(slot->fd);
+    slot->buffer = NULL;
+    slot->data   = NULL;
+    slot->fd     = -1;
+    slot->width  = 0;
+    slot->height = 0;
+    slot->busy   = false;
+}
+
 void tbox_backend_wayland_destroy(tbox_backend_wayland *backend) {
     if (backend == NULL) {
         return;
@@ -1053,15 +1080,10 @@ void tbox_backend_wayland_destroy(tbox_backend_wayland *backend) {
     if (backend->seat != NULL) {
         wl_seat_destroy(backend->seat);
     }
-    if (backend->shm_data != NULL) {
-        munmap(backend->shm_data, backend->shm_size);
-    }
-    if (backend->shm_fd != -1) {
-        close(backend->shm_fd);
-    }
-    if (backend->buffer != NULL) {
-        wl_buffer_destroy(backend->buffer);
-    }
+    for (int i = 0; i < TBOX_WAYLAND_SLOTS; i++)
+        tbox_backend_wayland_slot_free(&backend->slots[i]);
+    if (backend->frame_callback != NULL) wl_callback_destroy(backend->frame_callback);
+    if (backend->wake_fd >= 0) close(backend->wake_fd);
     tbox_damage_tracker_destroy(backend->damage);
     if (backend->xdg_toplevel != NULL) {
         xdg_toplevel_destroy(backend->xdg_toplevel);
@@ -1107,6 +1129,16 @@ void tbox_backend_wayland_destroy(tbox_backend_wayland *backend) {
     free(backend);
 }
 
+/* `timeout_ms` shortened to the next key repeat, if one is due sooner. */
+static int tbox_backend_wayland_clamp_timeout(const tbox_backend_wayland *backend, int timeout_ms) {
+    if (!backend->repeat_active || backend->repeat_rate <= 0) return timeout_ms;
+    uint64_t now = tbox_backend_wayland_now_ns();
+    if (now == 0 || backend->repeat_next_ns <= now) return 0;
+    uint64_t wait = (backend->repeat_next_ns - now + 999999u) / 1000000u;
+    if (wait > INT32_MAX) wait = INT32_MAX;
+    return timeout_ms < 0 || (int)wait < timeout_ms ? (int)wait : timeout_ms;
+}
+
 bool tbox_backend_wayland_poll(tbox_backend_wayland *backend, int timeout_ms) {
     if (backend == NULL || backend->display == NULL) {
         return false;
@@ -1128,8 +1160,38 @@ bool tbox_backend_wayland_poll(tbox_backend_wayland *backend, int timeout_ms) {
         return false;
     }
 
-    struct pollfd pfd = { .fd = wl_display_get_fd(backend->display), .events = POLLIN };
-    int ready         = poll(&pfd, 1, timeout_ms);
+    /* Besides the display: the wake eventfd and the clipboard pipes, so a
+     * blocking wait still notices a post from another thread and keeps
+     * copy/paste transfers moving. */
+    size_t write_count = 0;
+    for (tbox_clipboard_write *pending = backend->writes; pending != NULL; pending = pending->next) write_count++;
+    struct pollfd fixed[3 + 8];
+    struct pollfd *fds = fixed;
+    size_t capacity    = sizeof(fixed) / sizeof(fixed[0]);
+    if (3 + write_count > capacity) {
+        fds = malloc((3 + write_count) * sizeof(*fds));
+        if (fds == NULL) {
+            fds         = fixed;
+            write_count = capacity - 3; /* the rest still drain on later wakes */
+        }
+    }
+    nfds_t count  = 0;
+    fds[count++]  = (struct pollfd){ .fd = wl_display_get_fd(backend->display), .events = POLLIN };
+    if (backend->wake_fd >= 0) fds[count++] = (struct pollfd){ .fd = backend->wake_fd, .events = POLLIN };
+    if (backend->paste_fd >= 0) fds[count++] = (struct pollfd){ .fd = backend->paste_fd, .events = POLLIN };
+    size_t added = 0;
+    for (tbox_clipboard_write *pending = backend->writes; pending != NULL && added < write_count; pending = pending->next, added++)
+        fds[count++] = (struct pollfd){ .fd = pending->fd, .events = POLLOUT };
+
+    int ready      = poll(fds, count, tbox_backend_wayland_clamp_timeout(backend, timeout_ms));
+    short revents  = fds[0].revents;
+    bool woken     = backend->wake_fd >= 0 && (fds[1].revents & POLLIN);
+    if (fds != fixed) free(fds);
+
+    if (woken) {
+        uint64_t value;
+        (void)!read(backend->wake_fd, &value, sizeof(value));
+    }
 
     if (ready < 0) {
         wl_display_cancel_read(backend->display);
@@ -1138,15 +1200,7 @@ bool tbox_backend_wayland_poll(tbox_backend_wayland *backend, int timeout_ms) {
         return errno == EINTR;
     }
 
-    if (ready == 0) {
-        /* Timed out with nothing pending. */
-        wl_display_cancel_read(backend->display);
-        tbox_backend_wayland_repeat_tick(backend);
-        tbox_backend_wayland_clipboard_pump(backend);
-        return true;
-    }
-
-    if (pfd.revents & POLLIN) {
+    if (revents & POLLIN) {
         if (wl_display_read_events(backend->display) == -1) {
             return false;
         }
@@ -1162,6 +1216,21 @@ bool tbox_backend_wayland_poll(tbox_backend_wayland *backend, int timeout_ms) {
     tbox_backend_wayland_clipboard_pump(backend);
 
     return true;
+}
+
+void tbox_backend_wayland_wake(tbox_backend_wayland *backend) {
+    if (backend == NULL || backend->wake_fd < 0) return;
+    uint64_t one = 1;
+    (void)!write(backend->wake_fd, &one, sizeof(one));
+}
+
+bool tbox_backend_wayland_frame_ready(const tbox_backend_wayland *backend) {
+    if (backend == NULL || backend->frame_callback != NULL) return false;
+    /* With both buffers still on the compositor's side a present would be
+     * refused; their wl_buffer.release is the event to wait for. */
+    for (int i = 0; i < TBOX_WAYLAND_SLOTS; i++)
+        if (!backend->slots[i].busy) return true;
+    return false;
 }
 
 bool tbox_backend_wayland_should_close(const tbox_backend_wayland *backend) {
@@ -1215,10 +1284,20 @@ tbox_backend_wayland *tbox_backend_wayland_open(int32_t width, int32_t height, c
     if (backend == NULL) {
         return NULL;
     }
-    backend->shm_fd = -1;
     backend->paste_fd = -1;
+    backend->shown    = -1;
+    for (int i = 0; i < TBOX_WAYLAND_SLOTS; i++) {
+        backend->slots[i].backend = backend;
+        backend->slots[i].fd      = -1;
+    }
+    backend->wake_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (backend->wake_fd < 0) {
+        free(backend);
+        return NULL;
+    }
     backend->damage = tbox_damage_tracker_create();
     if (backend->damage == NULL) {
+        close(backend->wake_fd);
         free(backend);
         return NULL;
     }
@@ -1291,13 +1370,32 @@ tbox_backend_wayland *tbox_backend_wayland_open(int32_t width, int32_t height, c
     return backend;
 }
 
-/* (Re)allocates backend->buffer/shm_data to match backend->width/height, if
- * it doesn't already. Mirrors example/tbox_wayland.c's draw_and_attach's
- * buffer-allocation half (the checkerboard-drawing half is gone -- callers
- * paint via tbox_raster_display_list instead). Returns false, leaving the
- * previous buffer (if any) untouched, on any allocation failure. */
-static bool tbox_backend_wayland_ensure_buffer(tbox_backend_wayland *backend) {
-    if (backend->buffer != NULL && backend->buffer_width == backend->width && backend->buffer_height == backend->height) {
+static void tbox_backend_wayland_buffer_release(void *data, struct wl_buffer *buffer) {
+    (void)buffer;
+    tbox_wayland_slot *slot = data;
+    slot->busy              = false;
+}
+
+static const struct wl_buffer_listener tbox_backend_wayland_buffer_listener = {
+    .release = tbox_backend_wayland_buffer_release,
+};
+
+static void tbox_backend_wayland_frame_done(void *data, struct wl_callback *callback, uint32_t time) {
+    (void)time;
+    tbox_backend_wayland *backend = data;
+    wl_callback_destroy(callback);
+    if (backend->frame_callback == callback) backend->frame_callback = NULL;
+}
+
+static const struct wl_callback_listener tbox_backend_wayland_frame_listener = {
+    .done = tbox_backend_wayland_frame_done,
+};
+
+/* (Re)allocates `slot` to match backend->width/height, if it doesn't
+ * already. Returns false, leaving the slot untouched, on any allocation
+ * failure. A fresh buffer holds no frame yet: its stale damage is full. */
+static bool tbox_backend_wayland_ensure_slot(tbox_backend_wayland *backend, tbox_wayland_slot *slot) {
+    if (slot->buffer != NULL && slot->width == backend->width && slot->height == backend->height) {
         return true;
     }
 
@@ -1322,110 +1420,167 @@ static bool tbox_backend_wayland_ensure_buffer(tbox_backend_wayland *backend) {
     struct wl_shm_pool *pool = wl_shm_create_pool(backend->shm, fd, (int32_t)pool_size);
     struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0, backend->width, backend->height, stride, WL_SHM_FORMAT_XRGB8888);
     wl_shm_pool_destroy(pool);
+    wl_buffer_add_listener(buffer, &tbox_backend_wayland_buffer_listener, slot);
 
-    /* Replace whatever buffer/mapping backed the previous size, if any -- the
-     * underlying shared memory the compositor is (or was) reading stays
-     * valid as long as it holds its own fd/mapping, so it's safe to drop
-     * ours as soon as the new one is ready. */
-    if (backend->buffer != NULL) {
-        wl_buffer_destroy(backend->buffer);
-    }
-    if (backend->shm_data != NULL) {
-        munmap(backend->shm_data, backend->shm_size);
-    }
-    if (backend->shm_fd != -1) {
-        close(backend->shm_fd);
-    }
+    /* Replace whatever backed the previous size, even if the compositor
+     * still holds it: it keeps its own reference to the shared memory, and
+     * a destroyed buffer sends no more release events. */
+    tbox_backend_wayland_slot_free(slot);
+    if (backend->shown == (int)(slot - backend->slots)) backend->shown = -1;
 
-    backend->shm_fd        = fd;
-    backend->shm_data      = data;
-    backend->shm_size      = pool_size;
-    backend->buffer        = buffer;
-    backend->buffer_width  = backend->width;
-    backend->buffer_height = backend->height;
-    /* Fresh shm memory holds no previous frame to repaint over. */
-    tbox_damage_tracker_invalidate(backend->damage);
+    slot->fd            = fd;
+    slot->data          = data;
+    slot->size          = pool_size;
+    slot->buffer        = buffer;
+    slot->width         = backend->width;
+    slot->height        = backend->height;
+    slot->stale         = (tbox_damage){ .full = true };
+    slot->outline_count = 0;
     return true;
 }
 
-void tbox_backend_wayland_present(tbox_backend_wayland *backend, const tbox_display_list *list) {
-    if (backend == NULL || backend->surface == NULL || backend->shm == NULL) {
+static void tbox_backend_wayland_merge_damage(tbox_damage *into, const tbox_damage *from, int32_t width, int32_t height) {
+    if (from->full) {
+        into->full  = true;
+        into->count = 0;
         return;
     }
-    if (backend->width <= 0 || backend->height <= 0) {
+    for (size_t i = 0; i < from->count && !into->full; i++)
+        tbox_damage_add(into, from->rects[i], width, height);
+}
+
+static bool tbox_backend_wayland_damage_empty(const tbox_damage *damage) {
+    return !damage->full && damage->count == 0;
+}
+
+static void tbox_backend_wayland_outline_strips(tbox_rect r, tbox_rect out[4]) {
+    out[0] = (tbox_rect){ r.x, r.y, r.width, 1.0 };
+    out[1] = (tbox_rect){ r.x, r.y + r.height - 1.0, r.width, 1.0 };
+    out[2] = (tbox_rect){ r.x, r.y, 1.0, r.height };
+    out[3] = (tbox_rect){ r.x + r.width - 1.0, r.y, 1.0, r.height };
+}
+
+static void tbox_backend_wayland_report(tbox_backend_wayland *backend, const tbox_damage *damage) {
+    if (damage->full) {
+        wl_surface_damage_buffer(backend->surface, 0, 0, backend->width, backend->height);
         return;
     }
-    if (!tbox_backend_wayland_ensure_buffer(backend)) {
-        return;
+    for (size_t i = 0; i < damage->count; i++) {
+        tbox_rect r = damage->rects[i];
+        wl_surface_damage_buffer(backend->surface, (int32_t)r.x, (int32_t)r.y, (int32_t)r.width, (int32_t)r.height);
     }
+}
 
-    uint32_t *pixels   = backend->shm_data;
-    int32_t width      = backend->width;
-    int32_t height     = backend->height;
-    tbox_damage damage = tbox_damage_tracker_update(backend->damage, list, width, height);
-
-    /* Last frame's debug outlines live only in the buffer, not in any
-     * display list: repaint their four edge strips away (a full repaint
-     * already does). Kept apart from `damage`, whose merging would turn a
-     * window-sized outline into a full repaint every frame. */
-    bool erased = false;
-    if (!damage.full) {
-        for (size_t i = 0; i < backend->debug_outline_count; i++) {
-            tbox_rect r        = backend->debug_outlines[i];
-            tbox_damage strips = { .count = 4, .full = false };
-            strips.rects[0]    = (tbox_rect){ r.x, r.y, r.width, 1.0 };
-            strips.rects[1]    = (tbox_rect){ r.x, r.y + r.height - 1.0, r.width, 1.0 };
-            strips.rects[2]    = (tbox_rect){ r.x, r.y, 1.0, r.height };
-            strips.rects[3]    = (tbox_rect){ r.x + r.width - 1.0, r.y, 1.0, r.height };
-            tbox_raster_display_list_damaged(pixels, width, height, list, &strips);
-            for (size_t e = 0; e < 4; e++)
-                wl_surface_damage_buffer(backend->surface, (int32_t)strips.rects[e].x, (int32_t)strips.rects[e].y, (int32_t)strips.rects[e].width, (int32_t)strips.rects[e].height);
-            erased = true;
-        }
+/* Reports every debug outline strip of `slot` as surface damage. */
+static void tbox_backend_wayland_report_outlines(tbox_backend_wayland *backend, const tbox_wayland_slot *slot) {
+    for (size_t i = 0; i < slot->outline_count; i++) {
+        tbox_rect strips[4];
+        tbox_backend_wayland_outline_strips(slot->outlines[i], strips);
+        for (size_t e = 0; e < 4; e++)
+            wl_surface_damage_buffer(backend->surface, (int32_t)strips[e].x, (int32_t)strips[e].y, (int32_t)strips[e].width, (int32_t)strips[e].height);
     }
-    backend->debug_outline_count = 0;
+}
 
-    if (!damage.full && damage.count == 0 && !erased) {
-        /* Nothing on screen changes; only honor an acked configure. */
-        if (backend->commit_pending) {
-            wl_surface_commit(backend->surface);
-            backend->commit_pending = false;
-        }
-        return;
-    }
-
-    /* Repaints only the damaged regions over the previous frame (cleared to
-     * opaque white first, matching every browser's default canvas: the
-     * rasterizer alpha-blends rather than overwriting). */
-    tbox_raster_display_list_damaged(pixels, width, height, list, &damage);
-
-    wl_surface_attach(backend->surface, backend->buffer, 0, 0);
-    if (damage.full) {
-        wl_surface_damage_buffer(backend->surface, 0, 0, width, height);
-    } else {
-        for (size_t i = 0; i < damage.count; i++) {
-            tbox_rect r = damage.rects[i];
-            wl_surface_damage_buffer(backend->surface, (int32_t)r.x, (int32_t)r.y, (int32_t)r.width, (int32_t)r.height);
-        }
-    }
-    if (backend->debug_damage) {
-        static const tbox_css_rgba magenta = { 255, 0, 255, 255 };
-        size_t count                       = damage.full ? 1 : damage.count;
-        for (size_t i = 0; i < count; i++) {
-            tbox_rect r        = damage.full ? (tbox_rect){ 0.0, 0.0, (double)width, (double)height } : damage.rects[i];
-            tbox_rect edges[4] = {
-                { r.x, r.y, r.width, 1.0 },
-                { r.x, r.y + r.height - 1.0, r.width, 1.0 },
-                { r.x, r.y, 1.0, r.height },
-                { r.x + r.width - 1.0, r.y, 1.0, r.height },
-            };
-            for (size_t e = 0; e < 4; e++)
-                tbox_raster_fill_rect(pixels, width, height, edges[e], magenta);
-            backend->debug_outlines[backend->debug_outline_count++] = r;
-        }
+/* Commits with a frame callback, so the compositor tells when it wants the
+ * next frame (see tbox_backend_wayland_frame_ready). */
+static void tbox_backend_wayland_commit(tbox_backend_wayland *backend) {
+    if (backend->frame_callback == NULL) {
+        backend->frame_callback = wl_surface_frame(backend->surface);
+        wl_callback_add_listener(backend->frame_callback, &tbox_backend_wayland_frame_listener, backend);
     }
     wl_surface_commit(backend->surface);
     backend->commit_pending = false;
+}
+
+bool tbox_backend_wayland_present(tbox_backend_wayland *backend, const tbox_display_list *list) {
+    if (backend == NULL || backend->surface == NULL || backend->shm == NULL) {
+        return true;
+    }
+    if (backend->width <= 0 || backend->height <= 0) {
+        return true;
+    }
+    for (int i = 0; i < TBOX_WAYLAND_SLOTS; i++)
+        if (!tbox_backend_wayland_ensure_slot(backend, &backend->slots[i]))
+            return true;
+
+    int32_t width      = backend->width;
+    int32_t height     = backend->height;
+    tbox_damage damage = tbox_damage_tracker_update(backend->damage, list, width, height);
+    /* Every buffer has to catch up with this frame's changes whenever it
+     * is painted next, even if that is two frames from now. */
+    for (int i = 0; i < TBOX_WAYLAND_SLOTS; i++)
+        tbox_backend_wayland_merge_damage(&backend->slots[i].stale, &damage, width, height);
+
+    tbox_wayland_slot *shown = backend->shown >= 0 ? &backend->slots[backend->shown] : NULL;
+    if (shown != NULL && tbox_backend_wayland_damage_empty(&shown->stale) && shown->outline_count == 0) {
+        /* Nothing on screen changes: no attach, but still commit for the
+         * frame callback (and any acked configure). */
+        tbox_backend_wayland_commit(backend);
+        return true;
+    }
+
+    /* The shown buffer when the compositor already released it (it only
+     * misses this frame), otherwise any released one. */
+    tbox_wayland_slot *slot = shown != NULL && !shown->busy ? shown : NULL;
+    for (int i = 0; slot == NULL && i < TBOX_WAYLAND_SLOTS; i++)
+        if (!backend->slots[i].busy) slot = &backend->slots[i];
+    if (slot == NULL) {
+        /* Both still on the compositor's side. The changes are already in
+         * each buffer's stale damage; the caller retries once one is
+         * released (a Wayland event, so a blocking poll wakes up). */
+        return false;
+    }
+
+    uint32_t *pixels = slot->data;
+
+    /* The surface damage: what differs from the buffer on screen. */
+    if (shown == NULL) {
+        wl_surface_damage_buffer(backend->surface, 0, 0, width, height);
+    } else {
+        tbox_backend_wayland_report(backend, &slot->stale);
+        if (shown != slot) tbox_backend_wayland_report(backend, &shown->stale);
+        tbox_backend_wayland_report_outlines(backend, shown);
+    }
+
+    /* This buffer's own outlines live only in its pixels, not in any
+     * display list: repaint their four edge strips away (a full repaint
+     * already does). Kept apart from the stale damage, whose merging would
+     * turn a window-sized outline into a full repaint every frame. */
+    if (!slot->stale.full) {
+        for (size_t i = 0; i < slot->outline_count; i++) {
+            tbox_damage strips = { .count = 4, .full = false };
+            tbox_backend_wayland_outline_strips(slot->outlines[i], strips.rects);
+            tbox_raster_display_list_damaged(pixels, width, height, list, &strips);
+        }
+        if (shown != slot) tbox_backend_wayland_report_outlines(backend, slot);
+    }
+    slot->outline_count = 0;
+
+    /* Repaints only what changed since this buffer was last painted (each
+     * region cleared to opaque white first, matching every browser's
+     * default canvas: the rasterizer alpha-blends rather than overwriting). */
+    tbox_damage repaint = slot->stale;
+    tbox_raster_display_list_damaged(pixels, width, height, list, &repaint);
+    slot->stale = (tbox_damage){ 0 };
+
+    if (backend->debug_damage) {
+        static const tbox_css_rgba magenta = { 255, 0, 255, 255 };
+        size_t count                       = repaint.full ? 1 : repaint.count;
+        for (size_t i = 0; i < count; i++) {
+            tbox_rect r = repaint.full ? (tbox_rect){ 0.0, 0.0, (double)width, (double)height } : repaint.rects[i];
+            tbox_rect edges[4];
+            tbox_backend_wayland_outline_strips(r, edges);
+            for (size_t e = 0; e < 4; e++)
+                tbox_raster_fill_rect(pixels, width, height, edges[e], magenta);
+            slot->outlines[slot->outline_count++] = r;
+        }
+    }
+
+    wl_surface_attach(backend->surface, slot->buffer, 0, 0);
+    slot->busy     = true;
+    backend->shown = (int)(slot - backend->slots);
+    tbox_backend_wayland_commit(backend);
+    return true;
 }
 
 void tbox_backend_wayland_set_debug_damage(tbox_backend_wayland *backend, bool enabled) {

@@ -153,6 +153,11 @@ target_link_libraries(tbox_assets_showrun PRIVATE tbox tbox_warnings tbox_saniti
 target_compile_definitions(tbox_assets_showrun PRIVATE
     TBOX_SHOWRUN_ASSETS_DIR=\"${PROJECT_SOURCE_DIR}/tests/assets\")
 
+# tbox_app_post from a worker thread; public API only, like the demos above.
+find_package(Threads REQUIRED)
+add_executable(tbox_worker_post_demo worker_post_demo.c)
+target_link_libraries(tbox_worker_post_demo PRIVATE tbox tbox_warnings tbox_sanitizers Threads::Threads)
+
 # The older app demo is still built only with both of its platform dependencies.
 if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
     add_executable(tbox_app_demo

@@ -3967,6 +3967,51 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* tbox_context_next_frame_time: idle is INFINITY; a transition-delay or
+     * animation-delay is a deadline at its end, not a frame every tick;
+     * a running one asks for the next frame; a finished one goes idle. */
+    {
+        const char *css = "#box { width: 80px; height: 30px; background-color: red; transition: background-color 1s linear 0.5s; }"
+                          "@media (min-width: 500px) { #box { background-color: blue; } }";
+        tbox_context *ctx = open_cstr("<div id='box'>x</div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_set_animation_time(ctx, 0.0);
+            tbox_context_run_frame(ctx, 400.0, 200.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_next_frame_time(ctx) == INFINITY && !tbox_context_animations_active(ctx));
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            TBOX_TEST_ASSERT(fabs(tbox_context_next_frame_time(ctx) - 0.5) < 1e-9 && tbox_context_animations_active(ctx));
+            tbox_context_set_animation_time(ctx, 0.75);
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_next_frame_time(ctx) <= 0.75);
+            tbox_context_set_animation_time(ctx, 1.5);
+            tbox_context_run_frame(ctx, 600.0, 200.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_next_frame_time(ctx) == INFINITY);
+            tbox_context_close(ctx);
+        }
+        TBOX_TEST_ASSERT(tbox_context_next_frame_time(NULL) == INFINITY);
+    }
+    {
+        const char *css = "@keyframes fade { from { opacity: 0; } to { opacity: 1; } }"
+                          "#a { width: 20px; height: 20px; background: red; animation: fade 1s linear 2s; }";
+        tbox_context *ctx = open_cstr("<div id='a'></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_set_animation_time(ctx, 10.0);
+            tbox_context_run_frame(ctx, 100.0, 100.0, &list);
+            TBOX_TEST_ASSERT(fabs(tbox_context_next_frame_time(ctx) - 12.0) < 1e-9);
+            tbox_context_set_animation_time(ctx, 12.5);
+            tbox_context_run_frame(ctx, 100.0, 100.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_next_frame_time(ctx) <= 12.5);
+            tbox_context_set_animation_time(ctx, 13.5);
+            tbox_context_run_frame(ctx, 100.0, 100.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_next_frame_time(ctx) == INFINITY);
+            tbox_context_close(ctx);
+        }
+    }
+
     /* @font-face registers a local font and the layout uses that exact face. */
     {
         const char *css = "@font-face { font-family: 'Fixture Font'; src: url('../../external/liberation-sans/LiberationSans-Regular.ttf'); }"
@@ -4145,6 +4190,8 @@ int tbox_test_context_run(void) {
             tbox_context_run_frame(ctx, 200.0, 300.0, &list);
             const tbox_layout_box *box = find_context_box(ctx, first);
             TBOX_TEST_ASSERT(box != NULL && fabs(box->border_box.y + deltas[m]) < 0.01 && tbox_context_animations_active(ctx));
+            /* waiting for the wheel to stop is a deadline, not a frame per tick */
+            TBOX_TEST_ASSERT(fabs(tbox_context_next_frame_time(ctx) - 0.2) < 1e-9);
             tbox_context_set_animation_time(ctx, 0.25);
             tbox_context_run_frame(ctx, 200.0, 300.0, &list);
             tbox_context_set_animation_time(ctx, 0.6);

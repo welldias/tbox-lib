@@ -425,7 +425,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->transitions                                        = NULL;
     ctx->animations                                         = NULL;
     ctx->animation_time                                     = 0.0;
-    ctx->animations_active                                  = false;
+    ctx->next_frame_time                                    = INFINITY;
     ctx->prefers_reduced_motion                              = options.prefers_reduced_motion;
     ctx->has_starting_style                                  = false;
     for (int s = 0; s < 2; s++) {

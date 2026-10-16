@@ -1,44 +1,52 @@
 # 5. Atualização da tela
 
 > - **Escopo:** quando o tbox decide redesenhar, o que é recalculado a cada frame e como ele descobre quais pixels precisam ser repintados.
-> - **Código relacionado:** `src/app/tbox_app.c` (`tbox_app_step`), `src/context/tbox_context.c` (`tbox_context_run_frame`), `src/output/tbox_raster_damage.c`, `src/output/tbox_backend_wayland.c`, `include/tbox/output.h`
+> - **Código relacionado:** `src/app/tbox_app.c` (`tbox_app_wait`, `tbox_app_post`), `src/context/tbox_context.c` (`tbox_context_run_frame`), `src/context/tbox_context_transition.c` (`tbox_context_next_frame_time`), `src/output/tbox_raster_damage.c`, `src/output/tbox_backend_wayland.c`, `src/output/tbox_window_backend.h`, `include/tbox/output.h`
 > - **Veja também:** [Arquitetura](02-arquitetura.md), [Eventos e interatividade](06-eventos-e-interatividade.md), [Débito técnico](dev/debito-tecnico.md#pipeline)
 
 ## Resumo
 
 1. **Você muda o estado; o tbox decide quando desenhar.** A aplicação altera
-   o DOM (atributos, texto, nós). A biblioteca observa eventos e pedidos de
-   redesenho e marca o frame como *sujo*.
+   o DOM (atributos, texto, nós). A biblioteca observa eventos, tarefas
+   postadas e pedidos de redesenho e marca o frame como *sujo*.
 2. **Num frame sujo, estilo, layout e display list são recalculados por
    inteiro.** Não há invalidação por nó (ainda).
 3. **Só os pixels que mudaram são repintados.** A display list nova é
    comparada com a anterior; apenas as regiões diferentes são rasterizadas e
    enviadas ao compositor.
+4. **Entre um frame e outro, o loop dorme.** `tbox_app_wait` calcula até
+   quando nada muda sozinho e bloqueia até lá — ou até um evento, uma tarefa
+   postada de outra thread ou o compositor pedir o próximo frame.
 
 ```mermaid
 flowchart TD
-    S([tbox_app_step]) --> P[ler eventos do backend]
-    P --> E{algum evento ou pedido<br/>mudou estado visível?}
-    E -- não --> Z([fim do passo<br/>nada é desenhado])
-    E -- sim --> RF[tbox_context_run_frame<br/>reseta frame_arena<br/>cascata + estilo → layout → display list]
+    S([tbox_app_wait]) --> T[calcula o timeout<br/>prazo do contexto, frame pronto?, limite do chamador]
+    T --> P[poll do backend: dorme até evento,<br/>wake, prazo ou timeout]
+    P --> E{evento, tarefa, pedido ou<br/>animação mudou estado visível?}
+    E -- não --> Z([fim da volta<br/>nada é desenhado])
+    E -- sim --> FR{compositor pediu<br/>o próximo frame?}
+    FR -- não --> W([fica pendente<br/>até o frame callback])
+    FR -- sim --> RF[tbox_context_run_frame<br/>reseta frame_arena<br/>cascata + estilo → layout → display list]
     RF --> PR[backend.present]
     PR --> DT[tbox_damage_tracker_update<br/>compara assinaturas com o frame anterior]
     DT --> Q{dano?}
-    Q -- nenhum --> N([sem attach/commit])
+    Q -- nenhum --> N([commit sem buffer novo,<br/>só pelo frame callback])
     Q -- regiões --> R[rasteriza só as ops que<br/>tocam cada região]
     Q -- full --> F[rasteriza a lista inteira]
-    R --> C[wl_surface_damage_buffer por região<br/>+ commit]
+    R --> C[wl_surface_damage_buffer por região<br/>+ frame callback + commit]
     F --> C
 ```
 
 ## Quando um frame fica sujo
 
-`tbox_app_step` processa todos os eventos pendentes e acumula uma decisão
+Cada volta de `tbox_app_wait` (e de `tbox_app_step`, que é a mesma volta
+sem esperar) processa todos os eventos pendentes e acumula uma decisão
 "redesenhar ou não". Fica sujo quando:
 
 | Origem | Condição |
 |---|---|
-| `tbox_app_request_redraw(app)` | sempre (pedidos antes do próximo passo se juntam em um) |
+| `tbox_app_request_redraw(app)` | sempre (pedidos antes da próxima volta se juntam em um) |
+| `tbox_app_post(app, fn, …)` | sempre que alguma tarefa rodou (uma tarefa costuma mudar o DOM) |
 | Clique | sempre — pode mover o cursor de um campo, abrir um popup, mudar foco ou disparar handlers |
 | Arrasto | se moveu scrollbar, canal de cor, `range`, barra de hora ou seleção de texto |
 | Soltar o botão | se `:active` mudou |
@@ -47,15 +55,64 @@ flowchart TD
 | Texto digitado / colado | se o campo focado mudou |
 | Ponteiro | se o elemento sob o ponteiro mudou (`:hover`) |
 | Janela | se o tamanho mudou |
-| Animação | enquanto houver `transition` ou `animation` ativa (inclusive a de entrada, por `@starting-style`, e uma `animation` no atraso inicial; uma pausada não conta), rolagem suave (`scroll-behavior: smooth`) em curso ou um scroll snap esperando a roda parar |
+| Animação | quando chega o `tbox_context_next_frame_time`: a cada frame enquanto houver `transition` ou `animation` em curso (inclusive a de entrada, por `@starting-style`) ou rolagem suave (`scroll-behavior: smooth`); uma vez no fim de um `transition-delay`/`animation-delay` e no fim da espera de um scroll snap (0,15 s sem roda). Uma pausada não conta |
 
-O cursor do mouse (`cursor`) é atualizado a cada passo, mas não suja o frame.
+O cursor do mouse (`cursor`) é atualizado a cada volta, mas não suja o frame.
 
-**Mutação do DOM fora de um handler** (um timer seu, uma resposta de outra
-thread entregue ao loop, um arquivo que terminou de carregar) não é
-detectada automaticamente. Depois de mudar o documento, chame
-`tbox_app_request_redraw(app)`. Dentro de um handler de clique, tecla ou
-input isso não é necessário — o próprio evento já suja o frame.
+**Mutação do DOM fora de um handler** (um timer seu, um arquivo que
+terminou de carregar) não é detectada automaticamente. Depois de mudar o
+documento, chame `tbox_app_request_redraw(app)`. Dentro de um handler de
+clique, tecla ou input, ou de uma tarefa entregue por `tbox_app_post`, isso
+não é necessário — o próprio evento ou a tarefa já suja o frame. **De outra
+thread**, nunca mude o DOM diretamente: poste uma tarefa (ver
+[Memória e concorrência](13-memoria-e-concorrencia.md#threads)).
+
+## Quando o loop dorme
+
+`tbox_app_run(app)` é `tbox_app_wait(app, -1)` até a janela fechar. Quem tem
+loop próprio (um motor de script, um timer seu) chama
+`tbox_app_wait(app, max_ms)` com o próprio prazo; `tbox_app_step(app)` é
+`tbox_app_wait(app, 0)`, que nunca bloqueia.
+
+O timeout de cada volta é o menor entre:
+
+| Fonte | Quanto espera |
+|---|---|
+| Limite do chamador (`max_ms`) | `-1` não limita; `0` nunca bloqueia |
+| Redesenho pendente, resize ou `:hover` a reconferir após um frame | 0 (se o compositor já liberou o frame) |
+| `tbox_context_next_frame_time` | até o prazo: 0 com animação em curso; o fim de um atraso ou do snap; sem limite quando ocioso |
+| Frame pendente com o compositor | sem limite: o `wl_surface.frame` (ou o `wl_buffer.release`) é um evento e acorda o poll |
+| Backend | o próprio backend reduz o timeout à próxima repetição de tecla (no Wayland a repetição é do cliente) |
+
+E o poll volta antes do timeout com qualquer evento do compositor, um
+`tbox_app_post` (o backend Wayland tem um `eventfd` no mesmo `poll`) ou
+progresso numa transferência de clipboard (os pipes também entram no
+`poll`).
+
+O prazo do contexto vem de `tbox_context_next_frame_time`, calculado em
+cada `tbox_context_run_frame` no relógio de `tbox_context_set_animation_time`
+(segundos, monotônico): `-INFINITY` = próximo frame, `INFINITY` = ocioso, ou
+o instante em que algo volta a mudar. Quem usa `tbox_context` sem
+`tbox_app` pode dormir até ele da mesma forma.
+
+Depois de cada frame o loop reconfere o `:hover` uma vez (timeout 0): uma
+animação ou um texto digitado pode mover o elemento sob o ponteiro parado.
+
+### Ritmo pelo compositor
+
+Cada commit pede um `wl_surface.frame`. Enquanto ele não chega,
+`frame_ready` é falso e um frame sujo fica pendente — o estado (eventos,
+handlers, DOM) continua sendo processado, só a pintura espera. Com
+animação ativa, isso dá exatamente um frame por atualização do monitor
+(medido: ~75 frames/s num monitor de 75 Hz). Uma janela oculta não recebe o
+callback e para de animar; como o relógio é real, a animação "pula" para a
+posição certa quando a janela volta, como no navegador. Um frame sujo sem
+mudança na display list ainda faz um commit sem buffer novo, só para manter
+o callback chegando.
+
+Medido em 2026-10-16 (sway, build Debug): `tbox_keyboard_demo` ocioso usou
+0,06 s de CPU em 5 s, com 3 commits; antes, o mesmo loop girava a 100% de
+um núcleo.
 
 Usando `tbox_context` sem `tbox_app`, a regra é a mesma, só que a decisão é
 sua: as funções de evento (`tbox_context_dispatch_click`,
@@ -162,9 +219,23 @@ altera nenhum pixel dentro dela: **o resultado é idêntico a uma repintura
 completa**. Há um teste de equivalência de pixels em
 `tests/output/test_raster.c`.
 
-No backend Wayland o buffer `wl_shm` persiste entre frames e serve de base.
-`present` envia um `wl_surface_damage_buffer` por região; sem dano, não faz
-attach nem commit.
+### Buffer duplo
+
+O backend Wayland alterna entre dois buffers `wl_shm` e só pinta num que o
+compositor liberou (`wl_buffer.release`), para nunca escrever no que ele
+ainda está lendo. Um buffer livre pode estar um ou mais frames atrás, então
+cada buffer guarda o **dano acumulado desde que foi pintado pela última
+vez**: o dano de todo frame entra nos dois, e um buffer repinta tudo o que
+acumulou quando é usado. Se o compositor já liberou o buffer que está na
+tela, ele é reaproveitado (só falta o dano deste frame).
+
+`present` envia ao compositor o dano do buffer escolhido somado ao do que
+está na tela, ou seja, tudo o que difere entre os dois. Sem dano, não faz
+attach; faz só o commit do frame callback. Se os dois buffers ainda
+estiverem com o compositor, `present` recusa o frame (`false`) sem perder o
+dano, que já foi somado aos buffers; `frame_ready` também fica falso nesse
+caso, e o loop espera o `release`. No resize os dois buffers são recriados
+com dano `full`.
 
 ## Ver o que está sendo repintado
 
@@ -230,11 +301,9 @@ Se o conteúdo do buffer se perder (realocação, troca de superfície), chame
 
 ## Limitações atuais
 
-- Estilo e layout não são incrementais.
-- O backend Wayland usa um único buffer `wl_shm`; ainda não espera
-  `wl_buffer.release` (risco de artefato momentâneo).
-- `tbox_app_step` não bloqueia nem sincroniza com o vsync. Um laço
-  `while (!tbox_app_should_close(app)) tbox_app_step(app);` gira sem pausa.
-  Se o consumo de CPU importar, faça uma pausa curta entre passos (alguns
-  milissegundos), ao custo de um pouco de latência.
+- Estilo e layout não são incrementais: cada frame de animação recalcula o
+  documento inteiro (agora no ritmo do monitor, não do loop).
 - O screenshot headless sempre repinta tudo.
+- Não há integração com loops externos por fd (glib, libuv); quem tem loop
+  próprio usa `tbox_app_wait` com o próprio prazo e `tbox_app_post` vindo de
+  outras threads.

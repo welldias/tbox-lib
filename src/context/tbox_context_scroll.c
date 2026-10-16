@@ -43,7 +43,7 @@ static void tbox_context_scroll_glide(tbox_context *ctx, tbox_scroll_state *stat
     state->from_y     = state->y;
     state->target_y   = target;
     state->start_time = ctx->animation_time;
-    ctx->animations_active = true;
+    tbox_context_wake_at(ctx, -INFINITY);
 }
 
 /* Scrolls `state` (of a container styled `style`) to `target`: at once,
@@ -70,7 +70,7 @@ static void tbox_context_scroll_moved(tbox_context *ctx, tbox_scroll_state *stat
     /* the idle wait starts at the next frame: ctx->animation_time is the
      * last frame's, maybe long ago */
     state->snap_time       = immediate ? -INFINITY : NAN;
-    ctx->animations_active = true;
+    tbox_context_wake_at(ctx, -INFINITY);
 }
 
 /* Snap positions found under a container, as scroll offsets. */
@@ -149,7 +149,7 @@ static void tbox_context_scroll_step(tbox_context *ctx, tbox_scroll_state *state
     }
     double eased = t < 0.5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0;
     state->y     = state->from_y + (state->target_y - state->from_y) * eased;
-    ctx->animations_active = true;
+    tbox_context_wake_at(ctx, -INFINITY);
 }
 
 static void tbox_context_shift_subtree(tbox_layout_box *box, double dy) {
@@ -185,7 +185,7 @@ void tbox_context_apply_scroll(tbox_context *ctx, tbox_layout_box *box) {
                         tbox_context_scroll_step(ctx, state);
                     }
                 } else if (state->snap_pending) {
-                    ctx->animations_active = true;
+                    tbox_context_wake_at(ctx, state->animating ? -INFINITY : state->snap_time + TBOX_SCROLL_SNAP_IDLE_SECONDS);
                 }
                 if (state->y > 0.0) tbox_context_shift_subtree(box->first_child, -state->y);
             }

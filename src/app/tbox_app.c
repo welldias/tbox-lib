@@ -1,6 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 #include <tbox/app.h>
 
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,16 +14,8 @@
 #include <tbox/output.h>
 #include <tbox/string_view.h>
 
+#include "base/tbox_mutex.h"
 #include "output/tbox_window_backend.h"
-
-/* Non-blocking, per docs/dev/historico.md's "loop não-bloqueante": each
- * tbox_app_step pumps at most this many milliseconds of Wayland events
- * before moving on to click/resize handling and returning -- see
- * tbox_backend_wayland_poll's doc comment ("0 never blocks"). tbox_app_step
- * is meant to be called every tick of a caller-driven loop (e.g. alongside a
- * future script engine's own task queue -- see docs/dev/historico.md's "Fora de
- * escopo" about vsync), not to wait for something to happen. */
-#define TBOX_APP_POLL_TIMEOUT_MS 0
 
 #ifndef TBOX_HAS_WINDOW_BACKEND
 #define TBOX_HAS_WINDOW_BACKEND 0
@@ -34,6 +28,13 @@
 #define TBOX_APP_PATH_BUF_SIZE 4096
 
 #if TBOX_HAS_WINDOW_BACKEND
+/* One tbox_app_post call waiting for the UI thread. */
+typedef struct tbox_app_task_entry {
+    tbox_app_task task;
+    void *userdata;
+    struct tbox_app_task_entry *next;
+} tbox_app_task_entry;
+
 struct tbox_app {
     tbox_font_face_cache *fonts;
     tbox_font_source *resolver_source;
@@ -67,6 +68,15 @@ struct tbox_app {
     char *control_css_copy;
     tbox_app_key_handler key_handler;
     void *key_handler_userdata;
+
+    /* After a frame the layout may have moved under a still pointer: the
+     * next wait re-tests :hover before sleeping. */
+    bool hover_recheck;
+
+    /* tbox_app_post's queue, the only state touched from other threads. */
+    tbox_mutex tasks_lock;
+    tbox_app_task_entry *tasks_head;
+    tbox_app_task_entry *tasks_tail;
 };
 #endif
 
@@ -236,6 +246,10 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     }
 
     tbox_app *app = (tbox_app *)malloc(sizeof(tbox_app));
+    if (app != NULL && !tbox_mutex_init(&app->tasks_lock)) {
+        free(app);
+        app = NULL;
+    }
     if (app == NULL) {
         tbox_window_backend_destroy(backend);
         tbox_context_close(ctx);
@@ -267,6 +281,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
             tbox_image_cache_destroy(images);
             tbox_font_face_cache_destroy(fonts);
             tbox_font_source_destroy(resolver_source);
+            tbox_mutex_destroy(&app->tasks_lock);
             free(app);
             return NULL;
         }
@@ -276,6 +291,9 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     }
     app->key_handler          = NULL;
     app->key_handler_userdata = NULL;
+    app->hover_recheck        = false;
+    app->tasks_head           = NULL;
+    app->tasks_tail           = NULL;
 
     return app;
 }
@@ -567,12 +585,96 @@ void tbox_app_set_debug_damage(tbox_app *app, bool enabled) {
     }
 }
 
+bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata) {
+    if (app == NULL || task == NULL)
+        return false;
+    tbox_app_task_entry *entry = malloc(sizeof(*entry));
+    if (entry == NULL)
+        return false;
+    entry->task     = task;
+    entry->userdata = userdata;
+    entry->next     = NULL;
+    tbox_mutex_lock(&app->tasks_lock);
+    if (app->tasks_tail != NULL)
+        app->tasks_tail->next = entry;
+    else
+        app->tasks_head = entry;
+    app->tasks_tail = entry;
+    tbox_mutex_unlock(&app->tasks_lock);
+    tbox_window_backend_wake(app->backend);
+    return true;
+}
+
+/* Runs, in posting order, the tasks queued before this call; a task posted
+ * meanwhile (even by one of them) waits for the next round. True if any ran:
+ * they usually mutate the document. */
+static bool tbox_app_run_tasks(tbox_app *app) {
+    tbox_mutex_lock(&app->tasks_lock);
+    tbox_app_task_entry *entry = app->tasks_head;
+    app->tasks_head            = NULL;
+    app->tasks_tail            = NULL;
+    tbox_mutex_unlock(&app->tasks_lock);
+    bool ran = entry != NULL;
+    while (entry != NULL) {
+        tbox_app_task_entry *next = entry->next;
+        entry->task(app, entry->userdata);
+        free(entry);
+        entry = next;
+    }
+    return ran;
+}
+
+static double tbox_app_now(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+        return 0.0;
+    return (double)now.tv_sec + (double)now.tv_nsec / 1000000000.0;
+}
+
+/* How long the next poll may sleep: until the context's next frame time,
+ * capped by `max_wait_ms` (-1: no cap). A frame already due but not
+ * allowed yet (pending frame callback or no free buffer) waits for the
+ * backend event that allows it. Posted tasks wake the poll by themselves. */
+static int tbox_app_timeout(tbox_app *app, int32_t max_wait_ms) {
+    if (max_wait_ms == 0 || app->hover_recheck)
+        return 0;
+    int32_t width  = 0;
+    int32_t height = 0;
+    tbox_window_backend_size(app->backend, &width, &height);
+    double next = app->redraw_requested || width != app->last_width || height != app->last_height ? -INFINITY : tbox_context_next_frame_time(app->ctx);
+    if (next == INFINITY || !tbox_window_backend_frame_ready(app->backend))
+        return max_wait_ms < 0 ? -1 : max_wait_ms;
+    double wait_ms = ceil((next - tbox_app_now()) * 1000.0);
+    if (!(wait_ms > 0.0))
+        return 0;
+    if (max_wait_ms >= 0 && wait_ms > (double)max_wait_ms)
+        return max_wait_ms;
+    return wait_ms > (double)INT_MAX ? INT_MAX : (int)wait_ms;
+}
+
 void tbox_app_step(tbox_app *app) {
+    tbox_app_wait(app, 0);
+}
+
+void tbox_app_run(tbox_app *app) {
+    while (!tbox_app_should_close(app))
+        tbox_app_wait(app, -1);
+}
+
+void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
     if (app == NULL) {
         return;
     }
+    if (tbox_app_should_close(app)) {
+        /* No window to serve; tasks still run, so a caller that joined its
+         * worker threads can drain what they posted before closing. */
+        tbox_app_run_tasks(app);
+        return;
+    }
 
-    if (!tbox_window_backend_poll(app->backend, TBOX_APP_POLL_TIMEOUT_MS)) {
+    int timeout        = tbox_app_timeout(app, max_wait_ms);
+    app->hover_recheck = false;
+    if (!tbox_window_backend_poll(app->backend, timeout)) {
         /* Connection to the compositor is gone -- see the `closed` field's
          * comment above. There is nothing left to dispatch/redraw. */
         app->closed = true;
@@ -678,6 +780,9 @@ void tbox_app_step(tbox_app *app) {
         }
     }
 
+    if (tbox_app_run_tasks(app))
+        dirty = true;
+
     /* pointer position, not just click -- :hover. Called every
      * tick unconditionally (no check for whether the pointer actually
      * moved since the last tick), same O(n) hit-test cost already accepted
@@ -701,16 +806,23 @@ void tbox_app_step(tbox_app *app) {
         dirty            = true;
     }
 
-    if (tbox_context_animations_active(app->ctx))
+    double now = tbox_app_now();
+    if (tbox_context_next_frame_time(app->ctx) <= now)
         dirty = true;
-    if (dirty) {
-        struct timespec now;
-        if (clock_gettime(CLOCK_MONOTONIC, &now) == 0)
-            tbox_context_set_animation_time(app->ctx, (double)now.tv_sec + (double)now.tv_nsec / 1000000000.0);
-        tbox_display_list list;
-        tbox_context_run_frame(app->ctx, (double)app->last_width, (double)app->last_height, &list);
-        tbox_window_backend_present(app->backend, &list);
+    if (!dirty)
+        return;
+    if (!tbox_window_backend_frame_ready(app->backend)) {
+        /* Paced by the compositor: this frame waits for its go-ahead. */
+        app->redraw_requested = true;
+        return;
     }
+    tbox_context_set_animation_time(app->ctx, now);
+    tbox_display_list list;
+    tbox_context_run_frame(app->ctx, (double)app->last_width, (double)app->last_height, &list);
+    if (tbox_window_backend_present(app->backend, &list))
+        app->hover_recheck = true;
+    else
+        app->redraw_requested = true;
 }
 
 bool tbox_app_should_close(const tbox_app *app) {
@@ -727,6 +839,13 @@ void tbox_app_close(tbox_app *app) {
 
     tbox_window_backend_destroy(app->backend);
     tbox_context_close(app->ctx);
+    /* Tasks never run are dropped; their userdata is the poster's. */
+    for (tbox_app_task_entry *entry = app->tasks_head; entry != NULL;) {
+        tbox_app_task_entry *next = entry->next;
+        free(entry);
+        entry = next;
+    }
+    tbox_mutex_destroy(&app->tasks_lock);
     tbox_image_cache_destroy(app->images);
     tbox_font_face_cache_destroy(app->fonts);
     tbox_font_source_destroy(app->resolver_source);
@@ -814,6 +933,19 @@ void tbox_app_set_debug_damage(tbox_app *app, bool enabled) {
 }
 void tbox_app_step(tbox_app *app) {
     (void)app;
+}
+void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
+    (void)app;
+    (void)max_wait_ms;
+}
+void tbox_app_run(tbox_app *app) {
+    (void)app;
+}
+bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata) {
+    (void)app;
+    (void)task;
+    (void)userdata;
+    return false;
 }
 bool tbox_app_should_close(const tbox_app *app) {
     (void)app;

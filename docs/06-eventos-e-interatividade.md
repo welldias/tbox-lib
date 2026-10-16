@@ -14,7 +14,7 @@ respeitam esses recortes tanto na pintura quanto ao iniciar um arrasto.
 ```mermaid
 flowchart LR
     OS[Compositor / SO] --> BE[Backend<br/>traduz para tbox_input_event]
-    BE --> APP[tbox_app_step]
+    BE --> APP[tbox_app_wait]
     APP -->|tecla| KH{tbox_app_on_key<br/>consumiu?}
     KH -- não --> CTX
     APP -->|clique, arrasto, scroll, texto| CTX[tbox_context]
@@ -132,7 +132,7 @@ funcionam; composição por IME ainda não (ver
 
 | Pseudo-classe | Atualizada por |
 |---|---|
-| `:hover` | posição do ponteiro a cada `tbox_app_step` (casa o elemento e seus ancestrais) |
+| `:hover` | posição do ponteiro a cada volta do loop e depois de cada frame, porque o layout pode ter mudado sob o ponteiro parado (casa o elemento e seus ancestrais) |
 | `:active` | botão pressionado até soltar (elemento e ancestrais) |
 | `:focus`, `:focus-within` | foco do contexto |
 | `:checked`, `:disabled`, `:enabled`, `:required`, `:optional` | atributos do DOM |
@@ -200,4 +200,4 @@ frame. A ordem que o `tbox_app` usa, por evento:
 - **soltar:** `scrollbar_release`, `range_release`, `set_active_at(false)`;
 - **a cada passo:** `update_hover` com a posição do ponteiro.
 
-Ver `tbox_app_step` em `src/app/tbox_app.c` como referência.
+Ver `tbox_app_wait` em `src/app/tbox_app.c` como referência.

@@ -13,14 +13,25 @@ typedef struct tbox_window_backend tbox_window_backend;
 
 tbox_window_backend *tbox_window_backend_open(int32_t width, int32_t height, const char *title);
 void tbox_window_backend_destroy(tbox_window_backend *window);
+/* Waits up to `timeout_ms` (-1: no limit, 0: never blocks) for native
+ * events or a wake; each backend also shortens the wait to its own
+ * deadlines (e.g. Wayland's client-side key repeat). False once the
+ * window system connection is lost. */
 bool tbox_window_backend_poll(tbox_window_backend *window, int timeout_ms);
+/* Makes a poll in progress (or the next one) return. Safe from any thread;
+ * every other function here belongs to the UI thread. */
+void tbox_window_backend_wake(tbox_window_backend *window);
+/* False while the window system has not asked for the next frame yet. */
+bool tbox_window_backend_frame_ready(const tbox_window_backend *window);
 bool tbox_window_backend_should_close(const tbox_window_backend *window);
 void tbox_window_backend_size(const tbox_window_backend *window, int32_t *width, int32_t *height);
 bool tbox_window_backend_take_event(tbox_window_backend *window, tbox_input_event *event);
 bool tbox_window_backend_pointer_position(const tbox_window_backend *window, double *x, double *y);
 bool tbox_window_backend_clipboard_copy(tbox_window_backend *window, const char *text, size_t length, uint32_t serial);
 bool tbox_window_backend_clipboard_paste(tbox_window_backend *window);
-void tbox_window_backend_present(tbox_window_backend *window, const tbox_display_list *list);
+/* False when no buffer was free: nothing painted, changes kept; present
+ * again once frame_ready or another event allows. */
+bool tbox_window_backend_present(tbox_window_backend *window, const tbox_display_list *list);
 void tbox_window_backend_set_cursor(tbox_window_backend *window, tbox_style_cursor cursor);
 void tbox_window_backend_set_debug_damage(tbox_window_backend *window, bool enabled);
 

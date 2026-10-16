@@ -14,8 +14,7 @@ tbox_app *app = tbox_app_create(
     "<body><h1>Hello</h1><button>Click</button></body>",
     "button { padding: 8px 16px; }", 480, 240);
 tbox_context_on_click(tbox_app_context(app), "button", 6, on_click, NULL);
-while (!tbox_app_should_close(app))
-    tbox_app_step(app);
+tbox_app_run(app); /* sleeps until something happens; returns when the window closes */
 tbox_app_close(app);
 ```
 

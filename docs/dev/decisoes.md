@@ -386,6 +386,41 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   marca de poucos pixels sairia torta. Só a `<string>` usa texto, numa face
   de meio tamanho que o Layout escolhe (2026-10-12).
 
+## Loop da aplicação e threads
+
+- **Afinidade de thread + uma única porta thread-safe** (`tbox_app_post`).
+  Toda a API roda na thread de UI (no macOS será obrigatoriamente a
+  principal); só `tbox_app_post` pode ser chamada de qualquer thread. A
+  fila é por instância de `tbox_app`, protegida por um mutex próprio — não
+  é estado global e não muda a regra de nenhuma outra estrutura.
+  Descartadas: contexto inteiro thread-safe (custo e complexidade sem caso
+  de uso) e expor um fd para loops externos (não existe no Windows nem no
+  macOS, cujos loops são de mensagens/run loop) (2026-10-16).
+- **Só `post`, sem `wake` separado**: acordar sem trabalho é
+  `tbox_app_post` com uma função vazia; uma função a menos na superfície
+  thread-safe. `wake` pode entrar depois sem quebrar nada (2026-10-16).
+- **O prazo interno não é público na aplicação.** `tbox_app_wait(app,
+  max_ms)` calcula sozinho quanto pode dormir (animações, atrasos, snap,
+  repetição de tecla, frame do compositor); quem tem loop próprio só passa
+  o próprio limite. O contexto expõe `tbox_context_next_frame_time` para
+  quem usa `tbox_context` sem `tbox_app`. Tempo absoluto em segundos no
+  relógio monotônico (o mesmo de `tbox_context_set_animation_time`)
+  internamente; `int32_t` ms na API de aplicação, por ser o tipo mais
+  simples de mapear em qualquer FFI (2026-10-16).
+- **`tbox_app_step` continua não-bloqueante** (é `tbox_app_wait(app, 0)`),
+  para não mudar a semântica de quem já integra um loop (2026-10-16).
+- **Ritmo pelo compositor, não por timer**: com animação ativa, o próximo
+  frame espera o `wl_surface.frame`; uma janela oculta pausa as animações
+  (o relógio é real, então elas "pulam" ao voltar, como no navegador). Cada
+  backend sabe seus próprios prazos (a repetição de tecla só existe no
+  Wayland; Windows e macOS repetem no sistema) e reduz o timeout recebido
+  (2026-10-16).
+- **Buffer duplo com dano acumulado por buffer**: cada buffer guarda o que
+  mudou desde que foi pintado pela última vez; o dano de cada frame entra
+  em todos. Se nenhum buffer estiver livre, o `present` recusa o frame e a
+  aplicação tenta de novo quando o compositor liberar um — o dano não se
+  perde porque já foi somado aos buffers (2026-10-16).
+
 ## Ferramentas
 
 - **`tbox_cmp` em C++/OpenCV, opcional, fora do `ctest`**: a API C do OpenCV

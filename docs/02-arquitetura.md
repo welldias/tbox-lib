@@ -94,8 +94,8 @@ sequenceDiagram
     participant B as Backend de janela
     participant C as tbox_context
     participant D as Damage tracker
-    App->>TA: tbox_app_step()
-    TA->>B: poll() / take_event()
+    App->>TA: tbox_app_run() / tbox_app_wait()
+    TA->>B: poll(timeout) / take_event()
     B-->>TA: eventos (clique, tecla, texto, scroll)
     TA->>C: dispatch_click / dispatch_key / update_hover ...
     C-->>App: handlers (on_click, on_input, on_submit...)

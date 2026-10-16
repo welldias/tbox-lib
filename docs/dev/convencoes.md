@@ -51,10 +51,14 @@ aceito; só será revisto se for medido como problema real (ver
 
 ## Estado global e threads
 
-A biblioteca não é thread-safe e não tem lock interno. Cada `tbox_context`
-(e tudo ligado a ele) deve ser usado por uma thread de cada vez. A análise
-formal de thread-safety está deliberadamente adiada até existir um caso de
-uso real (ver [Débito técnico](debito-tecnico.md#thread-safety)).
+A biblioteca usa **afinidade de thread**: cada `tbox_app`/`tbox_context`
+(e tudo ligado a ele) é usado só pela thread de UI. A única exceção é
+`tbox_app_post`, cuja fila por instância é protegida por um mutex
+(`src/base/tbox_mutex.h`) — o único lock da biblioteca. Uma nova função
+chamável de outra thread, ou um novo lock, precisa de discussão como um
+global (ver [Decisões](decisoes.md#loop-da-aplicação-e-threads)). A análise
+de thread-safety do resto continua adiada até existir um caso de uso real
+(ver [Débito técnico](debito-tecnico.md#thread-safety)).
 
 **Regra: nenhum estado global/estático mutável novo sem discussão.** O
 estado global que já existe (contextos de `:hover`/`:focus`/`:active` em

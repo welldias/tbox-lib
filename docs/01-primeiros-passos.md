@@ -61,8 +61,7 @@ int main(void) {
     if (app == NULL) return 1;
 
     tbox_context_on_click(tbox_app_context(app), "button", 6, on_click, NULL);
-    while (!tbox_app_should_close(app))
-        tbox_app_step(app);
+    tbox_app_run(app);
     tbox_app_close(app);
     return 0;
 }

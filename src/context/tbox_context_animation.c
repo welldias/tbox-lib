@@ -195,7 +195,8 @@ void tbox_context_apply_animations(tbox_context *ctx, const tbox_css_cascade_sou
             double progress;
             bool finished;
             bool effect = tbox_animation_progress(animation, local, &progress, &finished);
-            if (!finished && !state->paused) ctx->animations_active = true;
+            /* in its delay nothing moves until the delay ends */
+            if (!finished && !state->paused) tbox_context_wake_at(ctx, local < 0.0 ? now - local : -INFINITY);
             if (!effect) continue;
             unsigned long long animated = 0;
             for (size_t f = 0; f < state->frame_count; f++) animated |= state->frames[f].mask;

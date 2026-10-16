@@ -215,10 +215,18 @@ struct tbox_context {
     tbox_transition_state *transitions;
     tbox_animation_state *animations;
     double animation_time;
-    bool animations_active;
+    /* Earliest animation_time at which a frame would look different with no
+     * new input (INFINITY: idle); see tbox_context_next_frame_time. */
+    double next_frame_time;
     bool prefers_reduced_motion;
     bool has_starting_style; /* some author rule is inside @starting-style */
 };
+
+/* Asks for a frame no later than `seconds` (animation_time clock);
+ * -INFINITY: the very next frame. */
+static inline void tbox_context_wake_at(tbox_context *ctx, double seconds) {
+    if (seconds < ctx->next_frame_time) ctx->next_frame_time = seconds;
+}
 
 void tbox_context_free_transitions(tbox_context *ctx);
 void tbox_context_free_animations(tbox_context *ctx);

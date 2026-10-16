@@ -17,7 +17,7 @@ tbox_app *app = tbox_app_create(
     "<body><h1>Contador</h1><p id='n'>0</p><button>+1</button></body>",
     "button { padding: 6px 14px }", 320, 200);
 tbox_context_on_click(tbox_app_context(app), "button", 6, on_plus, NULL);
-while (!tbox_app_should_close(app)) tbox_app_step(app);
+tbox_app_run(app); /* dorme até algo acontecer; volta quando a janela fecha */
 tbox_app_close(app);
 ```
 

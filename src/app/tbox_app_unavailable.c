@@ -56,5 +56,8 @@ tbox_context *tbox_app_context(tbox_app *app) { (void)app; return NULL; }
 void tbox_app_request_redraw(tbox_app *app) { (void)app; }
 void tbox_app_set_debug_damage(tbox_app *app, bool enabled) { (void)app; (void)enabled; }
 void tbox_app_step(tbox_app *app) { (void)app; }
+void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) { (void)app; (void)max_wait_ms; }
+void tbox_app_run(tbox_app *app) { (void)app; }
+bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata) { (void)app; (void)task; (void)userdata; return false; }
 bool tbox_app_should_close(const tbox_app *app) { (void)app; return true; }
 void tbox_app_close(tbox_app *app) { (void)app; }

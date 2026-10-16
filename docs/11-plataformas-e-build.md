@@ -64,11 +64,20 @@ Empacotamento (instalar a lib e a fonte embutida no sistema) faz parte do
 `tbox_app` só conversa com a plataforma por `src/output/tbox_window_backend.h`
 (privado):
 
-- abrir/destruir janela, `poll` com timeout, tamanho atual, pedido de fechar;
+- abrir/destruir janela, tamanho atual, pedido de fechar;
+- `poll(timeout)`: esperar eventos nativos até o timeout, que o backend
+  reduz aos próprios prazos (no Wayland, a repetição de tecla, que no
+  Windows e no macOS é do sistema); `wake()`, a única operação chamada de
+  outra thread, que interrompe a espera (Wayland: `eventfd`; Windows:
+  `PostMessage`; macOS: `postEvent`/`CFRunLoopWakeUp`);
+- `frame_ready()`: se o sistema já pediu o próximo frame (Wayland:
+  `wl_surface.frame`; Windows: DWM/DXGI; macOS: `CADisplayLink`, que chega
+  em outra thread e por isso usa `wake`);
 - fila de `tbox_input_event` (clique com duplo clique, arrasto, soltar,
   scroll, tecla lógica, texto UTF-8, colar);
 - posição do ponteiro, cursor, clipboard (copiar/colar);
-- `present(display_list)` e o modo de depuração de dano.
+- `present(display_list)`, que pode recusar o frame (`false`) se não houver
+  buffer livre, e o modo de depuração de dano.
 
 Um backend novo implementa esse contrato e traduz os eventos nativos;
 layout, render e contexto não mudam. A descoberta de fontes é outra

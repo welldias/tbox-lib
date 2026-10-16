@@ -276,7 +276,9 @@ As duas rodam na orquestração (`tbox_context_transition.c`,
 do layout, então propriedades de layout (`width`, `padding`…) animam
 refazendo o layout a cada frame. O relógio é
 `tbox_context_set_animation_time`; enquanto alguma estiver ativa,
-`tbox_context_animations_active` é verdadeiro.
+`tbox_context_animations_active` é verdadeiro, e
+`tbox_context_next_frame_time` diz quando o próximo frame muda algo (no
+atraso inicial de uma `transition-delay`/`animation-delay`, o fim do atraso).
 
 - **Propriedades que interpolam** (`tbox_style_animatable`): `color`,
   `background-color`, `opacity`, `border-*-color`, `border-*-width`,

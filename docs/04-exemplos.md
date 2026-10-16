@@ -1,7 +1,7 @@
 # 4. Exemplos
 
 > - **Escopo:** receitas curtas para as tarefas mais comuns, do "olá mundo" ao render headless.
-> - **Código relacionado:** `example/tbox_app.c`, `example/keyboard_demo.c`, `example/control_theme_demo.c`, `example/assets_showrun.c`
+> - **Código relacionado:** `example/tbox_app.c`, `example/keyboard_demo.c`, `example/control_theme_demo.c`, `example/assets_showrun.c`, `example/worker_post_demo.c`
 > - **Veja também:** [Guia da API](03-guia-da-api.md), [Eventos e interatividade](06-eventos-e-interatividade.md), [Primeiros passos](01-primeiros-passos.md)
 
 Todos os trechos usam só a API pública (`#include <tbox/tbox.h>`). Os
@@ -37,8 +37,7 @@ int main(void) {
     tbox_app *app = tbox_app_create(html, css, 640, 400);
     if (app == NULL) return 1; /* sem backend, sem fonte ou falha de janela */
 
-    while (!tbox_app_should_close(app))
-        tbox_app_step(app);
+    tbox_app_run(app);
     tbox_app_close(app);
     return 0;
 }
@@ -148,26 +147,53 @@ separado, por `tbox_context_on_input` no campo focado.
 
 ## 6. Atualizar a tela a partir do seu próprio código
 
-Mutações feitas fora de um handler precisam de um pedido explícito:
+Mutações feitas no seu próprio loop, fora de um handler, precisam de um
+pedido explícito. O prazo do relógio é seu: passe-o a `tbox_app_wait`, que
+dorme até ele (ou até um evento antes):
 
 ```c
 #include <time.h>
 
-double last = 0.0;
-while (!tbox_app_should_close(app)) {
+static double now_seconds(void) {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    double seconds = (double)now.tv_sec + now.tv_nsec / 1e9;
-    if (seconds - last >= 1.0) {          /* uma vez por segundo */
-        last = seconds;
+    return (double)now.tv_sec + now.tv_nsec / 1e9;
+}
+
+double next_tick = now_seconds();
+while (!tbox_app_should_close(app)) {
+    double seconds = now_seconds();
+    if (seconds >= next_tick) {           /* uma vez por segundo */
+        next_tick = seconds + 1.0;
         char text[32];
         snprintf(text, sizeof text, "%.0f s", seconds);
         set_text(tbox_app_context(app), "#relogio", text);
         tbox_app_request_redraw(app);     /* sem isto, nada muda na tela */
     }
-    tbox_app_step(app);
+    tbox_app_wait(app, (int32_t)((next_tick - now_seconds()) * 1000.0) + 1);
 }
 ```
+
+Trabalho em outra thread entrega o resultado com `tbox_app_post`; a função
+roda na thread de UI e o frame já fica sujo, sem `request_redraw`:
+
+```c
+static void mostrar(tbox_app *app, void *userdata) {   /* thread de UI */
+    set_text(tbox_app_context(app), "#status", userdata);
+    free(userdata);
+}
+
+static void *trabalho(void *arg) {                     /* outra thread */
+    tbox_app *app = arg;
+    char *texto = baixar_algo();
+    if (!tbox_app_post(app, mostrar, texto)) free(texto);
+    return NULL;
+}
+```
+
+Antes de `tbox_app_close`, termine (`join`) as threads que postam; um
+`tbox_app_step` depois disso roda o que ainda estiver na fila. Exemplo
+completo: `example/worker_post_demo.c` (`tbox_worker_post_demo`).
 
 ## 7. Criar elementos dinamicamente
 
@@ -275,4 +301,5 @@ Partes e classes disponíveis: [Formulários e controles](10-formularios-e-contr
 | `tbox_keyboard_demo` | Formulário completo: foco por Tab, edição, seleção, clipboard, todos os tipos de input, lista rolável. |
 | `tbox_control_theme_demo` | Popups de cor/data/arquivo com tema próprio (`--default` compara com o tema embutido). |
 | `tbox_assets_showrun` | Navega pelos fixtures de `tests/assets` com as setas. |
+| `tbox_worker_post_demo` | Uma thread de trabalho atualiza uma barra de progresso via `tbox_app_post`; o loop dorme entre as tarefas. |
 | `html_parser`, `html_xpath`, `css_parser`, `css_selector`, `css_cascade`, `css_cascade_origins`, `css_style_by_node` | Uso isolado de cada camada, sem janela. |

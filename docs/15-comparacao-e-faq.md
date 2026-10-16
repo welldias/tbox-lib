@@ -41,8 +41,9 @@ display list no seu buffer, inclusive com repintura parcial. Ver
 [Atualização da tela](05-atualizacao-da-tela.md#usando-o-damage-tracking-sem-tbox_app).
 
 **É seguro usar de várias threads?**
-Não. Use a biblioteca de uma thread de UI e mande para ela o resultado do
-trabalho feito em outras. Ver [Memória e concorrência](13-memoria-e-concorrencia.md).
+Com uma regra: toda a API roda numa thread de UI, e as outras threads
+entregam trabalho a ela com `tbox_app_post`, a única função thread-safe. Ver
+[Memória e concorrência](13-memoria-e-concorrencia.md#threads).
 
 **Por que meu clique num `<a>` não dispara o handler?**
 Elementos inline não têm caixa própria; o alvo do clique é o bloco que os
@@ -50,7 +51,8 @@ contém. Dê `display: inline-block` ao elemento. Ver
 [Eventos](06-eventos-e-interatividade.md#hit-test).
 
 **Mudei o DOM e a tela não atualizou.**
-Fora de um handler, chame `tbox_app_request_redraw(app)`. Ver
+Fora de um handler, chame `tbox_app_request_redraw(app)`; de outra thread,
+mude o DOM dentro de uma função entregue por `tbox_app_post`. Ver
 [Atualização da tela](05-atualizacao-da-tela.md#quando-um-frame-fica-sujo).
 
 **Só parte do meu HTML aparece.**

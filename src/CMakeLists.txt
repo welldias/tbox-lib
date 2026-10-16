@@ -19,6 +19,11 @@ set(TBOX_SOURCES ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XP
 # library rather than folding into libc itself.
 find_library(TBOX_MATH_LIBRARY m)
 
+# tbox_app_post's queue lock (src/base/tbox_mutex.h): the one piece of the
+# library called from other threads.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 # Fontconfig backs tbox_font_source_fontconfig.c (Fonte/Texto layer), which
 # resolves a generic family like "sans-serif" to a real font file on Linux.
 # It is optional, same graceful-skip pattern as the Wayland dependency
@@ -96,7 +101,7 @@ if(TBOX_BUILD_STATIC)
     add_library(tbox_static STATIC ${TBOX_SOURCES})
     target_include_directories(tbox_static PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_include_directories(tbox_static PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/external/utf8.h ${CMAKE_SOURCE_DIR}/external/stb_image)
-    target_link_libraries(tbox_static PRIVATE tbox_warnings tbox_sanitizers freetype)
+    target_link_libraries(tbox_static PRIVATE tbox_warnings tbox_sanitizers freetype Threads::Threads)
     if(TBOX_MATH_LIBRARY)
         target_link_libraries(tbox_static PRIVATE ${TBOX_MATH_LIBRARY})
     endif()
@@ -132,7 +137,7 @@ if(TBOX_BUILD_SHARED)
     add_library(tbox_shared SHARED ${TBOX_SOURCES})
     target_include_directories(tbox_shared PUBLIC ${CMAKE_SOURCE_DIR}/include)
     target_include_directories(tbox_shared PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/external/utf8.h ${CMAKE_SOURCE_DIR}/external/stb_image)
-    target_link_libraries(tbox_shared PRIVATE tbox_warnings tbox_sanitizers freetype)
+    target_link_libraries(tbox_shared PRIVATE tbox_warnings tbox_sanitizers freetype Threads::Threads)
     if(TBOX_MATH_LIBRARY)
         target_link_libraries(tbox_shared PRIVATE ${TBOX_MATH_LIBRARY})
     endif()

@@ -493,21 +493,17 @@ int main(int argc, char **argv) {
     }
 
     while (!tbox_app_should_close(app)) {
-        tbox_app_step(app);
-
-        if (close_delay_ms > 0 && tbox_app_demo_elapsed_ms(&start_time) >= close_delay_ms) {
-            tbox_log("auto-close delay elapsed, closing");
-            break;
+        /* The auto-close deadline is this loop's own: tbox_app_wait sleeps
+         * until an event, an animation frame or that deadline. */
+        long remaining = -1;
+        if (close_delay_ms > 0) {
+            remaining = close_delay_ms - tbox_app_demo_elapsed_ms(&start_time);
+            if (remaining <= 0) {
+                tbox_log("auto-close delay elapsed, closing");
+                break;
+            }
         }
-
-        /* tbox_app_step polls with a 0ms (non-blocking) timeout -- see its
-         * doc comment in <tbox/app.h> -- by design, so a future caller can
-         * interleave its own task queue between ticks. This demo has no
-         * such queue, so it sleeps a bit itself between ticks purely to
-         * avoid spinning a CPU core at 100%; tbox itself never sleeps or
-         * reads the clock on its own (see <tbox/debug.h>). */
-        struct timespec tick_delay = { .tv_sec = 0, .tv_nsec = 8L * 1000L * 1000L };
-        nanosleep(&tick_delay, NULL);
+        tbox_app_wait(app, remaining > INT32_MAX ? INT32_MAX : (int32_t)remaining);
     }
 
     tbox_app_close(app);

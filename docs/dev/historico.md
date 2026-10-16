@@ -527,3 +527,35 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
 - `tests/base/test_list.c`: o vetor preenchido no laço é inicializado
   (`-Wmaybe-uninitialized` em `-O3`) e o índice é limitado.
 - Todos os tipos de build (GCC e Clang) compilam limpos e passam no `ctest`.
+
+## 2026-10-16 — Loop que dorme, buffer duplo e `tbox_app_post`
+
+- **Application**: `tbox_app_wait(app, max_ms)` (uma volta do loop que
+  dorme até evento, tarefa, prazo do contexto ou o limite do chamador),
+  `tbox_app_run` (`wait(-1)` até fechar) e `tbox_app_post` (fila por
+  instância com mutex, a única função thread-safe). `tbox_app_step` vira
+  `tbox_app_wait(app, 0)`, com a mesma semântica de antes. Um frame sujo
+  espera o compositor (`frame_ready`); depois de cada frame o `:hover` é
+  reconferido. Com a janela fechada, `wait`/`step` só rodam a fila.
+- **Orchestration**: `ctx->animations_active` (bool) virou
+  `ctx->next_frame_time` (prazo), público em `tbox_context_next_frame_time`.
+  Atrasos de `transition`/`animation` e a espera do scroll snap são prazos,
+  não um frame por volta. `tbox_context_animations_active` continua (=
+  prazo finito).
+- **Output**: backend Wayland com dois buffers `wl_shm` e dano acumulado por
+  buffer, `wl_buffer.release`, `wl_surface.frame` em todo commit, `eventfd`
+  para `wake`, pipes do clipboard e prazo da repetição de tecla no `poll`.
+  `present` retorna `bool` (recusa sem buffer livre). Interface de backend
+  ganhou `wake` e `frame_ready`.
+- **Base**: `src/base/tbox_mutex.h` (pthread); CMake liga `Threads::Threads`.
+- Exemplos: `tbox_worker_post_demo` (novo); os demais usam `tbox_app_run`
+  ou `tbox_app_wait`, sem `nanosleep`.
+- Testes de `tbox_context_next_frame_time` (transição e animação com
+  atraso, snap). Validação manual no sway: ocioso 0,06 s de CPU em 5 s;
+  animação contínua a ~75 frames/s num monitor de 75 Hz, `attach` =
+  `release`; resize repetido e fechamento com tarefas pendentes limpos com
+  ASan/UBSan; contornos de `debug_damage` sem fantasmas entre buffers.
+  Repetição de tecla e clipboard não foram exercitados (sem ferramenta de
+  entrada sintética).
+- Débito resolvido: "Buffer duplo no backend Wayland" e "Loop sem espera".
+  Novos: integração com loops externos, callbacks para bindings.

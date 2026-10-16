@@ -45,16 +45,28 @@ e define as regras abaixo.
 
 ## Threads
 
-**O tbox não é thread-safe e não tem lock interno.** Regras:
+**Afinidade de thread, com uma única porta thread-safe.** Regras:
 
 - Use cada `tbox_app`/`tbox_context` (e os caches ligados a ele) de uma
-  única thread, a mesma em que foi criado.
+  única thread — a thread de UI, a mesma em que foi criado. No macOS (quando
+  houver backend) ela terá de ser a thread principal do processo, como em
+  toda toolkit nativa.
+- **`tbox_app_post(app, fn, userdata)` é a única função que outras threads
+  podem chamar.** Ela enfileira `fn` e acorda o loop; `fn` roda na thread de
+  UI, dentro do próximo `tbox_app_wait`, na ordem em que foi postada, e o
+  frame fica sujo. É ali que o resultado de um trabalho em outra thread
+  (rede, disco, cálculo) muda o DOM.
+- A fila é por instância de `tbox_app`, com um mutex próprio; não há estado
+  global novo, e nenhuma outra estrutura ganhou lock.
+- Termine (`join`) as threads que postam antes de `tbox_app_close`. Com a
+  janela fechada, `tbox_app_wait`/`tbox_app_step` só rodam a fila: um
+  `tbox_app_step` depois do `join` entrega (e libera) o que sobrou. O que
+  ainda estiver na fila no `close` é descartado sem rodar.
 - O estado de `:hover`, `:focus` e `:active` é aplicado aos seletores por
   meio de variáveis globais durante o frame. Por isso, nem dois contextos
   independentes em threads diferentes são seguros hoje.
-- Trabalho pesado da aplicação (rede, disco, cálculo) pode rodar em outras
-  threads; entregue o resultado à thread da UI e, lá, mude o DOM e chame
-  `tbox_app_request_redraw`.
 
-A política de concorrência será definida quando houver um caso de uso real
-(documentos em paralelo, motor de script em outra thread).
+Bindings para outras linguagens seguem o mesmo modelo: o `invoke`/`post` da
+linguagem (Python, Go, C#, …) vira `tbox_app_post`. O motivo da escolha e as
+alternativas descartadas estão em
+[Decisões](dev/decisoes.md#loop-da-aplicação-e-threads).

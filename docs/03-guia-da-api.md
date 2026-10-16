@@ -25,8 +25,10 @@ borda, NULL, vida dos ponteiros) está no comentário dela no header.
   `tbox_xpath_node_set`) têm `items`/`count` e precisam do seu `_destroy`.
 - **Views retornadas** (`tbox_string_view`) são emprestadas; o header diz até
   quando valem (tipicamente até o próximo frame ou a próxima edição).
-- **Uma thread.** Nada é thread-safe; use a biblioteca a partir da thread da
-  aplicação.
+- **Uma thread de UI.** Toda a API roda na thread que criou o `tbox_app`
+  (no macOS, será obrigatoriamente a principal). A única função que outras
+  threads podem chamar é `tbox_app_post`. Ver
+  [Memória e concorrência](13-memoria-e-concorrencia.md#threads).
 
 A estrutura `tbox_style_clip_path` preserva os raios de `round` em pixels
 (`round_h`/`round_v`) e percentuais (`round_h_percent`/`round_v_percent`).
@@ -56,7 +58,10 @@ dos stops são percentuais de uma volta. Inicialize as estruturas com zero.
 | `tbox_app_create_from_files(html_path, css_path, w, h)` | Igual, lendo arquivos. `css_path` pode ser `NULL`. Imagens e `@font-face` relativos usam o diretório do HTML. |
 | `…_with_config(…, tbox_ua_style_config)` | Ajusta a folha user-agent (tamanho base, escala de headings, margens). |
 | `…_with_options(…, tbox_context_options)` | Config UA + tema dos popups + diretórios de recursos + `prefers_reduced_motion`. |
-| `tbox_app_step(app)` | Um passo não bloqueante: eventos, handlers, e frame se algo mudou. |
+| `tbox_app_run(app)` | O loop pronto: dorme até haver evento, tarefa ou frame de animação; volta quando a janela fecha. |
+| `tbox_app_wait(app, max_ms)` | Uma volta do loop esperando no máximo `max_ms` (`-1`: sem limite). Para quem tem loop próprio: passe o seu próximo prazo. |
+| `tbox_app_step(app)` | `tbox_app_wait(app, 0)`: uma volta que nunca bloqueia. |
+| `tbox_app_post(app, fn, userdata)` | **Única função thread-safe.** Executa `fn(app, userdata)` na thread de UI, na próxima volta, e marca o frame como sujo. |
 | `tbox_app_should_close(app)` | `true` quando a janela pediu fechamento ou a conexão caiu. Esc também fecha (se nenhum controle consumir a tecla). |
 | `tbox_app_close(app)` | Libera tudo. |
 | `tbox_app_context(app)` | O `tbox_context` interno, para registrar handlers e acessar o DOM. |
@@ -72,8 +77,7 @@ O loop típico:
 tbox_app *app = tbox_app_create_from_files("ui.html", "ui.css", 800, 600);
 if (app == NULL) return 1;
 /* registrar handlers aqui */
-while (!tbox_app_should_close(app))
-    tbox_app_step(app);
+tbox_app_run(app);
 tbox_app_close(app);
 ```
 
@@ -89,7 +93,7 @@ obtém por `tbox_app_context(app)`; sem janela, você o abre direto.
 | `tbox_context_open(html, len, css, len, fonts, images)` | Parseia e guarda. `fonts`/`images` são emprestados (`images` pode ser `NULL`). |
 | `tbox_context_open_with_config` / `_with_options` | Mesmas variantes de `tbox_app`. |
 | `tbox_context_run_frame(ctx, w, h, &list)` | Recalcula tudo e devolve a display list (válida até o próximo frame). |
-| `tbox_context_set_animation_time(ctx, s)` / `tbox_context_animations_active(ctx)` | Tempo para `transition`, `animation`, rolagem suave e scroll snap; quando há animação ativa, continue gerando frames. |
+| `tbox_context_set_animation_time(ctx, s)` / `tbox_context_next_frame_time(ctx)` | Tempo para `transition`, `animation`, rolagem suave e scroll snap. Depois de um frame, `next_frame_time` diz quando o próximo muda algo: `INFINITY` = ocioso; ≤ agora = já; senão, um prazo (fim de um atraso, do snap). `tbox_context_animations_active` = prazo finito. |
 | `tbox_context_close(ctx)` | Libera documento, folhas e arena de frame. Não toca `fonts`/`images`. |
 | `tbox_context_document(ctx)` | O `tbox_html_document`, necessário para mutar o DOM. |
 

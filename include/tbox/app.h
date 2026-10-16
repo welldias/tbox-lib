@@ -11,8 +11,13 @@ extern "C" {
 #endif
 
 /* Public application API. A tbox_app owns one document context, font/image
- * caches, and a window selected by the private backend interface. The GUI
- * core is not thread-safe; call these functions from the application thread. */
+ * caches, and a window selected by the private backend interface.
+ *
+ * Threads: every function here, and everything reached through
+ * tbox_app_context, belongs to the UI thread -- the one that created the
+ * app (on macOS it will have to be the process's main thread). The only
+ * exception is tbox_app_post, which any thread may call to hand work to the
+ * UI thread. */
 typedef struct tbox_app tbox_app;
 
 /* True when this build can create an interactive window. Screenshot
@@ -114,11 +119,41 @@ void tbox_app_request_redraw(tbox_app *app);
  * variable such as TBOX_DEBUG_DAMAGE onto this. A no-op if app == NULL. */
 void tbox_app_set_debug_damage(tbox_app *app, bool enabled);
 
-/* Pumps a nonblocking round of backend events, dispatches pointer and
- * translated keyboard input to the context, and recomputes a frame when
- * input, resize, or tbox_app_request_redraw changes visible state.
+/* One round of the loop: waits up to `max_wait_ms` for something to do
+ * (-1: as long as it takes; 0: never blocks), then dispatches pointer and
+ * keyboard input to the context, runs the tasks posted with tbox_app_post,
+ * and recomputes a frame when input, resize, a task, an animation or
+ * tbox_app_request_redraw changes visible state. It returns early, without
+ * waiting the whole `max_wait_ms`, as soon as an event arrives, a task is
+ * posted, or the library itself needs to run (an animation frame, the end
+ * of a transition-delay, a scroll snap, a key repeat). Frames are paced by
+ * the compositor: while an animation runs, each one waits for the display
+ * to ask for it, and a hidden window stops animating. Callers with their
+ * own loop pass their own next deadline; tbox_app_run passes -1.
  * A no-op if app == NULL. */
+void tbox_app_wait(tbox_app *app, int32_t max_wait_ms);
+
+/* tbox_app_wait(app, 0): one round that never blocks. */
 void tbox_app_step(tbox_app *app);
+
+/* Runs tbox_app_wait(app, -1) until tbox_app_should_close: sleeps while
+ * nothing happens. A no-op if app == NULL. */
+void tbox_app_run(tbox_app *app);
+
+/* Work handed to the UI thread: runs there, inside a later tbox_app_wait,
+ * in posting order, and marks the frame dirty (a task usually mutates the
+ * document, so no tbox_app_request_redraw is needed). */
+typedef void (*tbox_app_task)(tbox_app *app, void *userdata);
+
+/* Queues `task` and wakes a tbox_app_wait in progress. Safe to call from
+ * any thread -- the only function in this API that is -- including from a
+ * task or handler on the UI thread itself. Returns false (task not queued)
+ * if app or task is NULL or memory runs out. Every poster must be done
+ * before tbox_app_close; tasks still queued then are dropped without
+ * running. Once the window is closed, tbox_app_wait/tbox_app_step only run
+ * queued tasks, so after joining the posting threads one tbox_app_step
+ * drains them (and frees whatever `userdata` they own). */
+bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata);
 
 /* True once the window should close or its backend connection is lost.
  * The current Wayland backend also closes on Escape. NULL is already closed. */
