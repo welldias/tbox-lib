@@ -12,6 +12,7 @@ int tbox_test_arena_run(void);
 int tbox_test_list_run(void);
 int tbox_test_vector_run(void);
 int tbox_test_string_run(void);
+int tbox_test_number_run(void);
 int tbox_test_debug_run(void);
 int tbox_test_html_parser_tokenizer_run(void);
 int tbox_test_html_parser_tree_run(void);
@@ -36,6 +37,7 @@ static const tbox_test_group tbox_test_groups[] = {
     { "list",                      tbox_test_list_run                      },
     { "vector",                    tbox_test_vector_run                    },
     { "string",                    tbox_test_string_run                    },
+    { "number",                    tbox_test_number_run                    },
     { "debug",                     tbox_test_debug_run                     },
     { "html_parser_tokenizer",     tbox_test_html_parser_tokenizer_run     },
     { "html_parser_tree",          tbox_test_html_parser_tree_run          },

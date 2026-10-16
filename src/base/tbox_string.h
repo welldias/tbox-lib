@@ -54,11 +54,36 @@ tbox_string_view tbox_utf8_sanitize(tbox_arena *arena, tbox_string_view text);
  * U+10FFFF are written as U+FFFD. */
 size_t tbox_utf8_encode(char *out, size_t capacity, uint32_t codepoint);
 
+/* Copies the longest prefix of `text` that fits in out[0..capacity - 1)
+ * and ends on a codepoint boundary, NUL-terminates it and returns its
+ * byte length. Fixed-size fields (tbox_style strings, path buffers) use
+ * this so a cut never leaves half a UTF-8 sequence. `capacity` must be
+ * >= 1. */
+size_t tbox_utf8_copy_truncated(char *out, size_t capacity, tbox_string_view text);
+
 /* Simple (one-to-one) case mappings from utf8.h: no multi-codepoint
  * expansions such as German sharp s. A codepoint without a mapping is
  * returned unchanged. */
 uint32_t tbox_utf8_to_upper(uint32_t codepoint);
 uint32_t tbox_utf8_to_lower(uint32_t codepoint);
+
+/* ASCII helpers for markup and CSS syntax. They replace <ctype.h>, whose
+ * answers depend on the C locale (isspace also accepts '\v'). */
+
+/* ASCII whitespace as HTML and CSS define it (WHATWG Infra): TAB, LF, FF,
+ * CR and SPACE. XPath's grammar has its own set (no FF). */
+bool tbox_ascii_is_space(char c);
+bool tbox_ascii_is_hex_digit(char c);
+char tbox_ascii_to_lower(char c);
+
+/* `view` without leading and trailing tbox_ascii_is_space bytes. */
+tbox_string_view tbox_string_view_trim_ascii_space(tbox_string_view view);
+
+/* True if `view` starts with `prefix`, ASCII case-insensitively. */
+bool tbox_string_view_starts_with_ascii_ci(tbox_string_view view, const char *prefix);
+
+/* Copy of `view` in `arena` with 'A'-'Z' folded to lowercase. */
+tbox_string_view tbox_string_copy_lower_ascii(tbox_arena *arena, tbox_string_view view);
 
 /* Byte-wise, ASCII-only case-insensitive comparison (bytes >= 0x80 are
  * compared verbatim, never case-folded). Suitable for HTML tag/attribute

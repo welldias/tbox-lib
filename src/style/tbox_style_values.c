@@ -1,51 +1,16 @@
-#include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "base/tbox_string.h"
+#include "base/tbox_number.h"
 #include "style/tbox_style_internal.h"
 
-/* CSS2.1 "white space": space, tab, line feed, carriage return, form feed --
- * same definition tbox_css_cascade.c and tbox_css_color_parse.c use. */
-bool tbox_style_is_space(char byte) {
-    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == '\f';
-}
-
-tbox_string_view tbox_style_trim(tbox_string_view value) {
-    size_t start = 0;
-    while (start < value.size && tbox_style_is_space(value.data[start])) {
-        start++;
-    }
-    size_t end = value.size;
-    while (end > start && tbox_style_is_space(value.data[end - 1])) {
-        end--;
-    }
-    return tbox_string_view_make(value.data + start, end - start);
-}
-
-/* Parses a plain number ("10", "-3.5") via strtod, after copying it into a
- * small stack buffer since tbox_string_view isn't NUL-terminated -- same
- * approach as tbox_css_color_parse_number in tbox_css_color_parse.c. Rejects
- * anything that doesn't consume the whole text, including empty input or
- * text too long to plausibly be a CSS number. */
+/* Parses a plain number ("10", "-3.5") with tbox_number_parse
+ * (locale-independent). Rejects anything that doesn't consume the whole
+ * text, including empty input. */
 bool tbox_style_parse_number(tbox_string_view text, double *out_value) {
-    if (text.size == 0 || text.size >= 64) {
-        return false;
-    }
-
-    char buffer[64];
-    memcpy(buffer, text.data, text.size);
-    buffer[text.size] = '\0';
-
-    char *end     = NULL;
-    double result = strtod(buffer, &end);
-    if (end != buffer + text.size) {
-        return false;
-    }
-
-    *out_value = result;
-    return true;
+    return tbox_number_parse(text, out_value);
 }
 
 /* px per one `unit`, or false for an unknown unit (or a viewport unit with
@@ -133,7 +98,7 @@ bool tbox_style_parse_dimension(tbox_string_view text, const tbox_style_units *u
  * else, including a bare unitless number, fails so the caller can fall
  * back to the initial value, same as an undeclared property. */
 bool tbox_style_parse_length(tbox_string_view raw, const tbox_style_units *units, tbox_style_length *out) {
-    tbox_string_view text = tbox_style_trim(raw);
+    tbox_string_view text = tbox_string_view_trim_ascii_space(raw);
     if (text.size == 0) {
         return false;
     }
@@ -179,7 +144,7 @@ bool tbox_style_parse_spacing_length(tbox_string_view raw, const tbox_style_unit
 }
 
 bool tbox_style_parse_edge_color(tbox_string_view raw, tbox_css_rgba current_color, tbox_css_rgba *out) {
-    tbox_string_view value = tbox_style_trim(raw);
+    tbox_string_view value = tbox_string_view_trim_ascii_space(raw);
     if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("currentcolor"))) {
         *out = current_color;
         return true;
@@ -230,7 +195,7 @@ size_t tbox_style_four_value_index(size_t count, size_t side) {
  * `out_percent`); the other output is zeroed. */
 bool tbox_style_parse_radius(tbox_string_view value, const tbox_style_units *units, double *out_px, double *out_percent) {
     tbox_style_length length;
-    if (!tbox_style_parse_spacing_length(tbox_style_trim(value), units, &length) || length.kind == TBOX_STYLE_LENGTH_AUTO || length.value < 0.0)
+    if (!tbox_style_parse_spacing_length(tbox_string_view_trim_ascii_space(value), units, &length) || length.kind == TBOX_STYLE_LENGTH_AUTO || length.value < 0.0)
         return false;
     *out_px      = length.kind == TBOX_STYLE_LENGTH_PX ? length.value : length.px_offset;
     *out_percent = length.kind == TBOX_STYLE_LENGTH_PERCENT ? length.value : 0.0;
@@ -245,7 +210,7 @@ bool tbox_style_parse_radius(tbox_string_view value, const tbox_style_units *uni
  * shadow, too few/many lengths, a negative blur, or an unrecognized token
  * other than `inset` (which is ignored: the shadow still paints outside). */
 bool tbox_style_parse_shadow(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, int max_lengths, double out_lengths[4], tbox_css_rgba *out_color, bool *out_inset) {
-    tbox_string_view text = tbox_style_trim(raw);
+    tbox_string_view text = tbox_string_view_trim_ascii_space(raw);
     if (tbox_string_view_equal_ascii_ci(text, tbox_string_view_from_cstr("none"))) {
         for (int i = 0; i < 4; i++)
             out_lengths[i] = 0.0;
@@ -277,13 +242,13 @@ bool tbox_style_parse_shadow(tbox_string_view raw, const tbox_style_units *units
     tbox_css_rgba color = current_color;
     size_t i            = 0;
     while (i < text.size) {
-        while (i < text.size && tbox_style_is_space(text.data[i]))
+        while (i < text.size && tbox_ascii_is_space(text.data[i]))
             i++;
         if (i >= text.size)
             break;
         size_t start = i;
         paren_depth  = 0;
-        while (i < text.size && (paren_depth > 0 || !tbox_style_is_space(text.data[i]))) {
+        while (i < text.size && (paren_depth > 0 || !tbox_ascii_is_space(text.data[i]))) {
             if (text.data[i] == '(')
                 paren_depth++;
             else if (text.data[i] == ')' && paren_depth > 0)
@@ -318,7 +283,7 @@ bool tbox_style_parse_shadow(tbox_string_view raw, const tbox_style_units *units
 /* ---- tokens shared by the properties below ---- */
 
 bool tbox_style_is(tbox_string_view value, const char *keyword) {
-    return tbox_string_view_equal_ascii_ci(tbox_style_trim(value), tbox_string_view_from_cstr(keyword));
+    return tbox_string_view_equal_ascii_ci(tbox_string_view_trim_ascii_space(value), tbox_string_view_from_cstr(keyword));
 }
 
 /* Splits `text` at top-level occurrences of `separator` (outside
@@ -343,7 +308,7 @@ size_t tbox_style_split_top_level(tbox_string_view text, char separator, tbox_st
         else if (c == ')' && depth > 0)
             depth--;
         else if ((c == separator && depth == 0) || i == text.size) {
-            tbox_string_view part = tbox_style_trim(tbox_string_view_make(text.data + start, i - start));
+            tbox_string_view part = tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data + start, i - start));
             if (part.size == 0 || count == max)
                 return 0;
             parts[count++] = part;
@@ -358,7 +323,7 @@ size_t tbox_style_split_top_level(tbox_string_view text, char separator, tbox_st
 size_t tbox_style_tokens(tbox_string_view text, tbox_string_view *tokens, size_t max) {
     size_t count = 0, i = 0;
     while (i < text.size) {
-        while (i < text.size && tbox_style_is_space(text.data[i]))
+        while (i < text.size && tbox_ascii_is_space(text.data[i]))
             i++;
         if (i >= text.size)
             break;
@@ -368,7 +333,7 @@ size_t tbox_style_tokens(tbox_string_view text, tbox_string_view *tokens, size_t
         } else {
             int depth  = 0;
             char quote = 0;
-            while (i < text.size && (depth > 0 || quote != 0 || (!tbox_style_is_space(text.data[i]) && text.data[i] != '/'))) {
+            while (i < text.size && (depth > 0 || quote != 0 || (!tbox_ascii_is_space(text.data[i]) && text.data[i] != '/'))) {
                 char c = text.data[i];
                 if (quote != 0) {
                     if (c == quote)
@@ -396,14 +361,14 @@ bool tbox_style_function_args(tbox_string_view token, const char *name, tbox_str
     if (token.size < length + 2 || token.data[length] != '(' || token.data[token.size - 1] != ')' ||
         !tbox_string_view_equal_ascii_ci(tbox_string_view_make(token.data, length), tbox_string_view_make(name, length)))
         return false;
-    *args = tbox_style_trim(tbox_string_view_make(token.data + length + 1, token.size - length - 2));
+    *args = tbox_string_view_trim_ascii_space(tbox_string_view_make(token.data + length + 1, token.size - length - 2));
     return true;
 }
 
 /* An integer (z-index, line-clamp, ...). */
 bool tbox_style_parse_integer(tbox_string_view raw, int *out) {
     double value;
-    if (!tbox_style_parse_number(tbox_style_trim(raw), &value) || value != (double)(int)value)
+    if (!tbox_style_parse_number(tbox_string_view_trim_ascii_space(raw), &value) || value != (double)(int)value)
         return false;
     *out = (int)value;
     return true;
@@ -420,7 +385,7 @@ bool tbox_style_parse_angle_literal(tbox_string_view raw, double *out) {
         { "rad",  57.29577951308232     },
         { "turn", 360.0                 },
     };
-    tbox_string_view text = tbox_style_trim(raw);
+    tbox_string_view text = tbox_string_view_trim_ascii_space(raw);
     if (text.size == 1 && text.data[0] == '0') {
         *out = 0.0;
         return true;

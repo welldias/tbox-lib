@@ -1,4 +1,3 @@
-#include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +17,7 @@ typedef struct tbox_style_calc_parser {
 static bool tbox_style_calc_sum(tbox_style_calc_parser *p, tbox_style_calc_value *out);
 
 static void tbox_style_calc_skip_space(tbox_style_calc_parser *p) {
-    while (p->pos < p->text.size && tbox_style_is_space(p->text.data[p->pos]))
+    while (p->pos < p->text.size && tbox_ascii_is_space(p->text.data[p->pos]))
         p->pos++;
 }
 
@@ -408,7 +407,7 @@ static bool tbox_style_calc_sum(tbox_style_calc_parser *p, tbox_style_calc_value
         tbox_style_calc_skip_space(p);
         if (p->pos >= p->text.size || (p->text.data[p->pos] != '+' && p->text.data[p->pos] != '-'))
             return true;
-        if (p->pos == before || p->pos + 1 >= p->text.size || !tbox_style_is_space(p->text.data[p->pos + 1]))
+        if (p->pos == before || p->pos + 1 >= p->text.size || !tbox_ascii_is_space(p->text.data[p->pos + 1]))
             return false;
         char op = p->text.data[p->pos++];
         tbox_style_calc_value rhs;
@@ -439,7 +438,7 @@ bool tbox_style_parse_calc(tbox_string_view text, const tbox_style_units *units,
 /* Shared entry: calculations are accepted only in functional notation;
  * constants such as pi/e are not standalone property values. */
 static bool tbox_style_calc_evaluate(tbox_string_view text, const tbox_style_units *units, double em_base, bool number_percent, tbox_style_calc_value *out) {
-    text                             = tbox_style_trim(text);
+    text                             = tbox_string_view_trim_ascii_space(text);
     bool function                    = false;
     static const char *const names[] = {
         "calc(",
@@ -525,7 +524,7 @@ bool tbox_style_parse_calc_bounded(tbox_string_view text, const tbox_style_units
 /* <easing-function>: the keywords, cubic-bezier() (x1, x2 in [0, 1]) and
  * steps(<n>[, <position>]). linear() with stops is not supported. */
 bool tbox_style_parse_easing(tbox_string_view token, tbox_style_easing *out) {
-    token                    = tbox_style_trim(token);
+    token                    = tbox_string_view_trim_ascii_space(token);
     tbox_style_easing easing = tbox_style_easing_default();
     tbox_string_view args;
     if (tbox_style_is(token, "ease")) {
@@ -545,7 +544,7 @@ bool tbox_style_parse_easing(tbox_string_view token, tbox_style_easing *out) {
         if (tbox_style_split_top_level(args, ',', parts, 4) != 4)
             return false;
         for (int i = 0; i < 4; i++)
-            if (!tbox_style_parse_number(tbox_style_trim(parts[i]), &v[i]))
+            if (!tbox_style_parse_number(tbox_string_view_trim_ascii_space(parts[i]), &v[i]))
                 return false;
         if (v[0] < 0.0 || v[0] > 1.0 || v[2] < 0.0 || v[2] > 1.0)
             return false;
@@ -558,7 +557,7 @@ bool tbox_style_parse_easing(tbox_string_view token, tbox_style_easing *out) {
             return false;
         easing.steps = true, easing.step_count = (unsigned)n, easing.step_position = 0;
         if (count == 2) {
-            tbox_string_view position = tbox_style_trim(parts[1]);
+            tbox_string_view position = tbox_string_view_trim_ascii_space(parts[1]);
             if (tbox_style_is(position, "jump-start") || tbox_style_is(position, "start"))
                 easing.step_position = 1;
             else if (tbox_style_is(position, "jump-none"))
@@ -584,10 +583,7 @@ bool tbox_style_parse_url(tbox_string_view token, char *out, size_t capacity) {
         return false;
     if (args.size >= 2 && (args.data[0] == '"' || args.data[0] == '\'') && args.data[args.size - 1] == args.data[0])
         args = tbox_string_view_make(args.data + 1, args.size - 2);
-    size_t n = args.size < capacity - 1 ? args.size : capacity - 1;
-    memcpy(out, args.data, n);
-    out[n] = '\0';
-    return n > 0;
+    return tbox_utf8_copy_truncated(out, capacity, args) > 0;
 }
 
 void tbox_style_init_gradient(tbox_style_gradient *gradient) {
@@ -833,7 +829,7 @@ static void tbox_style_matrix_multiply(const double a[20], const double b[20], d
 
 /* An amount: a number or percentage, `default_amount` when omitted. */
 static bool tbox_style_parse_amount(tbox_string_view args, double default_amount, double *out) {
-    args = tbox_style_trim(args);
+    args = tbox_string_view_trim_ascii_space(args);
     if (args.size == 0) {
         *out = default_amount;
         return true;
@@ -888,7 +884,7 @@ bool tbox_style_parse_filter(tbox_string_view raw, const tbox_style_units *units
             }
         } else if (tbox_style_function_args(functions[f], "hue-rotate", &args)) {
             double degrees = 0.0;
-            if (tbox_style_trim(args).size > 0 && !tbox_style_parse_angle(args, units, &degrees))
+            if (tbox_string_view_trim_ascii_space(args).size > 0 && !tbox_style_parse_angle(args, units, &degrees))
                 return false;
             double c = cos(degrees * 3.141592653589793 / 180.0), sn = sin(degrees * 3.141592653589793 / 180.0);
             const double v[9] = { 0.213 + c * 0.787 - sn * 0.213, 0.715 - c * 0.715 - sn * 0.715, 0.072 - c * 0.072 + sn * 0.928, 0.213 - c * 0.213 + sn * 0.143, 0.715 + c * 0.285 + sn * 0.140, 0.072 - c * 0.072 - sn * 0.283, 0.213 - c * 0.213 - sn * 0.787, 0.715 - c * 0.715 + sn * 0.715, 0.072 + c * 0.928 + sn * 0.072 };
@@ -938,7 +934,7 @@ bool tbox_style_parse_filter(tbox_string_view raw, const tbox_style_units *units
         } else if (tbox_style_function_args(functions[f], "blur", &args)) {
             double radius = 0.0;
             tbox_style_length length;
-            if (tbox_style_trim(args).size > 0 && !tbox_style_is(args, "0")) {
+            if (tbox_string_view_trim_ascii_space(args).size > 0 && !tbox_style_is(args, "0")) {
                 if (!tbox_style_parse_length(args, units, &length) || length.kind != TBOX_STYLE_LENGTH_PX || length.value < 0.0)
                     return false;
                 radius = length.value;
@@ -992,7 +988,7 @@ bool tbox_style_filter_matrix_of(const tbox_style_filter_list *list, double out[
  * and bottom insets are `100% - offset`. `clip: auto` leaves it unset. */
 void tbox_style_parse_clip_rect(tbox_string_view raw, const tbox_style_units *units, tbox_style_clip_path *out) {
     tbox_string_view args, parts[4];
-    if (!tbox_style_function_args(tbox_style_trim(raw), "rect", &args))
+    if (!tbox_style_function_args(tbox_string_view_trim_ascii_space(raw), "rect", &args))
         return;
     size_t count = memchr(args.data, ',', args.size) != NULL ? tbox_style_split_top_level(args, ',', parts, 4) : tbox_style_tokens(args, parts, 4);
     if (count != 4)
@@ -1142,7 +1138,7 @@ bool tbox_style_parse_clip_path(tbox_string_view raw, const tbox_style_units *un
             }
         }
     } else if (tbox_style_function_args(tokens[0], "circle", &args) || tbox_style_function_args(tokens[0], "ellipse", &args)) {
-        bool circle = tolower((unsigned char)tokens[0].data[0]) == 'c';
+        bool circle = tbox_ascii_to_lower(tokens[0].data[0]) == 'c';
         clip.kind   = circle ? TBOX_STYLE_CLIP_PATH_CIRCLE : TBOX_STYLE_CLIP_PATH_ELLIPSE;
         count       = tbox_style_tokens(args, parts, 14);
         size_t at   = count;

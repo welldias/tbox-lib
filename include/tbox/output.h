@@ -24,9 +24,10 @@ extern "C" {
  * buffer_width/buffer_height, is a no-op. */
 void tbox_raster_fill_rect(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect rect, tbox_css_rgba color);
 
-/* Decodes `text` as UTF-8 and rasterizes it as a single line (v0: no
- * wrapping, matching tbox_font_measure_text/tbox_paint_op's TEXT_RUN scope)
- * into `pixels`, one glyph at a time via tbox_font_rasterize_glyph(face, ...).
+/* Shapes `text` (the same shaper Layout uses, see src/font/tbox_font_measure.h)
+ * and rasterizes it as a single line into `pixels`, one glyph at a time via
+ * tbox_font_rasterize_glyph_id. A TEXT_RUN op that carries `glyphs` is
+ * painted from them instead, without shaping.
  * `origin` is the TEXT_RUN's content-box origin (only origin.x/origin.y are
  * read, matching tbox_paint_op's rect for TEXT_RUN -- width/height are
  * ignored). The baseline is origin.y + tbox_font_face_ascent(face), constant

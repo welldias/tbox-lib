@@ -169,7 +169,9 @@ for (cada byte) {
 ```
 
 Entram no hash: tipo e geometria da op (`rect`, `inner_rect`, raios), cor,
-os **bytes** do texto e `letter_spacing`, fonte e imagem (pelo ponteiro),
+os **bytes** do texto e `letter_spacing`, o `id` e a posição (`x`, `y`) de
+cada glifo do `TEXT_RUN` (a mesma frase justificada com outro espaçamento
+pinta outra coisa), fonte e imagem (pelo ponteiro),
 cada campo do gradiente, as 20 entradas da matriz de filtro, e
 `clip`/`rounded_clip`, além de origem, regra e vértices dos recortes
 poligonais (pelo conteúdo, não pelo ponteiro da arena). Os bounds de polígonos

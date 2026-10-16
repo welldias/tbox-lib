@@ -136,7 +136,7 @@ void tbox_context_range_normalize(tbox_context *ctx, tbox_html_node *node) {
     if (!tbox_context_number_attribute(node, "value", &value)) value = min + (max - min) / 2.0;
     value = tbox_context_range_clamp_snap(value, min, max, step, any_step);
     char buffer[64];
-    int length = snprintf(buffer, sizeof(buffer), "%.15g", value);
+    int length = tbox_number_format(buffer, sizeof(buffer), value, 15);
     if (length <= 0 || (size_t)length >= sizeof(buffer)) return;
     const tbox_html_attribute *old = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
     if (old == NULL || !tbox_string_view_equal(old->value, tbox_string_view_make(buffer, (size_t)length)))
@@ -150,7 +150,7 @@ bool tbox_context_range_commit(tbox_context *ctx, const tbox_html_node *node, do
     tbox_context_range_limits(node, &min, &max, &step, &any_step);
     value = tbox_context_range_clamp_snap(value, min, max, step, any_step);
     char buffer[64];
-    int length = snprintf(buffer, sizeof(buffer), "%.15g", value);
+    int length = tbox_number_format(buffer, sizeof(buffer), value, 15);
     if (length <= 0 || (size_t)length >= sizeof(buffer)) return false;
     const tbox_html_attribute *old = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
     if (old != NULL && tbox_string_view_equal(old->value,

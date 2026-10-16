@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "font/tbox_font_measure.h"
 #include "test_support.h"
 
 /* <tbox/string_view.h> (pulled in by <tbox/font.h>) only exposes
@@ -203,6 +204,33 @@ int tbox_test_font_run(void) {
          * handing back the non-italic default face. */
         const tbox_font_face *regular_16_italic = tbox_font_face_cache_get(cache, no_family, false, true, 16.0);
         TBOX_TEST_ASSERT(regular_16_italic == NULL);
+
+        /* 11c: the incremental measurer's width after every step is
+         * bit-identical to measuring that prefix (kerning, letter-spacing,
+         * multi-byte codepoints); a masked one equals measuring the mask. */
+        if (regular_16 != NULL) {
+            const char text[] = "AVA To\xc3\xa9\xe2\x82\xac W.";
+            size_t size       = sizeof(text) - 1;
+            tbox_text_measurer measurer;
+            tbox_text_measurer_init(&measurer, regular_16, 0.75);
+            bool identical = true;
+            for (size_t at = 0; at < size;) {
+                at = tbox_text_measurer_step(&measurer, text, size, at);
+                identical = identical && measurer.width == tbox_font_measure_text_spaced(regular_16, tbox_string_view_make(text, at), 0.75);
+            }
+            TBOX_TEST_ASSERT(identical);
+            TBOX_TEST_ASSERT(measurer.width > 0.0);
+
+            tbox_text_measurer masked;
+            tbox_text_measurer_init_masked(&masked, regular_16, 0.75, '*');
+            for (size_t at = 0; at < size;)
+                at = tbox_text_measurer_step(&masked, text, size, at);
+            TBOX_TEST_ASSERT(masked.width == tbox_font_measure_text_spaced(regular_16, tbox_string_view_make("***********", 11), 0.75));
+
+            tbox_text_measurer none;
+            tbox_text_measurer_init(&none, NULL, 0.75);
+            TBOX_TEST_ASSERT(tbox_text_measurer_step(&none, text, size, 0) == 1 && none.width == 0.0);
+        }
 
         /* 12: _get on a NULL cache returns NULL instead of crashing. */
         TBOX_TEST_ASSERT(tbox_font_face_cache_get(NULL, no_family, false, false, 16.0) == NULL);

@@ -258,6 +258,7 @@ static void tbox_context_file_push_text(tbox_vector *items, const tbox_font_face
         .rect = {rect.x, rect.y + (rect.height - tbox_font_face_line_height(face)) / 2.0,
                  tbox_font_measure_text(face, value), tbox_font_face_line_height(face)},
         .color = color, .text = value, .face = face, .has_clip = true, .clip = clip};
+    tbox_font_shape_into(items->arena, face, value, 0.0, &op->glyphs, &op->glyph_count);
 }
 
 void tbox_context_paint_file_controls(tbox_context *ctx, const tbox_layout_box *box,

@@ -353,21 +353,13 @@ typedef struct tbox_css_supports_cursor {
     bool valid;
 } tbox_css_supports_cursor;
 
-static bool tbox_css_supports_space(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
-}
-
 static void tbox_css_supports_skip(tbox_css_supports_cursor *c) {
-    while (c->at < c->end && tbox_css_supports_space(*c->at))
+    while (c->at < c->end && tbox_ascii_is_space(*c->at))
         c->at++;
 }
 
 static tbox_string_view tbox_css_supports_trim(const char *start, const char *end) {
-    while (start < end && tbox_css_supports_space(*start))
-        start++;
-    while (end > start && tbox_css_supports_space(end[-1]))
-        end--;
-    return tbox_string_view_make(start, (size_t)(end - start));
+    return tbox_string_view_trim_ascii_space(tbox_string_view_make(start, (size_t)(end - start)));
 }
 
 /* Case-insensitive `word` at the cursor, followed by a space or '('. */
@@ -376,7 +368,7 @@ static bool tbox_css_supports_keyword(const tbox_css_supports_cursor *c, const c
     if ((size_t)(c->end - c->at) <= length || !tbox_string_view_equal_ascii_ci(tbox_string_view_make(c->at, length), tbox_string_view_from_cstr(word)))
         return false;
     char next = c->at[length];
-    return tbox_css_supports_space(next) || next == '(';
+    return tbox_ascii_is_space(next) || next == '(';
 }
 
 /* The matching ')' for the '(' just before `from`, or NULL. */
@@ -509,7 +501,7 @@ static bool tbox_css_supports_in_parens(tbox_css_supports_cursor *c) {
         return false;
     }
     const char *open = c->at;
-    while (open < c->end && *open != '(' && !tbox_css_supports_space(*open))
+    while (open < c->end && *open != '(' && !tbox_ascii_is_space(*open))
         open++;
     if (open >= c->end || *open != '(') {
         c->valid = false;

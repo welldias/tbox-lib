@@ -150,6 +150,7 @@ void tbox_context_sync_select_boxes(tbox_context *ctx, tbox_layout_box *box) {
                                      tbox_font_measure_text(face, label), tbox_font_face_line_height(face)},
                             .text = label, .font = face, .style = style,
                         };
+                        tbox_font_shape_into(&ctx->frame_arena, face, label, style->letter_spacing, &run->glyphs, &run->glyph_count);
                         box->text_runs = run;
                         box->text_run_count = 1;
                     }
@@ -282,6 +283,7 @@ void tbox_context_paint_select_popup(tbox_context *ctx, tbox_vector *items) {
                 .text = label, .face = face, .has_clip = true,
                 .clip = tbox_context_rect_intersection(row, inner),
             };
+            tbox_font_shape_into(items->arena, face, label, 0.0, &op->glyphs, &op->glyph_count);
         }
     }
 }

@@ -319,6 +319,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
                         .rect = {content_x - 16.0, content_y, 14.0, tbox_font_face_line_height(face)},
                         .text = tbox_string_view_from_cstr(marker), .font = face, .style = style,
                     };
+                    tbox_font_shape_into(arena, face, runs[0].text, style->letter_spacing, &runs[0].glyphs, &runs[0].glyph_count);
                     if (count > 0) memcpy(runs + 1, box->text_runs, count * sizeof(*runs));
                     box->text_runs = runs;
                     box->text_run_count = count + 1;

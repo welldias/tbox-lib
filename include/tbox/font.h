@@ -176,6 +176,20 @@ typedef struct tbox_font_glyph_bitmap {
  * never hold onto `alpha` across two rasterize calls. */
 tbox_font_glyph_bitmap tbox_font_rasterize_glyph(tbox_font_face *face, uint32_t codepoint);
 
+/* Same, for a glyph index of `face` (what a tbox_glyph carries) instead of
+ * a codepoint; tbox_font_rasterize_glyph is this after FT_Get_Char_Index. */
+tbox_font_glyph_bitmap tbox_font_rasterize_glyph_id(tbox_font_face *face, uint32_t glyph_id);
+
+/* One positioned glyph of a shaped text run (docs/09-texto-e-fontes.md,
+ * "Do texto aos glifos"). Produced by Layout, carried by a TEXT_RUN paint
+ * op, painted by Output as is. */
+typedef struct tbox_glyph {
+    uint32_t id;      /* glyph index in the run's face */
+    uint32_t cluster; /* byte offset, in the run's text, of the source character */
+    double x, y;      /* pen position relative to the run's origin and baseline */
+    double advance;   /* advance including letter-spacing */
+} tbox_glyph;
+
 /* Opaque: owns two copies of font bytes (regular and bold -- see "why two
  * font sources" below, in tbox_font_face_cache_create's doc comment) plus a
  * vector of already-loaded tbox_font_face instances, keyed by (family, bold,

@@ -10,6 +10,7 @@
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
+#include "font/tbox_font_measure.h"
 #include "render/tbox_render_internal.h"
 
 /* Pushes one FILL_RECT of `color` covering `rect` onto `items` -- shared by
@@ -1025,6 +1026,7 @@ static void tbox_render_push_emphasis_mark(tbox_vector *items, const tbox_layout
         op->color = color;
         op->text  = mark;
         op->face  = run->emphasis_font;
+        tbox_font_shape_into(items->arena, run->emphasis_font, mark, 0.0, &op->glyphs, &op->glyph_count);
         break;
     }
     default:
@@ -1042,14 +1044,21 @@ static void tbox_render_push_emphasis(tbox_vector *items, const tbox_layout_text
     double size = style->font_size > 0.0 ? style->font_size : 16.0;
     double extent = style->text_emphasis_mark == TBOX_STYLE_EMPHASIS_STRING ? size * 0.5 : fmax(7.0, size * 0.42);
     double cy = style->text_emphasis_under ? run->rect.y + tbox_font_face_line_height(run->font) + extent / 2.0 : run->rect.y - extent / 2.0;
-    size_t at = 0;
-    while (at < run->text.size) {
-        size_t start = at;
-        uint32_t c = tbox_render_next_codepoint(run->text, &at);
-        if (tbox_render_emphasis_skips(c))
+    /* One mark centered on each painted glyph (its advance without the
+     * trailing letter-spacing); the source character, found through the
+     * glyph's cluster, decides whether it takes one. */
+    const tbox_glyph *glyphs = run->glyphs;
+    size_t glyph_count       = run->glyph_count;
+    if (glyph_count == 0)
+        tbox_font_shape_into(items->arena, run->font, run->text, style->letter_spacing, &glyphs, &glyph_count);
+    for (size_t g = 0; g < glyph_count; g++) {
+        size_t at = glyphs[g].cluster;
+        if (at >= run->text.size)
             continue;
-        double left  = tbox_font_measure_text_spaced(run->font, tbox_string_view_make(run->text.data, start), style->letter_spacing);
-        double right = tbox_font_measure_text_spaced(run->font, tbox_string_view_make(run->text.data, at), style->letter_spacing) - style->letter_spacing;
+        if (tbox_render_emphasis_skips(tbox_render_next_codepoint(run->text, &at)))
+            continue;
+        double left  = glyphs[g].x;
+        double right = glyphs[g].x + glyphs[g].advance - style->letter_spacing;
         tbox_render_push_emphasis_mark(items, run, run->rect.x + (left + right) / 2.0, cy, size, color);
     }
 }
@@ -1441,6 +1450,8 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         op->text           = run->text;
         op->face           = run->font;
         op->letter_spacing = run->style->letter_spacing;
+        op->glyphs         = run->glyphs;
+        op->glyph_count    = run->glyph_count;
         op->image          = NULL;
         op->radius         = 0.0;
         for (size_t j = 0; j < 4; j++)

@@ -5,7 +5,6 @@ static bool tbox_context_number_parse(tbox_string_view value, double *out);
 static bool tbox_context_is_email_input(const tbox_html_node *node);
 static bool tbox_context_email_ascii_alnum(unsigned char c);
 static bool tbox_context_email_address_valid(tbox_string_view address);
-static bool tbox_context_email_ascii_space(char c);
 
 bool tbox_context_is_text_control(const tbox_html_node *node) {
     return tbox_context_is_text_input(node) || tbox_context_is_textarea(node);
@@ -202,13 +201,6 @@ bool tbox_context_is_search_input(const tbox_html_node *node) {
     return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("search", 6));
 }
 
-bool tbox_context_is_password_input(const tbox_html_node *node) {
-    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
-        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
-    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
-    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("password", 8));
-}
-
 bool tbox_context_is_number_input(const tbox_html_node *node) {
     if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
         !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
@@ -261,17 +253,11 @@ bool tbox_context_number_syntax(tbox_string_view value, bool complete) {
 }
 
 static bool tbox_context_number_parse(tbox_string_view value, double *out) {
-    if (value.size == 0 || !tbox_context_number_syntax(value, true) || value.size == SIZE_MAX) return false;
-    char *copy = malloc(value.size + 1);
-    if (copy == NULL) return false;
-    memcpy(copy, value.data, value.size);
-    copy[value.size] = '\0';
-    char *end;
-    double parsed = strtod(copy, &end);
-    bool valid = end == copy + value.size && isfinite(parsed);
-    free(copy);
-    if (valid && out != NULL) *out = parsed;
-    return valid;
+    if (value.size == 0 || !tbox_context_number_syntax(value, true)) return false;
+    double parsed;
+    if (!tbox_number_parse(value, &parsed)) return false;
+    if (out != NULL) *out = parsed;
+    return true;
 }
 
 bool tbox_context_number_attribute(const tbox_html_node *node, const char *name, double *out) {
@@ -336,10 +322,6 @@ static bool tbox_context_email_address_valid(tbox_string_view address) {
     return true;
 }
 
-static bool tbox_context_email_ascii_space(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
-}
-
 bool tbox_context_email_valid(const tbox_html_node *input) {
     if (!tbox_context_is_email_input(input)) return false;
     const tbox_html_attribute *value = tbox_html_node_get_attribute(input, tbox_string_view_make("value", 5));
@@ -353,8 +335,8 @@ bool tbox_context_email_valid(const tbox_html_node *input) {
         size_t end = start;
         while (end < text.size && (!multiple || text.data[end] != ',')) end++;
         size_t first = start, last = end;
-        while (first < last && tbox_context_email_ascii_space(text.data[first])) first++;
-        while (last > first && tbox_context_email_ascii_space(text.data[last - 1])) last--;
+        while (first < last && tbox_ascii_is_space(text.data[first])) first++;
+        while (last > first && tbox_ascii_is_space(text.data[last - 1])) last--;
         if (!tbox_context_email_address_valid(tbox_string_view_make(text.data + first, last - first))) return false;
         if (end == text.size) break;
         start = end + 1;
@@ -386,8 +368,8 @@ bool tbox_context_url_valid(const tbox_html_node *input) {
     for (size_t i = colon + 1; i < value.size; i++) {
         unsigned char c = (unsigned char)value.data[i];
         if (c <= 0x20 || c == 0x7f) return false;
-        if (c == '%' && (i + 2 >= value.size || !isxdigit((unsigned char)value.data[i + 1]) ||
-                         !isxdigit((unsigned char)value.data[i + 2]))) return false;
+        if (c == '%' && (i + 2 >= value.size || !tbox_ascii_is_hex_digit(value.data[i + 1]) ||
+                         !tbox_ascii_is_hex_digit(value.data[i + 2]))) return false;
     }
     tbox_string_view scheme = tbox_string_view_make(value.data, colon);
     bool web_scheme = tbox_string_view_equal_ascii_ci(scheme, tbox_string_view_make("http", 4)) ||
@@ -436,7 +418,7 @@ bool tbox_context_number_step(tbox_context *ctx, const tbox_html_node *node, int
         (has_max && next > max + 1e-9)) return false;
     if (has_current && next == current) return false;
     char buffer[64];
-    int length = snprintf(buffer, sizeof(buffer), "%.15g", next);
+    int length = tbox_number_format(buffer, sizeof(buffer), next, 15);
     if (length <= 0 || (size_t)length >= sizeof(buffer)) return false;
     if (field->capacity < (size_t)length + 1) {
         char *value = realloc(field->value, (size_t)length + 1);

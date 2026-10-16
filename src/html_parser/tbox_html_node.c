@@ -125,13 +125,6 @@ static tbox_string_view tbox_html_node_copy_string(tbox_arena *arena, tbox_strin
  * doc comment in html_parser.h) -- so an attribute added via
  * tbox_html_node_set_attribute is indistinguishable from one that came out
  * of the parser. */
-static tbox_string_view tbox_html_node_copy_string_lower(tbox_arena *arena, tbox_string_view view) {
-    tbox_string_builder builder;
-    tbox_string_builder_init(&builder, arena, view.size);
-    tbox_string_builder_append_view_lower_ascii(&builder, view);
-    return tbox_string_builder_finish(&builder);
-}
-
 void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, tbox_string_view value) {
     if (node->type != TBOX_HTML_NODE_ELEMENT) {
         return;
@@ -152,7 +145,7 @@ void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *
     }
 
     tbox_html_attribute *added = &attributes[node->element.attribute_count];
-    added->name                = tbox_html_node_copy_string_lower(&document->arena, name);
+    added->name                = tbox_string_copy_lower_ascii(&document->arena, name);
     added->value               = tbox_html_node_copy_string(&document->arena, value);
 
     node->element.attributes      = attributes;

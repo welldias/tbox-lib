@@ -1,4 +1,5 @@
 #include "tbox_layout_internal.h"
+#include "tbox_layout_password.h"
 #include <string.h>
 
 bool tbox_layout_is_hidden_input(const tbox_html_node *node) {
@@ -15,6 +16,33 @@ bool tbox_layout_is_password_input(const tbox_html_node *node) {
         !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
     const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
     return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("password", 8));
+}
+
+uint32_t tbox_layout_password_codepoint(const tbox_font_face *face) {
+    return tbox_font_face_has_glyph(face, 0x2022) ? 0x2022 : '*';
+}
+
+tbox_string_view tbox_layout_password_glyph(const tbox_font_face *face) {
+    return tbox_layout_password_codepoint(face) == 0x2022 ? tbox_string_view_make("\xe2\x80\xa2", 3) : tbox_string_view_make("*", 1);
+}
+
+tbox_string_view tbox_layout_password_mask(tbox_arena *arena, const tbox_font_face *face, tbox_string_view text) {
+    tbox_string_view glyph = tbox_layout_password_glyph(face);
+    size_t count           = tbox_string_view_codepoint_count(text);
+    char *masked           = count <= SIZE_MAX / glyph.size ? tbox_arena_alloc(arena, count * glyph.size) : NULL;
+    if (masked == NULL)
+        return tbox_string_view_make(NULL, 0);
+    for (size_t i = 0; i < count; i++)
+        memcpy(masked + i * glyph.size, glyph.data, glyph.size);
+    return tbox_string_view_make(masked, count * glyph.size);
+}
+
+double tbox_layout_password_width(const tbox_font_face *face, tbox_string_view text, double letter_spacing) {
+    tbox_text_measurer measurer;
+    tbox_text_measurer_init_masked(&measurer, face, letter_spacing, tbox_layout_password_codepoint(face));
+    for (size_t at = 0; at < text.size;)
+        at = tbox_text_measurer_step(&measurer, text.data, text.size, at);
+    return measurer.width;
 }
 
 static bool tbox_layout_is_checked_checkbox(const tbox_html_node *node) {
@@ -90,20 +118,8 @@ void tbox_layout_input_push_value_word(tbox_arena *arena, const tbox_html_node *
     const tbox_font_face *face = tbox_layout_style_face(fonts, style);
     if (label.size > 0 && face != NULL) {
         tbox_string_view display = label;
-        if (tbox_layout_is_password_input(node)) {
-            bool bullet = tbox_font_face_has_glyph(face, 0x2022);
-            size_t count = tbox_string_view_codepoint_count(label);
-            size_t unit = bullet ? 3 : 1;
-            display = tbox_string_view_make(NULL, 0);
-            char *masked = count <= SIZE_MAX / unit ? tbox_arena_alloc(arena, count * unit) : NULL;
-            if (masked != NULL) {
-                for (size_t i = 0; i < count; i++) {
-                    if (bullet) memcpy(masked + i * unit, "\xe2\x80\xa2", 3);
-                    else masked[i] = '*';
-                }
-                display = tbox_string_view_make(masked, count * unit);
-            }
-        }
+        if (tbox_layout_is_password_input(node))
+            display = tbox_layout_password_mask(arena, face, label);
         tbox_layout_word *word = tbox_layout_new_word(words);
         word->text = display;
         word->face = face;

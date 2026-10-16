@@ -14,21 +14,16 @@ static const tbox_html_node *tbox_context_named_map(const tbox_html_node *node, 
 }
 
 static size_t tbox_context_area_coords(tbox_string_view text, double *values, size_t capacity) {
-    if (text.size == 0 || text.size >= 1024) return 0;
-    char buffer[1024];
-    memcpy(buffer, text.data, text.size);
-    buffer[text.size] = '\0';
-    size_t count = 0;
-    char *cursor = buffer;
-    while (*cursor != '\0' && count < capacity) {
-        while (*cursor == ',' || isspace((unsigned char)*cursor)) cursor++;
-        if (*cursor == '\0') break;
-        char *end;
-        double value = strtod(cursor, &end);
-        if (end == cursor || !isfinite(value)) return 0;
+    size_t count = 0, at = 0;
+    while (at < text.size && count < capacity) {
+        while (at < text.size && (text.data[at] == ',' || tbox_ascii_is_space(text.data[at]))) at++;
+        if (at == text.size) break;
+        double value;
+        size_t used = tbox_number_scan(tbox_string_view_make(text.data + at, text.size - at), &value);
+        if (used == 0 || !isfinite(value)) return 0;
         values[count++] = value;
-        cursor = end;
-        if (*cursor != '\0' && *cursor != ',' && !isspace((unsigned char)*cursor)) return 0;
+        at += used;
+        if (at < text.size && text.data[at] != ',' && !tbox_ascii_is_space(text.data[at])) return 0;
     }
     return count;
 }

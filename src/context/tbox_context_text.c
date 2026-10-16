@@ -2,13 +2,20 @@
 
 static void tbox_context_bind_text_value(tbox_context *ctx, tbox_text_field *field);
 
+/* A measurer for `node`'s displayed value: masked for a password input,
+ * so the caret lines up with the drawn marks. */
+static void tbox_context_input_measurer(tbox_text_measurer *measurer, const tbox_html_node *node,
+                                        const tbox_font_face *face, double letter_spacing) {
+    if (tbox_layout_is_password_input(node))
+        tbox_text_measurer_init_masked(measurer, face, letter_spacing, tbox_layout_password_codepoint(face));
+    else
+        tbox_text_measurer_init(measurer, face, letter_spacing);
+}
+
 double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face,
                                          tbox_string_view text, double letter_spacing) {
-    if (!tbox_context_is_password_input(node)) return tbox_font_measure_text_spaced(face, text, letter_spacing);
-    size_t characters = tbox_string_view_codepoint_count(text);
-    tbox_string_view glyph = tbox_font_face_has_glyph(face, 0x2022) ?
-        tbox_string_view_make("\xe2\x80\xa2", 3) : tbox_string_view_make("*", 1);
-    return characters * tbox_font_measure_text_spaced(face, glyph, letter_spacing);
+    if (!tbox_layout_is_password_input(node)) return tbox_font_measure_text_spaced(face, text, letter_spacing);
+    return tbox_layout_password_width(face, text, letter_spacing);
 }
 
 static void tbox_context_bind_text_value(tbox_context *ctx, tbox_text_field *field) {
@@ -96,21 +103,16 @@ void tbox_context_sync_text_value(tbox_context *ctx, tbox_text_field *field) {
 size_t tbox_context_cursor_at_x(const tbox_text_field *field, const tbox_layout_box *box,
                                        const tbox_font_face *face, double x) {
     double relative_x = x - box->content_box.x + field->scroll_x;
-    size_t best = 0;
+    tbox_text_measurer measurer;
+    tbox_context_input_measurer(&measurer, field->node, face, box->style->letter_spacing);
     for (size_t at = 0; at < field->length;) {
-        size_t next = tbox_utf8_next(field->value, field->length, at);
-        if (next == at) break;
-        double advance = tbox_context_input_advance(field->node, face,
-            tbox_string_view_make(field->value, next), box->style->letter_spacing);
-        if (relative_x < advance) {
-            double previous = tbox_context_input_advance(field->node, face,
-                tbox_string_view_make(field->value, at), box->style->letter_spacing);
-            return relative_x - previous < advance - relative_x ? at : next;
-        }
-        best = next;
+        double previous = measurer.width;
+        size_t next     = tbox_text_measurer_step(&measurer, field->value, field->length, at);
+        if (relative_x < measurer.width)
+            return relative_x - previous < measurer.width - relative_x ? at : next;
         at = next;
     }
-    return best;
+    return field->length;
 }
 
 size_t tbox_context_cursor_at_point(const tbox_text_field *field, const tbox_layout_box *box,
@@ -123,16 +125,15 @@ size_t tbox_context_cursor_at_point(const tbox_text_field *field, const tbox_lay
     if (row >= field->line_count) row = field->line_count - 1;
     tbox_text_line line = field->lines[row];
     double relative_x = x - box->content_box.x;
-    for (size_t at = line.start; at < line.end;) {
-        size_t next = tbox_utf8_next(field->value, field->length, at);
-        if (next <= at || next > line.end) break;
-        double advance = tbox_font_measure_text_spaced(face,
-            tbox_string_view_make(field->value + line.start, next - line.start), box->style->letter_spacing);
-        if (relative_x < advance) {
-            double previous = tbox_font_measure_text_spaced(face,
-                tbox_string_view_make(field->value + line.start, at - line.start), box->style->letter_spacing);
-            return relative_x - previous < advance - relative_x ? at : next;
-        }
+    const char *text  = field->value + line.start;
+    size_t length     = line.end - line.start;
+    tbox_text_measurer measurer;
+    tbox_text_measurer_init(&measurer, face, box->style->letter_spacing);
+    for (size_t at = 0; at < length;) {
+        double previous = measurer.width;
+        size_t next     = tbox_text_measurer_step(&measurer, text, length, at);
+        if (relative_x < measurer.width)
+            return line.start + (relative_x - previous < measurer.width - relative_x ? at : next);
         at = next;
     }
     return line.end;
@@ -173,7 +174,7 @@ bool tbox_context_drag_select_at(tbox_context *ctx, double x, double y) {
 
 tbox_string_view tbox_context_selected_text(tbox_context *ctx) {
     if (ctx == NULL || !tbox_context_is_text_control(ctx->focused_node) ||
-        tbox_context_is_password_input(ctx->focused_node) ||
+        tbox_layout_is_password_input(ctx->focused_node) ||
         !tbox_context_node_attached(ctx, ctx->focused_node) ||
         !tbox_context_focusable(ctx, ctx->focused_node))
         return tbox_string_view_make(NULL, 0);

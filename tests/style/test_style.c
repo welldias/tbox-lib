@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_string.h"
 #include "test_support.h"
 
 static tbox_html_document *parse_html_cstr(const char *html) {
@@ -2347,6 +2348,24 @@ int tbox_test_style_run(void) {
     /* place-*, text-wrap family, text-overflow strings, display keywords,
      * text-indent keywords, background-origin, scrollbars, 3D borders,
      * kerning and hyphens. */
+    /* Strings longer than their fixed field are cut on a codepoint
+     * boundary: "a" plus six 3-byte arrows does not fit
+     * text_overflow_string[16], and a byte cut would leave half an arrow. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { text-overflow: \"a\xe2\x86\x92\xe2\x86\x92\xe2\x86\x92\xe2\x86\x92\xe2\x86\x92\xe2\x86\x92\";"
+            " hyphenate-character: \"\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\"; }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(strlen(style.text_overflow_string) == 13);
+        TBOX_TEST_ASSERT(tbox_string_view_valid_utf8(tbox_string_view_from_cstr(style.text_overflow_string)));
+        TBOX_TEST_ASSERT(strlen(style.hyphenate_character) == 14);
+        TBOX_TEST_ASSERT(tbox_string_view_valid_utf8(tbox_string_view_from_cstr(style.hyphenate_character)));
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     {
         tbox_html_document *doc    = parse_html_cstr("<div><p>x</p></div>");
         const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;

@@ -317,18 +317,24 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   real. Exige tabelas UAX #29 (libgrapheme ou utf8proc como dependência
   opcional, ou tabela própria gerada).
 - **Toca:** `src/base/tbox_string.c` (um `tbox_grapheme_next/previous`),
+  `src/font/tbox_font_measure.h` (o passo do medidor),
   `src/context/tbox_context_text.c`, `src/context/tbox_context_events.c`,
   `src/layout/tbox_layout_inline.c`, `src/layout/tbox_layout_sizing.c`.
 
-### Números dependentes do locale
+### Strings de tamanho fixo em `tbox_style`
 
-- **O que é:** `strtod` e `snprintf("%g")` seguem `LC_NUMERIC`. Uma
-  aplicação que chama `setlocale(LC_ALL, "")` em pt_BR faz `1.5em` virar
-  `1` e valores gerados saírem com vírgula.
-- **Quando revisitar:** antes de bindings ou da primeira aplicação que
-  configure o locale.
-- **Toca:** `src/css_parser/`, `src/css_cascade/`, `src/style/`,
-  `src/context/` (usos de `strtod`/`snprintf`).
+- **O que é:** `text-overflow`, `hyphenate-character`, `text-emphasis`,
+  `content` do marcador, `font-family`, `url()` e nome de animação vão para
+  `char[N]` dentro de `tbox_style` (16 a 256 bytes). Um valor maior é
+  cortado — sempre entre codepoints (`tbox_utf8_copy_truncated`), mas
+  cortado.
+- **Por que importa:** perde texto silenciosamente; o struct público fica
+  grande e copiado por valor na herança.
+- **Quando revisitar:** quando um valor real passar do limite, ou na próxima
+  revisão do ABI de `tbox_style`. A troca natural é `tbox_string_view`
+  apontando para a arena do frame/folha.
+- **Toca:** `include/tbox/style.h`, `src/style/tbox_style.c`,
+  `src/layout/tbox_layout_flow.c` (cópia para caixas anônimas).
 
 ### Entidades: windows-1252, maiúsculas alternativas, multi-codepoint
 

@@ -75,6 +75,12 @@ typedef struct tbox_paint_op {
     tbox_string_view text;
     const tbox_font_face *face; /* injected by whoever builds the display list, never loaded here */
     double letter_spacing;      /* TEXT_RUN only; px after each codepoint */
+    /* TEXT_RUN: the positioned glyphs Output paints (docs/08-layout-e-pintura.md,
+     * "Texto como glifos posicionados"), x relative to rect.x and y to the
+     * baseline; borrowed from the frame arena like the rest of the list.
+     * NULL/0 makes Output shape `text` itself with the same shaper. */
+    const tbox_glyph *glyphs;
+    size_t glyph_count;
 
     /* IMAGE only (NULL for FILL_RECT/TEXT_RUN): the decoded image to
      * composite into `rect` -- see tbox_raster_image. */
@@ -159,9 +165,9 @@ typedef struct tbox_display_list {
  * docs/dev/historico.md's "Render Pipeline" and v18 sections (clipping of scroll
  * containers and input text via `clip` below).
  *
- * This never calls into <tbox/font.h>: a run's `font` pointer is only
- * copied into the resulting paint op's `face`, never dereferenced -- Output
- * Display is the one that rasterizes glyphs.
+ * A run's `font` and `glyphs` are copied into the TEXT_RUN op as they
+ * are; Render only shapes text of its own (a `text-emphasis` string mark)
+ * and never rasterizes -- Output Display paints the glyphs.
  *
  * `arena` is supplied by the caller (same per-frame arena as
  * tbox_style_resolve_tree and tbox_layout_build upstream) -- the returned

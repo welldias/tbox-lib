@@ -259,6 +259,20 @@ static double tbox_layout_atomic_top(const tbox_style *style, const tbox_font_fa
     }
 }
 
+/* Shapes `text` at `x` (relative to the run) and appends its glyphs, their
+ * clusters offset by `cluster_base` (where `text` starts in the run). */
+static void tbox_layout_append_glyphs(tbox_arena *arena, tbox_vector *glyphs, const tbox_font_face *face, tbox_string_view text, double letter_spacing, double x, size_t cluster_base) {
+    tbox_glyph *shaped;
+    size_t count;
+    if (!tbox_font_shape(arena, face, text, letter_spacing, x, (uint32_t)cluster_base, &shaped, &count, NULL))
+        return;
+    for (size_t i = 0; i < count; i++) {
+        tbox_glyph *slot = (tbox_glyph *)tbox_vector_push(glyphs);
+        if (slot != NULL)
+            *slot = shaped[i];
+    }
+}
+
 double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs) {
     double cursor_x                = 0.0;
     double run_start_x             = 0.0;
@@ -273,15 +287,19 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
     const tbox_image *run_image = NULL;
     double run_image_height     = 0.0;
     tbox_string_builder run_builder;
+    /* The run's glyphs, each word shaped where this line places it, so the
+     * drawing follows the layout exactly (spaces, word-spacing, justify). */
+    tbox_vector run_glyphs;
     bool have_run = false;
 
     for (size_t i = line->start; i < line->end; i++) {
         const tbox_layout_word *word = &words[i];
 
-        /* `justify_gap` widens every real word gap (text-align: justify);
-         * each such word then opens its own run, since a run's text can
-         * only carry single, unwidened spaces. */
+        /* `justify_gap` widens every real word gap (text-align: justify).
+         * The run keeps a single ' ' in its text; the wider gap lives only
+         * in the glyph positions, like word-spacing's. */
         bool justified = justify_gap != 0.0 && i != line->start && word->space_width > 0.0;
+        double gap_x   = cursor_x;
         if (i != line->start) {
             cursor_x += word->space_width + (justified ? justify_gap : 0.0);
         }
@@ -292,6 +310,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
         if (word->atomic != NULL) {
             if (have_run) {
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
+                *run                      = (tbox_layout_text_run){ 0 };
                 run->rect.x               = content_x + run_start_x;
                 double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
                 run->rect.y               = run_is_image ? tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) : line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent, tbox_font_face_line_height(run_face), block_face);
@@ -301,6 +320,8 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
                 run->font                 = run_face;
                 run->style                = run_style;
                 run->image                = run_is_image ? run_image : NULL;
+                run->glyphs               = (const tbox_glyph *)run_glyphs.data;
+                run->glyph_count          = tbox_vector_length(&run_glyphs);
                 have_run                  = false;
             }
             double x = content_x + cursor_x;
@@ -318,10 +339,11 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
          * `<mark>` word already gets today via the `style` mismatch, just
          * unconditional here since an image's face/style are otherwise
          * ordinary values that could otherwise coincidentally match. */
-        bool new_run = !have_run || word->face != run_face || word->style != run_style || word->image != NULL || run_is_image || word->style->word_spacing != 0.0 || justified;
+        bool new_run = !have_run || word->face != run_face || word->style != run_style || word->image != NULL || run_is_image;
         if (new_run) {
             if (have_run) {
                 tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
+                *run                      = (tbox_layout_text_run){ 0 };
                 run->rect.x               = content_x + run_start_x;
                 double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
                 run->rect.y               = run_is_image ? tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) : line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent, tbox_font_face_line_height(run_face), block_face);
@@ -331,6 +353,8 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
                 run->font                 = run_face;
                 run->style                = run_style;
                 run->image                = run_is_image ? run_image : NULL;
+                run->glyphs               = (const tbox_glyph *)run_glyphs.data;
+                run->glyph_count          = tbox_vector_length(&run_glyphs);
             }
 
             run_start_x      = cursor_x;
@@ -340,17 +364,22 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
             run_image        = word->image;
             run_image_height = word->image_height;
             tbox_string_builder_init(&run_builder, arena, word->text.size + 8);
+            tbox_vector_init(&run_glyphs, arena, sizeof(tbox_glyph), word->text.size + 1);
             have_run = true;
         } else if (!word->no_space_before) {
+            tbox_layout_append_glyphs(arena, &run_glyphs, word->face, tbox_string_view_make(" ", 1), word->style->letter_spacing, gap_x - run_start_x, run_builder.length);
             tbox_string_builder_append_byte(&run_builder, ' ');
         }
 
+        if (!run_is_image)
+            tbox_layout_append_glyphs(arena, &run_glyphs, word->face, word->text, word->style->letter_spacing, cursor_x - run_start_x, run_builder.length);
         tbox_string_builder_append_view(&run_builder, word->text);
         cursor_x += word->width;
         /* A line broken at a soft hyphen shows the hyphen
          * (hyphenate-character, "-" when auto). */
         if (word->soft_hyphen_after && i + 1 == line->end && word->face != NULL) {
             tbox_string_view hyphen = word->style->hyphenate_character[0] != '\0' ? tbox_string_view_from_cstr(word->style->hyphenate_character) : tbox_string_view_make("-", 1);
+            tbox_layout_append_glyphs(arena, &run_glyphs, word->face, hyphen, word->style->letter_spacing, cursor_x - run_start_x, run_builder.length);
             tbox_string_builder_append_view(&run_builder, hyphen);
             cursor_x += tbox_font_measure_text_spaced(word->face, hyphen, word->style->letter_spacing);
         }
@@ -359,6 +388,7 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
 
     if (have_run) {
         tbox_layout_text_run *run = (tbox_layout_text_run *)tbox_vector_push(runs);
+        *run                      = (tbox_layout_text_run){ 0 };
         run->rect.x               = content_x + run_start_x;
         double ascent             = run_is_image ? run_image_height : tbox_font_face_ascent(run_face);
         run->rect.y               = run_is_image ? tbox_layout_atomic_top(run_style, run_face, ascent, run_image_height, line, line_y, block_face) : line_y + (line->ascent - ascent) + tbox_layout_vertical_align_offset(run_style, run_face, ascent, tbox_font_face_line_height(run_face), block_face);
@@ -368,12 +398,10 @@ double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *wo
         run->font                 = run_face;
         run->style                = run_style;
         run->image                = run_is_image ? run_image : NULL;
+        run->glyphs               = (const tbox_glyph *)run_glyphs.data;
+        run->glyph_count          = tbox_vector_length(&run_glyphs);
     }
     return cursor_x;
-}
-
-static size_t tbox_layout_previous_codepoint(tbox_string_view text) {
-    return tbox_utf8_previous(text.data, text.size);
 }
 
 /* Split only text words too wide for an empty line. Each piece is a UTF-8
@@ -416,10 +444,11 @@ void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, dou
             double limit = start == 0 ? first_limit : available_width;
             size_t end = start, best = start;
             double best_width = 0.0;
+            tbox_text_measurer piece;
+            tbox_text_measurer_init(&piece, word->face, word->style->letter_spacing);
             while (end < word->text.size) {
-                size_t next = tbox_utf8_next(word->text.data, word->text.size, end);
-                tbox_string_view piece = tbox_string_view_make(word->text.data + start, next - start);
-                double measured        = tbox_font_measure_text_spaced(word->face, piece, word->style->letter_spacing);
+                size_t next     = tbox_text_measurer_step(&piece, word->text.data, word->text.size, end);
+                double measured = piece.width;
                 if (measured > limit && best > start)
                     break;
                 best       = next;
@@ -440,6 +469,13 @@ void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, dou
     *words = expanded;
 }
 
+/* The ellipsis (or text-overflow string) as its own shaped run. */
+static void tbox_layout_push_ellipsis_mark(tbox_vector *runs, tbox_rect rect, tbox_string_view text, const tbox_font_face *face, const tbox_style *style) {
+    tbox_layout_text_run *mark = (tbox_layout_text_run *)tbox_vector_push(runs);
+    *mark                      = (tbox_layout_text_run){ .rect = rect, .text = text, .font = face, .style = style };
+    tbox_font_shape_into(runs->arena, face, text, style->letter_spacing, &mark->glyphs, &mark->glyph_count);
+}
+
 void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_x, double available_width, const tbox_style *style, const tbox_font_face *face, const tbox_layout_line *line, double line_y, bool force) {
     if (runs->length == first || face == NULL)
         return;
@@ -457,13 +493,8 @@ void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_
     /* line-clamp (`force`): the mark follows the line's text, truncating it
      * only when there is no room left for the mark. */
     if (force && last->rect.x + last->rect.width <= limit) {
-        double end                 = last->rect.x + last->rect.width;
-        tbox_layout_text_run *mark = (tbox_layout_text_run *)tbox_vector_push(runs);
-        mark->rect                 = (tbox_rect){ end, line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height };
-        mark->text                 = ellipsis;
-        mark->font                 = face;
-        mark->style                = style;
-        mark->image                = NULL;
+        double end = last->rect.x + last->rect.width;
+        tbox_layout_push_ellipsis_mark(runs, (tbox_rect){ end, line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height }, ellipsis, face, style);
         return;
     }
     while (runs->length > first) {
@@ -473,14 +504,27 @@ void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_
             runs->length--;
             continue;
         }
-        while (last->text.size > 0 && last->rect.x + tbox_font_measure_text_spaced(last->font, last->text, last->style->letter_spacing) > limit) {
-            last->text.size = tbox_layout_previous_codepoint(last->text);
+        /* Keep the most glyphs whose painted extent still ends before
+         * `limit`; the text is cut at the first dropped glyph's cluster. */
+        if (last->glyph_count == 0 && last->text.size > 0)
+            tbox_font_shape_into(runs->arena, last->font, last->text, last->style->letter_spacing, &last->glyphs, &last->glyph_count);
+        size_t fit       = 0;
+        double fit_width = 0.0;
+        for (size_t g = 0; g < last->glyph_count; g++) {
+            double end = last->glyphs[g].x + last->glyphs[g].advance;
+            if (last->rect.x + end <= limit) {
+                fit       = g + 1;
+                fit_width = end;
+            }
         }
-        if (last->text.size == 0) {
+        if (fit == 0) {
             runs->length--;
             continue;
         }
-        last->rect.width = tbox_font_measure_text_spaced(last->font, last->text, last->style->letter_spacing);
+        if (fit < last->glyph_count)
+            last->text.size = last->glyphs[fit].cluster;
+        last->glyph_count = fit;
+        last->rect.width  = fit_width;
         break;
     }
     double mark_x = right - glyph_width > content_x ? right - glyph_width : content_x;
@@ -489,10 +533,5 @@ void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_
         last  = &items[runs->length - 1];
         mark_x = last->rect.x + last->rect.width;
     }
-    tbox_layout_text_run *mark = (tbox_layout_text_run *)tbox_vector_push(runs);
-    mark->rect                 = (tbox_rect){ mark_x, line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height };
-    mark->text                 = ellipsis;
-    mark->font                 = face;
-    mark->style                = style;
-    mark->image                = NULL;
+    tbox_layout_push_ellipsis_mark(runs, (tbox_rect){ mark_x, line_y + line->ascent - tbox_font_face_ascent(face), glyph_width, line->height }, ellipsis, face, style);
 }

@@ -24,7 +24,7 @@ Este arquivo é o mapa físico, para quem vai editar o código.
 
 | Diretório | Header público | Arquivos principais |
 |---|---|---|
-| `base/` | `callback.h` (`tbox_destroy_notify`) | `tbox_arena`, `tbox_vector`, `tbox_list`, `tbox_string` (string builder, colapso de espaços), `tbox_debug`, `tbox_mutex.h` (fila de `tbox_app_post`), `tbox_release` (liberação de `userdata` adiada durante callbacks) |
+| `base/` | `callback.h` (`tbox_destroy_notify`) | `tbox_arena`, `tbox_vector`, `tbox_list`, `tbox_string` (UTF-8, ASCII, string builder, colapso de espaços), `tbox_number` (números sem locale), `tbox_debug`, `tbox_mutex.h` (fila de `tbox_app_post`), `tbox_release` (liberação de `userdata` adiada durante callbacks) |
 | `html_parser/` | `html_parser.h` | tokenizer, tree builder (fechamento implícito), `tbox_html_entities.c` (tabela WHATWG gerada) |
 | `html_xpath/` | `html_xpath.h` | lexer, parser, avaliador de XPath sobre `tbox_html_node` |
 | `css_parser/` | `css_parser.h` | tokenizer, parser, stylesheet (incl. `@media`, `@font-face`, `@keyframes`), `tbox_css_supports.c` (condições de `@supports`) |

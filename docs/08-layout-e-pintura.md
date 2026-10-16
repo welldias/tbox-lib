@@ -153,7 +153,7 @@ do CSS e emite comandos (`tbox_paint_op`):
 | Op | Uso |
 |---|---|
 | `FILL_RECT` | Fundos, bordas, decorações de texto, destaque de `<mark>` (com raio, para cantos arredondados) |
-| `TEXT_RUN` | Um trecho de texto com uma face e uma cor |
+| `TEXT_RUN` | Um trecho de texto com uma face, uma cor e seus [glifos posicionados](#texto-como-glifos-posicionados) |
 | `IMAGE` | Imagens e `background-image` |
 | `GRADIENT` | Gradientes lineares/radiais/cônicos (e `repeating-`) |
 | `FILL_RING` | Retângulo arredondado menos outro (bordas e contornos arredondados, sombras `inset`) |
@@ -167,6 +167,46 @@ de caixas `absolute`/`fixed` vira um `clip-path: inset()` equivalente na
 Style) e matriz de cor (`filter` só de cor); `IMAGE`/`GRADIENT` levam
 também o `background-blend-mode` da camada. `opacity` e os filtros que
 espalham vão no `LAYER_BEGIN` da [camada](#camadas-de-composição).
+
+### Texto como glifos posicionados
+
+Um `TEXT_RUN` carrega, além de `text`/`face`/`letter_spacing`, o vetor
+`glyphs`/`glyph_count` (`tbox_glyph`, em `<tbox/font.h>`): para cada glifo,
+o índice na fonte (`id`), a posição `x`/`y` relativa a `rect.x` e à linha
+de base, o `advance` (avanço + `letter-spacing`) e o `cluster` — offset em
+bytes, em `text`, do caractere que o originou. Os glifos vivem na arena do
+frame, como o resto da display list.
+
+```mermaid
+flowchart LR
+    W[palavras medidas<br/>tbox_text_measurer] --> R[run da linha<br/>tbox_layout_text_run.glyphs]
+    R --> O[TEXT_RUN.glyphs]
+    O --> P[raster: só pinta<br/>id em x, y]
+```
+
+- **Quem posiciona é o layout.** `tbox_layout_build_line_runs` gera os
+  glifos de cada palavra na posição em que a própria linha a colocou, com o
+  mesmo shaper que mediu a palavra (`tbox_font_shape`, sobre
+  `tbox_text_measurer`). Por isso o desenho coincide com o que o layout
+  mediu, inclusive nos espaços.
+- **O raster não decodifica UTF-8 nem calcula kerning.** Para cada glifo,
+  rasteriza o `id` (`tbox_font_rasterize_glyph_id`) em
+  `rect.x + x`, `linha de base + y`. Um `TEXT_RUN` sem glifos (montado à
+  mão por uma aplicação ou por um teste) é moldado na hora pelo mesmo
+  shaper — mesma regra, só fora da arena.
+- **`word-spacing` e `text-align: justify`** viram deslocamento dos glifos;
+  uma linha não é mais partida em um `TEXT_RUN` por palavra.
+- **Reticências** cortam o vetor de glifos (e `text`, pelo `cluster`);
+  marcas de `text-emphasis` ficam centradas em cada glifo.
+- **Damage tracking:** o hash do op inclui `id` e `x` de cada glifo, então
+  mudar só o espaçamento de uma linha justificada repinta a linha.
+
+Edição de texto (cursor, seleção, clique em `<input>`/`<textarea>`)
+continua no `tbox_text_measurer` sobre o valor do campo, que não é o texto
+pintado (máscara de senha, linhas do textarea); como medidor e shaper são o
+mesmo código, os dois não divergem. Shaping real (HarfBuzz), fallback de
+fonte e bidi entram só no shaper — ver
+[Texto e fontes](09-texto-e-fontes.md#do-texto-aos-glifos).
 
 ### Ordem de pintura
 

@@ -7,20 +7,9 @@
 #include <math.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_number.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
-
-/* CSS2.1 "white space": space, tab, line feed, carriage return, form feed --
- * same definition tbox_css_selector_match.c uses. */
-static bool tbox_css_cascade_is_space(char byte) {
-    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == '\f';
-}
-
-static tbox_string_view tbox_css_media_trim(tbox_string_view view) {
-    while (view.size && tbox_css_cascade_is_space(*view.data)) view.data++, view.size--;
-    while (view.size && tbox_css_cascade_is_space(view.data[view.size - 1])) view.size--;
-    return view;
-}
 
 static bool tbox_css_media_equals(tbox_string_view view, const char *text) {
     return tbox_string_view_equal_ascii_ci(view, tbox_string_view_from_cstr(text));
@@ -28,14 +17,10 @@ static bool tbox_css_media_equals(tbox_string_view view, const char *text) {
 
 /* A non-negative number with an optional unit suffix into `out`/`unit`. */
 static bool tbox_css_media_number(tbox_string_view value, double *out, char unit[8]) {
-    char number[64];
-    if (value.size == 0 || value.size >= sizeof(number)) return false;
-    memcpy(number, value.data, value.size);
-    number[value.size] = '\0';
-    char *end = NULL;
-    *out = strtod(number, &end);
-    if (end == number || !isfinite(*out) || *out < 0.0 || strlen(end) >= 8) return false;
-    strcpy(unit, end);
+    size_t used = tbox_number_scan(value, out);
+    if (used == 0 || !isfinite(*out) || *out < 0.0 || value.size - used >= 8) return false;
+    memcpy(unit, value.data + used, value.size - used);
+    unit[value.size - used] = '\0';
     return true;
 }
 
@@ -45,9 +30,9 @@ static bool tbox_css_media_ratio(tbox_string_view value, double *out) {
     while (slash < value.size && value.data[slash] != '/') slash++;
     double a, b = 1.0;
     char unit[8];
-    if (!tbox_css_media_number(tbox_css_media_trim(tbox_string_view_make(value.data, slash)), &a, unit) || unit[0] != '\0') return false;
+    if (!tbox_css_media_number(tbox_string_view_trim_ascii_space(tbox_string_view_make(value.data, slash)), &a, unit) || unit[0] != '\0') return false;
     if (slash < value.size &&
-        (!tbox_css_media_number(tbox_css_media_trim(tbox_string_view_make(value.data + slash + 1, value.size - slash - 1)), &b, unit) || unit[0] != '\0' || b == 0.0))
+        (!tbox_css_media_number(tbox_string_view_trim_ascii_space(tbox_string_view_make(value.data + slash + 1, value.size - slash - 1)), &b, unit) || unit[0] != '\0' || b == 0.0))
         return false;
     *out = a / b;
     return true;
@@ -57,13 +42,13 @@ static bool tbox_css_media_ratio(tbox_string_view value, double *out) {
  * window: light color scheme, a mouse that hovers, 1dppx, 8 bits per
  * color channel, no scripting, no forced colors, no contrast preference. */
 static bool tbox_css_media_feature(tbox_string_view clause, double width, double height, bool reduced_motion) {
-    clause = tbox_css_media_trim(clause);
+    clause = tbox_string_view_trim_ascii_space(clause);
     if (clause.size < 3 || clause.data[0] != '(' || clause.data[clause.size - 1] != ')') return false;
     clause.data++, clause.size -= 2;
-    clause = tbox_css_media_trim(clause);
+    clause = tbox_string_view_trim_ascii_space(clause);
     size_t colon = 0;
     while (colon < clause.size && clause.data[colon] != ':') colon++;
-    tbox_string_view name = tbox_css_media_trim(tbox_string_view_make(clause.data, colon));
+    tbox_string_view name = tbox_string_view_trim_ascii_space(tbox_string_view_make(clause.data, colon));
     if (colon == clause.size) {
         /* Boolean context: true unless the feature's value would be none/0. */
         if (tbox_css_media_equals(name, "prefers-reduced-motion")) return reduced_motion;
@@ -74,7 +59,7 @@ static bool tbox_css_media_feature(tbox_string_view clause, double width, double
                tbox_css_media_equals(name, "aspect-ratio") || tbox_css_media_equals(name, "resolution") ||
                tbox_css_media_equals(name, "prefers-color-scheme");
     }
-    tbox_string_view value = tbox_css_media_trim(tbox_string_view_make(clause.data + colon + 1, clause.size - colon - 1));
+    tbox_string_view value = tbox_string_view_trim_ascii_space(tbox_string_view_make(clause.data + colon + 1, clause.size - colon - 1));
     static const struct {
         const char *name, *value;
     } discrete[] = {
@@ -136,7 +121,7 @@ static bool tbox_css_media_feature(tbox_string_view clause, double width, double
 }
 
 static bool tbox_css_media_one(tbox_string_view query, double width, double height, bool reduced_motion) {
-    query = tbox_css_media_trim(query);
+    query = tbox_string_view_trim_ascii_space(query);
     bool negate = false;
     if (query.size > 4 && tbox_css_media_equals(tbox_string_view_make(query.data, 4), "not ")) {
         query.data += 4, query.size -= 4, negate = true;
@@ -145,7 +130,7 @@ static bool tbox_css_media_one(tbox_string_view query, double width, double heig
     }
     bool result = true, saw = false;
     while (query.size) {
-        query = tbox_css_media_trim(query);
+        query = tbox_string_view_trim_ascii_space(query);
         if (!query.size) break;
         size_t end = 0;
         if (query.data[0] == '(') {
@@ -158,7 +143,7 @@ static bool tbox_css_media_one(tbox_string_view query, double width, double heig
             if (depth != 0) return false;
             result &= tbox_css_media_feature(tbox_string_view_make(query.data, end), width, height, reduced_motion);
         } else {
-            while (end < query.size && !tbox_css_cascade_is_space(query.data[end])) end++;
+            while (end < query.size && !tbox_ascii_is_space(query.data[end])) end++;
             tbox_string_view token = tbox_string_view_make(query.data, end);
             if (tbox_css_media_equals(token, "and")) { query.data += end, query.size -= end; continue; }
             result &= tbox_css_media_equals(token, "all") || tbox_css_media_equals(token, "screen");
@@ -306,7 +291,7 @@ tbox_string_view tbox_css_cascade_strip_important(tbox_string_view value, bool *
     }
 
     size_t bang = tail_start;
-    while (bang > 0 && tbox_css_cascade_is_space(value.data[bang - 1])) {
+    while (bang > 0 && tbox_ascii_is_space(value.data[bang - 1])) {
         bang--;
     }
     if (bang == 0 || value.data[bang - 1] != '!') {
@@ -314,7 +299,7 @@ tbox_string_view tbox_css_cascade_strip_important(tbox_string_view value, bool *
     }
 
     size_t result_size = bang - 1;
-    while (result_size > 0 && tbox_css_cascade_is_space(value.data[result_size - 1])) {
+    while (result_size > 0 && tbox_ascii_is_space(value.data[result_size - 1])) {
         result_size--;
     }
 

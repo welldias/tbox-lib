@@ -16,6 +16,13 @@ Leitura obrigatória antes de qualquer mudança de código.
 - Sem exceções, sem alocação escondida: memória vem de uma `tbox_arena` ou
   de `malloc` explícito.
 - `tbox_string_view` para toda string que não é dona da memória.
+- Texto e sintaxe passam por `src/base/`, nunca pela libc diretamente:
+  UTF-8 por `tbox_string.h` (único arquivo que vê o `utf8.h`); espaço,
+  caixa e prefixos ASCII por `tbox_ascii_*`/`tbox_string_view_*` (nada de
+  `<ctype.h>`, que depende do locale); números decimais por
+  `tbox_number.h` (nada de `strtod`/`%g`, que seguem `LC_NUMERIC`); cópia
+  para campo de tamanho fixo por `tbox_utf8_copy_truncated`; largura de
+  prefixos por `tbox_text_measurer` (`src/font/tbox_font_measure.h`).
 - Compilação com `-Wall -Wextra -Wpedantic -Werror`; o build tem de sair limpo.
 
 ## Posse de memória

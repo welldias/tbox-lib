@@ -29,13 +29,74 @@ flowchart LR
    tamanho em pixels. O cache carrega sob demanda uma face por combinação de
    família, peso, largura (`font-stretch`), itálico, kerning e tamanho, e a
    mantém pela vida do cache (não é refeita a cada frame).
-3. **Rasterização** — o Output pede o bitmap de cobertura de cada glifo e o
-   compõe no buffer com a cor do texto.
+3. **Rasterização** — o Output pede o bitmap de cobertura de cada glifo que
+   o layout já posicionou (ver [Do texto aos glifos](#do-texto-aos-glifos)) e
+   o compõe no buffer com a cor do texto.
 
 Com `tbox_app` você não precisa fazer nada: ele resolve sans-serif regular e
 negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
 `tbox_context` direto, você cria o `tbox_font_face_cache` (ver
 [exemplo 9](04-exemplos.md#9-pipeline-sem-tbox_app)).
+
+## Medição incremental
+
+`tbox_font_measure_text_spaced` mede um trecho inteiro. Quem precisa da
+largura de **cada prefixo** de um trecho (posicionar o cursor por clique,
+cortar para as reticências, quebrar uma palavra longa com `overflow-wrap`,
+quebrar linhas do `<textarea>`, centralizar marcas de `text-emphasis`) usa
+o medidor incremental de `src/font/tbox_font_measure.h`:
+
+```c
+tbox_text_measurer m;
+tbox_text_measurer_init(&m, face, letter_spacing);
+for (size_t at = 0; at < text.size;) {
+    at = tbox_text_measurer_step(&m, text.data, text.size, at);
+    /* m.width == largura de text[0..at) */
+}
+```
+
+Cada passo acrescenta um codepoint (kerning com o anterior, avanço e
+`letter-spacing`), na mesma ordem de soma que `tbox_font_measure_text_spaced`
+usa — que é implementada por cima do medidor. Por isso `m.width` é
+**idêntica bit a bit** à medição do prefixo, e trocar remedições por passos
+não muda nenhum resultado, só o custo: O(n) em vez de O(n²).
+
+`tbox_text_measurer_init_masked` mede como se cada codepoint fosse um único
+caractere de substituição (a máscara do `<input type=password>`); o layout
+desenha a máscara com o mesmo medidor, então cursor e texto coincidem.
+
+O medidor é o ponto onde a unidade de passo pode mudar depois: segmentação
+por grafema troca o "um codepoint" do passo, e shaping (HarfBuzz) passaria a
+avançar por cluster — sem mudar quem o usa.
+
+## Do texto aos glifos
+
+A cada passo, o medidor também informa o glifo que produziu: índice na
+fonte (`glyph_id`, via `FT_Get_Char_Index`), posição (`glyph_x`, já com o
+kerning) e avanço (`glyph_advance`, com `letter-spacing`). O shaper
+`tbox_font_shape` (`src/font/tbox_font_measure.h`) só repete esses passos e
+grava um `tbox_glyph` por passo:
+
+```c
+typedef struct tbox_glyph {
+    uint32_t id;       /* índice do glifo na face */
+    uint32_t cluster;  /* offset em bytes do caractere de origem no texto */
+    double x, y;       /* posição relativa à origem do run e à linha de base */
+    double advance;    /* avanço + letter-spacing */
+} tbox_glyph;
+```
+
+Hoje cada codepoint vira exatamente um glifo, na mesma ordem (`cluster`
+crescente). Com HarfBuzz isso deixa de valer — ligaduras juntam vários
+caracteres num glifo, marcas combinantes usam `y`, bidi reordena — e é por
+isso que o desenho recebe glifos e não texto: só o shaper muda. O layout
+guarda os glifos em `tbox_layout_text_run.glyphs`, o render os copia para o
+`TEXT_RUN` e o raster os pinta (ver
+[Layout e pintura](08-layout-e-pintura.md#texto-como-glifos-posicionados)).
+
+O raster desenha por índice (`tbox_font_rasterize_glyph_id`);
+`tbox_font_rasterize_glyph` (por codepoint) continua como atalho para
+`FT_Get_Char_Index` + o mesmo caminho.
 
 ## O que funciona
 
@@ -91,7 +152,13 @@ negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
   maiúsculas/minúsculas (`tbox_utf8_to_upper`/`_to_lower`) também ficam
   ali. `src/base/tbox_string.c` é o único arquivo que inclui
   `external/utf8.h`: o CMake só dá o caminho dele a esse arquivo, então um
-  `#include "utf8.h"` em outro lugar não compila.
+  `#include "utf8.h"` em outro lugar não compila. Valores de CSS copiados
+  para campos de tamanho fixo (`text-overflow`, `hyphenate-character`,
+  `text-emphasis`, `content` do marcador) são cortados entre codepoints,
+  nunca no meio de um (`tbox_utf8_copy_truncated`).
+- Números em CSS e atributos (`1.5em`, `value` de `<input type=number>`,
+  `coords`) são lidos e escritos por `src/base/tbox_number`, sem depender
+  do `LC_NUMERIC` da aplicação.
 - `<ruby>` desenha cada trecho de texto-base com seu `<rt>` centralizado
   acima. O `<rt>` usa metade do tamanho da fonte por padrão e `<rp>` fica
   oculto. A unidade ruby não quebra entre trechos. Veja

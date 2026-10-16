@@ -2,6 +2,7 @@
 #include <string.h>
 #include "tbox_css_parser.h"
 
+#include "base/tbox_number.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 
@@ -52,13 +53,6 @@ static tbox_string_view tbox_css_parser_copy(tbox_css_parser *parser, tbox_strin
     tbox_string_builder builder;
     tbox_string_builder_init(&builder, parser->arena, view.size);
     tbox_string_builder_append_view(&builder, view);
-    return tbox_string_builder_finish(&builder);
-}
-
-static tbox_string_view tbox_css_parser_copy_lower(tbox_css_parser *parser, tbox_string_view view) {
-    tbox_string_builder builder;
-    tbox_string_builder_init(&builder, parser->arena, view.size);
-    tbox_string_builder_append_view_lower_ascii(&builder, view);
     return tbox_string_builder_finish(&builder);
 }
 
@@ -231,7 +225,7 @@ static bool tbox_css_parser_parse_attribute_qualifier(tbox_css_parser *parser, t
     if (parser->current.type != TBOX_CSS_TOKEN_IDENT) {
         return false;
     }
-    tbox_string_view name = tbox_css_parser_copy_lower(parser, parser->current.text);
+    tbox_string_view name = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
     tbox_css_parser_advance(parser);
     tbox_css_parser_skip_s(parser);
 
@@ -310,7 +304,7 @@ static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox
         tbox_css_parser_advance(parser);
         if (parser->current.type != TBOX_CSS_TOKEN_IDENT)
             return false;
-        tbox_string_view lower = tbox_css_parser_copy_lower(parser, parser->current.text);
+        tbox_string_view lower = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
         char *buffer           = (char *)tbox_arena_alloc(parser->arena, lower.size + 2);
         if (buffer == NULL)
             return false;
@@ -322,7 +316,7 @@ static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox
     }
 
     if (parser->current.type == TBOX_CSS_TOKEN_IDENT) {
-        tbox_string_view name = tbox_css_parser_copy_lower(parser, parser->current.text);
+        tbox_string_view name = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
         tbox_css_parser_advance(parser);
         /* CSS2's one-colon :before/:after/:first-line/:first-letter are the
          * same pseudo-elements as their "::" forms. */
@@ -342,7 +336,7 @@ static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox
     }
 
     if (parser->current.type == TBOX_CSS_TOKEN_FUNCTION) {
-        tbox_string_view name = tbox_css_parser_copy_lower(parser, parser->current.text);
+        tbox_string_view name = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
         size_t argument_start = parser->current.offset + parser->current.text.size + 1;
         tbox_css_parser_advance(parser);
         if (tbox_string_view_equal_cstr(name, "not")) {
@@ -350,7 +344,7 @@ static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox
             tbox_vector_init(&nested, parser->arena, sizeof(tbox_css_simple_selector), 1);
             tbox_css_parser_skip_s(parser);
             if (parser->current.type == TBOX_CSS_TOKEN_IDENT) {
-                tbox_string_view type = tbox_css_parser_copy_lower(parser, parser->current.text);
+                tbox_string_view type = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
                 tbox_css_parser_advance(parser);
                 tbox_css_parser_push_simple_selector(&nested, TBOX_CSS_SIMPLE_SELECTOR_TYPE, TBOX_CSS_COMBINATOR_NONE, type);
             } else if (parser->current.type == TBOX_CSS_TOKEN_STAR) {
@@ -426,7 +420,7 @@ static bool tbox_css_parser_parse_compound(tbox_css_parser *parser, tbox_vector 
     bool pushed_any = false;
 
     if (parser->current.type == TBOX_CSS_TOKEN_IDENT) {
-        tbox_string_view name = tbox_css_parser_copy_lower(parser, parser->current.text);
+        tbox_string_view name = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
         tbox_css_parser_advance(parser);
         tbox_css_parser_push_simple_selector(out, TBOX_CSS_SIMPLE_SELECTOR_TYPE, combinator, name);
         pushed_any = true;
@@ -578,7 +572,7 @@ static bool tbox_css_parser_parse_declaration(tbox_css_parser *parser, tbox_vect
         tbox_css_parser_skip_to_semicolon_or_rbrace(parser);
         return false;
     }
-    tbox_string_view property = tbox_css_parser_copy_lower(parser, parser->current.text);
+    tbox_string_view property = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
     tbox_css_parser_advance(parser);
     tbox_css_parser_skip_s(parser);
 
@@ -831,11 +825,8 @@ static void tbox_css_parser_parse_keyframes(tbox_css_parser *parser, const tbox_
                 else if (tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("to"))) offset = 1.0;
                 tbox_css_parser_advance(parser);
             } else if (parser->current.type == TBOX_CSS_TOKEN_NUMBER) {
-                char digits[32];
-                size_t length = parser->current.text.size < sizeof(digits) - 1 ? parser->current.text.size : sizeof(digits) - 1;
-                memcpy(digits, parser->current.text.data, length);
-                digits[length] = '\0';
-                double percent = strtod(digits, NULL);
+                double percent;
+                if (!tbox_number_parse(parser->current.text, &percent)) percent = -1.0;
                 tbox_css_parser_advance(parser);
                 if (parser->current.type == TBOX_CSS_TOKEN_DELIM && parser->current.text.size == 1 && parser->current.text.data[0] == '%') {
                     tbox_css_parser_advance(parser);

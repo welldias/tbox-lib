@@ -19,18 +19,6 @@ struct tbox_style_custom_properties {
 
 #define TBOX_STYLE_VAR_MAX_DEPTH 16
 
-static bool tbox_style_vars_is_space(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
-}
-
-static tbox_string_view tbox_style_vars_trim(tbox_string_view text) {
-    while (text.size > 0 && tbox_style_vars_is_space(text.data[0]))
-        text = tbox_string_view_make(text.data + 1, text.size - 1);
-    while (text.size > 0 && tbox_style_vars_is_space(text.data[text.size - 1]))
-        text.size--;
-    return text;
-}
-
 static bool tbox_style_vars_is_custom(tbox_string_view property) {
     return property.size > 2 && property.data[0] == '-' && property.data[1] == '-';
 }
@@ -101,14 +89,14 @@ static bool tbox_style_vars_substitute_text(tbox_arena *arena, tbox_string_view 
             if (j >= text.size)
                 return false; /* unterminated var( */
             size_t name_end        = comma != 0 ? comma : j;
-            tbox_string_view name  = tbox_style_vars_trim(tbox_string_view_make(text.data + i + 4, name_end - i - 4));
+            tbox_string_view name  = tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data + i + 4, name_end - i - 4));
             tbox_string_view value;
             if (!tbox_style_vars_is_custom(name))
                 return false;
             if (!tbox_style_vars_lookup(arena, name, computed, inherited, depth, &value)) {
                 if (comma == 0)
                     return false;
-                if (!tbox_style_vars_substitute_text(arena, tbox_style_vars_trim(tbox_string_view_make(text.data + comma + 1, j - comma - 1)), computed, inherited, depth + 1, &value))
+                if (!tbox_style_vars_substitute_text(arena, tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data + comma + 1, j - comma - 1)), computed, inherited, depth + 1, &value))
                     return false;
             }
             tbox_string_builder_append_view(&builder, value);
@@ -154,7 +142,7 @@ tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style
             if (valid && set != NULL) {
                 tbox_string_builder copy;
                 tbox_string_builder_init(&copy, arena, value.size + 1);
-                tbox_string_builder_append_view(&copy, tbox_style_vars_trim(value));
+                tbox_string_builder_append_view(&copy, tbox_string_view_trim_ascii_space(value));
                 tbox_string_builder name;
                 tbox_string_builder_init(&name, arena, decl->property.size + 1);
                 tbox_string_builder_append_view(&name, decl->property);
@@ -225,7 +213,7 @@ static bool tbox_style_light_dark_text(tbox_arena *arena, tbox_string_view text,
         if (close == 0 || comma == 0)
             return false;
         tbox_string_view chosen = dark ? tbox_string_view_make(text.data + comma + 1, close - comma - 1) : tbox_string_view_make(text.data + open, comma - open);
-        chosen                  = tbox_style_vars_trim(chosen);
+        chosen                  = tbox_string_view_trim_ascii_space(chosen);
         if (chosen.size == 0 || !tbox_style_light_dark_text(arena, chosen, dark, depth + 1, &chosen))
             return false;
         tbox_string_builder_append_view(&builder, tbox_string_view_make(text.data + done, at - done));

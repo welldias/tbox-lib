@@ -45,10 +45,6 @@ static const tbox_style_quotes tbox_style_default_quotes = {
     { { "\xE2\x80\x9D", 3 }, { "\xE2\x80\x99", 3 } },
 };
 
-static bool tbox_style_generated_is_space(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
-}
-
 static bool tbox_style_generated_ends_in(const tbox_css_selector *selector, const char *pseudo) {
     if (selector->simple_selector_count == 0)
         return false;
@@ -98,7 +94,7 @@ bool tbox_style_generated_allowed(const tbox_html_node *element) {
 /* ---- tokens of a declaration value ---- */
 
 static tbox_string_view tbox_style_generated_skip_space(tbox_string_view text) {
-    while (text.size > 0 && tbox_style_generated_is_space(text.data[0]))
+    while (text.size > 0 && tbox_ascii_is_space(text.data[0]))
         text = tbox_string_view_make(text.data + 1, text.size - 1);
     return text;
 }
@@ -152,7 +148,7 @@ static bool tbox_style_generated_string(tbox_string_view *text, tbox_string_buil
             digits++, i++;
         }
         if (digits > 0) {
-            if (i < text->size && tbox_style_generated_is_space(text->data[i]))
+            if (i < text->size && tbox_ascii_is_space(text->data[i]))
                 i++;
             tbox_style_generated_append_codepoint(builder, cp);
         } else {
@@ -183,7 +179,7 @@ static size_t tbox_style_generated_arguments(tbox_string_view *text, tbox_string
         else if ((c == ')' || c == ',') && depth == 0) {
             tbox_string_view arg = tbox_string_view_make(text->data + start, i - start);
             arg                  = tbox_style_generated_skip_space(arg);
-            while (arg.size > 0 && tbox_style_generated_is_space(arg.data[arg.size - 1]))
+            while (arg.size > 0 && tbox_ascii_is_space(arg.data[arg.size - 1]))
                 arg.size--;
             if (count < max)
                 args[count++] = arg;
@@ -242,7 +238,7 @@ static void tbox_style_generated_counter_list(tbox_style_generated *generated, c
         if (value.size > 0 && (value.data[0] == '-' || value.data[0] == '+' || (value.data[0] >= '0' && value.data[0] <= '9'))) {
             char number[24];
             size_t n = 0;
-            while (n < value.size && n + 1 < sizeof(number) && !tbox_style_generated_is_space(value.data[n])) {
+            while (n < value.size && n + 1 < sizeof(number) && !tbox_ascii_is_space(value.data[n])) {
                 number[n] = value.data[n];
                 n++;
             }

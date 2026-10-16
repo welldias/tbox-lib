@@ -4,6 +4,7 @@
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
+#include "font/tbox_font_measure.h"
 #include "html_parser/tbox_html_entities.h"
 #include <stddef.h>
 #include <stdint.h>

@@ -2,10 +2,6 @@
 
 #include "base/tbox_string.h"
 
-static bool tbox_css_is_space(char c) {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f';
-}
-
 static bool tbox_css_is_digit(char c) {
     return c >= '0' && c <= '9';
 }
@@ -90,7 +86,7 @@ static void tbox_css_tokenizer_consume_ident(tbox_css_tokenizer *t) {
  * ')'/whitespace, with optional surrounding S. */
 static bool tbox_css_tokenizer_scan_url(tbox_css_tokenizer *t, tbox_css_token *out, size_t start) {
     t->position++; /* '(' */
-    while (t->position < t->length && tbox_css_is_space(t->input[t->position])) {
+    while (t->position < t->length && tbox_ascii_is_space(t->input[t->position])) {
         t->position++;
     }
 
@@ -114,7 +110,7 @@ static bool tbox_css_tokenizer_scan_url(tbox_css_tokenizer *t, tbox_css_token *o
         }
     } else {
         content_start = t->position;
-        while (t->position < t->length && t->input[t->position] != ')' && !tbox_css_is_space(t->input[t->position])) {
+        while (t->position < t->length && t->input[t->position] != ')' && !tbox_ascii_is_space(t->input[t->position])) {
             if (t->input[t->position] == '\\' && t->position + 1 < t->length) {
                 t->position += 2;
                 continue;
@@ -124,7 +120,7 @@ static bool tbox_css_tokenizer_scan_url(tbox_css_tokenizer *t, tbox_css_token *o
         content_end = t->position;
     }
 
-    while (t->position < t->length && tbox_css_is_space(t->input[t->position])) {
+    while (t->position < t->length && tbox_ascii_is_space(t->input[t->position])) {
         t->position++;
     }
     if (t->position < t->length && t->input[t->position] == ')') {
@@ -271,7 +267,7 @@ static bool tbox_css_tokenizer_skip_insignificant(tbox_css_tokenizer *t) {
     size_t start = t->position;
 
     for (;;) {
-        while (t->position < t->length && tbox_css_is_space(t->input[t->position])) {
+        while (t->position < t->length && tbox_ascii_is_space(t->input[t->position])) {
             t->position++;
         }
 

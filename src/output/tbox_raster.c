@@ -9,6 +9,7 @@
 
 #include "tbox_raster_internal.h"
 #include "base/tbox_string.h"
+#include "font/tbox_font_measure.h"
 
 /* stb_image_resize2 is third-party, vendored code (external/stb_image/, see
  * its own README.md) -- not held to this project's own -Wall -Wextra
@@ -556,73 +557,98 @@ void tbox_raster_fill_rounded_rect(uint32_t *pixels, int32_t buffer_width, int32
     tbox_raster_fill_rounded_rect_clipped(pixels, buffer_width, buffer_height, rect, corners, color, false, (tbox_rect){0});
 }
 
-static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color, double letter_spacing, bool has_clip, tbox_rect clip, const tbox_paint_op *rounded) {
-    if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || face == NULL || text.size == 0 || color.a == 0) {
-        return;
-    }
-    if (has_clip && (clip.width <= 0.0 || clip.height <= 0.0)) return;
-    int32_t clip_x0 = has_clip ? (int32_t)floor(clip.x) : 0;
-    int32_t clip_y0 = has_clip ? (int32_t)floor(clip.y) : 0;
-    int32_t clip_x1 = has_clip ? (int32_t)floor(clip.x + clip.width) : buffer_width;
-    int32_t clip_y1 = has_clip ? (int32_t)floor(clip.y + clip.height) : buffer_height;
+/* Where TEXT_RUN glyphs may land (the op's clip, or the whole buffer). */
+typedef struct tbox_raster_text_target {
+    uint32_t *pixels;
+    int32_t buffer_width, buffer_height;
+    int32_t clip_x0, clip_y0, clip_x1, clip_y1;
+    const tbox_paint_op *rounded;
+    tbox_css_rgba color;
+    double color_alpha;
+} tbox_raster_text_target;
 
-    /* tbox_font_rasterize_glyph mutates the FT_Face's internal glyph slot
-     * (see <tbox/font.h>) so it takes a non-const tbox_font_face*, even
-     * though from this function's point of view -- and tbox_paint_op's --
-     * `face` is only ever read. Casting away const here is the same
-     * logical-vs-bitwise-constness situation tbox_font_measure_text's own
-     * FT_Load_Char call already lives with inside font.h's implementation. */
-    tbox_font_face *mutable_face = (tbox_font_face *)face;
+/* Composites one glyph with its pen at (pen_x, baseline_y). */
+static void tbox_raster_glyph(const tbox_raster_text_target *target, tbox_font_face *face, uint32_t glyph_id, double pen_x, double baseline_y) {
+    uint32_t *pixels             = target->pixels;
+    int32_t buffer_width         = target->buffer_width;
+    int32_t buffer_height        = target->buffer_height;
+    int32_t clip_x0              = target->clip_x0, clip_y0 = target->clip_y0;
+    int32_t clip_x1              = target->clip_x1, clip_y1 = target->clip_y1;
+    const tbox_paint_op *rounded = target->rounded;
+    tbox_css_rgba color          = target->color;
+    double color_alpha           = target->color_alpha;
+    tbox_font_glyph_bitmap glyph = tbox_font_rasterize_glyph_id(face, glyph_id);
+    if (glyph.width > 0 && glyph.height > 0 && glyph.alpha != NULL) {
+        int32_t glyph_x0 = (int32_t)floor(pen_x + glyph.bearing_x);
+        int32_t glyph_y0 = (int32_t)floor(baseline_y - glyph.bearing_y);
 
-    double pen_x       = origin.x;
-    double baseline_y  = origin.y + tbox_font_face_ascent(face);
-    double color_alpha = color.a / 255.0;
+        for (int gy = 0; gy < glyph.height; gy++) {
+            int32_t py = glyph_y0 + gy;
+            if (py < 0 || py >= buffer_height || py < clip_y0 || py >= clip_y1) {
+                continue;
+            }
 
-    uint32_t previous = 0;
-    for (size_t at = 0; at < text.size;) {
-        uint32_t codepoint;
-        at = tbox_utf8_decode(text.data, text.size, at, &codepoint);
-        pen_x += tbox_font_face_kerning(face, previous, codepoint);
-        previous = codepoint;
+            const unsigned char *glyph_row = glyph.alpha + (size_t)gy * (size_t)glyph.width;
+            uint32_t *pixel_row            = pixels + (size_t)py * (size_t)buffer_width;
 
-        tbox_font_glyph_bitmap glyph = tbox_font_rasterize_glyph(mutable_face, codepoint);
-
-        if (glyph.width > 0 && glyph.height > 0 && glyph.alpha != NULL) {
-            int32_t glyph_x0 = (int32_t)floor(pen_x + glyph.bearing_x);
-            int32_t glyph_y0 = (int32_t)floor(baseline_y - glyph.bearing_y);
-
-            for (int gy = 0; gy < glyph.height; gy++) {
-                int32_t py = glyph_y0 + gy;
-                if (py < 0 || py >= buffer_height || py < clip_y0 || py >= clip_y1) {
+            for (int gx = 0; gx < glyph.width; gx++) {
+                int32_t px = glyph_x0 + gx;
+                if (px < 0 || px >= buffer_width || px < clip_x0 || px >= clip_x1) {
                     continue;
                 }
 
-                const unsigned char *glyph_row = glyph.alpha + (size_t)gy * (size_t)glyph.width;
-                uint32_t *pixel_row            = pixels + (size_t)py * (size_t)buffer_width;
-
-                for (int gx = 0; gx < glyph.width; gx++) {
-                    int32_t px = glyph_x0 + gx;
-                    if (px < 0 || px >= buffer_width || px < clip_x0 || px >= clip_x1) {
-                        continue;
-                    }
-
-                    unsigned char glyph_alpha = glyph_row[gx];
-                    if (glyph_alpha == 0 || (rounded != NULL && !tbox_raster_in_shape_clip(rounded, (double)px + 0.5, (double)py + 0.5))) {
-                        continue;
-                    }
-
-                    double combined_alpha = (glyph_alpha / 255.0) * color_alpha;
-                    pixel_row[px]         = tbox_raster_blend_pixel(pixel_row[px], color, combined_alpha);
+                unsigned char glyph_alpha = glyph_row[gx];
+                if (glyph_alpha == 0 || (rounded != NULL && !tbox_raster_in_shape_clip(rounded, (double)px + 0.5, (double)py + 0.5))) {
+                    continue;
                 }
+
+                double combined_alpha = (glyph_alpha / 255.0) * color_alpha;
+                pixel_row[px]         = tbox_raster_blend_pixel(pixel_row[px], color, combined_alpha);
             }
         }
+    }
+}
 
-        pen_x += glyph.advance + letter_spacing;
+/* Paints `glyphs` (docs/08-layout-e-pintura.md, "Texto como glifos
+ * posicionados") as they are: no UTF-8 decoding, no kerning here. Without
+ * glyphs (an op built by hand), `text` is shaped on the fly by the same
+ * measurer Layout shapes with, one glyph at a time. */
+static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_glyph *glyphs, size_t glyph_count, const tbox_font_face *face, tbox_css_rgba color, double letter_spacing, bool has_clip, tbox_rect clip, const tbox_paint_op *rounded) {
+    if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || face == NULL || (text.size == 0 && glyph_count == 0) || color.a == 0) {
+        return;
+    }
+    if (has_clip && (clip.width <= 0.0 || clip.height <= 0.0)) return;
+    tbox_raster_text_target target = {
+        .pixels = pixels, .buffer_width = buffer_width, .buffer_height = buffer_height,
+        .clip_x0 = has_clip ? (int32_t)floor(clip.x) : 0,
+        .clip_y0 = has_clip ? (int32_t)floor(clip.y) : 0,
+        .clip_x1 = has_clip ? (int32_t)floor(clip.x + clip.width) : buffer_width,
+        .clip_y1 = has_clip ? (int32_t)floor(clip.y + clip.height) : buffer_height,
+        .rounded = rounded, .color = color, .color_alpha = color.a / 255.0,
+    };
+
+    /* tbox_font_rasterize_glyph_id mutates the FT_Face's internal glyph
+     * slot (see <tbox/font.h>) so it takes a non-const tbox_font_face*,
+     * even though from this function's point of view -- and
+     * tbox_paint_op's -- `face` is only ever read. */
+    tbox_font_face *mutable_face = (tbox_font_face *)face;
+    double baseline_y            = origin.y + tbox_font_face_ascent(face);
+
+    if (glyph_count > 0) {
+        for (size_t i = 0; i < glyph_count; i++)
+            tbox_raster_glyph(&target, mutable_face, glyphs[i].id, origin.x + glyphs[i].x, baseline_y + glyphs[i].y);
+        return;
+    }
+    tbox_text_measurer measurer;
+    tbox_text_measurer_init(&measurer, face, letter_spacing);
+    for (size_t at = 0; at < text.size;) {
+        at = tbox_text_measurer_step(&measurer, text.data, text.size, at);
+        tbox_raster_glyph(&target, mutable_face, measurer.glyph_id, origin.x + measurer.glyph_x, baseline_y);
     }
 }
 
 void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color) {
-    tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, origin, text, face, color, 0.0, false, (tbox_rect){0}, NULL);
+    tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, origin, text, NULL, 0, face, color, 0.0, false, (tbox_rect){0}, NULL);
 }
 
 /* Composites `image`'s decoded RGBA8 pixels into `dest_rect`. When
@@ -765,7 +791,7 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
         }
         break;
     case TBOX_PAINT_TEXT_RUN:
-        tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0}, (op->has_rounded_clip || op->polygon_clip != NULL) ? op : NULL);
+        tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->glyphs, op->glyph_count, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0}, (op->has_rounded_clip || op->polygon_clip != NULL) ? op : NULL);
         break;
     case TBOX_PAINT_IMAGE:
         if (op->has_rounded_clip) {

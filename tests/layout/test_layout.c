@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "base/tbox_arena.h"
+#include "layout/tbox_layout_password.h"
 #include "test_support.h"
 
 /* baseline-alignment assertions below compare a run's rect.y
@@ -158,6 +159,20 @@ int tbox_test_layout_run(void) {
 
     const tbox_font_face *regular_16 = tbox_font_face_cache_get(fonts, tbox_string_view_make(NULL, 0), false, false, 16.0);
     TBOX_TEST_ASSERT_MSG(regular_16 != NULL, "failed to resolve the regular 16px face");
+
+    /* Password masking: one mark per codepoint, and the width the context
+     * uses for the caret equals the measured width of the drawn mask. */
+    if (regular_16 != NULL) {
+        tbox_arena arena      = tbox_arena_create(0);
+        tbox_string_view text = tbox_string_view_make("a\xc3\xa9\xe2\x82\xac\xf0\x9f\x98\x80", 10);
+        tbox_string_view mask = tbox_layout_password_mask(&arena, regular_16, text);
+        tbox_string_view mark = tbox_layout_password_glyph(regular_16);
+        TBOX_TEST_ASSERT(mask.size == 4 * mark.size);
+        double drawn = tbox_font_measure_text_spaced(regular_16, mask, 1.5);
+        TBOX_TEST_ASSERT(tbox_layout_password_width(regular_16, text, 1.5) == drawn);
+        TBOX_TEST_ASSERT(tbox_layout_password_width(regular_16, tbox_string_view_make("", 0), 1.5) == 0.0);
+        tbox_arena_destroy(&arena);
+    }
 
     /* 1: an explicit width/height in px is used as-is. */
     {
@@ -1553,7 +1568,8 @@ int tbox_test_layout_run(void) {
     }
 
     /* text-align: justify stretches every line but the last to the full
-     * width; the last line stays left-aligned. */
+     * width; the last line stays left-aligned. Each line stays one run:
+     * the widened gaps live in the glyph positions. */
     {
         tbox_html_document *doc        = parse_html_cstr("<p>aa bb cc dd ee ff gg hh ii jj</p>");
         const tbox_html_node *root     = tbox_html_document_root(doc);
@@ -1562,8 +1578,14 @@ int tbox_test_layout_run(void) {
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
         tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
         const tbox_layout_box *box     = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
-        TBOX_TEST_ASSERT(box != NULL && box->text_run_count > 2);
-        if (box != NULL && box->text_run_count > 2) {
+        TBOX_TEST_ASSERT(box != NULL && box->text_run_count >= 2);
+        if (box != NULL && box->text_run_count >= 2) {
+            const tbox_layout_text_run *line = &box->text_runs[0];
+            TBOX_TEST_ASSERT(line->glyph_count > 0 && line->text.size > 0 && line->glyphs[0].x == 0.0);
+            if (line->glyph_count > 0) {
+                const tbox_glyph *end_glyph = &line->glyphs[line->glyph_count - 1];
+                TBOX_TEST_ASSERT(tbox_test_double_approx_equal(end_glyph->x + end_glyph->advance, line->rect.width));
+            }
             double right      = box->content_box.x + box->content_box.width;
             double last_y     = box->text_runs[box->text_run_count - 1].rect.y;
             size_t full_lines = 0;
@@ -3708,10 +3730,18 @@ int tbox_test_layout_run(void) {
         TBOX_TEST_ASSERT(plain != NULL && spaced != NULL && indented != NULL);
         if (plain != NULL && spaced != NULL && indented != NULL) {
             TBOX_TEST_ASSERT(plain->text_run_count == 1);
-            TBOX_TEST_ASSERT(spaced->text_run_count == 3);
-            if (spaced->text_run_count == 3) {
-                double gap = spaced->text_runs[1].rect.x - (spaced->text_runs[0].rect.x + spaced->text_runs[0].rect.width);
-                TBOX_TEST_ASSERT(gap > 10.0);
+            /* word-spacing keeps one run; "two" starts more than 10px after
+             * "one" ends, in the glyph positions. */
+            TBOX_TEST_ASSERT(spaced->text_run_count == 1);
+            if (spaced->text_run_count == 1 && plain->text_run_count == 1) {
+                const tbox_layout_text_run *run = &spaced->text_runs[0];
+                TBOX_TEST_ASSERT(run->glyph_count == 13 && string_view_equal_cstr(run->text, "one two three"));
+                if (run->glyph_count == 13) {
+                    double gap = run->glyphs[4].x - (run->glyphs[2].x + run->glyphs[2].advance);
+                    TBOX_TEST_ASSERT(gap > 10.0);
+                    TBOX_TEST_ASSERT(run->glyphs[4].cluster == 4);
+                }
+                TBOX_TEST_ASSERT(tbox_test_double_approx_equal(run->rect.width, plain->text_runs[0].rect.width + 20.0));
             }
             TBOX_TEST_ASSERT(indented->text_run_count == 1);
             if (indented->text_run_count == 1)
@@ -3861,6 +3891,19 @@ int tbox_test_layout_run(void) {
                 const tbox_layout_text_run *last = &ellip->text_runs[ellip->text_run_count - 1];
                 TBOX_TEST_ASSERT(string_view_equal_cstr(last->text, "\xe2\x80\xa6") || string_view_equal_cstr(last->text, "..."));
                 TBOX_TEST_ASSERT(last->rect.x + last->rect.width <= ellip->content_box.x + ellip->content_box.width + 1e-6);
+                TBOX_TEST_ASSERT(last->glyph_count > 0);
+            }
+            /* The cut run keeps one glyph per remaining character, ending
+             * at its width, and its text ends where the dropped glyphs
+             * began. */
+            TBOX_TEST_ASSERT(ellip->text_run_count == 2);
+            if (ellip->text_run_count == 2) {
+                const tbox_layout_text_run *cut = &ellip->text_runs[0];
+                TBOX_TEST_ASSERT(cut->text.size > 0 && cut->text.size < 13 && cut->glyph_count == cut->text.size);
+                if (cut->glyph_count > 0) {
+                    const tbox_glyph *end = &cut->glyphs[cut->glyph_count - 1];
+                    TBOX_TEST_ASSERT(end->x + end->advance == cut->rect.width);
+                }
             }
         }
         tbox_arena_destroy(&arena);

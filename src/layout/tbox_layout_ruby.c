@@ -104,6 +104,7 @@ double tbox_layout_build_ruby_runs(tbox_arena *arena, const tbox_html_node *node
                 .rect = {cursor_x + (cell_width - rt_width) / 2.0, y, rt_width, annotation_height},
                 .text = annotation, .font = rt_face, .style = rt_style,
             };
+            tbox_font_shape_into(arena, rt_face, annotation, rt_style->letter_spacing, &run->glyphs, &run->glyph_count);
         }
         tbox_layout_text_run *run = tbox_vector_push(&runs);
         *run = (tbox_layout_text_run){
@@ -111,6 +112,7 @@ double tbox_layout_build_ruby_runs(tbox_arena *arena, const tbox_html_node *node
                 base_width, tbox_layout_style_line_height(style, base_face)},
             .text = base, .font = base_face, .style = style,
         };
+        tbox_font_shape_into(arena, base_face, base, style->letter_spacing, &run->glyphs, &run->glyph_count);
         cursor_x += cell_width;
     }
     box->text_runs = runs.data;

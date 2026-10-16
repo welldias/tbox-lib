@@ -18,28 +18,28 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
                 if (lines != NULL && runs != NULL) {
                     double line_height = tbox_context_style_line_height(style, face);
                     size_t count = 0, start = 0, at = 0;
-                    double width = 0.0;
+                    tbox_text_measurer line;
+                    tbox_text_measurer_init(&line, face, style->letter_spacing);
                     while (at < field->length) {
                         size_t next = tbox_utf8_next(field->value, field->length, at);
-                        if (next == at) next = at + 1;
                         if (field->value[at] == '\n') {
-                            lines[count++] = (tbox_text_line){start, at, width};
+                            lines[count++] = (tbox_text_line){start, at, line.width};
                             start = next;
-                            width = 0.0;
+                            tbox_text_measurer_init(&line, face, style->letter_spacing);
                         } else {
-                            double next_width = tbox_font_measure_text_spaced(face,
-                                tbox_string_view_make(field->value + start, next - start), style->letter_spacing);
-                            if (next_width > box->content_box.width && at > start) {
-                                lines[count++] = (tbox_text_line){start, at, width};
+                            tbox_text_measurer grown = line;
+                            tbox_text_measurer_step(&grown, field->value, field->length, at);
+                            if (grown.width > box->content_box.width && at > start) {
+                                lines[count++] = (tbox_text_line){start, at, line.width};
                                 start = at;
-                                next_width = tbox_font_measure_text_spaced(face,
-                                    tbox_string_view_make(field->value + start, next - start), style->letter_spacing);
+                                tbox_text_measurer_init(&grown, face, style->letter_spacing);
+                                tbox_text_measurer_step(&grown, field->value, field->length, at);
                             }
-                            width = next_width;
+                            line = grown;
                         }
                         at = next;
                     }
-                    lines[count++] = (tbox_text_line){start, field->length, width};
+                    lines[count++] = (tbox_text_line){start, field->length, line.width};
                     field->lines = lines;
                     field->line_count = count;
                     double max_scroll = count * line_height - box->content_box.height;
@@ -66,6 +66,8 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
                             .text = tbox_string_view_make(field->value + lines[i].start, lines[i].end - lines[i].start),
                             .font = face, .style = style,
                         };
+                        tbox_font_shape_into(&ctx->frame_arena, face, runs[run_count - 1].text, style->letter_spacing,
+                                             &runs[run_count - 1].glyphs, &runs[run_count - 1].glyph_count);
                     }
                     box->text_runs = runs;
                     box->text_run_count = run_count;

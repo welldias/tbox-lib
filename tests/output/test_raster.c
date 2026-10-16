@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "base/tbox_arena.h"
+#include "font/tbox_font_measure.h"
 #include "test_support.h"
 
 /* Only tbox_raster_* is exercised here -- tbox_backend_wayland_* needs a
@@ -542,6 +544,77 @@ static void tbox_test_raster_display_list_matches_direct_calls(int *failures_ptr
         tbox_font_face_destroy(face);
     }
 
+    *failures_ptr = failures;
+}
+
+/* A TEXT_RUN paints its glyphs as given (docs/08-layout-e-pintura.md,
+ * "Texto como glifos posicionados"): shaped glyphs paint exactly like the
+ * text-only fallback, moving a glyph moves its pixels, the op's text is
+ * not re-read when glyphs are present, and the damage tracker sees a
+ * glyph that moved with the same text. */
+static void tbox_test_raster_glyph_runs(int *failures_ptr, const void *font_data, size_t font_size) {
+    int failures         = *failures_ptr;
+    tbox_font_face *face = tbox_font_face_load(font_data, font_size, 16.0);
+    TBOX_TEST_ASSERT(face != NULL);
+    if (face != NULL) {
+        const int32_t width = 80, height = 30;
+        size_t bytes        = sizeof(uint32_t) * (size_t)width * (size_t)height;
+        tbox_arena arena    = tbox_arena_create(0);
+        tbox_string_view text = tbox_test_raster_view_from_cstr("Ab\xc3\xa9");
+        tbox_glyph *glyphs;
+        size_t count;
+        double shaped_width;
+        TBOX_TEST_ASSERT(tbox_font_shape(&arena, face, text, 0.5, 0.0, 0, &glyphs, &count, &shaped_width));
+        TBOX_TEST_ASSERT(count == 3 && glyphs[0].cluster == 0 && glyphs[1].cluster == 1 && glyphs[2].cluster == 2);
+        TBOX_TEST_ASSERT(shaped_width == tbox_font_measure_text_spaced(face, text, 0.5));
+        TBOX_TEST_ASSERT(count == 3 && glyphs[2].x + glyphs[2].advance == shaped_width);
+
+        tbox_paint_op op         = { 0 };
+        op.kind                  = TBOX_PAINT_TEXT_RUN;
+        op.rect                  = (tbox_rect){ 4, 4, 60, 20 };
+        op.color                 = (tbox_css_rgba){ 0, 0, 0, 255 };
+        op.text                  = text;
+        op.face                  = face;
+        op.letter_spacing        = 0.5;
+        tbox_display_list list   = { &op, 1 };
+        uint32_t *fallback       = tbox_test_raster_make_buffer(width, height, 0xFFFFFFFFu);
+        uint32_t *shaped         = tbox_test_raster_make_buffer(width, height, 0xFFFFFFFFu);
+        uint32_t *moved          = tbox_test_raster_make_buffer(width, height, 0xFFFFFFFFu);
+        uint32_t *other_text     = tbox_test_raster_make_buffer(width, height, 0xFFFFFFFFu);
+        TBOX_TEST_ASSERT(fallback != NULL && shaped != NULL && moved != NULL && other_text != NULL);
+        if (fallback != NULL && shaped != NULL && moved != NULL && other_text != NULL && count == 3) {
+            tbox_raster_display_list(fallback, width, height, &list);
+            op.glyphs      = glyphs;
+            op.glyph_count = count;
+            tbox_raster_display_list(shaped, width, height, &list);
+            TBOX_TEST_ASSERT(memcmp(fallback, shaped, bytes) == 0);
+
+            op.text = tbox_test_raster_view_from_cstr("zzz");
+            tbox_raster_display_list(other_text, width, height, &list);
+            TBOX_TEST_ASSERT(memcmp(other_text, shaped, bytes) == 0);
+            op.text = text;
+
+            tbox_damage_tracker *tracker = tbox_damage_tracker_create();
+            TBOX_TEST_ASSERT(tracker != NULL);
+            tbox_damage_tracker_update(tracker, &list, width, height);
+            tbox_glyph shifted[3] = { glyphs[0], glyphs[1], glyphs[2] };
+            shifted[1].x += 12.0;
+            op.glyphs = shifted;
+            tbox_raster_display_list(moved, width, height, &list);
+            TBOX_TEST_ASSERT(memcmp(moved, shaped, bytes) != 0);
+            tbox_damage damage = tbox_damage_tracker_update(tracker, &list, width, height);
+            TBOX_TEST_ASSERT(damage.full || damage.count > 0);
+            damage = tbox_damage_tracker_update(tracker, &list, width, height);
+            TBOX_TEST_ASSERT(!damage.full && damage.count == 0);
+            tbox_damage_tracker_destroy(tracker);
+        }
+        free(fallback);
+        free(shaped);
+        free(moved);
+        free(other_text);
+        tbox_arena_destroy(&arena);
+        tbox_font_face_destroy(face);
+    }
     *failures_ptr = failures;
 }
 
@@ -1691,6 +1764,7 @@ int tbox_test_output_raster_run(void) {
     if (font_data != NULL) {
         tbox_test_raster_text_run_basic(&failures, font_data, font_size);
         tbox_test_raster_display_list_matches_direct_calls(&failures, font_data, font_size);
+        tbox_test_raster_glyph_runs(&failures, font_data, font_size);
         tbox_test_raster_damage_pixel_equivalence(&failures, font_data, font_size);
         tbox_test_raster_layer_damage(&failures);
         free(font_data);

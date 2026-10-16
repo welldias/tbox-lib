@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 
 /* One already-loaded face, keyed by (family, bold, italic, size_px) -- see
@@ -160,11 +161,7 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
      * tbox_font_source_fontconfig_family_cstr (src/font/tbox_font_source_fontconfig.c)
      * -- always NUL-terminated. */
     char family_buf[64];
-    size_t family_len = family.size < sizeof(family_buf) - 1 ? family.size : sizeof(family_buf) - 1;
-    if (family_len > 0) {
-        memcpy(family_buf, family.data, family_len);
-    }
-    family_buf[family_len] = '\0';
+    tbox_utf8_copy_truncated(family_buf, sizeof(family_buf), family);
 
     size_t entry_count = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < entry_count; i++) {

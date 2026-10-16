@@ -126,6 +126,20 @@ size_t tbox_utf8_encode(char *out, size_t capacity, uint32_t codepoint) {
     return size;
 }
 
+size_t tbox_utf8_copy_truncated(char *out, size_t capacity, tbox_string_view text) {
+    size_t length = 0;
+    while (length < text.size) {
+        size_t next = tbox_utf8_next(text.data, text.size, length);
+        if (next > capacity - 1)
+            break;
+        length = next;
+    }
+    if (length > 0)
+        memcpy(out, text.data, length);
+    out[length] = '\0';
+    return length;
+}
+
 uint32_t tbox_utf8_to_upper(uint32_t codepoint) {
     return (uint32_t)utf8uprcodepoint((utf8_int32_t)codepoint);
 }
@@ -152,8 +166,37 @@ tbox_string_view tbox_utf8_sanitize(tbox_arena *arena, tbox_string_view text) {
     return tbox_string_builder_finish(&builder);
 }
 
-static char tbox_ascii_to_lower(char c) {
+char tbox_ascii_to_lower(char c) {
     return (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+}
+
+bool tbox_ascii_is_space(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+}
+
+bool tbox_ascii_is_hex_digit(char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+tbox_string_view tbox_string_view_trim_ascii_space(tbox_string_view view) {
+    size_t start = 0, end = view.size;
+    while (start < end && tbox_ascii_is_space(view.data[start]))
+        start++;
+    while (end > start && tbox_ascii_is_space(view.data[end - 1]))
+        end--;
+    return tbox_string_view_make(view.data + start, end - start);
+}
+
+bool tbox_string_view_starts_with_ascii_ci(tbox_string_view view, const char *prefix) {
+    size_t length = strlen(prefix);
+    return view.size >= length && tbox_string_view_equal_ascii_ci(tbox_string_view_make(view.data, length), tbox_string_view_make(prefix, length));
+}
+
+tbox_string_view tbox_string_copy_lower_ascii(tbox_arena *arena, tbox_string_view view) {
+    tbox_string_builder builder;
+    tbox_string_builder_init(&builder, arena, view.size);
+    tbox_string_builder_append_view_lower_ascii(&builder, view);
+    return tbox_string_builder_finish(&builder);
 }
 
 bool tbox_string_view_equal_ascii_ci(tbox_string_view a, tbox_string_view b) {
@@ -227,10 +270,6 @@ tbox_string_view tbox_string_builder_finish(const tbox_string_builder *builder) 
     return tbox_string_view_make(builder->data, builder->length);
 }
 
-static bool tbox_is_ascii_whitespace(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
-}
-
 tbox_string_view tbox_string_collapse_whitespace(tbox_arena *arena, tbox_string_view text) {
     tbox_string_builder builder;
     tbox_string_builder_init(&builder, arena, text.size);
@@ -238,7 +277,7 @@ tbox_string_view tbox_string_collapse_whitespace(tbox_arena *arena, tbox_string_
     bool pending_space = false;
     for (size_t i = 0; i < text.size; i++) {
         char c = text.data[i];
-        if (tbox_is_ascii_whitespace(c)) {
+        if (tbox_ascii_is_space(c) || c == '\v') { /* '\v' is collapsed too, not drawn */
             /* Defer emitting the collapsed space until we know there is more
              * non-whitespace content ahead, so trailing runs are dropped. */
             pending_space = true;

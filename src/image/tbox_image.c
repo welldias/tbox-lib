@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 
 /* stb_image is third-party, vendored code (external/stb_image/, see its own
@@ -124,9 +125,7 @@ const tbox_image *tbox_image_cache_get(tbox_image_cache *cache, tbox_string_view
     }
 
     char src_buf[TBOX_IMAGE_CACHE_SRC_BUF_SIZE];
-    size_t src_len = src.size < sizeof(src_buf) - 1 ? src.size : sizeof(src_buf) - 1;
-    memcpy(src_buf, src.data, src_len);
-    src_buf[src_len] = '\0';
+    tbox_utf8_copy_truncated(src_buf, sizeof(src_buf), src);
 
     size_t entry_count = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < entry_count; i++) {

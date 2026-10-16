@@ -61,9 +61,9 @@ static bool tbox_context_resource_path(char *path, size_t capacity, const char *
 static bool tbox_context_rel_has_stylesheet(tbox_string_view value) {
     size_t index = 0;
     while (index < value.size) {
-        while (index < value.size && isspace((unsigned char)value.data[index])) index++;
+        while (index < value.size && tbox_ascii_is_space(value.data[index])) index++;
         size_t start = index;
-        while (index < value.size && !isspace((unsigned char)value.data[index])) index++;
+        while (index < value.size && !tbox_ascii_is_space(value.data[index])) index++;
         if (tbox_string_view_equal_ascii_ci(tbox_string_view_make(value.data + start, index - start),
             tbox_string_view_from_cstr("stylesheet"))) return true;
     }
@@ -99,7 +99,7 @@ typedef struct tbox_context_css_base {
 /* Skips white space and comments from `at`. */
 static size_t tbox_context_css_skip_space(tbox_string_view css, size_t at) {
     for (;;) {
-        while (at < css.size && isspace((unsigned char)css.data[at])) at++;
+        while (at < css.size && tbox_ascii_is_space(css.data[at])) at++;
         if (at + 1 < css.size && css.data[at] == '/' && css.data[at + 1] == '*') {
             const char *end = NULL;
             for (size_t i = at + 2; i + 1 < css.size; i++)
@@ -112,8 +112,7 @@ static size_t tbox_context_css_skip_space(tbox_string_view css, size_t at) {
 }
 
 static bool tbox_context_css_keyword_at(tbox_string_view css, size_t at, const char *keyword) {
-    size_t length = strlen(keyword);
-    return at + length <= css.size && tbox_string_view_equal_ascii_ci(tbox_string_view_make(css.data + at, length), tbox_string_view_from_cstr(keyword));
+    return at <= css.size && tbox_string_view_starts_with_ascii_ci(tbox_string_view_make(css.data + at, css.size - at), keyword);
 }
 
 static void tbox_context_append_css(tbox_string_builder *builder, tbox_string_view css, tbox_context_css_base base, int depth);
@@ -136,7 +135,7 @@ static void tbox_context_append_import(tbox_string_builder *builder, tbox_string
         end = at;
         if (at < prelude.size) at++;
     } else if (is_url) {
-        while (at < prelude.size && prelude.data[at] != ')' && !isspace((unsigned char)prelude.data[at])) at++;
+        while (at < prelude.size && prelude.data[at] != ')' && !tbox_ascii_is_space(prelude.data[at])) at++;
         end = at;
     } else {
         return;
@@ -149,7 +148,7 @@ static void tbox_context_append_import(tbox_string_builder *builder, tbox_string
     tbox_string_view url   = tbox_string_view_make(prelude.data + start, end - start);
     size_t media_start     = tbox_context_css_skip_space(prelude, at);
     tbox_string_view media = tbox_string_view_make(prelude.data + media_start, prelude.size - media_start);
-    while (media.size > 0 && isspace((unsigned char)media.data[media.size - 1])) media.size--;
+    while (media.size > 0 && tbox_ascii_is_space(media.data[media.size - 1])) media.size--;
     tbox_string_view layer = tbox_string_view_make(NULL, 0);
     bool layered           = false;
     if (tbox_context_css_keyword_at(media, 0, "layer(")) {
@@ -158,11 +157,11 @@ static void tbox_context_append_import(tbox_string_builder *builder, tbox_string
         layer   = tbox_string_view_make(media.data + 6, (size_t)(close - media.data) - 6);
         layered = true;
         media   = tbox_string_view_make(close + 1, media.size - (size_t)(close + 1 - media.data));
-    } else if (tbox_context_css_keyword_at(media, 0, "layer") && (media.size == 5 || isspace((unsigned char)media.data[5]))) {
+    } else if (tbox_context_css_keyword_at(media, 0, "layer") && (media.size == 5 || tbox_ascii_is_space(media.data[5]))) {
         layered = true;
         media   = tbox_string_view_make(media.data + 5, media.size - 5);
     }
-    while (media.size > 0 && isspace((unsigned char)media.data[0])) media = tbox_string_view_make(media.data + 1, media.size - 1);
+    while (media.size > 0 && tbox_ascii_is_space(media.data[0])) media = tbox_string_view_make(media.data + 1, media.size - 1);
     if (tbox_context_css_keyword_at(media, 0, "supports(")) {
         size_t close = 9;
         for (int depth = 1; close < media.size; close++) {
@@ -178,7 +177,7 @@ static void tbox_context_append_import(tbox_string_builder *builder, tbox_string
         tbox_string_view condition = tbox_string_view_make(wrapped, (size_t)length);
         if (!tbox_css_supports(tbox_string_view_make(inner.data, inner.size)) && !tbox_css_supports(condition)) return;
         media = tbox_string_view_make(media.data + close + 1, media.size - close - 1);
-        while (media.size > 0 && isspace((unsigned char)media.data[0])) media = tbox_string_view_make(media.data + 1, media.size - 1);
+        while (media.size > 0 && tbox_ascii_is_space(media.data[0])) media = tbox_string_view_make(media.data + 1, media.size - 1);
     }
 
     char path[4096];

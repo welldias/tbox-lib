@@ -586,6 +586,7 @@ void tbox_context_date_text(tbox_vector *items, const tbox_font_face *face,
                  rect.y + (rect.height - tbox_font_face_line_height(face)) / 2.0,
                  width, tbox_font_face_line_height(face)},
         .color = color, .text = value, .face = face};
+    tbox_font_shape_into(items->arena, face, value, 0.0, &op->glyphs, &op->glyph_count);
 }
 
 void tbox_context_paint_date_popup(tbox_context *ctx, tbox_vector *items) {

@@ -10,7 +10,6 @@
 #include <tbox/html_parser.h>
 #include <tbox/style.h>
 
-#include <ctype.h>
 #include <dirent.h>
 #include <limits.h>
 #include <math.h>
@@ -23,10 +22,13 @@
 #include <unistd.h>
 
 #include "base/tbox_arena.h"
+#include "base/tbox_number.h"
 #include "base/tbox_release.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
 #include "context/tbox_context_hit_test.h"
+#include "font/tbox_font_measure.h"
+#include "layout/tbox_layout_password.h"
 
 /* One tbox_context_on_click registration: a compiled selector-group plus
  * the handler/userdata to fire when some ancestor of a clicked node
@@ -331,7 +333,6 @@ bool tbox_context_popup_click(tbox_context *ctx, double x, double y);
 bool tbox_context_node_attached(const tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_is_text_input(const tbox_html_node *node);
 bool tbox_context_is_search_input(const tbox_html_node *node);
-bool tbox_context_is_password_input(const tbox_html_node *node);
 double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face, tbox_string_view text, double letter_spacing);
 bool tbox_context_is_number_input(const tbox_html_node *node);
 bool tbox_context_is_range_input(const tbox_html_node *node);

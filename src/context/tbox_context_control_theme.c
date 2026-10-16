@@ -56,7 +56,7 @@ tbox_style tbox_context_control_style(tbox_context *ctx, const tbox_html_node *o
     size_t type_length = type != NULL && type->value.size < sizeof(type_text) - 1 ?
         type->value.size : 0;
     for (size_t i = 0; i < type_length; i++)
-        type_text[i] = (char)tolower((unsigned char)type->value.data[i]);
+        type_text[i] = tbox_ascii_to_lower(type->value.data[i]);
     type_text[type_length] = '\0';
     attrs[count++] = (tbox_html_attribute){tbox_string_view_from_cstr("type"),
         type_length > 0 ? tbox_string_view_make(type_text, type_length) :

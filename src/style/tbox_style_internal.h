@@ -26,8 +26,6 @@ typedef struct tbox_style_calc_value {
 
 /* Typed value/function parsers. False leaves error recovery to the property
  * resolver; these routines do not perform cascade or mutate DOM state. */
-bool tbox_style_is_space(char byte);
-tbox_string_view tbox_style_trim(tbox_string_view value);
 bool tbox_style_parse_number(tbox_string_view text, double *out_value);
 bool tbox_style_parse_dimension(tbox_string_view text, const tbox_style_units *units, double em_base, double *out);
 bool tbox_style_parse_calc(tbox_string_view text, const tbox_style_units *units, double em_base, double percent_base, double *out_px, double *out_percent);

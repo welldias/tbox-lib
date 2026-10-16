@@ -2,16 +2,12 @@
 
 #include "base/tbox_string.h"
 
-static bool tbox_html_is_space(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
-}
-
 static bool tbox_html_is_ascii_alpha(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
 static bool tbox_html_is_tag_name_end(char c) {
-    return tbox_html_is_space(c) || c == '/' || c == '>';
+    return tbox_ascii_is_space(c) || c == '/' || c == '>';
 }
 
 void tbox_html_tokenizer_init(tbox_html_tokenizer *tokenizer, const char *input, size_t length, tbox_arena *arena) {
@@ -67,7 +63,7 @@ static bool tbox_html_raw_text_close_at(const tbox_html_tokenizer *t, size_t idx
     size_t after = name_start + name_len;
     if (after < t->length) {
         char delimiter = t->input[after];
-        if (!(delimiter == '>' || delimiter == '/' || tbox_html_is_space(delimiter))) {
+        if (!(delimiter == '>' || delimiter == '/' || tbox_ascii_is_space(delimiter))) {
             return false;
         }
     }
@@ -137,11 +133,11 @@ static bool tbox_html_tokenizer_scan_declaration(tbox_html_tokenizer *t, tbox_ht
 
     if (pos + 7 <= t->length && tbox_string_view_equal_ascii_ci(tbox_string_view_make(t->input + pos, 7), tbox_string_view_make("DOCTYPE", 7))) {
         pos += 7;
-        while (pos < t->length && tbox_html_is_space(t->input[pos])) {
+        while (pos < t->length && tbox_ascii_is_space(t->input[pos])) {
             pos++;
         }
         size_t name_start = pos;
-        while (pos < t->length && !tbox_html_is_space(t->input[pos]) && t->input[pos] != '>') {
+        while (pos < t->length && !tbox_ascii_is_space(t->input[pos]) && t->input[pos] != '>') {
             pos++;
         }
         tbox_string_view name = tbox_string_view_make(t->input + name_start, pos - name_start);
@@ -192,7 +188,7 @@ static bool tbox_html_tokenizer_scan_start_tag(tbox_html_tokenizer *t, tbox_html
     bool self_closing            = false;
 
     for (;;) {
-        while (pos < t->length && tbox_html_is_space(t->input[pos])) {
+        while (pos < t->length && tbox_ascii_is_space(t->input[pos])) {
             pos++;
         }
         if (pos >= t->length) {
@@ -216,7 +212,7 @@ static bool tbox_html_tokenizer_scan_start_tag(tbox_html_tokenizer *t, tbox_html
         size_t attr_name_start = pos;
         while (pos < t->length) {
             char ch = t->input[pos];
-            if (tbox_html_is_space(ch) || ch == '=' || ch == '/' || ch == '>') {
+            if (tbox_ascii_is_space(ch) || ch == '=' || ch == '/' || ch == '>') {
                 break;
             }
             pos++;
@@ -227,14 +223,14 @@ static bool tbox_html_tokenizer_scan_start_tag(tbox_html_tokenizer *t, tbox_html
         }
         tbox_string_view attr_name = tbox_string_view_make(t->input + attr_name_start, pos - attr_name_start);
 
-        while (pos < t->length && tbox_html_is_space(t->input[pos])) {
+        while (pos < t->length && tbox_ascii_is_space(t->input[pos])) {
             pos++;
         }
 
         tbox_string_view attr_value = tbox_string_view_make(NULL, 0);
         if (pos < t->length && t->input[pos] == '=') {
             pos++;
-            while (pos < t->length && tbox_html_is_space(t->input[pos])) {
+            while (pos < t->length && tbox_ascii_is_space(t->input[pos])) {
                 pos++;
             }
             if (pos < t->length && (t->input[pos] == '"' || t->input[pos] == '\'')) {
@@ -250,7 +246,7 @@ static bool tbox_html_tokenizer_scan_start_tag(tbox_html_tokenizer *t, tbox_html
                 }
             } else {
                 size_t value_start = pos;
-                while (pos < t->length && !tbox_html_is_space(t->input[pos]) && t->input[pos] != '>') {
+                while (pos < t->length && !tbox_ascii_is_space(t->input[pos]) && t->input[pos] != '>') {
                     pos++;
                 }
                 attr_value = tbox_string_view_make(t->input + value_start, pos - value_start);

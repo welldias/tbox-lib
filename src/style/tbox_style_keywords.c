@@ -207,10 +207,10 @@ static bool tbox_style_equal_ci(tbox_string_view a, const char *b) {
 }
 
 static bool tbox_style_has_prefix_ci(tbox_string_view text, const char *prefix, tbox_string_view *rest) {
-    size_t length = strlen(prefix);
-    if (text.size < length || !tbox_string_view_equal_ascii_ci(tbox_string_view_make(text.data, length), tbox_string_view_make(prefix, length)))
+    if (!tbox_string_view_starts_with_ascii_ci(text, prefix))
         return false;
-    *rest = tbox_string_view_make(text.data + length, text.size - length);
+    size_t length = strlen(prefix);
+    *rest         = tbox_string_view_make(text.data + length, text.size - length);
     return true;
 }
 

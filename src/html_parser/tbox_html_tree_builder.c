@@ -70,13 +70,6 @@ static tbox_string_view tbox_html_tree_builder_copy(tbox_html_document *document
     return tbox_string_builder_finish(&builder);
 }
 
-static tbox_string_view tbox_html_tree_builder_copy_lower(tbox_html_document *document, tbox_string_view view) {
-    tbox_string_builder builder;
-    tbox_string_builder_init(&builder, &document->arena, view.size);
-    tbox_string_builder_append_view_lower_ascii(&builder, view);
-    return tbox_string_builder_finish(&builder);
-}
-
 static tbox_string_view tbox_html_tree_builder_copy_decoded(tbox_html_document *document, tbox_string_view view) {
     return tbox_html_decode_entities(&document->arena, view);
 }
@@ -105,7 +98,7 @@ static bool tbox_html_tree_builder_is_p_closing_tag(tbox_string_view tag_name) {
 static void tbox_html_tree_builder_handle_start_tag(tbox_html_tree_builder *builder, const tbox_html_token *token) {
     tbox_html_document *document = builder->document;
 
-    tbox_string_view tag_name = tbox_html_tree_builder_copy_lower(document, token->text);
+    tbox_string_view tag_name = tbox_string_copy_lower_ascii(&document->arena, token->text);
 
     size_t p_index;
     if (tbox_html_tree_builder_is_p_closing_tag(tag_name) && tbox_html_tree_builder_find_matching(builder, tbox_string_view_from_cstr("p"), &p_index)) {
@@ -131,7 +124,7 @@ static void tbox_html_tree_builder_handle_start_tag(tbox_html_tree_builder *buil
 
     for (size_t i = 0; i < token->attribute_count; i++) {
         const tbox_html_token_attribute *source = &token->attributes[i];
-        tbox_string_view name                   = tbox_html_tree_builder_copy_lower(document, source->name);
+        tbox_string_view name                   = tbox_string_copy_lower_ascii(&document->arena, source->name);
 
         bool duplicate = false;
         for (size_t j = 0; j < tbox_vector_length(&attributes); j++) {

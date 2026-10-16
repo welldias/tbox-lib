@@ -61,6 +61,13 @@ typedef struct tbox_layout_text_run {
     /* `text-emphasis-style: "<string>"`: `font` at half the size, for the
      * marks; NULL otherwise (the other marks are drawn as shapes). */
     const tbox_font_face *emphasis_font;
+
+    /* The shaped glyphs of `text` (docs/08-layout-e-pintura.md, "Texto
+     * como glifos posicionados"), x relative to rect.x, in the frame
+     * arena. Render copies them into the TEXT_RUN op. NULL/0 for an image
+     * run; a text run without glyphs is shaped by Output on the fly. */
+    const tbox_glyph *glyphs;
+    size_t glyph_count;
 } tbox_layout_text_run;
 
 typedef struct tbox_layout_box {

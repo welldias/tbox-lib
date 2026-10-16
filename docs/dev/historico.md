@@ -18,6 +18,39 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Texto como glifos posicionados
+
+O layout passa a entregar glifos, não só texto (etapas 1–4 do item 6).
+`tbox_glyph` (`<tbox/font.h>`: `id`, `cluster`, `x`, `y`, `advance`);
+`tbox_font_shape` gera um glifo por passo do `tbox_text_measurer`;
+`tbox_layout_text_run` e o `TEXT_RUN` carregam `glyphs`/`glyph_count`; o
+raster pinta por índice (`tbox_font_rasterize_glyph_id`) sem decodificar
+UTF-8 nem calcular kerning, e molda na hora só um op montado à mão.
+Reticências cortam o vetor de glifos; `text-emphasis` centra nos glifos;
+`word-spacing` e `justify` deixam de partir a linha em um run por palavra;
+o hash de damage inclui os glifos. Os 141 fixtures de `tests/assets`
+renderizam idênticos pixel a pixel antes e depois. Próximo passo: HarfBuzz
+dentro do shaper.
+
+## Após v20 — Texto e números centralizados em `src/base/`
+
+Cinco ajustes estruturais em sequência. (1) `tbox_utf8_copy_truncated`
+corta cópias para campos fixos de `tbox_style` e buffers de caminho sempre
+entre codepoints (antes `text-overflow: "a→→→→→→"` saía com meia seta).
+(2) Máscara de senha (`src/layout/tbox_layout_password.h`) única para layout
+e contexto. (3) `tbox_ascii_is_space`, `tbox_string_view_trim_ascii_space`,
+`tbox_string_view_starts_with_ascii_ci` e `tbox_string_copy_lower_ascii`
+substituem 11 `is_space`, 5 `trim`, 3 `copy_lower` e os prefixos sem caixa
+locais, além das 17 chamadas a `<ctype.h>` (que aceitavam `'\v'` e
+dependiam do locale); só o XPath mantém seu conjunto de espaços. (4) `src/base/tbox_number` lê e escreve
+números sem `LC_NUMERIC`: com pt_BR, `strtod("1.5")` dava 1. (5)
+`tbox_text_measurer` (`src/font/tbox_font_measure.h`) mede prefixos de forma
+incremental, com resultado idêntico bit a bit; cursor de `<input>` e
+`<textarea>`, quebra do `<textarea>`, reticências, `overflow-wrap` e
+`text-emphasis` passam de O(n²) para O(n). Testes novos em
+`tests/base/test_number.c` (inclusive com `LC_NUMERIC=pt_BR`),
+`test_string.c`, `test_font.c`, `test_layout.c` e `test_style.c`.
+
 ## Após v20 — UTF-8 validado na entrada
 
 Texto que entra por `tbox_html_parse`, `tbox_css_parse`, setters do DOM e

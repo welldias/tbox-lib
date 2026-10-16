@@ -5,36 +5,7 @@
 #include <string.h>
 
 #include "base/tbox_string.h"
-
-/* CSS2.1 "white space" -- same definition used across this module (see
- * tbox_css_cascade.c). Only used here to trim the inside of a component
- * ("rgb( 10 , 20, 30 )"), never the whole `value` argument: every public
- * function in this file requires the caller to have already trimmed
- * leading/trailing whitespace off `value` itself, matching
- * tbox_css_hex_to_rgba's contract. */
-static bool tbox_css_color_is_space(char byte) {
-    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == '\f';
-}
-
-static tbox_string_view tbox_css_color_trim(tbox_string_view value) {
-    size_t start = 0;
-    while (start < value.size && tbox_css_color_is_space(value.data[start])) {
-        start++;
-    }
-    size_t end = value.size;
-    while (end > start && tbox_css_color_is_space(value.data[end - 1])) {
-        end--;
-    }
-    return tbox_string_view_make(value.data + start, end - start);
-}
-
-static bool tbox_css_color_starts_with_ci(tbox_string_view value, const char *prefix) {
-    size_t prefix_length = strlen(prefix);
-    if (value.size < prefix_length) {
-        return false;
-    }
-    return tbox_string_view_equal_ascii_ci(tbox_string_view_make(value.data, prefix_length), tbox_string_view_from_cstr(prefix));
-}
+#include "base/tbox_number.h"
 
 tbox_css_color_format tbox_css_color_detect_format(tbox_string_view value) {
     if (value.data == NULL || value.size == 0) {
@@ -43,10 +14,10 @@ tbox_css_color_format tbox_css_color_detect_format(tbox_string_view value) {
     if (value.data[0] == '#') {
         return TBOX_CSS_COLOR_FORMAT_HEXA;
     }
-    if (tbox_css_color_starts_with_ci(value, "rgb(") || tbox_css_color_starts_with_ci(value, "rgba(")) {
+    if (tbox_string_view_starts_with_ascii_ci(value, "rgb(") || tbox_string_view_starts_with_ascii_ci(value, "rgba(")) {
         return TBOX_CSS_COLOR_FORMAT_RGBA;
     }
-    if (tbox_css_color_starts_with_ci(value, "hsl(") || tbox_css_color_starts_with_ci(value, "hsla(")) {
+    if (tbox_string_view_starts_with_ascii_ci(value, "hsl(") || tbox_string_view_starts_with_ascii_ci(value, "hsla(")) {
         return TBOX_CSS_COLOR_FORMAT_HSLA;
     }
     if (tbox_css_named_color_find(value, NULL)) {
@@ -65,7 +36,7 @@ static bool tbox_css_color_extract_call(tbox_string_view value, const char *cons
     }
     for (size_t i = 0; i < prefix_count; i++) {
         size_t prefix_length = strlen(prefixes[i]);
-        if (value.size >= prefix_length && tbox_css_color_starts_with_ci(value, prefixes[i])) {
+        if (value.size >= prefix_length && tbox_string_view_starts_with_ascii_ci(value, prefixes[i])) {
             *out_args = tbox_string_view_make(value.data + prefix_length, value.size - prefix_length - 1);
             return true;
         }
@@ -85,7 +56,7 @@ static size_t tbox_css_color_split_components(tbox_string_view args, tbox_string
             if (count >= max_components) {
                 return 0;
             }
-            out_components[count++] = tbox_css_color_trim(tbox_string_view_make(args.data + start, i - start));
+            out_components[count++] = tbox_string_view_trim_ascii_space(tbox_string_view_make(args.data + start, i - start));
             start                   = i + 1;
         }
     }
@@ -112,7 +83,7 @@ static size_t tbox_css_color_components(tbox_string_view args, tbox_string_view 
     size_t count = 0, i = 0;
     bool slash = false;
     while (i < args.size) {
-        while (i < args.size && tbox_css_color_is_space(args.data[i]))
+        while (i < args.size && tbox_ascii_is_space(args.data[i]))
             i++;
         if (i >= args.size)
             break;
@@ -124,7 +95,7 @@ static size_t tbox_css_color_components(tbox_string_view args, tbox_string_view 
             continue;
         }
         size_t start = i;
-        while (i < args.size && !tbox_css_color_is_space(args.data[i]) && args.data[i] != '/')
+        while (i < args.size && !tbox_ascii_is_space(args.data[i]) && args.data[i] != '/')
             i++;
         if (count == 4)
             return 0;
@@ -137,12 +108,12 @@ static size_t tbox_css_color_components(tbox_string_view args, tbox_string_view 
 }
 
 /* Parses one numeric CSS component -- a plain number ("128", "-3.5") or a
- * percentage ("50%") -- via strtod, after copying it into a small stack
- * buffer since tbox_string_view isn't NUL-terminated. Rejects anything that
- * doesn't consume the whole (trimmed) text, including empty input or a
- * component too long to plausibly be a CSS number/percentage. */
+ * percentage ("50%") -- via tbox_number_parse, which is locale-independent.
+ * Rejects anything that doesn't consume the whole (trimmed) text, including
+ * empty input or a component too long to plausibly be a CSS
+ * number/percentage. */
 static bool tbox_css_color_parse_number(tbox_string_view text, double *out_value, bool *out_is_percentage) {
-    text = tbox_css_color_trim(text);
+    text = tbox_string_view_trim_ascii_space(text);
     if (text.size == 0 || text.size >= 64) {
         return false;
     }
@@ -163,13 +134,8 @@ static bool tbox_css_color_parse_number(tbox_string_view text, double *out_value
         }
     }
 
-    char buffer[64];
-    memcpy(buffer, text.data, number_length);
-    buffer[number_length] = '\0';
-
-    char *end     = NULL;
-    double result = strtod(buffer, &end);
-    if (end != buffer + number_length) {
+    double result;
+    if (!tbox_number_parse(tbox_string_view_make(text.data, number_length), &result)) {
         return false;
     }
 
@@ -196,7 +162,7 @@ static unsigned char tbox_css_color_byte(double value_0_to_255) {
 
 /* A hue: a bare number (degrees) or deg/grad/rad/turn. */
 static bool tbox_css_color_parse_hue(tbox_string_view text, double *out) {
-    text = tbox_css_color_trim(text);
+    text = tbox_string_view_trim_ascii_space(text);
     static const struct {
         const char *unit;
         double degrees;
@@ -395,15 +361,15 @@ static bool tbox_css_color_parse_function(tbox_string_view value, tbox_css_rgba 
 /* color(srgb|srgb-linear r g b [/ alpha]), using explicit numeric or
  * percentage components. RGBA8 output clips channels to the sRGB gamut. */
 static bool tbox_css_color_parse_srgb(tbox_string_view args, tbox_css_rgba *out_color) {
-    args       = tbox_css_color_trim(args);
+    args       = tbox_string_view_trim_ascii_space(args);
     size_t end = 0;
-    while (end < args.size && !tbox_css_color_is_space(args.data[end]))
+    while (end < args.size && !tbox_ascii_is_space(args.data[end]))
         end++;
     tbox_string_view space = tbox_string_view_make(args.data, end);
     bool linear            = tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("srgb-linear"));
     if (!linear && !tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("srgb")))
         return false;
-    args = tbox_css_color_trim(tbox_string_view_make(args.data + end, args.size - end));
+    args = tbox_string_view_trim_ascii_space(tbox_string_view_make(args.data + end, args.size - end));
     if (memchr(args.data, ',', args.size) != NULL)
         return false;
     tbox_string_view components[4];
@@ -493,7 +459,7 @@ static size_t tbox_css_color_split_nested(tbox_string_view args, tbox_string_vie
         else if (ch == ',' && depth == 0) {
             if (count == max)
                 return 0;
-            out[count++] = tbox_css_color_trim(tbox_string_view_make(args.data + start, i - start));
+            out[count++] = tbox_string_view_trim_ascii_space(tbox_string_view_make(args.data + start, i - start));
             start        = i + 1;
         }
     }
@@ -502,7 +468,7 @@ static size_t tbox_css_color_split_nested(tbox_string_view args, tbox_string_vie
 
 /* "<color> [<percentage>]" of color-mix(). */
 static bool tbox_css_color_mix_operand(tbox_string_view text, tbox_css_rgba *color, double *percent, bool *has_percent) {
-    text              = tbox_css_color_trim(text);
+    text              = tbox_string_view_trim_ascii_space(text);
     *has_percent      = false;
     size_t split      = text.size;
     int depth         = 0;
@@ -512,7 +478,7 @@ static bool tbox_css_color_mix_operand(tbox_string_view text, tbox_css_rgba *col
             depth++;
         else if (text.data[i] == ')')
             depth--;
-        else if (depth == 0 && tbox_css_color_is_space(text.data[i]))
+        else if (depth == 0 && tbox_ascii_is_space(text.data[i]))
             last_space = i;
     }
     if (last_space < text.size && text.data[text.size - 1] == '%') {
@@ -525,15 +491,15 @@ static bool tbox_css_color_mix_operand(tbox_string_view text, tbox_css_rgba *col
     /* The percentage may also come first. */
     if (!*has_percent && text.size > 0) {
         size_t first_space = 0;
-        while (first_space < text.size && !tbox_css_color_is_space(text.data[first_space]))
+        while (first_space < text.size && !tbox_ascii_is_space(text.data[first_space]))
             first_space++;
         bool is_percent;
         if (first_space < text.size && text.data[first_space - 1] == '%' && tbox_css_color_parse_number(tbox_string_view_make(text.data, first_space), percent, &is_percent) && is_percent) {
             *has_percent = true;
-            return tbox_css_color_parse(tbox_css_color_trim(tbox_string_view_make(text.data + first_space, text.size - first_space)), color);
+            return tbox_css_color_parse(tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data + first_space, text.size - first_space)), color);
         }
     }
-    return tbox_css_color_parse(tbox_css_color_trim(tbox_string_view_make(text.data, split)), color);
+    return tbox_css_color_parse(tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data, split)), color);
 }
 
 /* color-mix(in <space> [<hue method>], <color> [p%], <color> [p%]), mixed
@@ -545,13 +511,13 @@ static bool tbox_css_color_parse_function(tbox_string_view value, tbox_css_rgba 
     if (!tbox_css_color_extract_call(value, mix, 1, &args) || tbox_css_color_split_nested(args, parts, 3) != 3)
         return false;
     tbox_string_view space = parts[0];
-    if (space.size < 3 || !tbox_string_view_equal_ascii_ci(tbox_string_view_make(space.data, 2), tbox_string_view_from_cstr("in")) || !tbox_css_color_is_space(space.data[2]))
+    if (space.size < 3 || !tbox_string_view_equal_ascii_ci(tbox_string_view_make(space.data, 2), tbox_string_view_from_cstr("in")) || !tbox_ascii_is_space(space.data[2]))
         return false;
-    space       = tbox_css_color_trim(tbox_string_view_make(space.data + 2, space.size - 2));
+    space       = tbox_string_view_trim_ascii_space(tbox_string_view_make(space.data + 2, space.size - 2));
     size_t word = 0;
-    while (word < space.size && !tbox_css_color_is_space(space.data[word]))
+    while (word < space.size && !tbox_ascii_is_space(space.data[word]))
         word++;
-    tbox_string_view method = tbox_css_color_trim(tbox_string_view_make(space.data + word, space.size - word));
+    tbox_string_view method = tbox_string_view_trim_ascii_space(tbox_string_view_make(space.data + word, space.size - word));
     space                   = tbox_string_view_make(space.data, word);
     /* Keep the existing approximation for known spaces, but do not
      * silently map misspelled/custom space names to OKLab. */
@@ -590,10 +556,10 @@ static bool tbox_css_color_parse_function(tbox_string_view value, tbox_css_rgba 
         if (!tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("oklch")) && !tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("lch")) && !tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("hsl")))
             return false;
         size_t end = 0;
-        while (end < method.size && !tbox_css_color_is_space(method.data[end]))
+        while (end < method.size && !tbox_ascii_is_space(method.data[end]))
             end++;
         tbox_string_view keyword = tbox_string_view_make(method.data, end);
-        tbox_string_view suffix  = tbox_css_color_trim(tbox_string_view_make(method.data + end, method.size - end));
+        tbox_string_view suffix  = tbox_string_view_trim_ascii_space(tbox_string_view_make(method.data + end, method.size - end));
         if (!tbox_string_view_equal_ascii_ci(suffix, tbox_string_view_from_cstr("hue")))
             return false;
         if (tbox_string_view_equal_ascii_ci(keyword, tbox_string_view_from_cstr("shorter")))

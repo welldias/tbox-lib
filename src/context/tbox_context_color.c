@@ -117,6 +117,7 @@ void tbox_context_paint_color_popup(tbox_context *ctx, tbox_vector *items) {
                 .rect = {popup.rect.x + 8.0, bar.y - 3.0, 12.0, 16.0},
                 .color = label_style.color,
                 .text = tbox_string_view_make(labels + channel, 1), .face = face};
+            tbox_font_shape_into(items->arena, face, label->text, 0.0, &label->glyphs, &label->glyph_count);
         }
         unsigned char current = channel == 0 ? color.r : channel == 1 ? color.g : color.b;
         for (unsigned segment = 0; segment < 16; segment++) {

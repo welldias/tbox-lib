@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "base/tbox_number.h"
 #include "css_parser/tbox_css_stylesheet.h"
 
 /* These types describe declarations before they enter the text-valued CSS
@@ -258,12 +259,23 @@ static bool tbox_ua_format_length(tbox_ua_length length, char *buffer, size_t ca
     }
     if (suffix == NULL)
         return false;
-    int written = snprintf(buffer, capacity, "%g%s", length.value, suffix);
-    return written >= 0 && (size_t)written < capacity;
+    int number = tbox_number_format(buffer, capacity, length.value, 6);
+    if (number < 0 || (size_t)number >= capacity)
+        return false;
+    int written = snprintf(buffer + number, capacity - (size_t)number, "%s", suffix);
+    return written >= 0 && (size_t)written < capacity - (size_t)number;
 }
 
 static bool tbox_ua_format_color(tbox_ua_color color, char *buffer, size_t capacity) {
-    int written = color.a == 255 ? snprintf(buffer, capacity, "#%02x%02x%02x", color.r, color.g, color.b) : snprintf(buffer, capacity, "rgba(%u,%u,%u,%.17g)", color.r, color.g, color.b, (double)color.a / 255.0);
+    if (color.a == 255) {
+        int written = snprintf(buffer, capacity, "#%02x%02x%02x", color.r, color.g, color.b);
+        return written >= 0 && (size_t)written < capacity;
+    }
+    char alpha[32];
+    int alpha_length = tbox_number_format(alpha, sizeof(alpha), (double)color.a / 255.0, 17);
+    if (alpha_length < 0 || (size_t)alpha_length >= sizeof(alpha))
+        return false;
+    int written = snprintf(buffer, capacity, "rgba(%u,%u,%u,%s)", color.r, color.g, color.b, alpha);
     return written >= 0 && (size_t)written < capacity;
 }
 

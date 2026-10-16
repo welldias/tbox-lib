@@ -310,6 +310,39 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   `src/base/tbox_string.c` (caixa e codificação), imposto pelo CMake, para
   que trocá-lo no futuro (por exemplo por utf8proc, para grafemas) toque um
   só arquivo (após v20).
+- **Números convertidos por código próprio, não por `strtod_l`**:
+  `strtod_l`/`uselocale` exigem um `locale_t` "C" criado uma vez e guardado
+  (estado global, ver Convenções) ou criado a cada número (caro). O scanner
+  de `tbox_number` segue a gramática de `<number>` do CSS e converte com o
+  caminho rápido exato (mantissa ≤ 2^53 e expoente decimal em ±22, uma
+  operação IEEE); fora disso usa `pow`, com erro de poucos ulps — aceitável
+  para valores de UI. A escrita usa `snprintf("%.*g")` e troca o separador
+  decimal do locale por `.` (após v20).
+- **Medidor incremental em vez de vetor de larguras por prefixo**: o
+  medidor (`tbox_text_measurer`) não aloca, cabe em quem para cedo
+  (quebra, reticências) e é a própria base de
+  `tbox_font_measure_text_spaced`, o que garante resultado idêntico. Um
+  vetor de prefixos só compensaria com buscas repetidas no mesmo texto
+  (após v20).
+- **Glifos na operação de pintura, posicionados pelo layout**: o
+  `TEXT_RUN` carrega o vetor de `tbox_glyph`, e o raster só pinta.
+  Alternativa descartada: glifos só no run do layout, com o raster lendo
+  texto — manteria as duas implementações de posicionamento (medição e
+  raster) que o item quis eliminar, e o `tbox_cmp`/headless já consomem a
+  display list. Um op sem glifos ainda é moldado pelo raster, mas pelo
+  mesmo shaper, para não quebrar quem monta display lists à mão. Cada
+  palavra é moldada isoladamente, na posição que a linha lhe deu; o espaço
+  entre palavras de um run vira um glifo de espaço no início do vão (após
+  v20).
+- **Edição de texto fica no medidor, não nos glifos pintados**: cursor,
+  seleção e clique em `<input>`/`<textarea>` trabalham sobre o valor do
+  campo, que não é o texto pintado (máscara de senha, linhas do textarea).
+  Medidor e shaper são o mesmo código; com HarfBuzz, o medidor passa a
+  iterar a saída do shaper, e a edição o acompanha (após v20).
+- **Strings de `tbox_style` continuam `char[N]`**: corte seguro por
+  codepoint agora; trocar por views mexe no ABI público e na vida das
+  strings herdadas, e fica para quando houver caso real (ver Débito
+  técnico).
 
 ## Layout
 

@@ -228,6 +228,14 @@ static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
         hash = tbox_damage_mix(hash, op->text.data, op->text.size);
     hash = tbox_damage_mix_pointer(hash, op->face);
     hash = tbox_damage_mix_double(hash, op->letter_spacing);
+    /* Glyph positions can change with the same text (justify,
+     * word-spacing), so they are part of what was painted. */
+    hash = tbox_damage_mix_int(hash, (long long)op->glyph_count);
+    for (size_t i = 0; i < op->glyph_count; i++) {
+        hash = tbox_damage_mix_int(hash, (long long)op->glyphs[i].id);
+        hash = tbox_damage_mix_double(hash, op->glyphs[i].x);
+        hash = tbox_damage_mix_double(hash, op->glyphs[i].y);
+    }
     hash = tbox_damage_mix_pointer(hash, op->image);
     hash = tbox_damage_mix_int(hash, op->image_pixelated);
     hash = tbox_damage_mix_double(hash, op->radius);

@@ -214,5 +214,34 @@ int tbox_test_string_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+
+    /* 19: tbox_utf8_copy_truncated never cuts a sequence in half. */
+    {
+        char out[5];
+        TBOX_TEST_ASSERT(tbox_utf8_copy_truncated(out, sizeof(out), tbox_string_view_from_cstr("ab\xe2\x82\xac")) == 2);
+        TBOX_TEST_ASSERT(strcmp(out, "ab") == 0);
+        TBOX_TEST_ASSERT(tbox_utf8_copy_truncated(out, sizeof(out), tbox_string_view_from_cstr("a\xe2\x82\xac")) == 4);
+        TBOX_TEST_ASSERT(strcmp(out, "a\xe2\x82\xac") == 0);
+        TBOX_TEST_ASSERT(tbox_utf8_copy_truncated(out, 1, tbox_string_view_from_cstr("abc")) == 0 && out[0] == '\0');
+    }
+
+
+    /* 20: ASCII helpers -- WHATWG whitespace (no '\v'), never locale-based. */
+    {
+        TBOX_TEST_ASSERT(tbox_ascii_is_space(' ') && tbox_ascii_is_space('\f') && tbox_ascii_is_space('\r'));
+        TBOX_TEST_ASSERT(!tbox_ascii_is_space('\v') && !tbox_ascii_is_space((char)0xA0) && !tbox_ascii_is_space((char)0x85));
+        TBOX_TEST_ASSERT(tbox_ascii_is_hex_digit('F') && tbox_ascii_is_hex_digit('a') && !tbox_ascii_is_hex_digit('g'));
+        TBOX_TEST_ASSERT(tbox_ascii_to_lower('Q') == 'q' && tbox_ascii_to_lower((char)0xC3) == (char)0xC3);
+        tbox_string_view trimmed = tbox_string_view_trim_ascii_space(tbox_string_view_from_cstr(" \t\xc2\xa0x\n\f"));
+        TBOX_TEST_ASSERT(trimmed.size == 3 && memcmp(trimmed.data, "\xc2\xa0x", 3) == 0); /* NBSP is not trimmed */
+        TBOX_TEST_ASSERT(tbox_string_view_trim_ascii_space(tbox_string_view_from_cstr("  ")).size == 0);
+        TBOX_TEST_ASSERT(tbox_string_view_starts_with_ascii_ci(tbox_string_view_from_cstr("RGBA(1)"), "rgba("));
+        TBOX_TEST_ASSERT(!tbox_string_view_starts_with_ascii_ci(tbox_string_view_from_cstr("rg"), "rgb("));
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_string_view lower = tbox_string_copy_lower_ascii(&arena, tbox_string_view_from_cstr("DiV\xc3\x89"));
+        TBOX_TEST_ASSERT(lower.size == 5 && memcmp(lower.data, "div\xc3\x89", 5) == 0);
+        tbox_arena_destroy(&arena);
+    }
+
     return failures;
 }

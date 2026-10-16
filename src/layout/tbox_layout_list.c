@@ -261,6 +261,7 @@ void tbox_layout_append_outside_marker(tbox_arena *arena, const tbox_html_node *
     double ascent                       = first_line != NULL ? first_line->ascent : tbox_font_face_ascent(face);
     double height                       = first_line != NULL ? first_line->height : tbox_layout_style_line_height(style, face);
     tbox_layout_text_run *run           = (tbox_layout_text_run *)tbox_vector_push(runs);
+    *run                                = (tbox_layout_text_run){ 0 };
     run->font                           = face;
     run->style                          = marker.style;
     if (marker.image != NULL) {
@@ -273,5 +274,6 @@ void tbox_layout_append_outside_marker(tbox_arena *arena, const tbox_html_node *
     double width = tbox_font_measure_text_spaced(face, marker.text, marker.style->letter_spacing);
     run->rect    = (tbox_rect){ content_x - width - gap, line_y + ascent - tbox_font_face_ascent(face), width, height };
     run->text    = marker.text;
+    tbox_font_shape_into(arena, face, run->text, marker.style->letter_spacing, &run->glyphs, &run->glyph_count);
     run->image   = NULL;
 }

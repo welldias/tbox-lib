@@ -142,11 +142,6 @@ static bool tbox_css_selector_matches_nth(const tbox_html_node *node, tbox_strin
     return difference % a == 0 && difference / a >= 0;
 }
 
-/* CSS2.1 "white space": space, tab, line feed, carriage return, form feed. */
-static bool tbox_css_selector_is_space(char byte) {
-    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == '\f';
-}
-
 /* True if `token` appears as one whole whitespace-separated item of `list`
  * (used for CLASS and the '~=' attribute operator). Comparison is byte-exact
  * (case-sensitive), per CSS2.1. */
@@ -161,11 +156,11 @@ static bool tbox_css_selector_prefix_equal(tbox_string_view value, tbox_string_v
 static bool tbox_css_selector_token_list_contains_case(tbox_string_view list, tbox_string_view token, bool insensitive) {
     size_t i = 0;
     while (i < list.size) {
-        while (i < list.size && tbox_css_selector_is_space(list.data[i])) {
+        while (i < list.size && tbox_ascii_is_space(list.data[i])) {
             i++;
         }
         size_t start = i;
-        while (i < list.size && !tbox_css_selector_is_space(list.data[i])) {
+        while (i < list.size && !tbox_ascii_is_space(list.data[i])) {
             i++;
         }
         if (i > start) {

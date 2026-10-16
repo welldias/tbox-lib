@@ -416,10 +416,6 @@ void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node,
  * a break opportunity) when whitespace really sits between them in the
  * source: `a<b>b</b>` is one word, `a <b>b</b>` two. */
 
-static bool tbox_layout_is_ascii_space(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
-}
-
 /* Glues the first word pushed since index `first` to the content before
  * it, unless whitespace separated them; then records the new content. */
 static void tbox_layout_join_words(tbox_vector *words, size_t first, bool leading_space, tbox_layout_inline_state *state) {
@@ -461,9 +457,9 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
             if (text.size == 0)
                 continue;
             bool preserved = style->white_space == TBOX_STYLE_WHITE_SPACE_PRE || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE_WRAP || style->white_space == TBOX_STYLE_WHITE_SPACE_BREAK_SPACES;
-            bool trailing  = !preserved && tbox_layout_is_ascii_space(text.data[text.size - 1]);
+            bool trailing  = !preserved && tbox_ascii_is_space(text.data[text.size - 1]);
             if (words->length > first) {
-                tbox_layout_join_words(words, first, !preserved && tbox_layout_is_ascii_space(text.data[0]), state);
+                tbox_layout_join_words(words, first, !preserved && tbox_ascii_is_space(text.data[0]), state);
                 const tbox_layout_word *last = (const tbox_layout_word *)tbox_vector_at(words, words->length - 1);
                 if (last->hard_break)
                     state->has_content = false; /* pre-line/pre newlines */

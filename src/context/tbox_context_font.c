@@ -1,17 +1,11 @@
 #include "tbox_context_internal.h"
 #include <strings.h>
 
-static tbox_string_view tbox_font_trim(tbox_string_view value) {
-    while (value.size && isspace((unsigned char)value.data[0])) value.data++, value.size--;
-    while (value.size && isspace((unsigned char)value.data[value.size - 1])) value.size--;
-    return value;
-}
-
 static tbox_string_view tbox_font_descriptor(const tbox_css_font_face_rule *face, const char *name) {
     tbox_string_view found = {0};
     for (size_t i = 0; i < face->declaration_count; i++)
         if (tbox_string_view_equal_ascii_ci(face->declarations[i].property, tbox_string_view_from_cstr(name)))
-            found = tbox_font_trim(face->declarations[i].value);
+            found = tbox_string_view_trim_ascii_space(face->declarations[i].value);
     return found;
 }
 
@@ -20,13 +14,13 @@ static bool tbox_font_url(tbox_string_view src, char *out, size_t capacity) {
     while (start + 4 <= src.size && strncasecmp(src.data + start, "url(", 4) != 0) start++;
     if (start + 4 > src.size) return false;
     start += 4;
-    while (start < src.size && isspace((unsigned char)src.data[start])) start++;
+    while (start < src.size && tbox_ascii_is_space(src.data[start])) start++;
     char quote = 0;
     if (start < src.size && (src.data[start] == '\'' || src.data[start] == '"')) quote = src.data[start++];
     size_t end = start;
     while (end < src.size && (quote ? src.data[end] != quote : src.data[end] != ')')) end++;
     if (end == src.size) return false;
-    tbox_string_view path = tbox_font_trim(tbox_string_view_make(src.data + start, end - start));
+    tbox_string_view path = tbox_string_view_trim_ascii_space(tbox_string_view_make(src.data + start, end - start));
     if (path.size == 0 || path.size >= capacity || memchr(path.data, ':', path.size) != NULL) return false;
     memcpy(out, path.data, path.size);
     out[path.size] = '\0';
