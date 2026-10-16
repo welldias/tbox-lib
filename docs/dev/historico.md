@@ -18,6 +18,18 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Shaping com HarfBuzz
+
+HarfBuzz entra como shaper opcional (`TBOX_ENABLE_HARFBUZZ`, padrão `ON`):
+`src/font/tbox_font_shaper_harfbuzz.c` ou `tbox_font_shaper_simple.c`
+(o comportamento anterior, idêntico pixel a pixel nos 141 fixtures), atrás
+de `src/font/tbox_font_face_internal.h`. Ligaduras, formas contextuais
+(árabe: `سلام` vira 3 glifos), composição de acentos, GPOS. O medidor passa
+a moldar o trecho inteiro e andar por ele (`tbox_text_measurer_init` recebe o
+texto; `tbox_text_measurer_finish`; `tbox_text_prefix_width` para cursor e
+seleção). Com HarfBuzz, 117 dos 141 fixtures mudam alguns pixels: o kerning
+GPOS (fracionário) desloca o texto.
+
 ## Após v20 — Texto como glifos posicionados
 
 O layout passa a entregar glifos, não só texto (etapas 1–4 do item 6).

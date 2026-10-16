@@ -531,7 +531,8 @@ static bool tbox_context_dispatch_key_event(tbox_context *ctx, tbox_key_event ev
             for (size_t i = 0; i < field->line_count; i++)
                 if (field->cursor >= field->lines[i].start && field->cursor <= field->lines[i].end)
                     row = i;
-            double x      = box->content_box.x + tbox_font_measure_text_spaced(face, tbox_string_view_make(field->value + field->lines[row].start, field->cursor - field->lines[row].start), box->style->letter_spacing);
+            tbox_string_view line = tbox_string_view_make(field->value + field->lines[row].start, field->lines[row].end - field->lines[row].start);
+            double x              = box->content_box.x + tbox_text_prefix_width(face, box->style->letter_spacing, line, field->cursor - field->lines[row].start);
             double height = tbox_context_style_line_height(box->style, face);
             double y      = box->content_box.y + ((double)row + (event.key == TBOX_KEY_UP ? -0.5 : 1.5)) * height - field->scroll_y;
             field->cursor = tbox_context_cursor_at_point(field, box, face, x, y);

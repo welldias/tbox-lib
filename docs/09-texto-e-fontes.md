@@ -30,7 +30,7 @@ flowchart LR
    família, peso, largura (`font-stretch`), itálico, kerning e tamanho, e a
    mantém pela vida do cache (não é refeita a cada frame).
 3. **Rasterização** — o Output pede o bitmap de cobertura de cada glifo que
-   o layout já posicionou (ver [Do texto aos glifos](#do-texto-aos-glifos)) e
+   o layout já posicionou (ver [Shaping](#shaping-do-texto-aos-glifos)) e
    o compõe no buffer com a cor do texto.
 
 Com `tbox_app` você não precisa fazer nada: ele resolve sans-serif regular e
@@ -38,44 +38,10 @@ negrito pelo Fontconfig na criação e as outras famílias sob demanda. Com
 `tbox_context` direto, você cria o `tbox_font_face_cache` (ver
 [exemplo 9](04-exemplos.md#9-pipeline-sem-tbox_app)).
 
-## Medição incremental
+## Shaping: do texto aos glifos
 
-`tbox_font_measure_text_spaced` mede um trecho inteiro. Quem precisa da
-largura de **cada prefixo** de um trecho (posicionar o cursor por clique,
-cortar para as reticências, quebrar uma palavra longa com `overflow-wrap`,
-quebrar linhas do `<textarea>`, centralizar marcas de `text-emphasis`) usa
-o medidor incremental de `src/font/tbox_font_measure.h`:
-
-```c
-tbox_text_measurer m;
-tbox_text_measurer_init(&m, face, letter_spacing);
-for (size_t at = 0; at < text.size;) {
-    at = tbox_text_measurer_step(&m, text.data, text.size, at);
-    /* m.width == largura de text[0..at) */
-}
-```
-
-Cada passo acrescenta um codepoint (kerning com o anterior, avanço e
-`letter-spacing`), na mesma ordem de soma que `tbox_font_measure_text_spaced`
-usa — que é implementada por cima do medidor. Por isso `m.width` é
-**idêntica bit a bit** à medição do prefixo, e trocar remedições por passos
-não muda nenhum resultado, só o custo: O(n) em vez de O(n²).
-
-`tbox_text_measurer_init_masked` mede como se cada codepoint fosse um único
-caractere de substituição (a máscara do `<input type=password>`); o layout
-desenha a máscara com o mesmo medidor, então cursor e texto coincidem.
-
-O medidor é o ponto onde a unidade de passo pode mudar depois: segmentação
-por grafema troca o "um codepoint" do passo, e shaping (HarfBuzz) passaria a
-avançar por cluster — sem mudar quem o usa.
-
-## Do texto aos glifos
-
-A cada passo, o medidor também informa o glifo que produziu: índice na
-fonte (`glyph_id`, via `FT_Get_Char_Index`), posição (`glyph_x`, já com o
-kerning) e avanço (`glyph_advance`, com `letter-spacing`). O shaper
-`tbox_font_shape` (`src/font/tbox_font_measure.h`) só repete esses passos e
-grava um `tbox_glyph` por passo:
+Todo texto passa por um **shaper** antes de ser medido ou desenhado. Ele
+recebe o trecho, a face e o `letter-spacing` e devolve glifos posicionados:
 
 ```c
 typedef struct tbox_glyph {
@@ -86,17 +52,76 @@ typedef struct tbox_glyph {
 } tbox_glyph;
 ```
 
-Hoje cada codepoint vira exatamente um glifo, na mesma ordem (`cluster`
-crescente). Com HarfBuzz isso deixa de valer — ligaduras juntam vários
-caracteres num glifo, marcas combinantes usam `y`, bidi reordena — e é por
-isso que o desenho recebe glifos e não texto: só o shaper muda. O layout
-guarda os glifos em `tbox_layout_text_run.glyphs`, o render os copia para o
-`TEXT_RUN` e o raster os pinta (ver
-[Layout e pintura](08-layout-e-pintura.md#texto-como-glifos-posicionados)).
+Há duas implementações, escolhidas no configure — uma ou outra é compilada,
+nunca as duas (ver [Plataformas e build](11-plataformas-e-build.md#dependências)):
 
-O raster desenha por índice (`tbox_font_rasterize_glyph_id`);
-`tbox_font_rasterize_glyph` (por codepoint) continua como atalho para
-`FT_Get_Char_Index` + o mesmo caminho.
+| Arquivo | Quando | O que faz |
+|---|---|---|
+| `src/font/tbox_font_shaper_harfbuzz.c` | HarfBuzz encontrado (`TBOX_ENABLE_HARFBUZZ=ON`, padrão) | GSUB/GPOS do HarfBuzz: ligaduras, formas contextuais (árabe, devanágari…), marcas combinantes posicionadas (`y`), kerning OpenType |
+| `src/font/tbox_font_shaper_simple.c` | sem HarfBuzz | um glifo por codepoint, kerning da tabela `kern` pelo FreeType |
+
+No HarfBuzz:
+
+- **A fonte é lida dos bytes que a face já guarda** (`hb_face` sobre o
+  mesmo buffer do `FT_Face`), sem `hb-ft`: o processo tem dois FreeType (o
+  estático do build e o do sistema, de que o HarfBuzz depende), e o `hb-ft`
+  chamaria o errado.
+- **Avanços vêm do FreeType** (`FT_Load_Glyph`, com hinting) — os mesmos
+  que o raster usa para os bitmaps; o HarfBuzz decide quais glifos e os
+  deslocamentos (kerning, marcas).
+- **`font-kerning: none`** desliga a feature `kern`; **`letter-spacing`
+  diferente de zero** desliga as ligaduras opcionais (`liga`, `clig`,
+  `dlig`), como o CSS recomenda. O `letter-spacing` entra uma vez por
+  cluster, depois do último glifo dele.
+- O objeto `hb_font` e o buffer de shaping vivem **na face** (nada global);
+  são criados no `tbox_font_face_load` e destruídos com ela.
+- Script, direção e idioma são adivinhados por trecho
+  (`hb_buffer_guess_segment_properties`). Uma palavra hebraica ou árabe sai
+  com os glifos na ordem visual certa; a ordem das **palavras** numa linha
+  mista continua lógica (sem bidi).
+
+Veja `tests/assets/141.html` (compare com um build
+`-DTBOX_ENABLE_HARFBUZZ=OFF`).
+
+`tbox_font_shape` (`src/font/tbox_font_measure.h`) grava os glifos numa
+arena; `tbox_font_measure_text_spaced` é a largura do mesmo shaping. O
+layout molda cada palavra na posição em que a linha a coloca e guarda os
+glifos em `tbox_layout_text_run.glyphs`; o render os copia para o
+`TEXT_RUN` e o raster os pinta por índice (`tbox_font_rasterize_glyph_id`)
+— ver [Layout e pintura](08-layout-e-pintura.md#texto-como-glifos-posicionados).
+
+## Largura de cada prefixo
+
+Quem precisa da largura de **cada prefixo** de um trecho (posicionar o
+cursor por clique, quebrar uma palavra longa com `overflow-wrap`, quebrar
+linhas do `<textarea>`) usa o medidor de `src/font/tbox_font_measure.h`:
+
+```c
+tbox_text_measurer m;
+tbox_text_measurer_init(&m, face, letter_spacing, text.data, text.size);
+while (m.at < text.size) {
+    tbox_text_measurer_step(&m);
+    /* m.width == largura de text[0..m.at) dentro do texto moldado */
+}
+tbox_text_measurer_finish(&m);
+```
+
+O medidor molda o trecho **inteiro** uma vez e anda por ele um codepoint
+por passo; a largura acumulada é a dos clusters já percorridos. Um cluster
+com vários caracteres (a ligadura "ffi", uma letra com acento combinante)
+tem a largura repartida igualmente entre eles, como fazem os navegadores —
+o cursor pode parar dentro de uma ligadura. Ao fim do texto, `m.width` é
+exatamente `tbox_font_measure_text_spaced(face, text, letter_spacing)`.
+
+Uma consequência do shaping: a largura do prefixo **dentro** do texto
+inteiro não é, em geral, a largura do prefixo moldado sozinho ("f" seguido
+de "i" vira um glifo só; sozinho, "f" é outro). O medidor dá a primeira,
+que é a que corresponde ao que está desenhado. Custo: um shaping por trecho
+e O(n) passos.
+
+`tbox_text_measurer_init_masked` mede como se cada codepoint fosse um único
+caractere de substituição (a máscara do `<input type=password>`); o layout
+desenha a máscara com o mesmo shaper, então cursor e texto coincidem.
 
 ## O que funciona
 
@@ -169,17 +194,20 @@ O raster desenha por índice (`tbox_font_rasterize_glyph_id`);
 - Ruby aceita texto-base direto e um `<rt>` por trecho. Conteúdo interno com
   estilos mistos é achatado em texto; anotação lateral, múltiplas camadas de
   anotação e posicionamento vertical não são suportados.
-- **Sem shaping.** A largura do texto é a soma dos avanços dos glifos (com
-  kerning). Não há ligaduras, nem reordenação, nem formas contextuais: texto
-  árabe, hebraico, devanágari e similares não são exibidos corretamente.
-  HarfBuzz seria a troca de implementação natural, atrás da mesma API.
+- **Shaping só com HarfBuzz.** Sem ele (`tbox_font_shaper_simple.c`), a
+  largura é a soma dos avanços com kerning: sem ligaduras nem formas
+  contextuais, e árabe, devanágari e similares saem errados.
+- **Shaping por palavra.** Cada palavra é moldada sozinha; não há kerning
+  nem contexto através de um espaço ou de uma fronteira de elemento.
 - **Unidade é o codepoint, não o grafema.** Cursor, backspace,
   `break-all`, reticências e máscara de senha andam por codepoint: um "é"
   decomposto (e + U+0301), emojis com modificador/ZWJ e bandeiras podem ser
   partidos. Ver [Débito técnico](dev/debito-tecnico.md#segmentação-por-grafema).
 - **Sem fallback por glifo.** Cada trecho usa uma fonte; um caractere que
   não existe nela não é buscado em outra.
-- **Sem texto bidirecional** nem `writing-mode` vertical.
+- **Sem texto bidirecional** nem `writing-mode` vertical. O HarfBuzz põe os
+  glifos de uma palavra RTL na ordem visual, mas as palavras de uma linha
+  ficam na ordem lógica, e cursor, seleção e reticências supõem LTR.
 - **Sem lista de fallback** em `font-family` além do primeiro nome (o
   Fontconfig cobre a maior parte disso).
 - **`@font-face` remoto** (URLs `http`) e faixas de peso não são suportados.

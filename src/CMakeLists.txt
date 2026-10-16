@@ -56,6 +56,31 @@ set(FONTCONFIG_INCLUDE_DIRS ${FONTCONFIG_INCLUDE_DIRS} PARENT_SCOPE)
 set(FONTCONFIG_LIBRARY_DIRS ${FONTCONFIG_LIBRARY_DIRS} PARENT_SCOPE)
 set(FONTCONFIG_LIBRARIES ${FONTCONFIG_LIBRARIES} PARENT_SCOPE)
 
+# HarfBuzz backs the text shaper (docs/09-texto-e-fontes.md, "Shaping").
+# Optional with the same graceful-skip: exactly one of the two shaper files
+# is compiled -- tbox_font_shaper_harfbuzz.c when HarfBuzz is found,
+# tbox_font_shaper_simple.c (one glyph per codepoint) otherwise.
+set(TBOX_HARFBUZZ_FOUND FALSE)
+if(TBOX_ENABLE_HARFBUZZ AND PkgConfig_FOUND)
+    pkg_check_modules(HARFBUZZ QUIET harfbuzz)
+    if(HARFBUZZ_FOUND)
+        set(TBOX_HARFBUZZ_FOUND TRUE)
+    endif()
+endif()
+if(TBOX_HARFBUZZ_FOUND)
+    list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_shaper_simple.c)
+else()
+    list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_shaper_harfbuzz.c)
+    if(TBOX_ENABLE_HARFBUZZ)
+        message(WARNING
+            "HarfBuzz (pkg-config module 'harfbuzz') not found: text is shaped "
+            "one glyph per codepoint (no ligatures or complex scripts).\n"
+            "  Arch Linux:    sudo pacman -S harfbuzz\n"
+            "  Debian/Ubuntu: sudo apt install libharfbuzz-dev"
+        )
+    endif()
+endif()
+
 if(NOT TBOX_FONTCONFIG_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_source_fontconfig.c)
     if(TBOX_ENABLE_FONTCONFIG)
@@ -116,6 +141,11 @@ if(TBOX_BUILD_STATIC)
         target_link_directories(tbox_static PRIVATE ${FONTCONFIG_LIBRARY_DIRS})
         target_link_libraries(tbox_static PRIVATE ${FONTCONFIG_LIBRARIES})
     endif()
+    if(TBOX_HARFBUZZ_FOUND)
+        target_include_directories(tbox_static PRIVATE ${HARFBUZZ_INCLUDE_DIRS})
+        target_link_directories(tbox_static PRIVATE ${HARFBUZZ_LIBRARY_DIRS})
+        target_link_libraries(tbox_static PRIVATE ${HARFBUZZ_LIBRARIES})
+    endif()
     if(TBOX_WAYLAND_FOUND)
         target_compile_definitions(tbox_static PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)
         if(WAYLAND_CURSOR_FOUND)
@@ -151,6 +181,11 @@ if(TBOX_BUILD_SHARED)
         target_include_directories(tbox_shared PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
         target_link_directories(tbox_shared PRIVATE ${FONTCONFIG_LIBRARY_DIRS})
         target_link_libraries(tbox_shared PRIVATE ${FONTCONFIG_LIBRARIES})
+    endif()
+    if(TBOX_HARFBUZZ_FOUND)
+        target_include_directories(tbox_shared PRIVATE ${HARFBUZZ_INCLUDE_DIRS})
+        target_link_directories(tbox_shared PRIVATE ${HARFBUZZ_LIBRARY_DIRS})
+        target_link_libraries(tbox_shared PRIVATE ${HARFBUZZ_LIBRARIES})
     endif()
     if(TBOX_WAYLAND_FOUND)
         target_compile_definitions(tbox_shared PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)

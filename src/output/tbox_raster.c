@@ -612,7 +612,7 @@ static void tbox_raster_glyph(const tbox_raster_text_target *target, tbox_font_f
 /* Paints `glyphs` (docs/08-layout-e-pintura.md, "Texto como glifos
  * posicionados") as they are: no UTF-8 decoding, no kerning here. Without
  * glyphs (an op built by hand), `text` is shaped on the fly by the same
- * measurer Layout shapes with, one glyph at a time. */
+ * shaper Layout uses, in a scratch arena. */
 static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_glyph *glyphs, size_t glyph_count, const tbox_font_face *face, tbox_css_rgba color, double letter_spacing, bool has_clip, tbox_rect clip, const tbox_paint_op *rounded) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || face == NULL || (text.size == 0 && glyph_count == 0) || color.a == 0) {
         return;
@@ -639,12 +639,13 @@ static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width,
             tbox_raster_glyph(&target, mutable_face, glyphs[i].id, origin.x + glyphs[i].x, baseline_y + glyphs[i].y);
         return;
     }
-    tbox_text_measurer measurer;
-    tbox_text_measurer_init(&measurer, face, letter_spacing);
-    for (size_t at = 0; at < text.size;) {
-        at = tbox_text_measurer_step(&measurer, text.data, text.size, at);
-        tbox_raster_glyph(&target, mutable_face, measurer.glyph_id, origin.x + measurer.glyph_x, baseline_y);
-    }
+    tbox_arena scratch = tbox_arena_create(0);
+    tbox_glyph *shaped;
+    size_t shaped_count;
+    if (tbox_font_shape(&scratch, face, text, letter_spacing, 0.0, 0, &shaped, &shaped_count, NULL))
+        for (size_t i = 0; i < shaped_count; i++)
+            tbox_raster_glyph(&target, mutable_face, shaped[i].id, origin.x + shaped[i].x, baseline_y + shaped[i].y);
+    tbox_arena_destroy(&scratch);
 }
 
 void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color) {

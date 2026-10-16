@@ -204,9 +204,9 @@ flowchart LR
 Edição de texto (cursor, seleção, clique em `<input>`/`<textarea>`)
 continua no `tbox_text_measurer` sobre o valor do campo, que não é o texto
 pintado (máscara de senha, linhas do textarea); como medidor e shaper são o
-mesmo código, os dois não divergem. Shaping real (HarfBuzz), fallback de
-fonte e bidi entram só no shaper — ver
-[Texto e fontes](09-texto-e-fontes.md#do-texto-aos-glifos).
+mesmo código, os dois não divergem. O shaping (HarfBuzz, quando presente)
+mora só no shaper; fallback de fonte e bidi entrariam no mesmo lugar — ver
+[Texto e fontes](09-texto-e-fontes.md#shaping-do-texto-aos-glifos).
 
 ### Ordem de pintura
 

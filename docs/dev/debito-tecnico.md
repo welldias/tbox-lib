@@ -305,6 +305,20 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   omitido. Mesmo mecanismo de truncar `open_elements` já usado para `<p>`.
 - **Toca:** `tbox_html_tree_builder_handle_start_tag`.
 
+### Shaping por palavra e a cada frame
+
+- **O que é:** o layout molda cada palavra sozinha, e de novo a cada frame
+  (não há cache de shaping). Sem contexto através de um espaço ou de uma
+  fronteira de elemento (`<b>f</b>i` não forma ligadura, kerning entre
+  palavras não existe).
+- **Por que importa:** com HarfBuzz o shaping é a parte cara da medição;
+  documentos com muito texto pagam isso em todo frame.
+- **Quando revisitar:** quando um perfil mostrar o shaping no topo, ou com
+  o layout incremental (ver "Estilo e layout incrementais"). Um cache por
+  (face, texto, letter-spacing) na face resolveria o custo.
+- **Toca:** `src/font/tbox_font_face.c`, `src/font/tbox_font_shaper_harfbuzz.c`,
+  `src/layout/tbox_layout_inline.c`.
+
 ### Segmentação por grafema
 
 - **O que é:** edição de texto, `break-all`/`overflow-wrap`, reticências e

@@ -17,29 +17,33 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
                 tbox_layout_text_run *runs = tbox_arena_alloc(&ctx->frame_arena, maximum * sizeof(*runs));
                 if (lines != NULL && runs != NULL) {
                     double line_height = tbox_context_style_line_height(style, face);
-                    size_t count = 0, start = 0, at = 0;
-                    tbox_text_measurer line;
-                    tbox_text_measurer_init(&line, face, style->letter_spacing);
-                    while (at < field->length) {
-                        size_t next = tbox_utf8_next(field->value, field->length, at);
-                        if (field->value[at] == '\n') {
-                            lines[count++] = (tbox_text_line){start, at, line.width};
-                            start = next;
-                            tbox_text_measurer_init(&line, face, style->letter_spacing);
-                        } else {
-                            tbox_text_measurer grown = line;
-                            tbox_text_measurer_step(&grown, field->value, field->length, at);
-                            if (grown.width > box->content_box.width && at > start) {
-                                lines[count++] = (tbox_text_line){start, at, line.width};
-                                start = at;
-                                tbox_text_measurer_init(&grown, face, style->letter_spacing);
-                                tbox_text_measurer_step(&grown, field->value, field->length, at);
+                    /* Each paragraph (up to a '\n') is shaped from the start
+                     * of the current line; a line breaks before the
+                     * codepoint that would overflow it, and the rest of the
+                     * paragraph is shaped again from there. */
+                    size_t count = 0, start = 0;
+                    for (;;) {
+                        size_t end = start;
+                        while (end < field->length && field->value[end] != '\n') end++;
+                        size_t line_start = start;
+                        tbox_text_measurer line;
+                        tbox_text_measurer_init(&line, face, style->letter_spacing, field->value + line_start, end - line_start);
+                        while (line.at < line.length) {
+                            size_t before       = line.at;
+                            double before_width = line.width;
+                            tbox_text_measurer_step(&line);
+                            if (line.width > box->content_box.width && before > 0) {
+                                lines[count++] = (tbox_text_line){line_start, line_start + before, before_width};
+                                line_start += before;
+                                tbox_text_measurer_finish(&line);
+                                tbox_text_measurer_init(&line, face, style->letter_spacing, field->value + line_start, end - line_start);
                             }
-                            line = grown;
                         }
-                        at = next;
+                        lines[count++] = (tbox_text_line){line_start, end, line.width};
+                        tbox_text_measurer_finish(&line);
+                        if (end >= field->length) break;
+                        start = end + 1;
                     }
-                    lines[count++] = (tbox_text_line){start, field->length, line.width};
                     field->lines = lines;
                     field->line_count = count;
                     double max_scroll = count * line_height - box->content_box.height;
@@ -111,10 +115,9 @@ void tbox_context_paint_textarea_caret(tbox_context *ctx, tbox_display_list *out
                             size_t a = start > line_start ? start : line_start;
                             size_t b = end < line_end ? end : line_end;
                             if (b > a) {
-                                double left = box->content_box.x + tbox_font_measure_text_spaced(face,
-                                    tbox_string_view_make(field->value + line_start, a - line_start), style->letter_spacing);
-                                double right = box->content_box.x + tbox_font_measure_text_spaced(face,
-                                    tbox_string_view_make(field->value + line_start, b - line_start), style->letter_spacing);
+                                tbox_string_view text = tbox_string_view_make(field->value + line_start, line_end - line_start);
+                                double left = box->content_box.x + tbox_text_prefix_width(face, style->letter_spacing, text, a - line_start);
+                                double right = box->content_box.x + tbox_text_prefix_width(face, style->letter_spacing, text, b - line_start);
                                 items[count++] = (tbox_paint_op){.kind = TBOX_PAINT_FILL_RECT,
                                     .rect = {left, op.rect.y, right - left, line_height},
                                     .color = {130, 175, 235, 255}, .has_clip = true, .clip = clip};
@@ -126,8 +129,9 @@ void tbox_context_paint_textarea_caret(tbox_context *ctx, tbox_display_list *out
                     for (size_t i = 0; i < field->line_count; i++)
                         if (field->cursor >= field->lines[i].start && field->cursor <= field->lines[i].end) row = i;
                     size_t offset = field->cursor - field->lines[row].start;
-                    double x = box->content_box.x + tbox_font_measure_text_spaced(face,
-                        tbox_string_view_make(field->value + field->lines[row].start, offset), style->letter_spacing);
+                    tbox_string_view text = tbox_string_view_make(field->value + field->lines[row].start,
+                                                                  field->lines[row].end - field->lines[row].start);
+                    double x = box->content_box.x + tbox_text_prefix_width(face, style->letter_spacing, text, offset);
                     items[count++] = (tbox_paint_op){.kind = TBOX_PAINT_FILL_RECT,
                         .rect = {x, box->content_box.y + row * line_height - field->scroll_y, 1.0, line_height},
                         .color = style->caret_color.a != 0 ? style->caret_color : style->color, .has_clip = true, .clip = clip};

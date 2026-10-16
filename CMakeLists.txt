@@ -22,6 +22,7 @@ option(TBOX_BUILD_TESTS "Build the tbox test suite" ON)
 option(TBOX_ENABLE_SANITIZERS "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 option(TBOX_ENABLE_WAYLAND "Build the Linux Wayland window backend when available" ON)
 option(TBOX_ENABLE_FONTCONFIG "Use Fontconfig for application font discovery when available" ON)
+option(TBOX_ENABLE_HARFBUZZ "Use HarfBuzz for text shaping when available" ON)
 
 # Treat every compiler warning as an error across the whole project.
 add_library(tbox_warnings INTERFACE)

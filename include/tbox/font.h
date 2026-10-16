@@ -144,14 +144,13 @@ double tbox_font_face_x_height(const tbox_font_face *face);
  * symbols such as U+2713 CHECK MARK. */
 bool tbox_font_face_has_glyph(const tbox_font_face *face, uint32_t codepoint);
 
-/* v0: the sum of each codepoint's advance width, decoded from `text` as
- * UTF-8, with no kerning and no shaping (no ligatures, no bidi/complex
- * reordering) -- enough for simple single-line Latin text. Real shaping
- * (HarfBuzz) is a future upgrade to this SAME signature's implementation,
- * not a new layer -- it only matters once multilingual/complex text does.
- * text.size == 0 returns 0. */
+/* The width of `text` (UTF-8) as the shaper lays it out on one line
+ * (docs/09-texto-e-fontes.md, "Shaping"): with HarfBuzz, ligatures,
+ * contextual forms and OpenType kerning; without it, one glyph per
+ * codepoint with the `kern` table. No bidi. text.size == 0 returns 0. */
 double tbox_font_measure_text(const tbox_font_face *face, tbox_string_view text);
-/* Same measurement with an extra advance after each Unicode codepoint. */
+/* Same measurement with an extra advance after each cluster (CSS
+ * letter-spacing); a nonzero value also disables optional ligatures. */
 double tbox_font_measure_text_spaced(const tbox_font_face *face, tbox_string_view text, double letter_spacing);
 
 /* An 8-bit alpha coverage bitmap for one rasterized glyph (FT_Render_Glyph,

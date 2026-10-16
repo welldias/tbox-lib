@@ -114,3 +114,4 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 138 | `asin()`/`acos()`/`atan()`/`atan2()`: pares com ângulos literais em gradientes e filtros; aninhamento em largura e opacidade |
 | 139 | Gradientes cônicos: interpolação, setores, `from`/`at`, repetição angular, mosaico e máscara |
 | 140 | `polygon()`: triângulo, concavidade, `nonzero`/`evenodd`, interseção de recortes e filtros |
+| 141 | Shaping com HarfBuzz: ligaduras (e `letter-spacing` desligando-as), kerning GPOS com `font-kerning: none`, acentos combinantes e marcas empilhadas, formas contextuais árabes (isoladas com ZWNJ), hebraico com niqqud, frase árabe sem bidi; cursor dentro de ligadura em `<input>`/`<textarea>`. Sem HarfBuzz, as linhas "depois" saem iguais às "antes" |

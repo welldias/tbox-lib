@@ -5,17 +5,22 @@ static void tbox_context_bind_text_value(tbox_context *ctx, tbox_text_field *fie
 /* A measurer for `node`'s displayed value: masked for a password input,
  * so the caret lines up with the drawn marks. */
 static void tbox_context_input_measurer(tbox_text_measurer *measurer, const tbox_html_node *node,
-                                        const tbox_font_face *face, double letter_spacing) {
+                                        const tbox_font_face *face, double letter_spacing, tbox_string_view value) {
     if (tbox_layout_is_password_input(node))
-        tbox_text_measurer_init_masked(measurer, face, letter_spacing, tbox_layout_password_codepoint(face));
+        tbox_text_measurer_init_masked(measurer, face, letter_spacing, value.data, value.size, tbox_layout_password_codepoint(face));
     else
-        tbox_text_measurer_init(measurer, face, letter_spacing);
+        tbox_text_measurer_init(measurer, face, letter_spacing, value.data, value.size);
 }
 
 double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face,
-                                         tbox_string_view text, double letter_spacing) {
-    if (!tbox_layout_is_password_input(node)) return tbox_font_measure_text_spaced(face, text, letter_spacing);
-    return tbox_layout_password_width(face, text, letter_spacing);
+                                  tbox_string_view value, size_t offset, double letter_spacing) {
+    tbox_text_measurer measurer;
+    tbox_context_input_measurer(&measurer, node, face, letter_spacing, value);
+    while (measurer.at < offset && measurer.at < measurer.length)
+        tbox_text_measurer_step(&measurer);
+    double width = measurer.width;
+    tbox_text_measurer_finish(&measurer);
+    return width;
 }
 
 static void tbox_context_bind_text_value(tbox_context *ctx, tbox_text_field *field) {
@@ -104,15 +109,20 @@ size_t tbox_context_cursor_at_x(const tbox_text_field *field, const tbox_layout_
                                        const tbox_font_face *face, double x) {
     double relative_x = x - box->content_box.x + field->scroll_x;
     tbox_text_measurer measurer;
-    tbox_context_input_measurer(&measurer, field->node, face, box->style->letter_spacing);
-    for (size_t at = 0; at < field->length;) {
+    tbox_context_input_measurer(&measurer, field->node, face, box->style->letter_spacing,
+                                tbox_string_view_make(field->value, field->length));
+    size_t found = field->length;
+    while (measurer.at < measurer.length) {
+        size_t at       = measurer.at;
         double previous = measurer.width;
-        size_t next     = tbox_text_measurer_step(&measurer, field->value, field->length, at);
-        if (relative_x < measurer.width)
-            return relative_x - previous < measurer.width - relative_x ? at : next;
-        at = next;
+        size_t next     = tbox_text_measurer_step(&measurer);
+        if (relative_x < measurer.width) {
+            found = relative_x - previous < measurer.width - relative_x ? at : next;
+            break;
+        }
     }
-    return field->length;
+    tbox_text_measurer_finish(&measurer);
+    return found;
 }
 
 size_t tbox_context_cursor_at_point(const tbox_text_field *field, const tbox_layout_box *box,
@@ -128,15 +138,19 @@ size_t tbox_context_cursor_at_point(const tbox_text_field *field, const tbox_lay
     const char *text  = field->value + line.start;
     size_t length     = line.end - line.start;
     tbox_text_measurer measurer;
-    tbox_text_measurer_init(&measurer, face, box->style->letter_spacing);
-    for (size_t at = 0; at < length;) {
+    tbox_text_measurer_init(&measurer, face, box->style->letter_spacing, text, length);
+    size_t found = line.end;
+    while (measurer.at < measurer.length) {
+        size_t at       = measurer.at;
         double previous = measurer.width;
-        size_t next     = tbox_text_measurer_step(&measurer, text, length, at);
-        if (relative_x < measurer.width)
-            return line.start + (relative_x - previous < measurer.width - relative_x ? at : next);
-        at = next;
+        size_t next     = tbox_text_measurer_step(&measurer);
+        if (relative_x < measurer.width) {
+            found = line.start + (relative_x - previous < measurer.width - relative_x ? at : next);
+            break;
+        }
     }
-    return line.end;
+    tbox_text_measurer_finish(&measurer);
+    return found;
 }
 
 bool tbox_context_drag_select(tbox_context *ctx, double x) {
@@ -259,15 +273,14 @@ void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *o
                     input_clip = tbox_context_rect_intersection(input_clip, ancestor->padding_box);
             const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
             if (face != NULL) {
-                double cursor_x = tbox_context_input_advance(box->node, face,
-                    tbox_string_view_make(field->value, field->cursor), style->letter_spacing);
+                tbox_string_view value = tbox_string_view_make(field->value, field->length);
+                double cursor_x = tbox_context_input_advance(box->node, face, value, field->cursor, style->letter_spacing);
                 double visible_width = box->content_box.width - control_width - 1.0;
                 if (visible_width < 0.0) visible_width = 0.0;
                 if (cursor_x < field->scroll_x) field->scroll_x = cursor_x;
                 if (cursor_x > field->scroll_x + visible_width)
                     field->scroll_x = cursor_x - visible_width;
-                double text_width = tbox_context_input_advance(box->node, face,
-                    tbox_string_view_make(field->value, field->length), style->letter_spacing);
+                double text_width = tbox_context_input_advance(box->node, face, value, field->length, style->letter_spacing);
                 double max_scroll = text_width - visible_width;
                 if (max_scroll < 0.0) max_scroll = 0.0;
                 if (field->scroll_x > max_scroll) field->scroll_x = max_scroll;
@@ -291,9 +304,9 @@ void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *o
                                 size_t start = field->anchor < field->cursor ? field->anchor : field->cursor;
                                 size_t end = field->anchor > field->cursor ? field->anchor : field->cursor;
                                 double left = box->content_box.x - field->scroll_x +
-                                    tbox_context_input_advance(box->node, face, tbox_string_view_make(field->value, start), style->letter_spacing);
+                                    tbox_context_input_advance(box->node, face, value, start, style->letter_spacing);
                                 double right = box->content_box.x - field->scroll_x +
-                                    tbox_context_input_advance(box->node, face, tbox_string_view_make(field->value, end), style->letter_spacing);
+                                    tbox_context_input_advance(box->node, face, value, end, style->letter_spacing);
                                 if (left < box->content_box.x) left = box->content_box.x;
                                 if (right > box->content_box.x + box->content_box.width - control_width)
                                     right = box->content_box.x + box->content_box.width - control_width;

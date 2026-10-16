@@ -333,7 +333,9 @@ bool tbox_context_popup_click(tbox_context *ctx, double x, double y);
 bool tbox_context_node_attached(const tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_is_text_input(const tbox_html_node *node);
 bool tbox_context_is_search_input(const tbox_html_node *node);
-double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face, tbox_string_view text, double letter_spacing);
+/* Width of value[0..offset) as `node` draws it (masked for a password),
+ * within the shaping of the whole value. */
+double tbox_context_input_advance(const tbox_html_node *node, const tbox_font_face *face, tbox_string_view value, size_t offset, double letter_spacing);
 bool tbox_context_is_number_input(const tbox_html_node *node);
 bool tbox_context_is_range_input(const tbox_html_node *node);
 bool tbox_context_number_syntax(tbox_string_view value, bool complete);

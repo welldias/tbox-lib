@@ -290,7 +290,8 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   (Liberation Sans Regular) para testes determinísticos sem depender das
   fontes da máquina (v0).
 - **Sem shaping (HarfBuzz)**: soma de advances via FreeType. HarfBuzz seria
-  troca de implementação atrás da mesma assinatura (v0).
+  troca de implementação atrás da mesma assinatura (v0). *(superado: ver
+  "HarfBuzz como shaper opcional" abaixo)*
 - **Cache de faces carregado sob demanda** por (família, peso, itálico,
   tamanho, …), vida própria, não resetado por frame (v2, v12, v13, v18, v19).
 - **Resolução de família por callback (`tbox_font_resolver_fn`)**, para o
@@ -334,11 +335,23 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   palavra é moldada isoladamente, na posição que a linha lhe deu; o espaço
   entre palavras de um run vira um glifo de espaço no início do vão (após
   v20).
+- **HarfBuzz como shaper opcional, em arquivo próprio**: pela regra de
+  dependências, `tbox_font_shaper_harfbuzz.c` ou `tbox_font_shaper_simple.c`
+  é compilado, nunca os dois, atrás de `src/font/tbox_font_face_internal.h`.
+  Sem `hb-ft`: o processo tem o FreeType estático do build e o do sistema
+  (de que o HarfBuzz depende), e o `hb-ft` chamaria o do sistema com um
+  `FT_Face` do nosso; o `hb_face` lê os bytes que a face já guarda e um
+  sub-font troca só o avanço pelo do nosso FreeType (com hinting, o mesmo dos
+  bitmaps). `hb_font`/`hb_buffer` ficam na face, sem estado global.
+  `letter-spacing` ≠ 0 desliga `liga`/`clig`/`dlig` e entra uma vez por
+  cluster; `font-kerning: none` desliga `kern`. O medidor molda o trecho
+  inteiro e reparte a largura de um cluster entre seus codepoints, como os
+  navegadores fazem com ligaduras (após v20).
 - **Edição de texto fica no medidor, não nos glifos pintados**: cursor,
   seleção e clique em `<input>`/`<textarea>` trabalham sobre o valor do
   campo, que não é o texto pintado (máscara de senha, linhas do textarea).
-  Medidor e shaper são o mesmo código; com HarfBuzz, o medidor passa a
-  iterar a saída do shaper, e a edição o acompanha (após v20).
+  O medidor itera a saída do shaper (com ou sem HarfBuzz), e a edição o
+  acompanha (após v20).
 - **Strings de `tbox_style` continuam `char[N]`**: corte seguro por
   codepoint agora; trocar por views mexe no ABI público e na vida das
   strings herdadas, e fica para quando houver caso real (ver Débito

@@ -39,10 +39,10 @@ tbox_string_view tbox_layout_password_mask(tbox_arena *arena, const tbox_font_fa
 
 double tbox_layout_password_width(const tbox_font_face *face, tbox_string_view text, double letter_spacing) {
     tbox_text_measurer measurer;
-    tbox_text_measurer_init_masked(&measurer, face, letter_spacing, tbox_layout_password_codepoint(face));
-    for (size_t at = 0; at < text.size;)
-        at = tbox_text_measurer_step(&measurer, text.data, text.size, at);
-    return measurer.width;
+    tbox_text_measurer_init_masked(&measurer, face, letter_spacing, text.data, text.size, tbox_layout_password_codepoint(face));
+    double width = tbox_text_measurer_total(&measurer);
+    tbox_text_measurer_finish(&measurer);
+    return width;
 }
 
 static bool tbox_layout_is_checked_checkbox(const tbox_html_node *node) {

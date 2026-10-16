@@ -443,24 +443,25 @@ void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, dou
         while (start < word->text.size) {
             double limit = start == 0 ? first_limit : available_width;
             size_t end = start, best = start;
-            double best_width = 0.0;
             tbox_text_measurer piece;
-            tbox_text_measurer_init(&piece, word->face, word->style->letter_spacing);
+            tbox_text_measurer_init(&piece, word->face, word->style->letter_spacing, word->text.data + start, word->text.size - start);
             while (end < word->text.size) {
-                size_t next     = tbox_text_measurer_step(&piece, word->text.data, word->text.size, end);
+                size_t next     = start + tbox_text_measurer_step(&piece);
                 double measured = piece.width;
                 if (measured > limit && best > start)
                     break;
-                best       = next;
-                best_width = measured;
-                end        = next;
+                best = next;
+                end  = next;
                 if (measured > limit)
                     break; /* one glyph exceeds the line */
             }
+            tbox_text_measurer_finish(&piece);
+            /* The cut is chosen within the shaped word; the piece is then
+             * shaped (and drawn) on its own, so its width is its own. */
             tbox_layout_word *part = (tbox_layout_word *)tbox_vector_push(&expanded);
             *part                  = *word;
             part->text             = tbox_string_view_make(word->text.data + start, best - start);
-            part->width            = best_width;
+            part->width            = tbox_font_measure_text_spaced(word->face, part->text, word->style->letter_spacing);
             part->space_width      = start == 0 ? word->space_width : 0.0;
             part->no_space_before  = start != 0;
             start                  = best;

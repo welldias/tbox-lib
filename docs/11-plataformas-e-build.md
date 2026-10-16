@@ -19,6 +19,7 @@
 |---|---|---|---|
 | FreeType | sim (baixada pelo CMake) | métricas e rasterização de glifos | — |
 | Fontconfig | não | achar fontes do sistema; `tbox_app`; screenshots | `tbox_app_*` continua linkável mas retorna falha; use `tbox_context` com fonte própria |
+| HarfBuzz | não | shaping: ligaduras, formas contextuais, marcas, kerning OpenType ([Texto e fontes](09-texto-e-fontes.md#shaping-do-texto-aos-glifos)) | um glifo por codepoint (`tbox_font_shaper_simple.c`) |
 | wayland-client, wayland-protocols, wayland-scanner, xkbcommon | não | janela interativa | sem janela (`tbox_app_backend_available()` = `false`) |
 | wayland-cursor | não | cursores CSS | cursor padrão |
 | OpenCV (core, imgproc, imgcodecs) + C++17 | não | ferramenta `tbox_cmp` | `tbox_cmp` não é construído |
@@ -32,6 +33,7 @@ avisa e segue, removendo do build os arquivos que dependem dela.
 |---|---|---|
 | `TBOX_ENABLE_WAYLAND` | `ON` | Constrói o backend Wayland, se as dependências existirem. `OFF` gera uma lib headless. |
 | `TBOX_ENABLE_FONTCONFIG` | `ON` | Usa Fontconfig, se existir. `OFF` deixa só a fonte que você fornecer. |
+| `TBOX_ENABLE_HARFBUZZ` | `ON` | Usa HarfBuzz para o shaping, se existir. `OFF` usa o shaper simples. |
 | `TBOX_BUILD_STATIC` / `TBOX_BUILD_SHARED` | `ON` / `ON` | `libtbox.a` e/ou `libtbox.so` (pelo menos uma). |
 | `TBOX_BUILD_EXAMPLES` | `ON` | Programas de `example/`. |
 | `TBOX_BUILD_TESTS` | `ON` | `tbox_tests` e, com OpenCV, `tbox_cmp`. |

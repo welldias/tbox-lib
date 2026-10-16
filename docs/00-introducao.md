@@ -67,8 +67,9 @@ O tbox é **experimental**. Hoje ele não serve se você precisa de:
 - Windows, macOS ou X11 (só há backend Wayland);
 - JavaScript ou páginas web reais;
 - acessibilidade (leitores de tela);
-- texto em escritas que exigem shaping (árabe, hebraico, línguas índicas)
-  ou IME;
+- texto bidirecional (árabe e hebraico misturados com latim numa linha) ou
+  IME — o shaping dessas escritas existe com HarfBuzz, mas a ordem das
+  palavras numa linha mista não;
 - `float`, `grid`, animações por `@keyframes`;
 - uso a partir de várias threads;
 - API estável.

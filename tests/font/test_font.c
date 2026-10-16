@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "base/tbox_arena.h"
 #include "font/tbox_font_measure.h"
 #include "test_support.h"
 
@@ -205,31 +206,54 @@ int tbox_test_font_run(void) {
         const tbox_font_face *regular_16_italic = tbox_font_face_cache_get(cache, no_family, false, true, 16.0);
         TBOX_TEST_ASSERT(regular_16_italic == NULL);
 
-        /* 11c: the incremental measurer's width after every step is
-         * bit-identical to measuring that prefix (kerning, letter-spacing,
-         * multi-byte codepoints); a masked one equals measuring the mask. */
+        /* 11c: the prefix measurer shapes the whole text once; prefixes
+         * never shrink, the last one is exactly the measured width, and a
+         * cluster of several codepoints (a ligature, when the shaper makes
+         * one) has its width split evenly. A masked one measures the mask;
+         * a NULL face measures 0. */
         if (regular_16 != NULL) {
-            const char text[] = "AVA To\xc3\xa9\xe2\x82\xac W.";
+            const char text[] = "AVA To\xc3\xa9\xe2\x82\xac W. office";
             size_t size       = sizeof(text) - 1;
             tbox_text_measurer measurer;
-            tbox_text_measurer_init(&measurer, regular_16, 0.75);
-            bool identical = true;
-            for (size_t at = 0; at < size;) {
-                at = tbox_text_measurer_step(&measurer, text, size, at);
-                identical = identical && measurer.width == tbox_font_measure_text_spaced(regular_16, tbox_string_view_make(text, at), 0.75);
+            tbox_text_measurer_init(&measurer, regular_16, 0.0, text, size);
+            bool monotonic = true;
+            double before  = 0.0;
+            size_t steps   = 0;
+            while (measurer.at < size) {
+                tbox_text_measurer_step(&measurer);
+                monotonic = monotonic && measurer.width >= before;
+                before    = measurer.width;
+                steps++;
             }
-            TBOX_TEST_ASSERT(identical);
-            TBOX_TEST_ASSERT(measurer.width > 0.0);
+            TBOX_TEST_ASSERT(monotonic && steps == measurer.count && steps == 18);
+            TBOX_TEST_ASSERT(measurer.width == tbox_font_measure_text_spaced(regular_16, tbox_string_view_make(text, size), 0.0));
+            TBOX_TEST_ASSERT(tbox_text_measurer_total(&measurer) == measurer.width);
+            tbox_text_measurer_finish(&measurer);
+
+            tbox_arena arena = tbox_arena_create(0);
+            tbox_glyph *glyphs;
+            size_t glyph_count;
+            tbox_string_view fi = tbox_string_view_make("fi", 2);
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, regular_16, fi, 0.0, 0.0, 0, &glyphs, &glyph_count, NULL));
+            if (glyph_count == 1) { /* the face (and shaper) made a ligature */
+                tbox_text_measurer_init(&measurer, regular_16, 0.0, fi.data, fi.size);
+                tbox_text_measurer_step(&measurer);
+                TBOX_TEST_ASSERT(measurer.width == glyphs[0].advance / 2.0);
+                tbox_text_measurer_step(&measurer);
+                TBOX_TEST_ASSERT(measurer.width == glyphs[0].advance);
+                tbox_text_measurer_finish(&measurer);
+            }
+            tbox_arena_destroy(&arena);
 
             tbox_text_measurer masked;
-            tbox_text_measurer_init_masked(&masked, regular_16, 0.75, '*');
-            for (size_t at = 0; at < size;)
-                at = tbox_text_measurer_step(&masked, text, size, at);
-            TBOX_TEST_ASSERT(masked.width == tbox_font_measure_text_spaced(regular_16, tbox_string_view_make("***********", 11), 0.75));
+            tbox_text_measurer_init_masked(&masked, regular_16, 0.75, text, size, '*');
+            TBOX_TEST_ASSERT(tbox_text_measurer_total(&masked) == tbox_font_measure_text_spaced(regular_16, tbox_string_view_make("******************", 18), 0.75));
+            tbox_text_measurer_finish(&masked);
 
             tbox_text_measurer none;
-            tbox_text_measurer_init(&none, NULL, 0.75);
-            TBOX_TEST_ASSERT(tbox_text_measurer_step(&none, text, size, 0) == 1 && none.width == 0.0);
+            tbox_text_measurer_init(&none, NULL, 0.75, text, size);
+            TBOX_TEST_ASSERT(tbox_text_measurer_step(&none) == 1 && none.width == 0.0);
+            tbox_text_measurer_finish(&none);
         }
 
         /* 12: _get on a NULL cache returns NULL instead of crashing. */
