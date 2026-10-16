@@ -212,7 +212,7 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 
 ### Tabela de propriedades do `@supports`
 
-- **O que é:** `tbox_css_supports.c` tem a própria lista de propriedades
+- **O que é:** `tbox_css_supports.c` tem a própria lista de propriedades e funcões 
   suportadas, uma cópia da [referência](../referencia/css-suportado.md); a
   Style não tem um registro que o parser (camada de baixo) possa consultar.
   Uma propriedade nova que não entrar nessa lista responde falso.

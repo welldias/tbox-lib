@@ -280,6 +280,6 @@ não, para não levar uma página ao seu caminho 3D.
 
 Os grandes ausentes, para decidir rápido: `float`, `grid`, `transform`
 além de translação, `writing-mode` vertical e texto bidirecional. A lista completa
-por propriedade e por elemento está em [CSS suportado](referencia/css-suportado.md)
+por propriedade e função (incluindo limitações e referências ao código) está em [CSS suportado](referencia/css-suportado.md)
 e [HTML suportado](referencia/html-suportado.md); o que existe de
 layout está em [Layout e pintura](08-layout-e-pintura.md).

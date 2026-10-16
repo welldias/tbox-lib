@@ -387,3 +387,147 @@ ignorados sem erro — o parser é tolerante.
 | | writing-mode | Specifies whether lines of text are laid out horizontally or vertically |
 | X | z-index | Sets the stack order of a positioned element |
 | | zoom | Specifies the zoom factor for an element. An element can be zoomed in and out |
+
+
+# Referência — funções CSS suportadas
+
+A legenda acima também vale para funções. As marcações consideram a resolução
+no estilo e o efeito no layout/pintura; reconhecer ou ignorar uma chamada no
+parser não conta como implementação. O suporte se limita às propriedades e
+sintaxes descritas abaixo.
+
+
+| Supported | Name | Description |
+| --- | --- | --- |
+| | acos() | Returns the inverse cosine of a number between -1 and 1 |
+| | asin() | Returns the inverse sine of a number between -1 and 1 |
+| | atan() | Returns the inverse tangent of a number between -∞ and ∞ |
+| | atan2() | Returns the inverse tangent of two values between -infinity and infinity |
+| X* | attr() | Returns the value of an attribute of the selected element |
+| X* | blur() | Applies a blur effect to an element |
+| X | brightness() | Adjusts the brightness of an element (brighter or darker) |
+| X* | calc() | Allows you to perform calculations to determine CSS property values |
+| X* | circle() | Defines a circle |
+| X* | clamp() | Sets a value that will adjust responsively between a minimum value and a maximum value depending on the size of the viewport |
+| | color() | Allows a color to be specified in a particular, specified color space |
+| X* | color-mix() | Mixes two color values in a given color space, by a given amount |
+| | conic-gradient() | Creates a conic gradient |
+| X | contrast() | Adjusts the contrast of an element |
+| | cos() | Returns the cosine of an angle |
+| X* | counter() | Returns the current value of the named counter |
+| X* | counters() | Returns the current values of the named and nested counters |
+| X | cubic-bezier() | Defines a Cubic Bezier curve |
+| X* | drop-shadow() | Applies a drop shadow effect to an image |
+| X* | ellipse() | Defines an ellipse |
+| | exp() | Returns E raised to the power of the specified number x (Ex) |
+| | fit-content() | Allows you to size an element based on its content |
+| X | grayscale() | Converts an image to grayscale |
+| X* | hsl() / hsla() | Defines a color using the Hue-Saturation-Lightness model (HSL); with an optional alpha component |
+| X | hue-rotate() | Applies a color rotation to an element |
+| X* | hwb() | Defines a color using the Hue-Whiteness-Blackness model (HWB); with an optional alpha component |
+| | hypot() | Returns the square root of the sum of squares of its parameters |
+| X* | inset() | Defines a rectangle at the specified inset distances from each side of the reference box |
+| X | invert() | Inverts the color of an image |
+| X* | lab() | Specifies a color in the CIE L*a*b color space |
+| X* | lch() | Specifies a color in the LCH (Lightness-Chroma-Hue) color space |
+| X* | light-dark() | Enables two color-value settings, and returns the first value if the user has set a light color theme, and the second value if the user has set a dark color theme |
+| X* | linear-gradient() | Creates a linear gradient |
+| | log() | Returns the natural logarithm (base E) of a specified number, or the logarithm of the number to the specified base |
+| | matrix() | Defines a 2D transformation, using a matrix of six values |
+| | matrix3d() | Defines a 3D transformation, using a 4x4 matrix of 16 values |
+| X* | max() | Uses the largest value, from a comma-separated list of values, as the property value |
+| X* | min() | Uses the smallest value, from a comma-separated list of values, as the property value |
+| | minmax() | Defines a size range greater than or equal to a min value and less than or equal to a max value (used with CSS grids) |
+| | mod() | Returns the remainder left over when a number is divided by another number |
+| X* | oklab() | Specifies a color in the OKLAB color space |
+| X* | oklch() | Specifies a color in the OKLCH color space |
+| X | opacity() | Applies an opacity effect to an element |
+| | perspective() | Defines a perspective view for a 3D transformed element |
+| | polygon() | Defines a polygon |
+| | pow() | Returns the value of a number (x) raised to the power of another number (y) |
+| X* | radial-gradient() | Creates a radial gradient |
+| | ray() | Defines the offset-path line segment that an animated element should follow |
+| | rem() | Returns the remainder left over when a number is divided by another number |
+| | repeat() | Repeats a set of columns or rows in a grid |
+| | repeating-conic-gradient() | Repeats a conic gradient |
+| X* | repeating-linear-gradient() | Repeats a linear gradient |
+| X* | repeating-radial-gradient() | Repeats a radial gradient |
+| X* | rgb() / rgba() | Defines colors using the Red-Green-Blue model (RGB); with an optional alpha component |
+| | rotate() | Defines a 2D rotation of an element |
+| | rotate3d() | Defines a 3D rotation of an element around its x, y, and z-axes |
+| | rotateX() | Defines a 3D rotation of an element around the x-axis (horizontal) |
+| | rotateY() | Defines a 3D rotation of an element around the y-axis (vertical) |
+| | rotateZ() | Defines a 3D rotation of an element around the z-axis |
+| | round() | Rounds a number according to the specified rounding-strategy |
+| X | saturate() | Adjusts the saturation (color intensity) of an element |
+| | scale() | Defines a 2D scaling of an element |
+| | scale3d() | Defines a 3D scaling of an element |
+| | scaleX() | Scales an element horizontally (the width) |
+| | scaleY() | Scales an element vertically (the height) |
+| X | sepia() | Converts an image to sepia |
+| | sin() | Returns the sine of a number (angle) |
+| | skew() | Skews an element along the x- and y-axis |
+| | skewX() | Skews an element along the x-axis |
+| | skewY() | Skews an element along the y-axis |
+| | sqrt() | Returns the square root of a number |
+| X | steps() | Creates a stepped timing function for animations |
+| | tan() | Returns the tangent of a number |
+| X | translate() | Allows you to re-position an element along the x- and y-axis |
+| X | translateX() | Allows you to re-position an element along the x-axis |
+| X | translateY() | Allows you to re-position an element along the y-axis |
+| | translateZ() | Allows you to re-position an element along the z-axis in 3D space |
+| X* | url() | Allows you to include a file in the stylesheet |
+| X | var() | Inserts the value of a custom property |
+| | xywh() | Creates a rectangle starting at the x and y coordinates of the contaning block, with the specified width and height |
+
+
+## Limitações e evidências no código
+
+- **Cálculos** (`src/style/tbox_style.c`, `tbox_style_calc_primary`):
+  `calc()` opera com números e comprimentos/percentuais, com `+ - * /` e
+  aninhamento. `min()`/`max()` aceitam até oito argumentos; comparações com
+  percentuais aceitam apenas um argumento percentual, sem limites já
+  aninhados. Em `clamp()`, esse argumento deve ser o central. Não há
+  avaliação geral dessas funções em ângulos, tempos ou componentes de cor.
+- **Cores** (`src/css_cascade/tbox_css_color_parse.c`): as funções de cor
+  marcadas aceitam componentes explícitos e alfa; não há sintaxe de cores
+  relativas nem componentes `none`. As cores são convertidas para RGBA de
+  8 bits. `color-mix()` interpola em `srgb`, `srgb-linear` ou OKLab/OKLCH;
+  outros espaços são aproximados por OKLab/OKLCH e os métodos de percurso
+  do matiz são ignorados (usa o arco mais curto).
+- **Tema** (`src/style/tbox_style_vars.c`): `light-dark()` escolhe pelo
+  `color-scheme` herdado; o ambiente prefere claro, então escolhe escuro
+  apenas quando há `dark` sem `light`.
+- **Conteúdo gerado** (`src/style/tbox_style_generated.c`): `attr()` só
+  produz texto em `content`, com fallback em string, sem conversão tipada.
+  `counter()`/`counters()` usam os estilos de `list-style-type` implementados;
+  não há `@counter-style` nem ligação automática com o contador `list-item`.
+- **Gradientes** (`src/style/tbox_style.c`, `tbox_style_parse_gradient`;
+  `src/output/tbox_raster.c`): lineares e radiais, inclusive repetidos,
+  aceitam até oito paradas (uma cor com duas posições ocupa duas paradas),
+  sem dicas de interpolação ou escolha do espaço de cor. Radiais aceitam
+  `circle`/`ellipse`, extensões `closest-*`/`farthest-*` e posição `at`,
+  mas não raios explícitos.
+- **Filtros** (`src/style/tbox_style.c`, `tbox_style_parse_filter_list`;
+  `src/output/tbox_raster.c`): as funções de cor atuam em `filter`
+  e `backdrop-filter`. `blur()` usa aproximação gaussiana por três box blurs;
+  `drop-shadow()` funciona em `filter`, mas é ignorado em `backdrop-filter`.
+  Uma lista comporta até seis operações internas (funções de cor
+  consecutivas são combinadas numa matriz).
+- **Formas** (`src/style/tbox_style.c`, `tbox_style_parse_clip_path`):
+  `circle()`, `ellipse()` e `inset()` funcionam em `clip-path`, com referência
+  fixa à border box; não há caixa de referência explícita nem `shape-outside`.
+  `inset(round ...)` aceita raios, mas descarta sua componente percentual.
+- **Transformações** (`src/style/tbox_style.c`, `tbox_style_parse_transform`):
+  apenas `translate()`, `translateX()` e `translateY()` têm efeito; a função
+  `perspective()` não é implementada, embora a propriedade `perspective`
+  seja aceita sem efeito. A palavra-chave `fit-content` existe, mas a
+  função `fit-content()` não é implementada.
+- **Recursos** (`tbox_style_parse_url` em `src/style/tbox_style.c`,
+  `src/context/tbox_context.c` e `src/context/tbox_context_font.c`): `url()`
+  funciona para recursos locais, como imagens, fontes e `@import`; não há
+  carregamento HTTP. É ignorado em `content`, filtros e cursores personalizados.
+
+A tabela cataloga as funções listadas acima; não é uma lista exaustiva da
+sintaxe CSS. Por exemplo, o código também implementa `rect()` no `clip`
+legado, descrito em [Layout e pintura](../08-layout-e-pintura.md).

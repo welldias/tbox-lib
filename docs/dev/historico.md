@@ -18,6 +18,11 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Catálogo de funções CSS
+
+Auditoria das 80 entradas da tabela de funções CSS: marca suporte existente,
+suporte com limitações e ausências, com referências à implementação.
+
 ## Após v20 — Indicadores HTML
 
 `<output>` passa a ter estilo inline e texto atualizável pelo DOM.
