@@ -209,6 +209,7 @@ struct tbox_context {
     tbox_destroy_notify select_destroy;
     tbox_scroll_state *scroll_states;
     const tbox_html_node *scroll_drag_node;
+    const tbox_html_node *scroll_thumb_hover; /* box whose scrollbar thumb is under the pointer (compared, never dereferenced) */
     double scroll_drag_grab_y;
     bool scroll_pointer_consumed;
     bool focus_scroll_pending;
@@ -319,6 +320,8 @@ void tbox_context_reveal_focused(tbox_context *ctx);
 void tbox_context_apply_sticky(tbox_context *ctx, double viewport_width, double viewport_height);
 tbox_rect tbox_context_rect_intersection(tbox_rect a, tbox_rect b);
 void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list);
+/* The node whose scrollbar thumb is at (x, y), or NULL. */
+const tbox_html_node *tbox_context_scrollbar_thumb_at(tbox_context *ctx, double x, double y);
 void tbox_context_push_fill(tbox_vector *items, tbox_rect rect, tbox_css_rgba color, bool has_clip, tbox_rect clip);
 void tbox_context_paint_select_arrows(const tbox_layout_box *box, tbox_vector *items);
 void tbox_context_paint_number_steppers(const tbox_layout_box *box, tbox_vector *items);

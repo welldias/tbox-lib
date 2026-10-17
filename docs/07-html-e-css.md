@@ -172,7 +172,10 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   CSS2 `:before`/`:after`); pesam como seletor de tipo na especificidade.
   As partes dos controles de formulário (`::slider-thumb`, `::selection`,
   o funcional `::picker(select)`…) estão em
-  [Formulários e controles](10-formularios-e-controles.md).
+  [Formulários e controles](10-formularios-e-controles.md); as da barra de
+  rolagem (`::-tbox-scrollbar-thumb`, único pseudo-elemento seguido de
+  `:hover`/`:active`), em
+  [Eventos e interatividade](06-eventos-e-interatividade.md#partes-da-barra).
 
 ### Conteúdo gerado (`::before`/`::after`)
 

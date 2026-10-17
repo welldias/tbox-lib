@@ -625,6 +625,14 @@ typedef enum tbox_style_part {
     TBOX_STYLE_PART_STEP_DOWN,            /* ::step-down: number */
     TBOX_STYLE_PART_COLOR_SWATCH,         /* ::color-swatch: color */
     TBOX_STYLE_PART_SELECTION,            /* ::selection: text inputs, textarea */
+    /* The vertical scrollbar of an `overflow-y: auto` box (no standard
+     * names exist, hence the -tbox- prefix). The thumb is resolved three
+     * times: plain, with :hover (pointer on it) and with :active (dragged,
+     * hover included). */
+    TBOX_STYLE_PART_SCROLLBAR_TRACK,        /* ::-tbox-scrollbar-track */
+    TBOX_STYLE_PART_SCROLLBAR_THUMB,        /* ::-tbox-scrollbar-thumb */
+    TBOX_STYLE_PART_SCROLLBAR_THUMB_HOVER,  /* ::-tbox-scrollbar-thumb:hover */
+    TBOX_STYLE_PART_SCROLLBAR_THUMB_ACTIVE, /* ::-tbox-scrollbar-thumb:active */
     TBOX_STYLE_PART_COUNT,
 } tbox_style_part;
 
@@ -639,6 +647,8 @@ typedef struct tbox_style_part_style {
     tbox_css_rgba border_colors[4];
     double border_radii[4];          /* top-left top-right bottom-right bottom-left, px */
     double border_radii_percent[4];  /* added to border_radii, % of the part's shorter side */
+    tbox_style_length margin[4];     /* top right bottom left; the scrollbar thumb's inset in its track */
+    tbox_style_length min_height;    /* the scrollbar thumb's shortest length; AUTO: built-in */
     /* Whether a stylesheet (UA included) declared `color` /
      * `background-color` for the part: undeclared ones fall back to the
      * control's built-in color (accent-color for fills and marks), even
@@ -1219,6 +1229,12 @@ const tbox_style *tbox_style_table_find(const tbox_style_table *table, const tbo
 /* `style`'s resolved control `part`, or NULL when its element has no such
  * part or the style didn't come from tbox_style_resolve_tree. */
 const tbox_style_part_style *tbox_style_part_find(const tbox_style *style, tbox_style_part part);
+
+/* Width of `style`'s vertical scrollbar in px: ::-tbox-scrollbar-track's
+ * `width` (a % of `base`), else 10, or 6 for `scrollbar-width: thin`; 0 for
+ * `scrollbar-width: none`. The one source for painting, hit tests and the
+ * `scrollbar-gutter: stable` strip. */
+double tbox_style_scrollbar_size(const tbox_style *style, double base);
 
 #ifdef __cplusplus
 }

@@ -55,6 +55,7 @@ typedef enum tbox_ua_keyword {
     TBOX_UA_KW_SUB,
     TBOX_UA_KW_SUPER,
     TBOX_UA_KW_CENTER,
+    TBOX_UA_KW_THIN,
 } tbox_ua_keyword;
 
 typedef enum tbox_ua_property {
@@ -79,6 +80,8 @@ typedef enum tbox_ua_property {
     TBOX_UA_PROP_BORDER_LEFT,
     TBOX_UA_PROP_OUTLINE,
     TBOX_UA_PROP_OUTLINE_OFFSET,
+    TBOX_UA_PROP_MIN_HEIGHT,
+    TBOX_UA_PROP_SCROLLBAR_WIDTH,
 } tbox_ua_property;
 
 typedef enum tbox_ua_value_kind {
@@ -166,6 +169,10 @@ static const char *tbox_ua_property_name(tbox_ua_property property) {
         return "outline";
     case TBOX_UA_PROP_OUTLINE_OFFSET:
         return "outline-offset";
+    case TBOX_UA_PROP_MIN_HEIGHT:
+        return "min-height";
+    case TBOX_UA_PROP_SCROLLBAR_WIDTH:
+        return "scrollbar-width";
     }
     return NULL;
 }
@@ -202,6 +209,8 @@ static const char *tbox_ua_keyword_name(tbox_ua_keyword keyword) {
         return "super";
     case TBOX_UA_KW_CENTER:
         return "center";
+    case TBOX_UA_KW_THIN:
+        return "thin";
     }
     return NULL;
 }
@@ -216,6 +225,7 @@ static tbox_ua_value_kind tbox_ua_expected_kind(tbox_ua_property property) {
     case TBOX_UA_PROP_HEIGHT:
     case TBOX_UA_PROP_BORDER_RADIUS:
     case TBOX_UA_PROP_OUTLINE_OFFSET:
+    case TBOX_UA_PROP_MIN_HEIGHT:
         return TBOX_UA_VALUE_LENGTH;
     case TBOX_UA_PROP_BORDER:
     case TBOX_UA_PROP_BORDER_LEFT:
@@ -249,6 +259,8 @@ static bool tbox_ua_keyword_matches_property(tbox_ua_property property, tbox_ua_
         return keyword == TBOX_UA_KW_SUB || keyword == TBOX_UA_KW_SUPER;
     case TBOX_UA_PROP_TEXT_ALIGN:
         return keyword == TBOX_UA_KW_CENTER;
+    case TBOX_UA_PROP_SCROLLBAR_WIDTH:
+        return keyword == TBOX_UA_KW_THIN;
     default:
         return false;
     }
@@ -351,10 +363,15 @@ static bool tbox_ua_build_selector(tbox_arena *arena, const tbox_ua_selector *de
     selector->simple_selector_count = part_count;
 
     tbox_css_simple_selector *tag = &selector->simple_selectors[0];
-    tag->kind                     = TBOX_CSS_SIMPLE_SELECTOR_TYPE;
     tag->combinator_before        = TBOX_CSS_COMBINATOR_NONE;
-    if (!tbox_ua_copy_string(arena, definition->tag, &tag->name))
-        return false;
+    if (strcmp(definition->tag, "*") == 0) {
+        tag->kind = TBOX_CSS_SIMPLE_SELECTOR_UNIVERSAL;
+        tag->name = tbox_string_view_make(NULL, 0);
+    } else {
+        tag->kind = TBOX_CSS_SIMPLE_SELECTOR_TYPE;
+        if (!tbox_ua_copy_string(arena, definition->tag, &tag->name))
+            return false;
+    }
 
     size_t next = 1;
     if (definition->qualifier != TBOX_UA_QUALIFIER_NONE) {
@@ -649,6 +666,13 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         UA_RULE_INPUT_PART("search", NULL, "clear-icon", UA_LEN(TBOX_UA_PROP_WIDTH, 16, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 245, 246, 248)),
         UA_RULE_INPUT_PART("file", NULL, "file-selector-button", UA_LEN(TBOX_UA_PROP_WIDTH, 88, TBOX_UA_UNIT_PX), UA_BORDER(1, 118, 124, 134), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 240, 242, 246), UA_COLOR(TBOX_UA_PROP_COLOR, 25, 25, 25)),
         UA_RULE_INPUT_PART("file", "disabled", "file-selector-button", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 232, 232, 232), UA_COLOR(TBOX_UA_PROP_COLOR, 140, 140, 140)),
+        /* Scrollbar of any scrolling box, discreet by default: thin, a
+         * transparent track (the painter's fallback, so scrollbar-color
+         * still colors it) and a pill thumb inset 1px, transparent around
+         * it on any background. The colors otherwise come from
+         * scrollbar-color in the painter. */
+        UA_RULE_1("*", UA_KW(TBOX_UA_PROP_SCROLLBAR_WIDTH, TBOX_UA_KW_THIN)),
+        UA_RULE_TAG_PART("*", "-tbox-scrollbar-thumb", UA_QUAD(TBOX_UA_PROP_MARGIN, 1, 1, 1, 1), UA_LEN(TBOX_UA_PROP_BORDER_RADIUS, 50, TBOX_UA_UNIT_PERCENT), UA_LEN(TBOX_UA_PROP_MIN_HEIGHT, 18, TBOX_UA_UNIT_PX)),
         UA_RULE_TAG_PART("input", "selection", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 130, 175, 235)),
         UA_RULE_TAG_PART("textarea", "selection", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 130, 175, 235)),
     };

@@ -120,3 +120,4 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 144 | Quebra de linha do `<textarea>`: entre palavras, espaços repetidos pendurados, quebras do próprio texto, palavra maior que a linha |
 | 145 | Checkbox e radio marcados e desmarcados alinhados na mesma linha; campos de texto vazios e preenchidos alinhados; `outline` como anel de foco em radio (redondo), checkbox, botão, slider e campos com borda reta e arredondada |
 | 146 | Lista do `<select>` pelo CSS padrão: `::picker(select)`, `option`/`optgroup`, `:hover`, `:checked`, `:disabled` (inclusive em `optgroup` desabilitado), tema por `var()`. Abra a lista para ver; o Firefox ainda mostra a lista nativa |
+| 147 | Scrollbar: padrão discreto, `scrollbar-width: auto`, `scrollbar-color`, partes `::-tbox-scrollbar-track`/`-thumb` (largura, borda, raio, margem, altura mínima, `:hover`, `:active`) e `scrollbar-gutter: stable` com largura própria. O Firefox só aplica as propriedades padrão |

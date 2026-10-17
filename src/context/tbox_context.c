@@ -415,6 +415,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->select_destroy                                     = NULL;
     ctx->scroll_states                                      = NULL;
     ctx->scroll_drag_node                                   = NULL;
+    ctx->scroll_thumb_hover                                 = NULL;
     ctx->scroll_drag_grab_y                                 = 0.0;
     ctx->scroll_pointer_consumed                            = false;
     ctx->focus_scroll_pending                               = false;

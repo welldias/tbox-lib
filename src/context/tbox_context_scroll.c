@@ -2,8 +2,9 @@
 #include "tbox_context_internal.h"
 #include "render/tbox_render_internal.h"
 
+/* `rail` is the track less the thumb's margins: where the thumb travels. */
 typedef struct tbox_scrollbar_geometry {
-    tbox_rect track, thumb;
+    tbox_rect track, rail, thumb;
     double max_scroll;
 } tbox_scrollbar_geometry;
 
@@ -11,9 +12,7 @@ static tbox_scroll_state *tbox_context_scroll_state(tbox_context *ctx, const tbo
 static void tbox_context_shift_subtree(tbox_layout_box *box, double dy);
 static bool tbox_context_scrollbar_geometry(const tbox_layout_box *box, double offset, tbox_scrollbar_geometry *out);
 static tbox_scroll_state *tbox_context_existing_scroll_state(tbox_context *ctx, const tbox_html_node *node);
-static size_t tbox_context_scrollbar_op_count(const tbox_layout_box *box);
-static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_box *box,
-                                           tbox_paint_op *items, size_t *index);
+static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_box *box, tbox_vector *items);
 static const tbox_layout_box *tbox_context_scrollbar_at(const tbox_layout_box *box,
                                                          double x, double y, bool has_clip, tbox_rect clip);
 
@@ -293,20 +292,36 @@ static bool tbox_context_scrollbar_geometry(const tbox_layout_box *box, double o
         box->content_box.height <= 0.0) return false;
     double max_scroll = box->scroll_content_height - box->content_box.height;
     if (max_scroll <= 0.0) return false;
-    /* scrollbar-width: thin is a narrower bar; none keeps scrolling but
-     * paints and hit-tests no bar (see tbox_context_scrollbar_visible). */
-    double bar   = box->style->scrollbar_width == TBOX_STYLE_SCROLLBAR_WIDTH_THIN ? 6.0 : 10.0;
+    /* The width is ::-tbox-scrollbar-track's or scrollbar-width's; none
+     * keeps scrolling but paints and hit-tests no bar (see
+     * tbox_context_scrollbar_visible), measured here as the default. */
+    double bar   = tbox_style_scrollbar_size(box->style, box->padding_box.width);
+    if (bar <= 0.0) bar = 10.0;
     double width = box->padding_box.width < bar ? box->padding_box.width : bar;
     tbox_rect track = {box->padding_box.x + box->padding_box.width - width,
                        box->padding_box.y, width, box->padding_box.height};
-    double thumb_height = track.height * track.height / (track.height + max_scroll);
-    if (thumb_height < 18.0) thumb_height = 18.0;
-    if (thumb_height > track.height) thumb_height = track.height;
+    /* ::-tbox-scrollbar-thumb: `margin` insets it in the track (a % of the
+     * track's width), `min-height` is its shortest length. */
+    const tbox_style_part_style *thumb = tbox_context_part(box->style, TBOX_STYLE_PART_SCROLLBAR_THUMB);
+    double margins[4];
+    for (size_t i = 0; i < 4; i++) {
+        margins[i] = tbox_style_length_resolve(thumb->margin[i], track.width);
+        if (!(margins[i] > 0.0)) margins[i] = 0.0;
+    }
+    tbox_rect rail = {track.x + margins[3], track.y + margins[0],
+                      track.width - margins[1] - margins[3], track.height - margins[0] - margins[2]};
+    if (rail.width < 0.0) rail.width = 0.0;
+    if (rail.height < 0.0) rail.height = 0.0;
+    double thumb_height = rail.height * rail.height / (rail.height + max_scroll);
+    double minimum      = tbox_context_part_size(thumb->min_height, rail.height, 18.0);
+    if (thumb_height < minimum) thumb_height = minimum;
+    if (thumb_height > rail.height) thumb_height = rail.height;
     double clamped = offset < 0.0 ? 0.0 : (offset > max_scroll ? max_scroll : offset);
-    double travel = track.height - thumb_height;
+    double travel = rail.height - thumb_height;
     *out = (tbox_scrollbar_geometry){
         .track = track,
-        .thumb = {track.x, track.y + travel * clamped / max_scroll, width, thumb_height},
+        .rail = rail,
+        .thumb = {rail.x, rail.y + travel * clamped / max_scroll, rail.width, thumb_height},
         .max_scroll = max_scroll,
     };
     return true;
@@ -328,22 +343,11 @@ static tbox_scroll_state *tbox_context_existing_scroll_state(tbox_context *ctx, 
     return NULL;
 }
 
-static size_t tbox_context_scrollbar_op_count(const tbox_layout_box *box) {
-    size_t count = 0;
-    for (; box != NULL; box = box->next_sibling) {
-        tbox_scrollbar_geometry geometry;
-        if (tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, 0.0, &geometry)) {
-            count += 2;
-            for (const tbox_layout_box *ancestor = box; ancestor != NULL; ancestor = ancestor->parent)
-                if (ancestor->style != NULL && ancestor->style->clip_path.kind == TBOX_STYLE_CLIP_PATH_POLYGON) count += 2;
-        }
-        count += tbox_context_scrollbar_op_count(box->first_child);
-    }
-    return count;
-}
-
-static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_box *box,
-                                           tbox_paint_op *items, size_t *index) {
+/* The track and thumb are the ::-tbox-scrollbar-track/-thumb parts; the
+ * thumb's :active variant while it is dragged, :hover while the pointer is
+ * on it. Undeclared colors fall back to scrollbar-color, then the built-in
+ * grays. */
+static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
         tbox_scrollbar_geometry geometry;
         tbox_scroll_state *state = box->node != NULL ? tbox_context_existing_scroll_state(ctx, box->node) : NULL;
@@ -353,47 +357,56 @@ static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_b
             size_t polygon_count = 0;
             for (const tbox_layout_box *ancestor = box; ancestor != NULL; ancestor = ancestor->parent) {
                 if (ancestor->style == NULL || ancestor->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_POLYGON) continue;
-                items[(*index)++] = (tbox_paint_op){
+                tbox_paint_op *op = tbox_vector_push(items);
+                *op = (tbox_paint_op){
                     .kind = TBOX_PAINT_LAYER_BEGIN, .color = {0, 0, 0, 255},
                     .polygon_clip = tbox_render_resolve_polygon(ancestor, &ctx->frame_arena),
                     .polygon_clip_origin = {ancestor->border_box.x, ancestor->border_box.y},
                 };
                 polygon_count++;
             }
-            /* scrollbar-color, alpha 0 being the default colors. */
-            tbox_css_rgba track_color = box->style->scrollbar_track_color.a != 0 ? box->style->scrollbar_track_color : (tbox_css_rgba){ 220, 224, 230, 255 };
+            /* scrollbar-color, alpha 0 being the default colors (a
+             * transparent track by default). */
+            tbox_css_rgba track_color = box->style->scrollbar_track_color.a != 0 ? box->style->scrollbar_track_color : (tbox_css_rgba){ 0, 0, 0, 0 };
             tbox_css_rgba thumb_color = box->style->scrollbar_thumb_color.a != 0 ? box->style->scrollbar_thumb_color : (tbox_css_rgba){ 100, 110, 122, 255 };
+            tbox_style_part thumb_part = ctx->scroll_drag_node == box->node ? TBOX_STYLE_PART_SCROLLBAR_THUMB_ACTIVE :
+                                         ctx->scroll_thumb_hover == box->node ? TBOX_STYLE_PART_SCROLLBAR_THUMB_HOVER :
+                                         TBOX_STYLE_PART_SCROLLBAR_THUMB;
             tbox_rect clip = geometry.track;
             for (const tbox_layout_box *ancestor = box->parent; ancestor != NULL; ancestor = ancestor->parent)
                 if (ancestor->style != NULL && ancestor->style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE)
                     clip = tbox_context_rect_intersection(clip, tbox_context_scrollport(ancestor));
-            items[(*index)++] = (tbox_paint_op){
-                .kind = TBOX_PAINT_FILL_RECT, .rect = geometry.track,
-                .color = track_color, .has_clip = true, .clip = clip,
-            };
-            items[(*index)++] = (tbox_paint_op){
-                .kind = TBOX_PAINT_FILL_RECT, .rect = geometry.thumb,
-                .color = thumb_color, .radius = geometry.thumb.width / 2.5,
-                .has_clip = true, .clip = clip,
-            };
-            for (size_t i = 0; i < polygon_count; i++)
-                items[(*index)++] = (tbox_paint_op){.kind = TBOX_PAINT_LAYER_END};
+            tbox_context_paint_part(items, geometry.track, tbox_context_part(box->style, TBOX_STYLE_PART_SCROLLBAR_TRACK),
+                                    track_color, true, clip);
+            tbox_context_paint_part(items, geometry.thumb, tbox_context_part(box->style, thumb_part), thumb_color, true, clip);
+            for (size_t i = 0; i < polygon_count; i++) {
+                tbox_paint_op *op = tbox_vector_push(items);
+                *op = (tbox_paint_op){.kind = TBOX_PAINT_LAYER_END};
+            }
         }
-        tbox_context_paint_scrollbars(ctx, box->first_child, items, index);
+        tbox_context_paint_scrollbars(ctx, box->first_child, items);
     }
 }
 
 void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list) {
-    size_t count = tbox_context_scrollbar_op_count(ctx->root);
-    if (count == 0) return;
-    tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena,
-        (list->count + count) * sizeof(*items));
-    if (items == NULL) return;
-    if (list->count > 0) memcpy(items, list->items, list->count * sizeof(*items));
-    size_t index = list->count;
-    tbox_context_paint_scrollbars(ctx, ctx->root, items, &index);
-    list->items = items;
-    list->count = index;
+    tbox_vector items;
+    tbox_vector_init(&items, &ctx->frame_arena, sizeof(tbox_paint_op), list->count + 16);
+    for (size_t i = 0; i < list->count; i++)
+        *(tbox_paint_op *)tbox_vector_push(&items) = list->items[i];
+    size_t before = items.length;
+    tbox_context_paint_scrollbars(ctx, ctx->root, &items);
+    if (items.length == before) return;
+    list->items = (tbox_paint_op *)items.data;
+    list->count = items.length;
+}
+
+const tbox_html_node *tbox_context_scrollbar_thumb_at(tbox_context *ctx, double x, double y) {
+    const tbox_layout_box *box = ctx->root != NULL ? tbox_context_scrollbar_at(ctx->root, x, y, false, (tbox_rect){0}) : NULL;
+    if (box == NULL) return NULL;
+    tbox_scroll_state *state = tbox_context_existing_scroll_state(ctx, box->node);
+    tbox_scrollbar_geometry geometry;
+    return tbox_context_scrollbar_geometry(box, state != NULL ? state->y : 0.0, &geometry) &&
+           tbox_context_point_in_rect(geometry.thumb, x, y) ? box->node : NULL;
 }
 
 static const tbox_layout_box *tbox_context_scrollbar_at(const tbox_layout_box *box,
@@ -507,9 +520,9 @@ bool tbox_context_scrollbar_drag(tbox_context *ctx, double x, double y) {
         ctx->scroll_drag_node = NULL;
         return true;
     }
-    double travel = geometry.track.height - geometry.thumb.height;
+    double travel = geometry.rail.height - geometry.thumb.height;
     if (travel > 0.0) {
-        double thumb_y = y - ctx->scroll_drag_grab_y - geometry.track.y;
+        double thumb_y = y - ctx->scroll_drag_grab_y - geometry.rail.y;
         if (thumb_y < 0.0) thumb_y = 0.0;
         if (thumb_y > travel) thumb_y = travel;
         state->y         = thumb_y / travel * geometry.max_scroll;

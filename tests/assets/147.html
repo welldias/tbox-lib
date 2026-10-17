@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* Scrollbar (docs/06-eventos-e-interatividade.md, "Rolagem"): as
+     * propriedades padrão scrollbar-width e scrollbar-color, e as partes do
+     * tbox ::-tbox-scrollbar-track e ::-tbox-scrollbar-thumb (largura,
+     * fundo, borda, raio, margem, altura mínima e os estados :hover e
+     * :active do polegar). Passe o mouse e arraste o polegar das caixas da
+     * segunda linha. O padrão é discreto (thin, trilho transparente, polegar
+     * em pílula com 1px de recuo); scrollbar-width: auto volta aos 10px.
+     * O Firefox e o Chrome aplicam só scrollbar-width e
+     * scrollbar-color; as partes -tbox- não existem neles. */
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 15px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    .caixa {
+      display: inline-block;
+      width: 150px;
+      height: 140px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #cbd5e1;
+      margin: 0 12px 12px 0;
+      vertical-align: top;
+    }
+
+    .caixa p {
+      margin: 4px 8px;
+    }
+
+    .classica {
+      scrollbar-width: auto;
+    }
+
+    .colorida {
+      scrollbar-color: #c81e78 #fde4f0;
+    }
+
+    .larga::-tbox-scrollbar-track {
+      width: 16px;
+      background-color: #f1f5f9;
+      border-left: 1px solid #cbd5e1;
+    }
+
+    .larga::-tbox-scrollbar-thumb {
+      background-color: #94a3b8;
+      border-radius: 7px;
+      margin: 3px;
+      min-height: 40px;
+    }
+
+    .larga::-tbox-scrollbar-thumb:hover {
+      background-color: #64748b;
+    }
+
+    .larga::-tbox-scrollbar-thumb:active {
+      background-color: #334155;
+    }
+
+    .pilula::-tbox-scrollbar-track {
+      width: 10px;
+      background-color: transparent;
+    }
+
+    .pilula::-tbox-scrollbar-thumb {
+      background-color: #7c3aed;
+      border: 2px solid white;
+      border-radius: 50%;
+    }
+
+    .pilula::-tbox-scrollbar-thumb:active {
+      background-color: #4c1d95;
+    }
+
+    .reservada {
+      scrollbar-gutter: stable;
+    }
+
+    .reservada::-tbox-scrollbar-track {
+      width: 20px;
+      background-color: #ecfdf5;
+    }
+
+    .reservada::-tbox-scrollbar-thumb {
+      background-color: #10b981;
+      margin: 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Scrollbar</h1>
+
+  <div class="caixa">
+    <p>Padrão</p>
+    <p>a</p>
+    <p>b</p>
+    <p>c</p>
+    <p>d</p>
+    <p>e</p>
+    <p>f</p>
+    <p>g</p>
+    <p>h</p>
+    <p>i</p>
+  </div>
+  <div class="caixa classica">
+    <p>scrollbar-width: auto</p>
+    <p>a</p>
+    <p>b</p>
+    <p>c</p>
+    <p>d</p>
+    <p>e</p>
+    <p>f</p>
+    <p>g</p>
+    <p>h</p>
+    <p>i</p>
+  </div>
+  <div class="caixa colorida">
+    <p>scrollbar-color</p>
+    <p>a</p>
+    <p>b</p>
+    <p>c</p>
+    <p>d</p>
+    <p>e</p>
+    <p>f</p>
+    <p>g</p>
+    <p>h</p>
+    <p>i</p>
+  </div>
+
+  <div class="caixa larga">
+    <p>Larga, margem, :hover e :active</p>
+    <p>a</p>
+    <p>b</p>
+    <p>c</p>
+    <p>d</p>
+    <p>e</p>
+    <p>f</p>
+    <p>g</p>
+    <p>h</p>
+    <p>i</p>
+  </div>
+  <div class="caixa pilula">
+    <p>Pílula com borda</p>
+    <p>a</p>
+    <p>b</p>
+    <p>c</p>
+    <p>d</p>
+    <p>e</p>
+    <p>f</p>
+    <p>g</p>
+    <p>h</p>
+    <p>i</p>
+  </div>
+  <div class="caixa reservada">
+    <p>scrollbar-gutter: stable com 20px</p>
+    <p>a</p>
+    <p>b</p>
+    <p>c</p>
+    <p>d</p>
+    <p>e</p>
+    <p>f</p>
+    <p>g</p>
+    <p>h</p>
+    <p>i</p>
+  </div>
+</body>
+
+</html>

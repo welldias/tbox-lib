@@ -3619,7 +3619,9 @@ int tbox_test_context_run(void) {
      * rows that lie outside its visible padding box. */
     {
         const char *html  = "<div id='list'><div id='one'></div><div id='two'></div><div id='three'></div></div>";
-        const char *css   = "#list { width: 60px; height: 40px; overflow-y: auto; } "
+        /* The classic bar (10px, opaque track) pinned by the standard
+         * properties: these checks are about scrolling, not the default look. */
+        const char *css   = "#list { width: 60px; height: 40px; overflow-y: auto; scrollbar-width: auto; scrollbar-color: #646e7a #dce0e6; } "
                             "#one, #two, #three { height: 30px; } "
                             "#one { background-color: red; } #two { background-color: green; } "
                             "#three { background-color: blue; }";
@@ -3936,6 +3938,118 @@ int tbox_test_context_run(void) {
                 TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Um"));
                 TBOX_TEST_ASSERT(one->element.selectedness && !two->element.selectedness);
                 TBOX_TEST_ASSERT(tbox_html_node_get_attribute(two, tbox_string_view_make("selected", 8)) != NULL);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Scrollbar parts: ::-tbox-scrollbar-track sets the bar's width (paint,
+     * hit test and the stable gutter alike), ::-tbox-scrollbar-thumb its
+     * inset, minimum length and shape, with :hover / :active variants; the
+     * thumb travels the track less its margins. */
+    {
+        const char *html = "<div><div id='box'><p>1</p><p>2</p><p>3</p><p>4</p><p>5</p><p>6</p><p>7</p><p>8</p><p>9</p></div></div>";
+        const char *css = "#box { width: 200px; height: 100px; overflow-y: auto; scrollbar-gutter: stable; }"
+            "#box::-tbox-scrollbar-track { width: 14px; background-color: rgb(1, 2, 3); }"
+            "#box::-tbox-scrollbar-thumb { background-color: rgb(4, 5, 6); margin: 3px; min-height: 60px; border: 0; }"
+            "#box::-tbox-scrollbar-thumb:hover { background-color: rgb(7, 8, 9); }"
+            "#box::-tbox-scrollbar-thumb:active { background-color: rgb(10, 11, 12); }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            const tbox_html_node *node = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_layout_box *box = find_context_box(ctx, node);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                /* The stable gutter is the track's 14px. */
+                TBOX_TEST_ASSERT(box->scrollbar_gutter == 14.0 && box->content_box.width == 200.0 - 14.0);
+                double right = box->padding_box.x + box->padding_box.width;
+                tbox_rect track = {0}, thumb = {0};
+                bool hover_thumb = false;
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    if (op->kind != TBOX_PAINT_FILL_RECT) continue;
+                    if (op->color.r == 1 && op->color.g == 2) track = op->rect;
+                    if (op->color.r == 4 && op->color.g == 5) thumb = op->rect;
+                    if (op->color.r == 7 && op->color.g == 8) hover_thumb = true;
+                }
+                TBOX_TEST_ASSERT(track.width == 14.0 && track.x == right - 14.0 && track.height == box->padding_box.height);
+                TBOX_TEST_ASSERT(thumb.x == track.x + 3.0 && thumb.width == 8.0 && thumb.y == track.y + 3.0 && thumb.height == 60.0);
+                TBOX_TEST_ASSERT(!hover_thumb);
+                double x = thumb.x + thumb.width / 2.0, y = thumb.y + 10.0;
+                /* Pointer on the thumb: :hover. */
+                TBOX_TEST_ASSERT(tbox_context_update_hover(ctx, true, x, y));
+                tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+                bool hovered = false, active = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].color.r == 7 && list.items[i].color.g == 8) hovered = true;
+                TBOX_TEST_ASSERT(hovered);
+                /* Dragging: :active; to the bottom of the rail scrolls to the end. */
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_press(ctx, x, y));
+                /* The thumb follows the pointer 1:1 along the rail. */
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_drag(ctx, x, y + 10.0));
+                tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+                bool followed = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].color.r == 10 && list.items[i].color.g == 11 &&
+                        fabs(list.items[i].rect.y - (thumb.y + 10.0)) < 1e-6)
+                        followed = true;
+                TBOX_TEST_ASSERT(followed);
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_drag(ctx, x, y + 1000.0));
+                tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+                tbox_rect dragged = {0};
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].color.r == 10 && list.items[i].color.g == 11) {
+                        active = true;
+                        dragged = list.items[i].rect;
+                    }
+                TBOX_TEST_ASSERT(active && dragged.y + dragged.height == track.y + track.height - 3.0);
+                tbox_context_scrollbar_release(ctx);
+                tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+                active = false;
+                for (size_t i = 0; i < list.count; i++)
+                    if (list.items[i].kind == TBOX_PAINT_FILL_RECT && list.items[i].color.r == 10 && list.items[i].color.g == 11) active = true;
+                TBOX_TEST_ASSERT(!active);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* The default scrollbar is discreet: thin (6px), a transparent track
+     * showing the content under it, and a gray pill thumb inset 1px (4px
+     * wide); scrollbar-width: auto still restores the 10px bar. */
+    {
+        const char *html = "<div><div id='a'><div class='tall'></div></div><div id='b'><div class='tall'></div></div></div>";
+        const char *css  = "#a, #b { width: 60px; height: 40px; overflow-y: auto; background-color: rgb(250, 0, 0); }"
+                           "#b { scrollbar-width: auto; } .tall { height: 200px; }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 200.0, 200.0, &list);
+            const tbox_html_node *a = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_layout_box *box = find_context_box(ctx, a);
+            const tbox_layout_box *wide = find_context_box(ctx, a->next_sibling);
+            TBOX_TEST_ASSERT(box != NULL && wide != NULL);
+            if (box != NULL && wide != NULL) {
+                double right = box->padding_box.x + box->padding_box.width;
+                bool thumb = false, wide_thumb = false, opaque_track = false, white = false;
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    if (op->kind != TBOX_PAINT_FILL_RECT) continue;
+                    tbox_css_rgba c = op->color;
+                    if (c.r == 100 && c.g == 110 && c.b == 122 && op->rect.x == right - 5.0 && op->rect.width == 4.0 &&
+                        op->rect.y == box->padding_box.y + 1.0 && op->corner_radii[0] == 2.0)
+                        thumb = true;
+                    if (c.r == 100 && c.g == 110 && c.b == 122 && op->rect.width == 8.0 &&
+                        op->rect.x == wide->padding_box.x + wide->padding_box.width - 9.0)
+                        wide_thumb = true;
+                    if (c.r == 220 && c.g == 224 && c.b == 230) opaque_track = true;
+                    if (c.r == 255 && c.g == 255 && c.b == 255 && c.a == 255) white = true;
+                }
+                TBOX_TEST_ASSERT(thumb && wide_thumb && !opaque_track && !white);
             }
             tbox_context_close(ctx);
         }
@@ -5467,7 +5581,7 @@ int tbox_test_context_run(void) {
         static const char *const parent_shapes[] = {"none", "polygon(0 0, 50% 0, 50% 100%, 0 100%)"};
         for (size_t c = 0; c < 2; c++) {
             char css[768];
-            snprintf(css, sizeof(css), "body { margin: 0; background: white; } #host { position: absolute; left: 10px; top: 10px; width: 60px; height: 40px; clip-path: %s; } #scroll { width: 60px; height: 40px; overflow-y: auto; clip-path: polygon(0 0, 100%% 0, 100%% 50%%, 0 50%%); } #content { height: 120px; background: red; }", parent_shapes[c]);
+            snprintf(css, sizeof(css), "body { margin: 0; background: white; } #host { position: absolute; left: 10px; top: 10px; width: 60px; height: 40px; clip-path: %s; } #scroll { width: 60px; height: 40px; overflow-y: auto; scrollbar-width: auto; clip-path: polygon(0 0, 100%% 0, 100%% 50%%, 0 50%%); } #content { height: 120px; background: red; }", parent_shapes[c]);
             tbox_context *ctx = open_cstr("<body><div id='host'><div id='scroll'><div id='content'></div></div></div></body>", css, fonts);
             TBOX_TEST_ASSERT(ctx != NULL);
             if (ctx != NULL) {

@@ -135,6 +135,24 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   só os campos que as partes usam são copiados. Cada propriedade nova
   numa parte pede um campo. Só os elementos que pintam a parte a recebem
   (2026-10-16).
+- **Scrollbar discreta por padrão** (`thin`, trilho transparente, pílula
+  com recuo de 1px), escolha do mantenedor. O recuo é margem transparente,
+  não borda branca: funciona em qualquer fundo e não se soma à borda de um
+  polegar personalizado. `thin` vem da UA (`* { scrollbar-width: thin }`),
+  então `scrollbar-width: auto` volta aos 10px; o trilho transparente é a
+  reserva do pintor, não uma declaração, para não anular `scrollbar-color`
+  (2026-10-16).
+- **Partes da scrollbar com prefixo `-tbox-`.** O CSS padrão só tem
+  `scrollbar-width`/`scrollbar-color` e não há rascunho para as partes. Entre
+  estender `scrollbar-width` com tamanho (só largura), usar os nomes
+  `::-webkit-scrollbar*` (prefixo de navegador, fora da regra de nomes) ou
+  um tema no `control_css` (global, e será revisto), o mantenedor escolheu
+  partes próprias no CSS do documento, no mesmo mecanismo das outras
+  partes (2026-10-16).
+- **Estado de parte como parâmetro da cascata**, não como estado global:
+  `:hover`/`:active` depois do pseudo-elemento são avaliados pelo `state`
+  passado na resolução, e o polegar é resolvido uma vez por variante
+  (2026-10-16).
 - **Lista do select pelo CSS padrão, sem opt-in.** As linhas são os
   `<option>`/`<optgroup>` do documento e a caixa é `::picker(select)`, como
   no select customizável; `appearance: base-select` não é exigido, porque

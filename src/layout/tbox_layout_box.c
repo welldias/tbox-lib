@@ -152,7 +152,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
     /* A stable scrollbar consumes a strip inside the existing padding box. */
     if (style->scrollbar_gutter_stable && style->scrollbar_width != TBOX_STYLE_SCROLLBAR_WIDTH_NONE &&
         style->overflow_y != TBOX_STYLE_OVERFLOW_Y_VISIBLE) {
-        double gutter = style->scrollbar_width == TBOX_STYLE_SCROLLBAR_WIDTH_THIN ? 6.0 : 10.0;
+        double gutter = tbox_style_scrollbar_size(style, content_width);
         if (gutter > content_width) gutter = content_width;
         content_width -= gutter;
         padding_right += gutter;

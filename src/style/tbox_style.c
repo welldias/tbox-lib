@@ -3646,7 +3646,7 @@ static tbox_style tbox_style_resolve_declared(const tbox_html_node *node, const 
 /* `::marker` of a list item: resolved like a child element of it, then
  * the properties a marker honors copied into the item's own style. */
 static void tbox_style_resolve_marker(const tbox_html_node *node, tbox_style *style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena) {
-    tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, "marker", viewport_width, viewport_height, reduced_motion);
+    tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, "marker", 0, viewport_width, viewport_height, reduced_motion);
     if (computed.count > 0) {
         tbox_style marker         = tbox_style_resolve_full(NULL, style, &computed, viewport_width, viewport_height, arena);
         style->marker_styled      = true;
@@ -3685,7 +3685,7 @@ static void tbox_style_resolve_marker(const tbox_html_node *node, tbox_style *st
 static void tbox_style_resolve_generated(const tbox_html_node *node, const tbox_style *style, int which, tbox_style_generated *generated, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena, tbox_vector *items) {
     if (!tbox_style_generated_wants(generated, which))
         return;
-    tbox_css_computed_style computed             = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, which == 0 ? "before" : "after", viewport_width, viewport_height, reduced_motion);
+    tbox_css_computed_style computed             = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, which == 0 ? "before" : "after", 0, viewport_width, viewport_height, reduced_motion);
     const tbox_css_resolved_declaration *content = tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("content"));
     if (content != NULL && !tbox_style_is(content->value, "none") && !tbox_style_is(content->value, "normal")) {
         tbox_style pseudo = tbox_style_resolve_full(NULL, style, &computed, viewport_width, viewport_height, arena);

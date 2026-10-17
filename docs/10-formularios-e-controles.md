@@ -178,6 +178,7 @@ implementação de compatibilidade (ver
 | meter `::slider-fill` | `::-moz-meter-bar` | `::-webkit-meter-optimum-value`, `-suboptimum-value`, `-even-less-good-value` |
 | select `::picker-icon` | — | `::picker-icon` (Chrome, com `appearance: base-select`) |
 | `::picker(select)`, `option:hover`/`:checked` na lista | — (lista nativa) | iguais (Chrome 135+, com `appearance: base-select`) |
+| `::-tbox-scrollbar-track` / `-thumb` (ver [Rolagem](06-eventos-e-interatividade.md#partes-da-barra)) | — (só `scrollbar-width`/`-color`) | `::-webkit-scrollbar` (largura), `::-webkit-scrollbar-track`, `::-webkit-scrollbar-thumb` (com `:hover`/`:active`) |
 | checkbox/radio `::checkmark` | — | — (o Chrome tem `::checkmark` só em `<option>`) |
 | `::file-selector-button` | igual | igual (antigo: `::-webkit-file-upload-button`) |
 | search `::clear-icon` | — | `::-webkit-search-cancel-button` |

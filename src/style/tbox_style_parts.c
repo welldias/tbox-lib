@@ -19,6 +19,16 @@ static const char *const tbox_style_part_names[TBOX_STYLE_PART_COUNT] = {
     [TBOX_STYLE_PART_STEP_DOWN]            = "step-down",
     [TBOX_STYLE_PART_COLOR_SWATCH]         = "color-swatch",
     [TBOX_STYLE_PART_SELECTION]            = "selection",
+    [TBOX_STYLE_PART_SCROLLBAR_TRACK]      = "-tbox-scrollbar-track",
+    [TBOX_STYLE_PART_SCROLLBAR_THUMB]      = "-tbox-scrollbar-thumb",
+    [TBOX_STYLE_PART_SCROLLBAR_THUMB_HOVER]  = "-tbox-scrollbar-thumb",
+    [TBOX_STYLE_PART_SCROLLBAR_THUMB_ACTIVE] = "-tbox-scrollbar-thumb",
+};
+
+/* The user-action state each part is resolved in (tbox_css_part_state). */
+static const unsigned tbox_style_part_states[TBOX_STYLE_PART_COUNT] = {
+    [TBOX_STYLE_PART_SCROLLBAR_THUMB_HOVER]  = TBOX_CSS_PART_STATE_HOVER,
+    [TBOX_STYLE_PART_SCROLLBAR_THUMB_ACTIVE] = TBOX_CSS_PART_STATE_HOVER | TBOX_CSS_PART_STATE_ACTIVE,
 };
 
 #define TBOX_STYLE_PART_BIT(part) (1u << (part))
@@ -30,7 +40,7 @@ static bool tbox_style_type_is(tbox_string_view type, const char *name) {
 /* The parts `node` has, one bit per tbox_style_part: only the ones the
  * control actually paints. An input without a type, or with a text-like
  * one, edits text and so has ::selection. */
-static unsigned tbox_style_parts_of(const tbox_html_node *node) {
+static unsigned tbox_style_control_parts_of(const tbox_html_node *node) {
     tbox_string_view tag = node->element.tag_name;
     if (tbox_string_view_equal_cstr(tag, "progress") || tbox_string_view_equal_cstr(tag, "meter"))
         return TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SLIDER_TRACK) | TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SLIDER_FILL);
@@ -64,11 +74,24 @@ static unsigned tbox_style_parts_of(const tbox_html_node *node) {
     return 0;
 }
 
+/* A box that may scroll (and so show a scrollbar) has the scrollbar parts
+ * too, whatever element it is. */
+static unsigned tbox_style_parts_of(const tbox_html_node *node, const tbox_style *style) {
+    unsigned parts = tbox_style_control_parts_of(node);
+    if (style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO && style->scrollbar_width != TBOX_STYLE_SCROLLBAR_WIDTH_NONE)
+        parts |= TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SCROLLBAR_TRACK) | TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SCROLLBAR_THUMB) |
+                 TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SCROLLBAR_THUMB_HOVER) | TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SCROLLBAR_THUMB_ACTIVE);
+    return parts;
+}
+
 /* Borders per side (none = 0 width) and radii per corner: a single
  * `border-radius` length fills every corner. */
 static void tbox_style_part_copy(const tbox_style *from, tbox_style_part_style *to) {
     to->width            = from->width;
     to->height           = from->height;
+    to->min_height       = from->min_height;
+    for (size_t i = 0; i < 4; i++)
+        to->margin[i] = from->margin[i];
     to->color            = from->color;
     to->background_color = from->background_color;
     bool separate        = false;
@@ -85,14 +108,14 @@ static void tbox_style_part_copy(const tbox_style *from, tbox_style_part_style *
 }
 
 void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena) {
-    unsigned parts = tbox_style_parts_of(node);
+    unsigned parts = tbox_style_parts_of(node, style);
     for (size_t part = 0; part < TBOX_STYLE_PART_COUNT; part++) {
         if ((parts & TBOX_STYLE_PART_BIT(part)) == 0)
             continue;
         tbox_style_part_style *out = (tbox_style_part_style *)tbox_arena_alloc(arena, sizeof(*out));
         if (out == NULL)
             continue;
-        tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, tbox_style_part_names[part], viewport_width, viewport_height, reduced_motion);
+        tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, tbox_style_part_names[part], tbox_style_part_states[part], viewport_width, viewport_height, reduced_motion);
         tbox_style resolved              = tbox_style_resolve_in_viewport(NULL, style, &computed, viewport_width, viewport_height);
         tbox_style_part_copy(&resolved, out);
         out->color_declared      = tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("color")) != NULL;
@@ -107,4 +130,15 @@ const tbox_style_part_style *tbox_style_part_find(const tbox_style *style, tbox_
     if (style == NULL || (unsigned)part >= TBOX_STYLE_PART_COUNT)
         return NULL;
     return style->parts[part];
+}
+
+double tbox_style_scrollbar_size(const tbox_style *style, double base) {
+    if (style == NULL || style->scrollbar_width == TBOX_STYLE_SCROLLBAR_WIDTH_NONE)
+        return 0.0;
+    double fallback = style->scrollbar_width == TBOX_STYLE_SCROLLBAR_WIDTH_THIN ? 6.0 : 10.0;
+    const tbox_style_part_style *track = tbox_style_part_find(style, TBOX_STYLE_PART_SCROLLBAR_TRACK);
+    if (track == NULL || track->width.kind == TBOX_STYLE_LENGTH_AUTO)
+        return fallback;
+    double width = tbox_style_length_resolve(track->width, base);
+    return width >= 0.0 ? width : fallback;
 }

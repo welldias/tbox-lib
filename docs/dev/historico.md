@@ -779,3 +779,40 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   teclado e pelo ponteiro, `:disabled` no grupo), `selected` intacto após
   escolher, setas atravessando grupos. Suíte limpa com ASan/UBSan.
   Fixture `146`.
+
+## 2026-10-16 — Partes da barra de rolagem
+
+- Quinta fase da personalização: `::-tbox-scrollbar-track` (largura, fundo,
+  borda, raio) e `::-tbox-scrollbar-thumb` (fundo, borda, raio, `margin`,
+  `min-height`) em qualquer caixa com `overflow-y: auto`, com
+  `::-tbox-scrollbar-thumb:hover` (ponteiro sobre o polegar) e `:active`
+  (arraste). `scrollbar-width`/`scrollbar-color` seguem como padrão.
+- A cascata aceita `:hover`/`:active` depois de um pseudo-elemento, com o
+  estado passado em `tbox_css_cascade_resolve_pseudo_element_in_viewport`
+  (parâmetro novo `state`). O polegar é resolvido nas três variantes.
+- A largura da barra vem só de `tbox_style_scrollbar_size`, usada pela
+  pintura, pelos testes de clique e pelo layout (`scrollbar-gutter`); saiu
+  o 10/6 repetido. O polegar percorre o trilho menos as margens (`rail`).
+- A folha UA aceita `*` e `min-height`; o padrão do polegar é
+  `border-radius: 40%; min-height: 18px` (o mesmo desenho de antes).
+- O contexto guarda a caixa cujo polegar está sob o ponteiro
+  (`scroll_thumb_hover`); `tbox_context_update_hover` passa a pedir
+  repintura quando ela muda.
+- Testes: largura no trilho e na faixa reservada, margem e mínimo do
+  polegar, variantes `:hover`/`:active`, arraste 1:1 no percurso interno.
+  O ASan pegou o campo novo do contexto sem inicializar (o contexto é
+  preenchido campo a campo); corrigido. Fixture `147`.
+
+## 2026-10-16 — Scrollbar discreta por padrão
+
+- Pedido do mantenedor: sem CSS, a barra é `thin` (6px), o trilho é
+  transparente e o polegar é uma pílula cinza com 1px de recuo (4px
+  visíveis). A UA ganhou `* { scrollbar-width: thin }` e o polegar
+  `margin: 1px; border-radius: 50%`; o trilho transparente é a cor de
+  reserva do pintor, para `scrollbar-color` ainda colori-lo.
+- A primeira versão usava `border: 2px solid white` no polegar: sobravam 2px
+  visíveis, o anel aparecia em fundos escuros e polegares personalizados
+  sem `border` herdavam o anel. Trocado pelo recuo transparente.
+- Os testes de mecânica de rolagem fixam a barra clássica por CSS
+  (`scrollbar-width: auto`, `scrollbar-color`); um teste novo cobre o
+  padrão discreto.

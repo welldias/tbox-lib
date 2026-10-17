@@ -162,6 +162,40 @@ mostram barras de rolagem com polegar arrastável e clique na trilha
 horizontal de container ainda não existe. `position: sticky` (eixo vertical)
 segura a caixa contra a borda do scrollport.
 
+### Partes da barra
+
+O CSS padrão só tem `scrollbar-width` (`auto`/`thin`/`none`) e
+`scrollbar-color`. Para o resto, o tbox tem duas partes próprias, com
+prefixo `-tbox-` por não existir nome padrão:
+
+```css
+.lista::-tbox-scrollbar-track { width: 14px; background-color: #f1f5f9; border-left: 1px solid #cbd5e1; }
+.lista::-tbox-scrollbar-thumb { background-color: #94a3b8; border-radius: 6px; margin: 3px; min-height: 30px; }
+.lista::-tbox-scrollbar-thumb:hover  { background-color: #64748b; }  /* ponteiro sobre o polegar */
+.lista::-tbox-scrollbar-thumb:active { background-color: #334155; }  /* arrastando */
+```
+
+| Parte | O que muda | Padrão |
+|---|---|---|
+| `::-tbox-scrollbar-track` | `width` (a largura da barra), fundo, borda, raio | 6px (`thin`; 10px com `scrollbar-width: auto`); cor de `scrollbar-color` ou transparente |
+| `::-tbox-scrollbar-thumb` | fundo, borda, raio, `margin` (recuo dentro do trilho), `min-height` | cor de `scrollbar-color` ou `#646e7a`; pílula (raio 50%); recuo de 1px; mínimo 18px |
+
+O padrão é discreto: a folha UA dá `* { scrollbar-width: thin }`, o trilho
+é transparente e o polegar é uma pílula de 4px visíveis. Para a barra
+clássica, use `scrollbar-width: auto` e, se quiser o trilho visível,
+`scrollbar-color`.
+
+- A largura do trilho vale para a pintura, o clique, o arraste e a faixa
+  reservada por `scrollbar-gutter: stable`.
+- O polegar percorre o trilho menos a sua `margin` e segue o ponteiro 1:1
+  no arraste.
+- `:hover` e `:active` só existem depois de `::-tbox-scrollbar-thumb`
+  (`:active` inclui `:hover`). As outras partes ainda não aceitam
+  pseudo-classe própria.
+- `scrollbar-width` e `scrollbar-color` continuam valendo onde as partes
+  não declaram largura ou cor. A barra não tem setas, e a do `<textarea>`
+  não é desenhada. Veja `tests/assets/147.html`.
+
 Com `scroll-behavior: smooth` no bloco rolável, as rolagens que a tbox
 faz por conta própria — revelar o controle focado e o clique na trilha da
 barra (uma página) — são animadas em 0,3 s (ease-in-out), pelo mesmo

@@ -376,3 +376,13 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   com cuidado onde não há correspondência 1:1 (o spin button único do
   Chrome; as três cores do meter).
 - **Toca:** `src/style/tbox_style_parts.c`, `docs/10-formularios-e-controles.md`.
+
+### Pseudo-classes nas demais partes
+
+- **O que é:** só `::-tbox-scrollbar-thumb` aceita `:hover`/`:active`
+  depois do pseudo-elemento. `::slider-thumb:hover`, `::step-up:active`
+  etc. ainda não: use o estado do controle (`input:hover::slider-thumb`).
+- **Quando revisitar:** quando um controle pedir estado por parte. O
+  mecanismo existe (`state` na cascata e variantes da parte); falta saber
+  que parte está sob o ponteiro em cada controle.
+- **Toca:** `src/style/tbox_style_parts.c`, os pintores em `src/context/`.

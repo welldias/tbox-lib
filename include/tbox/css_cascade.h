@@ -205,7 +205,16 @@ tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *
 bool tbox_css_cascade_media_matches(const tbox_css_media_condition *media, double viewport_width, double viewport_height, bool reduced_motion);
 /* Resolves @media rules against the current viewport. */
 tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion);
-tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, double viewport_width, double viewport_height, bool reduced_motion);
+/* User-action state of a pseudo-element, for selectors that go on past it
+ * with :hover / :active ("::-tbox-scrollbar-thumb:hover"): such a rule
+ * applies only when `state` has every one it names. */
+typedef enum tbox_css_part_state {
+    TBOX_CSS_PART_STATE_HOVER  = 1u << 0,
+    TBOX_CSS_PART_STATE_ACTIVE = 1u << 1,
+} tbox_css_part_state;
+/* tbox_css_cascade_resolve_pseudo_element with a viewport, and the
+ * pseudo-element's own `state` (a tbox_css_part_state mask, 0 for none). */
+tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion);
 /* tbox_css_cascade_resolve_in_viewport with the `@starting-style` rules
  * taking part too (they cascade like any other rule): the style a
  * transition starts from when `node` first appears. */
