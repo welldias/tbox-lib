@@ -1206,6 +1206,8 @@ static void tbox_test_raster_damage_tracker(int *failures_ptr) {
         tbox_damage_tracker_update(tracker, &list, width, height);
         tbox_paint_op swap = ops[0];
         ops[0]             = ops[1];
+        // list.items points at ops, so the update below reads it.
+        // cppcheck-suppress unreadVariable
         ops[1]             = swap;
         damage             = tbox_damage_tracker_update(tracker, &list, width, height);
         TBOX_TEST_ASSERT(!damage.full && tbox_test_damage_covers(&damage, (tbox_rect){ 10, 10, 25, 25 }));
@@ -1421,7 +1423,8 @@ static void tbox_test_raster_blend_modes(int *failures_ptr) {
             TBOX_TEST_ASSERT(b == 255 && r < b && g < b && r == g && r > 100);
         }
     }
-    (void)expected[0], (void)expected[2];
+    (void)expected[0];
+    (void)expected[2];
     *failures_ptr = failures;
 }
 

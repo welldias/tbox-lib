@@ -823,3 +823,44 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   inicializados (`-Wmaybe-uninitialized`, erro por `-Werror`), embora só
   sejam lidos quando `has_min`/`has_max` são verdadeiros. Inicializados com
   0. Era o único aviso do build Release; suíte passa em Debug e Release.
+
+## 2026-10-17 — cppcheck: banco de compilação sem duplicatas e addon `threadsafety`
+
+- O target `cppcheck` analisava cada fonte de `src/` duas vezes (entradas
+  de `tbox_static` e `tbox_shared` no `compile_commands.json`). Agora um
+  script (`cmake/tbox_cppcheck_compile_db.cmake`) grava uma cópia com a
+  primeira entrada de cada arquivo. Com cache vazio: CPU de 34 para 17,5 min,
+  tempo de 7 para 5 min; os achados são os mesmos.
+- Addon `threadsafety` ativado, exceto em `tests/` e `example/`. Achados em
+  `src/`: três tabelas `static const char *[]` do calendário viraram
+  `const char *const`; `readdir` em `tbox_context_file.c` foi suprimido (o
+  `DIR` é local). `localtime` no calendário virou `localtime_r`, com
+  `_POSIX_C_SOURCE 200809L` no topo do arquivo (como em `tbox_app.c`); o
+  backend Windows vai precisar de `localtime_s`.
+- `negativeIndex` em `tbox_style_animatable_length` era falso positivo, mas
+  dependia de `kind_of` mandar tudo o que sobra para `KIND_LENGTH` pelo
+  `default`. Agora `kind_of` lista todas as propriedades sem `default`
+  (`-Wswitch` acusa uma propriedade nova sem tipo), e o acessor de
+  comprimento testa a faixa `TOP..LEFT` e devolve `NULL` fora dela; leitura e
+  escrita ignoram o `NULL`.
+
+## 2026-10-17 — Relatório do cppcheck zerado
+
+- `tests/`: novo `TBOX_TEST_REQUIRE` (encerra o grupo) nas 33 checagens de
+  ponteiro de `test_tree.c`, que antes seguiam para um `NULL` desreferenciado
+  com `TBOX_TEST_ASSERT`. `constVariablePointer` e `redundantAssignment`
+  suprimidos em `tests/` no `tbox.cppcheck.in`.
+- `src/`: `const` em variáveis locais e parâmetros (incluindo
+  `tbox_backend_wayland_wake` e helpers internos de popup/tema/calendário).
+  `tbox_context_document` continua recebendo `tbox_context *`: devolve o
+  documento mutável.
+- Limpezas apontadas: condição sempre verdadeira (`node != NULL` na
+  cascata, `!word->hard_break` no sizing), atribuição descartada em
+  `tbox_app.c`, variáveis sombreadas renomeadas, ramo redundante na
+  interpolação de gradiente do raster (comportamento igual).
+- Falsos positivos suprimidos com motivo: normalização de `-0.0` e laço de
+  sufixo no damage tracking, `uninitvar` nos `memcpy` de transições e
+  animações, `unreadVariable` em `test_raster.c`.
+- `cmake --build build --target cppcheck` sai com 0; pode virar verificação
+  de CI.
+

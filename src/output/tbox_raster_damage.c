@@ -157,7 +157,9 @@ static uint64_t tbox_damage_mix(uint64_t hash, const void *data, size_t size) {
 }
 
 static uint64_t tbox_damage_mix_double(uint64_t hash, double value) {
+    // Not redundant: turns -0.0 (equal to 0.0) into +0.0.
     if (value == 0.0)
+        // cppcheck-suppress duplicateConditionalAssign
         value = 0.0; /* -0.0 paints like 0.0 */
     return tbox_damage_mix(hash, &value, sizeof(value));
 }
@@ -509,6 +511,8 @@ tbox_damage tbox_damage_tracker_update(tbox_damage_tracker *tracker, const tbox_
         while (prefix < old_count && prefix < new_count && tbox_damage_signature_equal(&old_ops[prefix], &new_ops[prefix]))
             prefix++;
         size_t suffix = 0;
+        // False only when the prefix covered all of old_ops.
+        // cppcheck-suppress knownConditionTrueFalse
         while (suffix < old_count - prefix && suffix < new_count - prefix && tbox_damage_signature_equal(&old_ops[old_count - 1 - suffix], &new_ops[new_count - 1 - suffix]))
             suffix++;
         if (prefix + suffix < old_count || prefix + suffix < new_count)

@@ -1,7 +1,7 @@
 # 12. Ferramentas e testes
 
-> - **Escopo:** testes automáticos, fixtures visuais, screenshot headless, comparação contra referências e ajudas de depuração.
-> - **Código relacionado:** `tests/`, `tests/assets/`, `tests/tbox_cmp.cpp`, `example/assets_showrun.c`, `example/tbox_app.c`, `include/tbox/debug.h`
+> - **Escopo:** testes automáticos, fixtures visuais, screenshot headless, comparação contra referências, análise estática e ajudas de depuração.
+> - **Código relacionado:** `tests/`, `tests/assets/`, `tests/tbox_cmp.cpp`, `example/assets_showrun.c`, `example/tbox_app.c`, `include/tbox/debug.h`, `tbox.cppcheck.in`, `cmake/tbox_cppcheck_compile_db.cmake`
 > - **Veja também:** [Primeiros passos](01-primeiros-passos.md), [Atualização da tela](05-atualizacao-da-tela.md#ver-o-que-está-sendo-repintado)
 
 ## Testes automáticos
@@ -14,6 +14,12 @@ Um único binário, `tbox_tests`, com um grupo por módulo (arena, vector,
 string, parsers HTML/CSS, seletores, cascata, cores, style, font, image,
 layout, render, raster, context). `ctest` roda cada grupo como um teste;
 para rodar um só: `build/tests/tbox_tests layout`.
+
+Asserções vêm de `tests/test_support.h`. `TBOX_TEST_ASSERT` conta a falha
+e segue. `TBOX_TEST_REQUIRE` conta e encerra o grupo: use-o quando as
+linhas seguintes dependem da condição (tipicamente um ponteiro que será
+desreferenciado), para a regressão aparecer como falha e não como segfault
+do binário inteiro.
 
 Os testes de medição de texto e layout usam a fonte embutida (Liberation
 Sans), então dão o mesmo resultado em qualquer máquina, inclusive sem
@@ -61,6 +67,25 @@ temporário mostrado no início.
   implementadas, e a fonte nunca é idêntica à do navegador que gerou a
   referência; `DIFFERENT` é diagnóstico, não falha. O código de saída só é
   diferente de zero em erro operacional (arquivo ausente, falha de render).
+
+## Análise estática — cppcheck
+
+- `cmake --build build --target cppcheck`; o target só existe se o
+  cppcheck for encontrado no configure. O relatório vai para
+  `build/cppcheck-report.txt`, e qualquer achado faz o target falhar.
+- Configuração em `tbox.cppcheck.in`, gerado como `build/tbox.cppcheck`.
+  Ele lê `build/cppcheck-compile_commands.json`, cópia do banco de
+  compilação com uma entrada por fonte: `tbox_static` e `tbox_shared`
+  compilam os mesmos arquivos, e sem o filtro cada um seria analisado duas
+  vezes. Para rodar o cppcheck à mão, gere esse arquivo com o target antes.
+- O addon `threadsafety` (precisa de Python 3) acusa `static` locais não
+  `const` e funções da libc que não são seguras entre threads. Ele é
+  desligado em `tests/` e `example/`, que são programas de uma thread só.
+- Em `tests/`, `constVariablePointer` e `redundantAssignment` são
+  suprimidos: a montagem dos casos sobrescreve campos de propósito.
+- O relatório está zerado; mantenha assim. Falso positivo:
+  `// cppcheck-suppress <id>` na linha anterior à do achado, com o motivo
+  num comentário.
 
 ## Depuração
 

@@ -76,7 +76,7 @@ static bool tbox_html_tokenizer_next_impl(tbox_html_tokenizer *t, tbox_html_toke
 
 static bool tbox_html_tokenizer_scan_raw_text(tbox_html_tokenizer *t, tbox_html_token *out) {
     size_t content_start = t->position;
-    size_t i             = t->position;
+    size_t i             = content_start;
 
     while (i < t->length) {
         size_t close_angle;

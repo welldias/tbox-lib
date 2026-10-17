@@ -846,7 +846,7 @@ static void tbox_style_resolve_border_sides(const tbox_css_computed_style *compu
         tbox_style_border_style border_style = TBOX_STYLE_BORDER_STYLE_NONE;
         tbox_css_rgba color                  = current_color;
         tbox_style_resolve_border(computed, axes[axis].name, true, units, current_color, &width, &border_style, &color);
-        size_t targets[] = { axes[axis].first, axes[axis].second };
+        const size_t targets[] = { axes[axis].first, axes[axis].second };
         for (size_t t = 0; t < 2; t++) {
             size_t i = targets[t];
             if (tbox_style_claim(decl, &width_winner[i]))
@@ -878,7 +878,7 @@ static void tbox_style_resolve_border_sides(const tbox_css_computed_style *compu
             if (!valid)
                 continue;
             /* block: top, bottom; inline: left (start), right (end). */
-            size_t targets[2] = { axis == 0 ? 0 : units->rtl ? 1 : 3, axis == 0 ? 2 : units->rtl ? 3 : 1 };
+            const size_t targets[2] = { axis == 0 ? 0 : units->rtl ? 1 : 3, axis == 0 ? 2 : units->rtl ? 3 : 1 };
             for (size_t t = 0; t < 2; t++) {
                 size_t i = targets[t], from = count == 2 ? t : 0;
                 if (part == 0 && tbox_style_claim(decl, &width_winner[i]))
@@ -1290,12 +1290,12 @@ static void tbox_style_resolve_flex(const tbox_css_computed_style *computed, con
         place = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(places[i][0]));
         tbox_string_view tokens[3];
         size_t count;
-        int value;
-        if (place != NULL && (count = tbox_style_tokens(place->value, tokens, 3)) >= 1 && count <= 2 && tbox_style_lookup(tokens[0], tbox_style_flex_aligns, TBOX_STYLE_COUNT(tbox_style_flex_aligns), &value) && !tbox_style_border_longhand_wins(tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(places[i][1])), place)) {
+        int align;
+        if (place != NULL && (count = tbox_style_tokens(place->value, tokens, 3)) >= 1 && count <= 2 && tbox_style_lookup(tokens[0], tbox_style_flex_aligns, TBOX_STYLE_COUNT(tbox_style_flex_aligns), &align) && !tbox_style_border_longhand_wins(tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(places[i][1])), place)) {
             if (i == 0)
-                style->align_items = (tbox_style_flex_align)value;
+                style->align_items = (tbox_style_flex_align)align;
             else
-                style->align_self = (tbox_style_flex_align)value;
+                style->align_self = (tbox_style_flex_align)align;
         }
     }
 
@@ -1538,6 +1538,8 @@ static void tbox_style_resolve_transition(const tbox_css_computed_style *compute
             base.properties       = tbox_style_is(name, "none") ? 0 : tbox_style_animatable_mask(name);
             rebuilt[i]            = base;
         }
+        // Copies only the name_count entries written above.
+        // cppcheck-suppress uninitvar
         memcpy(entries, rebuilt, sizeof(rebuilt[0]) * name_count);
         count = name_count;
     } else if (count == 0 && (duration != NULL || delay != NULL || timing != NULL)) {
@@ -1690,6 +1692,8 @@ static void tbox_style_resolve_animation(const tbox_css_computed_style *computed
             rebuilt[i] = count > 0 ? entries[i % count] : tbox_style_animation_default();
             tbox_style_animation_set_name(&rebuilt[i], names[i]);
         }
+        // Copies only the name_count entries written above.
+        // cppcheck-suppress uninitvar
         memcpy(entries, rebuilt, sizeof(rebuilt[0]) * name_count);
         count = name_count;
     }
@@ -3697,7 +3701,7 @@ static void tbox_style_resolve_generated(const tbox_html_node *node, const tbox_
             tbox_string_view text;
             bool has_box = tbox_style_generated_content(generated, node, &computed, &text);
             tbox_style_generated_restore_quotes(generated, quotes);
-            tbox_html_node *box_node = has_box ? tbox_style_generated_node(generated, node, which, text) : NULL;
+            const tbox_html_node *box_node = has_box ? tbox_style_generated_node(generated, node, which, text) : NULL;
             if (box_node != NULL) {
                 pseudo.generated        = (unsigned char)(which + 1);
                 tbox_style_entry *entry = (tbox_style_entry *)tbox_vector_push(items);

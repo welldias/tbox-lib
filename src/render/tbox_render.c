@@ -745,7 +745,8 @@ tbox_render_painted_box *tbox_render_paint_order(const tbox_layout_box *root, si
 /* `filter`: solid colors are transformed now; images and gradients carry
  * the matrix (composed with an inner element's) for the rasterizer. */
 static tbox_css_rgba tbox_render_filter_color(const double m[20], tbox_css_rgba c) {
-    double in[4] = { c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0 }, out[4];
+    const double in[4] = { c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0 };
+    double out[4];
     for (int row = 0; row < 4; row++) {
         double v = m[row * 5 + 4];
         for (int k = 0; k < 4; k++)
@@ -957,7 +958,7 @@ static void tbox_render_push_ellipse(tbox_vector *items, tbox_rect rect, tbox_cs
         return;
     }
     double ih[4] = { inner.width / 2.0, inner.width / 2.0, inner.width / 2.0, inner.width / 2.0 };
-    double iv[4] = { inner.height / 2.0, inner.height / 2.0, inner.height / 2.0, inner.height / 2.0 };
+    const double iv[4] = { inner.height / 2.0, inner.height / 2.0, inner.height / 2.0, inner.height / 2.0 };
     tbox_render_push_fill_ring(items, rect, h, inner, ih, color);
     tbox_paint_op *op = (tbox_paint_op *)tbox_vector_at(items, items->length - 1);
     op->elliptical = true;
@@ -1298,9 +1299,9 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
          * browsers): its edge radii are the border's grown by the offset,
          * then by the outline's width. Elliptical corners stay square. */
         double h[4], v[4];
-        bool rounded = st == TBOX_STYLE_BORDER_STYLE_SOLID && !tbox_render_style_corners(box->style, b, h, v) &&
+        bool rounded_outline = st == TBOX_STYLE_BORDER_STYLE_SOLID && !tbox_render_style_corners(box->style, b, h, v) &&
                        tbox_render_has_corners(h);
-        if (rounded) {
+        if (rounded_outline) {
             double inner_corners[4], outer_corners[4];
             for (size_t i = 0; i < 4; i++) {
                 inner_corners[i] = h[i] > 0.0 && h[i] + offset > 0.0 ? h[i] + offset : 0.0;
@@ -1338,24 +1339,24 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     if (visible && tbox_render_color_input(box->node, &input_color)) {
         const tbox_style_part_style *swatch = tbox_style_part_find(box->style, TBOX_STYLE_PART_COLOR_SWATCH);
         tbox_rect rect = box->content_box;
-        double corners[4] = { 0.0, 0.0, 0.0, 0.0 };
+        double swatch_corners[4] = { 0.0, 0.0, 0.0, 0.0 };
         if (swatch != NULL) {
             double base = rect.width < rect.height ? rect.width : rect.height;
             for (size_t i = 0; i < 4; i++)
-                corners[i] = swatch->border_radii[i] + swatch->border_radii_percent[i] * base / 100.0;
+                swatch_corners[i] = swatch->border_radii[i] + swatch->border_radii_percent[i] * base / 100.0;
             if (swatch->border_widths[0] > 0.0 || swatch->border_widths[1] > 0.0 || swatch->border_widths[2] > 0.0 || swatch->border_widths[3] > 0.0) {
                 tbox_rect inner = { rect.x + swatch->border_widths[3], rect.y + swatch->border_widths[0],
                                     rect.width - swatch->border_widths[1] - swatch->border_widths[3],
                                     rect.height - swatch->border_widths[0] - swatch->border_widths[2] };
                 double inner_corners[4];
-                tbox_render_inset_corners(corners, rect, inner, inner_corners);
-                tbox_render_push_fill_ring(items, rect, corners, inner, inner_corners, swatch->border_colors[0]);
+                tbox_render_inset_corners(swatch_corners, rect, inner, inner_corners);
+                tbox_render_push_fill_ring(items, rect, swatch_corners, inner, inner_corners, swatch->border_colors[0]);
                 rect = inner;
-                memcpy(corners, inner_corners, sizeof(corners));
+                memcpy(swatch_corners, inner_corners, sizeof(swatch_corners));
             }
         }
         if (rect.width > 0.0 && rect.height > 0.0)
-            tbox_render_push_fill_rect_corners(items, rect, corners, input_color);
+            tbox_render_push_fill_rect_corners(items, rect, swatch_corners, input_color);
     }
 
     if (visible && box->style != NULL && tbox_render_checked_radio(box->node)) {

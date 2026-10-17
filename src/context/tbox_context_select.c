@@ -148,7 +148,7 @@ tbox_select_field *tbox_context_select_field(tbox_context *ctx, const tbox_html_
 void tbox_context_sync_select_boxes(tbox_context *ctx, tbox_layout_box *box) {
     for (; box != NULL; box = box->next_sibling) {
         if (tbox_context_is_select(box->node)) {
-            tbox_select_field *field = tbox_context_select_field(ctx, box->node);
+            const tbox_select_field *field = tbox_context_select_field(ctx, box->node);
             if (field != NULL && field->selected != NULL && box->style != NULL) {
                 tbox_string_view label = tbox_context_option_label(ctx, field->selected);
                 const tbox_style *style = box->style;
@@ -202,7 +202,7 @@ static const tbox_style *tbox_context_select_row_style(tbox_context *ctx, const 
 void tbox_context_sync_option_selectedness(tbox_context *ctx, const tbox_html_node *node) {
     for (; node != NULL; node = node->next_sibling) {
         if (tbox_context_is_select(node)) {
-            tbox_select_field *field = tbox_context_select_field(ctx, node);
+            const tbox_select_field *field = tbox_context_select_field(ctx, node);
             for (size_t i = 0, count = tbox_context_option_count(node); i < count; i++) {
                 tbox_html_node *option = (tbox_html_node *)tbox_context_option_at(node, i);
                 if (option != NULL) option->element.selectedness = field != NULL && field->selected == option;
@@ -445,7 +445,7 @@ bool tbox_context_dispatch_select_key(tbox_context *ctx, tbox_key key) {
 tbox_string_view tbox_context_select_value(tbox_context *ctx, const tbox_html_node *select) {
     if (ctx == NULL || !tbox_context_is_select(select) || !tbox_context_node_attached(ctx, select))
         return tbox_string_view_make(NULL, 0);
-    tbox_select_field *field = tbox_context_select_field(ctx, select);
+    const tbox_select_field *field = tbox_context_select_field(ctx, select);
     return field != NULL && field->selected != NULL ?
         tbox_context_option_value(ctx, field->selected) : tbox_string_view_make(NULL, 0);
 }

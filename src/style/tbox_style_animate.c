@@ -125,9 +125,27 @@ static tbox_style_animatable_kind tbox_style_animatable_kind_of(tbox_style_anima
     case TBOX_STYLE_ANIM_LETTER_SPACING:
     case TBOX_STYLE_ANIM_WORD_SPACING:
         return KIND_NUMBER;
-    default:
-        return KIND_LENGTH;
+    case TBOX_STYLE_ANIM_TRANSLATE_X:
+    case TBOX_STYLE_ANIM_TRANSLATE_Y:
+    case TBOX_STYLE_ANIM_WIDTH:
+    case TBOX_STYLE_ANIM_HEIGHT:
+    case TBOX_STYLE_ANIM_PADDING_TOP:
+    case TBOX_STYLE_ANIM_PADDING_RIGHT:
+    case TBOX_STYLE_ANIM_PADDING_BOTTOM:
+    case TBOX_STYLE_ANIM_PADDING_LEFT:
+    case TBOX_STYLE_ANIM_MARGIN_TOP:
+    case TBOX_STYLE_ANIM_MARGIN_RIGHT:
+    case TBOX_STYLE_ANIM_MARGIN_BOTTOM:
+    case TBOX_STYLE_ANIM_MARGIN_LEFT:
+    case TBOX_STYLE_ANIM_TOP:
+    case TBOX_STYLE_ANIM_RIGHT:
+    case TBOX_STYLE_ANIM_BOTTOM:
+    case TBOX_STYLE_ANIM_LEFT:
+    case TBOX_STYLE_ANIM_COUNT:
+        break;
     }
+    /* No default above: -Wswitch flags a new property missing its kind. */
+    return KIND_LENGTH;
 }
 
 static tbox_css_rgba *tbox_style_animatable_color(tbox_style *style, tbox_style_animatable p) {
@@ -175,7 +193,9 @@ static tbox_style_length *tbox_style_animatable_length(tbox_style *style, tbox_s
         return &style->padding[p - TBOX_STYLE_ANIM_PADDING_TOP];
     if (p >= TBOX_STYLE_ANIM_MARGIN_TOP && p <= TBOX_STYLE_ANIM_MARGIN_LEFT)
         return &style->margin[p - TBOX_STYLE_ANIM_MARGIN_TOP];
-    return &style->offset[p - TBOX_STYLE_ANIM_TOP];
+    if (p >= TBOX_STYLE_ANIM_TOP && p <= TBOX_STYLE_ANIM_LEFT)
+        return &style->offset[p - TBOX_STYLE_ANIM_TOP];
+    return NULL;
 }
 
 static void tbox_style_animatable_color_read(tbox_css_rgba color, double out[4]) {
@@ -241,7 +261,8 @@ void tbox_style_animatable_read(const tbox_style *style, tbox_style_animatable p
         break;
     case KIND_LENGTH: {
         const tbox_style_length *length = tbox_style_animatable_length(s, property);
-        out[0] = length->value, out[1] = length->px_offset, out[2] = (double)length->kind;
+        if (length != NULL)
+            out[0] = length->value, out[1] = length->px_offset, out[2] = (double)length->kind;
         break;
     }
     }
@@ -292,6 +313,8 @@ void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable proper
     }
     case KIND_LENGTH: {
         tbox_style_length *length = tbox_style_animatable_length(style, property);
+        if (length == NULL)
+            break;
         bool non_negative         = property == TBOX_STYLE_ANIM_WIDTH || property == TBOX_STYLE_ANIM_HEIGHT || (property >= TBOX_STYLE_ANIM_PADDING_TOP && property <= TBOX_STYLE_ANIM_PADDING_LEFT);
         length->kind              = (tbox_style_length_kind)lround(value[2]);
         length->value             = non_negative && value[0] < 0.0 ? 0.0 : value[0];

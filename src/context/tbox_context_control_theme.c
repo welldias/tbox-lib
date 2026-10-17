@@ -38,7 +38,7 @@ static const char tbox_control_css[] =
 
 const char *tbox_context_default_control_css(void) { return tbox_control_css; }
 
-static tbox_style tbox_context_style_node(tbox_context *ctx, tbox_html_node *node,
+static tbox_style tbox_context_style_node(const tbox_context *ctx, const tbox_html_node *node,
                                           const tbox_style *parent) {
     tbox_css_cascade_source source = {ctx->control_stylesheet, TBOX_CSS_ORIGIN_AUTHOR};
     tbox_css_computed_style computed = tbox_css_cascade_resolve(&source, 1, node);
@@ -47,7 +47,7 @@ static tbox_style tbox_context_style_node(tbox_context *ctx, tbox_html_node *nod
     return style;
 }
 
-tbox_style tbox_context_control_style(tbox_context *ctx, const tbox_html_node *owner,
+tbox_style tbox_context_control_style(const tbox_context *ctx, const tbox_html_node *owner,
                                        const char *part, const char *state) {
     tbox_html_attribute attrs[3];
     size_t count = 0;

@@ -25,12 +25,12 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(root->type == TBOX_HTML_NODE_DOCUMENT);
 
         const tbox_html_node *p = root->first_child;
-        TBOX_TEST_ASSERT(p != NULL && p->type == TBOX_HTML_NODE_ELEMENT);
+        TBOX_TEST_REQUIRE(p != NULL && p->type == TBOX_HTML_NODE_ELEMENT);
         TBOX_TEST_ASSERT(text_eq(p->element.tag_name, "p"));
         TBOX_TEST_ASSERT(p->next_sibling == NULL);
 
         const tbox_html_node *text = p->first_child;
-        TBOX_TEST_ASSERT(text != NULL && text->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(text != NULL && text->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(text->text.text, "Hello"));
         tbox_html_document_destroy(doc);
     }
@@ -43,15 +43,15 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(text_eq(p->element.tag_name, "p"));
 
         const tbox_html_node *a = p->first_child;
-        TBOX_TEST_ASSERT(a != NULL && a->type == TBOX_HTML_NODE_TEXT && text_eq(a->text.text, "a"));
+        TBOX_TEST_REQUIRE(a != NULL && a->type == TBOX_HTML_NODE_TEXT && text_eq(a->text.text, "a"));
 
         const tbox_html_node *br = a->next_sibling;
-        TBOX_TEST_ASSERT(br != NULL && br->type == TBOX_HTML_NODE_ELEMENT);
+        TBOX_TEST_REQUIRE(br != NULL && br->type == TBOX_HTML_NODE_ELEMENT);
         TBOX_TEST_ASSERT(text_eq(br->element.tag_name, "br"));
         TBOX_TEST_ASSERT(br->first_child == NULL);
 
         const tbox_html_node *b = br->next_sibling;
-        TBOX_TEST_ASSERT(b != NULL && b->type == TBOX_HTML_NODE_TEXT && text_eq(b->text.text, "b"));
+        TBOX_TEST_REQUIRE(b != NULL && b->type == TBOX_HTML_NODE_TEXT && text_eq(b->text.text, "b"));
         TBOX_TEST_ASSERT(b->next_sibling == NULL);
         TBOX_TEST_ASSERT(p->last_child == b);
         tbox_html_document_destroy(doc);
@@ -128,7 +128,7 @@ int tbox_test_html_parser_tree_run(void) {
     {
         tbox_html_document *doc = parse_cstr("<p>text</b></p>");
         const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
-        TBOX_TEST_ASSERT(p->first_child != NULL);
+        TBOX_TEST_REQUIRE(p->first_child != NULL);
         TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "text"));
         TBOX_TEST_ASSERT(p->first_child == p->last_child);
         tbox_html_document_destroy(doc);
@@ -140,7 +140,7 @@ int tbox_test_html_parser_tree_run(void) {
         const tbox_html_node *root  = tbox_html_document_root(doc);
         const tbox_html_node *style = root->first_child;
         TBOX_TEST_ASSERT(text_eq(style->element.tag_name, "style"));
-        TBOX_TEST_ASSERT(style->first_child != NULL && style->first_child->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(style->first_child != NULL && style->first_child->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(style->first_child->text.text, "body { color: red; } "));
 
         const tbox_html_node *p = style->next_sibling;
@@ -169,7 +169,7 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(custom->first_child == NULL);
 
         const tbox_html_node *after = custom->next_sibling;
-        TBOX_TEST_ASSERT(after != NULL && after->type == TBOX_HTML_NODE_TEXT && text_eq(after->text.text, "after"));
+        TBOX_TEST_REQUIRE(after != NULL && after->type == TBOX_HTML_NODE_TEXT && text_eq(after->text.text, "after"));
         TBOX_TEST_ASSERT(after->parent == root);
         tbox_html_document_destroy(doc);
     }
@@ -189,7 +189,7 @@ int tbox_test_html_parser_tree_run(void) {
 
         tbox_html_document *space_doc    = parse_cstr("   ");
         const tbox_html_node *only_child = tbox_html_document_root(space_doc)->first_child;
-        TBOX_TEST_ASSERT(only_child != NULL && only_child->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(only_child != NULL && only_child->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(only_child->text.text, "   "));
         tbox_html_document_destroy(space_doc);
     }
@@ -492,7 +492,7 @@ int tbox_test_html_parser_tree_run(void) {
 
         tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("hi"));
 
-        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_REQUIRE(p->first_child != NULL && p->first_child == p->last_child);
         TBOX_TEST_ASSERT(p->first_child->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "hi"));
         TBOX_TEST_ASSERT(p->first_child->parent == p);
@@ -509,7 +509,7 @@ int tbox_test_html_parser_tree_run(void) {
 
         tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("bye"));
 
-        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_REQUIRE(p->first_child != NULL && p->first_child == p->last_child);
         TBOX_TEST_ASSERT(p->first_child->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "bye"));
 
@@ -530,7 +530,7 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("first"));
         tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("second"));
 
-        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_REQUIRE(p->first_child != NULL && p->first_child == p->last_child);
         TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "second"));
 
         tbox_arena arena         = tbox_arena_create(0);
@@ -604,7 +604,7 @@ int tbox_test_html_parser_tree_run(void) {
 
         tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr(""));
 
-        TBOX_TEST_ASSERT(p->first_child != NULL && p->first_child == p->last_child);
+        TBOX_TEST_REQUIRE(p->first_child != NULL && p->first_child == p->last_child);
         TBOX_TEST_ASSERT(p->first_child->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(p->first_child->text.text.size == 0);
         tbox_html_document_destroy(doc);
@@ -632,12 +632,12 @@ int tbox_test_html_parser_tree_run(void) {
         const tbox_html_node *root = tbox_html_document_root(doc);
 
         const tbox_html_node *p1 = root->first_child;
-        TBOX_TEST_ASSERT(p1 != NULL && text_eq(p1->element.tag_name, "p"));
+        TBOX_TEST_REQUIRE(p1 != NULL && text_eq(p1->element.tag_name, "p"));
         TBOX_TEST_ASSERT(text_eq(p1->first_child->text.text, "primeiro"));
         TBOX_TEST_ASSERT(p1->first_child == p1->last_child);
 
         const tbox_html_node *p2 = p1->next_sibling;
-        TBOX_TEST_ASSERT(p2 != NULL && p2->type == TBOX_HTML_NODE_ELEMENT && text_eq(p2->element.tag_name, "p"));
+        TBOX_TEST_REQUIRE(p2 != NULL && p2->type == TBOX_HTML_NODE_ELEMENT && text_eq(p2->element.tag_name, "p"));
         TBOX_TEST_ASSERT(text_eq(p2->first_child->text.text, "segundo"));
         TBOX_TEST_ASSERT(p2 == root->last_child);
         tbox_html_document_destroy(doc);
@@ -651,12 +651,12 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(text_eq(outer->element.tag_name, "div"));
 
         const tbox_html_node *p = outer->first_child;
-        TBOX_TEST_ASSERT(p != NULL && text_eq(p->element.tag_name, "p"));
+        TBOX_TEST_REQUIRE(p != NULL && text_eq(p->element.tag_name, "p"));
         TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "texto"));
         TBOX_TEST_ASSERT(p->first_child == p->last_child);
 
         const tbox_html_node *inner = p->next_sibling;
-        TBOX_TEST_ASSERT(inner != NULL && inner->type == TBOX_HTML_NODE_ELEMENT && text_eq(inner->element.tag_name, "div"));
+        TBOX_TEST_REQUIRE(inner != NULL && inner->type == TBOX_HTML_NODE_ELEMENT && text_eq(inner->element.tag_name, "div"));
         TBOX_TEST_ASSERT(text_eq(inner->first_child->text.text, "outro"));
         TBOX_TEST_ASSERT(inner == outer->last_child);
         tbox_html_document_destroy(doc);
@@ -670,15 +670,15 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(text_eq(ul->element.tag_name, "ul"));
 
         const tbox_html_node *li1 = ul->first_child;
-        TBOX_TEST_ASSERT(li1 != NULL && text_eq(li1->element.tag_name, "li"));
+        TBOX_TEST_REQUIRE(li1 != NULL && text_eq(li1->element.tag_name, "li"));
         TBOX_TEST_ASSERT(text_eq(li1->first_child->text.text, "um"));
 
         const tbox_html_node *li2 = li1->next_sibling;
-        TBOX_TEST_ASSERT(li2 != NULL && text_eq(li2->element.tag_name, "li"));
+        TBOX_TEST_REQUIRE(li2 != NULL && text_eq(li2->element.tag_name, "li"));
         TBOX_TEST_ASSERT(text_eq(li2->first_child->text.text, "dois"));
 
         const tbox_html_node *li3 = li2->next_sibling;
-        TBOX_TEST_ASSERT(li3 != NULL && text_eq(li3->element.tag_name, "li"));
+        TBOX_TEST_REQUIRE(li3 != NULL && text_eq(li3->element.tag_name, "li"));
         TBOX_TEST_ASSERT(text_eq(li3->first_child->text.text, "três"));
         TBOX_TEST_ASSERT(li3 == ul->last_child);
         TBOX_TEST_ASSERT(li3->next_sibling == NULL);
@@ -692,12 +692,12 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document *doc  = parse_cstr("<ul><li>A<ul><li>a1<li>a2</ul></li><li>B</ul>");
         const tbox_html_node *ul = tbox_html_document_root(doc)->first_child;
         const tbox_html_node *a  = ul->first_child;
-        TBOX_TEST_ASSERT(a != NULL && text_eq(a->element.tag_name, "li"));
+        TBOX_TEST_REQUIRE(a != NULL && text_eq(a->element.tag_name, "li"));
         const tbox_html_node *inner = a->first_child->next_sibling;
-        TBOX_TEST_ASSERT(inner != NULL && text_eq(inner->element.tag_name, "ul"));
+        TBOX_TEST_REQUIRE(inner != NULL && text_eq(inner->element.tag_name, "ul"));
         TBOX_TEST_ASSERT(inner->first_child != NULL && inner->first_child->next_sibling == inner->last_child);
         const tbox_html_node *b = a->next_sibling;
-        TBOX_TEST_ASSERT(b != NULL && text_eq(b->element.tag_name, "li") && b == ul->last_child);
+        TBOX_TEST_REQUIRE(b != NULL && text_eq(b->element.tag_name, "li") && b == ul->last_child);
         TBOX_TEST_ASSERT(text_eq(b->first_child->text.text, "B"));
         tbox_html_document_destroy(doc);
     }
@@ -708,12 +708,12 @@ int tbox_test_html_parser_tree_run(void) {
         const tbox_html_node *root = tbox_html_document_root(doc);
 
         const tbox_html_node *p = root->first_child;
-        TBOX_TEST_ASSERT(p != NULL && text_eq(p->element.tag_name, "p"));
+        TBOX_TEST_REQUIRE(p != NULL && text_eq(p->element.tag_name, "p"));
         TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "x"));
         TBOX_TEST_ASSERT(p->first_child == p->last_child);
 
         const tbox_html_node *li = p->next_sibling;
-        TBOX_TEST_ASSERT(li != NULL && li->type == TBOX_HTML_NODE_ELEMENT && text_eq(li->element.tag_name, "li"));
+        TBOX_TEST_REQUIRE(li != NULL && li->type == TBOX_HTML_NODE_ELEMENT && text_eq(li->element.tag_name, "li"));
         TBOX_TEST_ASSERT(text_eq(li->first_child->text.text, "y"));
         TBOX_TEST_ASSERT(li == root->last_child);
         tbox_html_document_destroy(doc);
@@ -728,7 +728,7 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(div->next_sibling == NULL);
 
         const tbox_html_node *span = div->first_child;
-        TBOX_TEST_ASSERT(span != NULL && text_eq(span->element.tag_name, "span"));
+        TBOX_TEST_REQUIRE(span != NULL && text_eq(span->element.tag_name, "span"));
         TBOX_TEST_ASSERT(span->first_child == NULL);
         tbox_html_document_destroy(doc);
     }
@@ -739,7 +739,7 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document *doc = parse_cstr("<p>&amp; &lt; &nbsp; &mdash; &#233; &#xE9;</p>");
         const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
         const tbox_html_node *t = p->first_child;
-        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(t->text.text, "& < \xC2\xA0 \xE2\x80\x94 \xC3\xA9 \xC3\xA9"));
         tbox_html_document_destroy(doc);
     }
@@ -760,7 +760,7 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document *doc = parse_cstr("<p>a&naoexiste;b c&ampd e&#;f</p>");
         const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
         const tbox_html_node *t = p->first_child;
-        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(t->text.text, "a&naoexiste;b c&ampd e&#;f"));
         tbox_html_document_destroy(doc);
     }
@@ -771,7 +771,7 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document *doc = parse_cstr("<p>&#0;&#xD800;&#99999999;</p>");
         const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
         const tbox_html_node *t = p->first_child;
-        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(t->text.text, "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD"));
         TBOX_TEST_ASSERT(tbox_string_view_valid_utf8(t->text.text));
         tbox_html_document_destroy(doc);
@@ -787,7 +787,7 @@ int tbox_test_html_parser_tree_run(void) {
         TBOX_TEST_ASSERT(text_eq(script->first_child->text.text, "a &amp; b"));
 
         const tbox_html_node *p = script->next_sibling;
-        TBOX_TEST_ASSERT(p != NULL && text_eq(p->element.tag_name, "p"));
+        TBOX_TEST_REQUIRE(p != NULL && text_eq(p->element.tag_name, "p"));
         TBOX_TEST_ASSERT(text_eq(p->first_child->text.text, "a & b"));
         tbox_html_document_destroy(doc);
     }
@@ -811,7 +811,7 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document *doc = parse_cstr("<p>&spades; &alpha; &frac12;</p>");
         const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
         const tbox_html_node *t = p->first_child;
-        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(t->text.text, "\xE2\x99\xA0 \xCE\xB1 \xC2\xBD"));
         tbox_html_document_destroy(doc);
     }
@@ -825,7 +825,7 @@ int tbox_test_html_parser_tree_run(void) {
             "&lsquo; &rsquo; &ldquo; &rdquo; &euro; &pound; &yen; &cent; &sect; &para; &middot; &deg;</p>");
         const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
         const tbox_html_node *t = p->first_child;
-        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(t->text.text,
                                   "& < > \" ' \xC2\xA0 \xC2\xA9 \xC2\xAE \xE2\x84\xA2 \xE2\x80\x94 \xE2\x80\x93 "
                                   "\xE2\x80\xA6 \xE2\x80\x98 \xE2\x80\x99 \xE2\x80\x9C \xE2\x80\x9D \xE2\x82\xAC "
@@ -841,7 +841,7 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document *doc = parse_cstr("<p>a&amp b</p>");
         const tbox_html_node *p = tbox_html_document_root(doc)->first_child;
         const tbox_html_node *t = p->first_child;
-        TBOX_TEST_ASSERT(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
+        TBOX_TEST_REQUIRE(t != NULL && t->type == TBOX_HTML_NODE_TEXT);
         TBOX_TEST_ASSERT(text_eq(t->text.text, "a&amp b"));
         tbox_html_document_destroy(doc);
     }

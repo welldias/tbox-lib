@@ -164,9 +164,9 @@ static void tbox_context_append_import(tbox_string_builder *builder, tbox_string
     while (media.size > 0 && tbox_ascii_is_space(media.data[0])) media = tbox_string_view_make(media.data + 1, media.size - 1);
     if (tbox_context_css_keyword_at(media, 0, "supports(")) {
         size_t close = 9;
-        for (int depth = 1; close < media.size; close++) {
-            if (media.data[close] == '(') depth++;
-            else if (media.data[close] == ')' && --depth == 0) break;
+        for (int nesting = 1; close < media.size; close++) {
+            if (media.data[close] == '(') nesting++;
+            else if (media.data[close] == ')' && --nesting == 0) break;
         }
         if (close >= media.size) return;
         /* supports(<condition>) or supports(<declaration>) */
@@ -628,6 +628,8 @@ void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handl
     ctx->submit_destroy  = destroy;
 }
 
+// Hands out the mutable document, so ctx stays non-const on purpose.
+// cppcheck-suppress constParameterPointer
 tbox_html_document *tbox_context_document(tbox_context *ctx) {
     if (ctx == NULL) {
         return NULL;

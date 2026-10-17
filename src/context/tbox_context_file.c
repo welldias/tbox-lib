@@ -82,7 +82,9 @@ static bool tbox_context_file_load_directory(tbox_context *ctx, const char *path
     tbox_file_entry *entries = NULL;
     size_t count = 0, capacity = 0;
     bool success = true;
-    struct dirent *item;
+    const struct dirent *item;
+    // readdir is only racy on a shared DIR stream; this one is local.
+    // cppcheck-suppress threadsafety-unsafe-call
     while ((item = readdir(directory)) != NULL) {
         if (strcmp(item->d_name, ".") == 0 || (strcmp(item->d_name, "..") == 0 && strcmp(path, "/") == 0))
             continue;

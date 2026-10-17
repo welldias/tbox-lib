@@ -11,18 +11,29 @@
                --enable=warning,style,performance,portability --inline-suppr
 
   Include paths and defines come from the compile database, so they always
-  match the real build.
+  match the real build. The CMake target first writes a copy with one entry
+  per source file (cmake/tbox_cppcheck_compile_db.cmake): tbox_static and
+  tbox_shared compile the same files, which would be analysed twice.
+  Running cppcheck by hand needs that file, so build the target once.
 -->
 <project version="1">
     <!-- Incremental analysis cache: re-runs only re-check changed files. -->
     <builddir>cppcheck</builddir>
-    <importproject>compile_commands.json</importproject>
+    <importproject>cppcheck-compile_commands.json</importproject>
 
     <platform>unix64</platform>
     <analyze-all-vs-configs>false</analyze-all-vs-configs>
     <check-headers>true</check-headers>
     <check-level-exhaustive/>
     <max-ctu-depth>4</max-ctu-depth>
+
+    <!-- Static locals and MT-unsafe libc calls (localtime, strtok, ...).
+         The library has thread affinity, but tbox_app_post runs on other
+         threads and new mutable static state needs discussion anyway
+         (docs/dev/convencoes.md). Needs Python 3. -->
+    <addons>
+        <addon>threadsafety</addon>
+    </addons>
 
     <libraries>
         <library>posix</library>
@@ -49,6 +60,14 @@
              from our own sources. Like everything else here, fileName is
              resolved relative to this (generated) file. -->
         <suppression fileName="@TBOX_CPPCHECK_SOURCE_DIR@/external/*">*</suppression>
+        <!-- Tests and examples are single-threaded programs; setenv,
+             stdout, strerror and friends are fine there. -->
+        <suppression fileName="@TBOX_CPPCHECK_SOURCE_DIR@/tests/*">threadsafety-*</suppression>
+        <suppression fileName="@TBOX_CPPCHECK_SOURCE_DIR@/example/*">threadsafety-*</suppression>
+        <!-- Test setup overwrites fields to build the next case, and
+             const on test locals buys nothing. -->
+        <suppression fileName="@TBOX_CPPCHECK_SOURCE_DIR@/tests/*">constVariablePointer</suppression>
+        <suppression fileName="@TBOX_CPPCHECK_SOURCE_DIR@/tests/*">redundantAssignment</suppression>
         <suppression fileName="_deps/*">*</suppression>
         <suppression fileName="generated/*">*</suppression>
     </suppressions>

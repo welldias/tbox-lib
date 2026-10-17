@@ -531,7 +531,7 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
      * itself, so every caller (Style layer, tbox_css_cascade_resolve_stylesheet,
      * tests) gets it automatically without knowing it exists. Runs after the
      * sources loop above (unchanged) so it can reuse `winners` as-is. */
-    if (node != NULL && pseudo == NULL) {
+    if (pseudo == NULL) {
         const tbox_html_attribute *style_attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("style", 5));
         if (style_attribute != NULL && style_attribute->value.size > 0) {
             tbox_css_stylesheet *inline_sheet = tbox_css_cascade_parse_inline_style(style_attribute->value);

@@ -350,7 +350,7 @@ static tbox_scroll_state *tbox_context_existing_scroll_state(tbox_context *ctx, 
 static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_box *box, tbox_vector *items) {
     for (; box != NULL; box = box->next_sibling) {
         tbox_scrollbar_geometry geometry;
-        tbox_scroll_state *state = box->node != NULL ? tbox_context_existing_scroll_state(ctx, box->node) : NULL;
+        const tbox_scroll_state *state = box->node != NULL ? tbox_context_existing_scroll_state(ctx, box->node) : NULL;
         if (tbox_context_scrollbar_visible(box) && tbox_context_scrollbar_geometry(box, state != NULL ? state->y : 0.0, &geometry)) {
             /* Scrollbars are appended after content: wrap them in the same
              * ancestor polygon intersections instead of escaping the clip. */
@@ -403,7 +403,7 @@ void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list) 
 const tbox_html_node *tbox_context_scrollbar_thumb_at(tbox_context *ctx, double x, double y) {
     const tbox_layout_box *box = ctx->root != NULL ? tbox_context_scrollbar_at(ctx->root, x, y, false, (tbox_rect){0}) : NULL;
     if (box == NULL) return NULL;
-    tbox_scroll_state *state = tbox_context_existing_scroll_state(ctx, box->node);
+    const tbox_scroll_state *state = tbox_context_existing_scroll_state(ctx, box->node);
     tbox_scrollbar_geometry geometry;
     return tbox_context_scrollbar_geometry(box, state != NULL ? state->y : 0.0, &geometry) &&
            tbox_context_point_in_rect(geometry.thumb, x, y) ? box->node : NULL;

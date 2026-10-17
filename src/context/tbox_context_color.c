@@ -5,7 +5,7 @@ typedef struct tbox_color_popup_geometry {
     tbox_rect bars[3];
 } tbox_color_popup_geometry;
 
-static bool tbox_context_color_popup_geometry(tbox_context *ctx, tbox_color_popup_geometry *out);
+static bool tbox_context_color_popup_geometry(const tbox_context *ctx, tbox_color_popup_geometry *out);
 
 tbox_css_rgba tbox_context_color_value(const tbox_html_node *node) {
     tbox_css_rgba color = {0, 0, 0, 255};
@@ -30,7 +30,7 @@ bool tbox_context_color_commit(tbox_context *ctx, const tbox_html_node *node, tb
     return true;
 }
 
-static bool tbox_context_color_popup_geometry(tbox_context *ctx, tbox_color_popup_geometry *out) {
+static bool tbox_context_color_popup_geometry(const tbox_context *ctx, tbox_color_popup_geometry *out) {
     if (ctx->open_color == NULL) return false;
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_color);
     if (box == NULL) return false;
@@ -63,12 +63,12 @@ static bool tbox_context_color_popup_geometry(tbox_context *ctx, tbox_color_popu
     return true;
 }
 
-bool tbox_context_color_popup_visible(tbox_context *ctx) {
+bool tbox_context_color_popup_visible(const tbox_context *ctx) {
     tbox_color_popup_geometry popup;
     return tbox_context_color_popup_geometry(ctx, &popup);
 }
 
-bool tbox_context_color_popup_contains(tbox_context *ctx, double x, double y) {
+bool tbox_context_color_popup_contains(const tbox_context *ctx, double x, double y) {
     tbox_color_popup_geometry popup;
     return tbox_context_color_popup_geometry(ctx, &popup) &&
         tbox_context_point_in_rect(popup.rect, x, y);

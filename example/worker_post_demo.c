@@ -37,7 +37,7 @@ static tbox_html_node *find_node(tbox_context *ctx, const char *selector) {
 
 /* Runs on the UI thread, inside tbox_app_run. */
 static void show_progress(tbox_app *app, void *userdata) {
-    int *percent              = userdata;
+    const int *percent        = userdata;
     tbox_context *ctx         = tbox_app_context(app);
     tbox_html_document *doc   = tbox_context_document(ctx);
     tbox_html_node *bar       = find_node(ctx, "#bar");

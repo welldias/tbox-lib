@@ -229,7 +229,11 @@ endif()
 # graceful-skip pattern as the other tools above -- without cppcheck the
 # target simply doesn't exist. tbox.cppcheck.in is configured into the build
 # directory so the project file points at this build's compile_commands.json
-# regardless of where the build directory lives. Findings are written as
+# regardless of where the build directory lives. It reads a deduplicated
+# copy of the compile database (cmake/tbox_cppcheck_compile_db.cmake), so
+# files built into both tbox_static and tbox_shared are analysed once.
+# The threadsafety addon (static locals, MT-unsafe libc calls) needs
+# Python 3 at analysis time. Findings are written as
 # plain text to <build>/cppcheck-report.txt instead of the terminal; any
 # finding still fails the target (--error-exitcode), so it can gate CI.
 find_program(TBOX_CPPCHECK_EXECUTABLE cppcheck)
@@ -247,6 +251,18 @@ if(TBOX_CPPCHECK_EXECUTABLE)
 
     cmake_host_system_information(RESULT TBOX_CPPCHECK_JOBS QUERY NUMBER_OF_LOGICAL_CORES)
 
+    add_custom_command(
+        OUTPUT "${CMAKE_BINARY_DIR}/cppcheck-compile_commands.json"
+        COMMAND "${CMAKE_COMMAND}"
+                "-DINPUT=${CMAKE_BINARY_DIR}/compile_commands.json"
+                "-DOUTPUT=${CMAKE_BINARY_DIR}/cppcheck-compile_commands.json"
+                -P "${CMAKE_SOURCE_DIR}/cmake/tbox_cppcheck_compile_db.cmake"
+        DEPENDS "${CMAKE_BINARY_DIR}/compile_commands.json"
+                "${CMAKE_SOURCE_DIR}/cmake/tbox_cppcheck_compile_db.cmake"
+        COMMENT "Deduplicating the compile database for cppcheck"
+        VERBATIM
+    )
+
     add_custom_target(cppcheck
         COMMAND "${TBOX_CPPCHECK_EXECUTABLE}"
                 "--project=${CMAKE_BINARY_DIR}/tbox.cppcheck"
@@ -257,6 +273,7 @@ if(TBOX_CPPCHECK_EXECUTABLE)
                 --quiet
                 -j ${TBOX_CPPCHECK_JOBS}
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS "${CMAKE_BINARY_DIR}/cppcheck-compile_commands.json"
         COMMENT "Running cppcheck static analysis (report: ${CMAKE_BINARY_DIR}/cppcheck-report.txt)"
         USES_TERMINAL
         VERBATIM

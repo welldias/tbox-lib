@@ -596,8 +596,8 @@ static bool tbox_css_color_parse_function(tbox_string_view value, tbox_css_rgba 
     double alpha = a.a * w0 + b.a * w1;
     tbox_css_linear_color result;
     if (tbox_string_view_equal_ascii_ci(space, tbox_string_view_from_cstr("srgb"))) {
-        double ca[3] = { colors[0].r / 255.0 * a.a, colors[0].g / 255.0 * a.a, colors[0].b / 255.0 * a.a };
-        double cb[3] = { colors[1].r / 255.0 * b.a, colors[1].g / 255.0 * b.a, colors[1].b / 255.0 * b.a };
+        const double ca[3] = { colors[0].r / 255.0 * a.a, colors[0].g / 255.0 * a.a, colors[0].b / 255.0 * a.a };
+        const double cb[3] = { colors[1].r / 255.0 * b.a, colors[1].g / 255.0 * b.a, colors[1].b / 255.0 * b.a };
         double mixed[3];
         for (int i = 0; i < 3; i++)
             mixed[i] = alpha > 0.0 ? (ca[i] * w0 + cb[i] * w1) / alpha : 0.0;

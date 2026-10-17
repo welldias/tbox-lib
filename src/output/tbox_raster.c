@@ -218,7 +218,7 @@ static bool tbox_raster_op_bounds(const tbox_paint_op *op, tbox_rect rect, int32
     *x0 = (int32_t)floor(rect.x), *y0 = (int32_t)floor(rect.y);
     *x1 = (int32_t)ceil(rect.x + rect.width), *y1 = (int32_t)ceil(rect.y + rect.height);
     tbox_rect clips[2] = { op->clip, op->rounded_clip };
-    bool active[2]     = { op->has_clip, op->has_rounded_clip };
+    const bool active[2]     = { op->has_clip, op->has_rounded_clip };
     for (int i = 0; i < 2; i++) {
         if (!active[i]) continue;
         int32_t cx0 = (int32_t)floor(clips[i].x), cy0 = (int32_t)floor(clips[i].y);
@@ -239,7 +239,8 @@ static bool tbox_raster_op_bounds(const tbox_paint_op *op, tbox_rect rect, int32
 static tbox_css_rgba tbox_raster_filter(const double *m, tbox_css_rgba c) {
     if (m == NULL)
         return c;
-    double in[4] = { c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0 }, out[4];
+    const double in[4] = { c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0 };
+    double out[4];
     for (int row = 0; row < 4; row++) {
         double v = m[row * 5 + 4];
         for (int k = 0; k < 4; k++)
@@ -421,17 +422,17 @@ static tbox_css_rgba tbox_raster_gradient_color(const tbox_raster_stop *stops, s
             t += first;
         }
     }
-    const tbox_raster_stop *a = &stops[0], *b = &stops[0];
-    if (t <= stops[0].position) {
-        a = b = &stops[0];
-    } else if (t >= stops[count - 1].position) {
-        a = b = &stops[count - 1];
-    } else {
-        for (size_t i = 1; i < count; i++) {
-            if (t <= stops[i].position) {
-                a = &stops[i - 1];
-                b = &stops[i];
-                break;
+    const tbox_raster_stop *a = &stops[0], *b = &stops[0]; /* at or before the first stop */
+    if (t > stops[0].position) {
+        if (t >= stops[count - 1].position) {
+            a = b = &stops[count - 1];
+        } else {
+            for (size_t i = 1; i < count; i++) {
+                if (t <= stops[i].position) {
+                    a = &stops[i - 1];
+                    b = &stops[i];
+                    break;
+                }
             }
         }
     }

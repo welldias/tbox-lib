@@ -1,3 +1,6 @@
+#define _POSIX_C_SOURCE 200809L /* localtime_r */
+#include <time.h>
+
 #include "tbox_context_internal.h"
 
 typedef struct tbox_date_popup_geometry {
@@ -6,7 +9,7 @@ typedef struct tbox_date_popup_geometry {
     double day_width, day_height, month_width, month_height;
 } tbox_date_popup_geometry;
 
-static bool tbox_context_date_popup_geometry(tbox_context *ctx, tbox_date_popup_geometry *out);
+static bool tbox_context_date_popup_geometry(const tbox_context *ctx, tbox_date_popup_geometry *out);
 
 static bool tbox_context_date_attribute(const tbox_html_node *node, const char *name, tbox_date *out);
 static bool tbox_context_month_attribute(const tbox_html_node *node, const char *name, tbox_date *out);
@@ -161,7 +164,7 @@ static bool tbox_context_datetime_allowed(const tbox_html_node *node, tbox_date 
     return true;
 }
 
-bool tbox_context_calendar_selection_allowed(tbox_context *ctx) {
+bool tbox_context_calendar_selection_allowed(const tbox_context *ctx) {
     if (tbox_context_is_time_input(ctx->open_date))
         return tbox_context_time_allowed(ctx->open_date, ctx->date_hour, ctx->date_minute);
     return tbox_context_is_datetime_input(ctx->open_date) ?
@@ -171,7 +174,8 @@ bool tbox_context_calendar_selection_allowed(tbox_context *ctx) {
 
 static tbox_date tbox_context_date_today(int *hour, int *minute) {
     time_t now = time(NULL);
-    struct tm *local = localtime(&now);
+    struct tm buffer;
+    const struct tm *local = localtime_r(&now, &buffer);
     if (local == NULL) {
         *hour = 0;
         *minute = 0;
@@ -323,7 +327,7 @@ static int tbox_context_date_weekday(int year, int month, int day) {
     return (year + year / 4 - year / 100 + year / 400 + offsets[month - 1] + day) % 7;
 }
 
-static bool tbox_context_date_popup_geometry(tbox_context *ctx, tbox_date_popup_geometry *out) {
+static bool tbox_context_date_popup_geometry(const tbox_context *ctx, tbox_date_popup_geometry *out) {
     if (ctx->open_date == NULL) return false;
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_date);
     if (box == NULL) return false;
@@ -377,12 +381,12 @@ static bool tbox_context_date_popup_geometry(tbox_context *ctx, tbox_date_popup_
     return true;
 }
 
-bool tbox_context_date_popup_visible(tbox_context *ctx) {
+bool tbox_context_date_popup_visible(const tbox_context *ctx) {
     tbox_date_popup_geometry popup;
     return tbox_context_date_popup_geometry(ctx, &popup);
 }
 
-bool tbox_context_date_popup_contains(tbox_context *ctx, double x, double y) {
+bool tbox_context_date_popup_contains(const tbox_context *ctx, double x, double y) {
     tbox_date_popup_geometry popup;
     return tbox_context_date_popup_geometry(ctx, &popup) &&
         tbox_context_point_in_rect(popup.rect, x, y);
@@ -620,8 +624,8 @@ void tbox_context_paint_date_popup(tbox_context *ctx, tbox_vector *items) {
         tbox_context_date_text(items, nav_face, popup.next, tbox_string_view_make(">", 1), nav_style.color);
     }
     if (tbox_context_is_month_input(ctx->open_date)) {
-        static const char *names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        static const char *const names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
         for (int month = 1; month <= 12; month++) {
             tbox_rect cell = {popup.rect.x + 12.0 + popup.month_width * ((month - 1) % 4),
                               popup.rect.y + 40.0 + popup.month_height * ((month - 1) / 4),
@@ -640,7 +644,7 @@ void tbox_context_paint_date_popup(tbox_context *ctx, tbox_vector *items) {
         return;
     }
     if (!tbox_context_is_time_input(ctx->open_date)) {
-    static const char *weekdays[] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
+    static const char *const weekdays[] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
     tbox_style weekday_style = tbox_context_control_style(ctx, ctx->open_date, "weekday", NULL);
     for (int column = 0; column < 7; column++)
         tbox_context_date_text(items, tbox_context_control_font(ctx, &weekday_style),
@@ -673,7 +677,7 @@ void tbox_context_paint_date_popup(tbox_context *ctx, tbox_vector *items) {
     }
     }
     if (tbox_context_is_datetime_input(ctx->open_date) || tbox_context_is_time_input(ctx->open_date)) {
-        static const char *labels[] = {"H", "M"};
+        static const char *const labels[] = {"H", "M"};
         tbox_style time_style = tbox_context_control_style(ctx, ctx->open_date, "time-track", NULL);
         tbox_style fill_style = tbox_context_control_style(ctx, ctx->open_date, "time-fill", NULL);
         tbox_style time_label_style = tbox_context_control_style(ctx, ctx->open_date, "time-label", NULL);

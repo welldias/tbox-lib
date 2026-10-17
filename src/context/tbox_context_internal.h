@@ -278,7 +278,7 @@ bool tbox_context_month_parse(tbox_string_view value, tbox_date *out);
 bool tbox_context_datetime_parse(tbox_string_view value, tbox_date *date, int *hour, int *minute);
 bool tbox_context_time_parse(tbox_string_view value, int *hour, int *minute);
 int tbox_context_date_compare(tbox_date a, tbox_date b);
-bool tbox_context_calendar_selection_allowed(tbox_context *ctx);
+bool tbox_context_calendar_selection_allowed(const tbox_context *ctx);
 void tbox_context_date_open(tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_date_commit(tbox_context *ctx, const tbox_html_node *node, tbox_date date);
 void tbox_context_sanitize_inputs(tbox_context *ctx, tbox_html_node *node);
@@ -296,11 +296,11 @@ void tbox_context_sync_option_selectedness(tbox_context *ctx, const tbox_html_no
 bool tbox_context_select_popup_hover(tbox_context *ctx, double x, double y, bool *changed);
 const tbox_layout_box *tbox_context_find_box(const tbox_layout_box *box, const tbox_html_node *node);
 void tbox_context_sync_select_boxes(tbox_context *ctx, tbox_layout_box *box);
-bool tbox_context_color_popup_visible(tbox_context *ctx);
-bool tbox_context_color_popup_contains(tbox_context *ctx, double x, double y);
+bool tbox_context_color_popup_visible(const tbox_context *ctx);
+bool tbox_context_color_popup_contains(const tbox_context *ctx, double x, double y);
 bool tbox_context_color_choose_point(tbox_context *ctx, double x, double y);
-bool tbox_context_date_popup_visible(tbox_context *ctx);
-bool tbox_context_date_popup_contains(tbox_context *ctx, double x, double y);
+bool tbox_context_date_popup_visible(const tbox_context *ctx);
+bool tbox_context_date_popup_contains(const tbox_context *ctx, double x, double y);
 bool tbox_context_date_shift_month(tbox_date *date, int direction);
 bool tbox_context_date_shift_year(tbox_date *date, int direction);
 bool tbox_context_date_shift_day(tbox_date *date, int delta);
@@ -377,7 +377,7 @@ bool tbox_context_move_focus(tbox_context *ctx, bool reverse);
 bool tbox_context_dispatch_select_key(tbox_context *ctx, tbox_key key);
 
 const char *tbox_context_default_control_css(void);
-tbox_style tbox_context_control_style(tbox_context *ctx, const tbox_html_node *owner, const char *part, const char *state);
+tbox_style tbox_context_control_style(const tbox_context *ctx, const tbox_html_node *owner, const char *part, const char *state);
 double tbox_context_control_size(tbox_style_length length, double fallback);
 void tbox_context_paint_control_box(tbox_vector *items, tbox_rect rect, const tbox_style *style, bool has_clip, tbox_rect clip);
 /* Control parts (docs/10-formularios-e-controles.md, "Partes dos

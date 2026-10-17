@@ -20,7 +20,7 @@ void tbox_backend_wayland_destroy(tbox_backend_wayland *backend);
 bool tbox_backend_wayland_poll(tbox_backend_wayland *backend, int timeout_ms);
 /* Interrupts a poll in progress (or makes the next one return at once).
  * The only function here safe to call from any thread. */
-void tbox_backend_wayland_wake(tbox_backend_wayland *backend);
+void tbox_backend_wayland_wake(const tbox_backend_wayland *backend);
 /* False while the compositor has not asked for the next frame yet (the
  * last present's wl_surface.frame is pending) or still holds both buffers.
  * Painting only when true paces frames to the display and pauses them while

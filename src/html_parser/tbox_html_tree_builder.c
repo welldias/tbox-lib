@@ -32,7 +32,7 @@ static tbox_html_node *tbox_html_tree_builder_top(tbox_html_tree_builder *builde
 static bool tbox_html_tree_builder_find_matching(tbox_html_tree_builder *builder, tbox_string_view name, size_t *out_index) {
     size_t length = tbox_vector_length(&builder->open_elements);
     for (size_t i = length; i-- > 0;) {
-        tbox_html_node *node = *(tbox_html_node **)tbox_vector_at(&builder->open_elements, i);
+        const tbox_html_node *node = *(tbox_html_node **)tbox_vector_at(&builder->open_elements, i);
         if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_ascii_ci(node->element.tag_name, name)) {
             *out_index = i;
             return true;
@@ -49,7 +49,7 @@ static bool tbox_html_tree_builder_find_open_li(tbox_html_tree_builder *builder,
     static const char *const boundaries[] = { "ul", "ol", "menu", "table", "td", "th", "caption", "button", "template" };
     size_t length = tbox_vector_length(&builder->open_elements);
     for (size_t i = length; i-- > 0;) {
-        tbox_html_node *node = *(tbox_html_node **)tbox_vector_at(&builder->open_elements, i);
+        const tbox_html_node *node = *(tbox_html_node **)tbox_vector_at(&builder->open_elements, i);
         if (node->type != TBOX_HTML_NODE_ELEMENT)
             continue;
         if (tbox_string_view_equal_cstr(node->element.tag_name, "li")) {

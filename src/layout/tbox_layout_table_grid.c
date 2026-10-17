@@ -188,7 +188,7 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
     size_t column_count = declared;
     size_t previous_group = SIZE_MAX;
     for (size_t r = 0; r < rows.length; r++) {
-        tbox_table_row *row = tbox_vector_at(&rows, r);
+        const tbox_table_row *row = tbox_vector_at(&rows, r);
         if (row->group_id != previous_group) {
             memset(occupied_until, 0, sizeof(occupied_until));
             previous_group = row->group_id;
@@ -234,7 +234,7 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
      * shared by the columns left without one. */
     bool fixed = table_style->table_layout_fixed && table_style->width.kind != TBOX_STYLE_LENGTH_AUTO;
     for (size_t i = 0; i < cells.length; i++) {
-        tbox_table_cell *cell = tbox_vector_at(&cells, i);
+        const tbox_table_cell *cell = tbox_vector_at(&cells, i);
         const tbox_style *style = tbox_layout_style_or_default(styles, cell->node);
         if (fixed && (cell->row != 0 || style->width.kind == TBOX_STYLE_LENGTH_AUTO)) continue;
         double css_width = tbox_layout_table_css_width(style, *table_width);
@@ -425,8 +425,8 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
             for (size_t r = 0; r < rows.length; r++) {
                 const tbox_table_row *row = tbox_vector_at(&rows, r);
                 for (size_t c = 0; c <= column_count; c++) {
-                    tbox_table_cell *left = c > 0 ? grid[r * column_count + c - 1] : NULL;
-                    tbox_table_cell *right = c < column_count ? grid[r * column_count + c] : NULL;
+                    const tbox_table_cell *left = c > 0 ? grid[r * column_count + c - 1] : NULL;
+                    const tbox_table_cell *right = c < column_count ? grid[r * column_count + c] : NULL;
                     if (left != NULL && left == right) continue;
                     double width = 0.0;
                     tbox_css_rgba color = {0, 0, 0, 255};
@@ -449,8 +449,8 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
             }
             for (size_t r = 0; r <= rows.length; r++) {
                 for (size_t c = 0; c < column_count; c++) {
-                    tbox_table_cell *above = r > 0 ? grid[(r - 1) * column_count + c] : NULL;
-                    tbox_table_cell *below = r < rows.length ? grid[r * column_count + c] : NULL;
+                    const tbox_table_cell *above = r > 0 ? grid[(r - 1) * column_count + c] : NULL;
+                    const tbox_table_cell *below = r < rows.length ? grid[r * column_count + c] : NULL;
                     if (above != NULL && above == below) continue;
                     double width = 0.0;
                     tbox_css_rgba color = {0, 0, 0, 255};

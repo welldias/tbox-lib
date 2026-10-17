@@ -1164,7 +1164,7 @@ bool tbox_backend_wayland_poll(tbox_backend_wayland *backend, int timeout_ms) {
      * blocking wait still notices a post from another thread and keeps
      * copy/paste transfers moving. */
     size_t write_count = 0;
-    for (tbox_clipboard_write *pending = backend->writes; pending != NULL; pending = pending->next) write_count++;
+    for (const tbox_clipboard_write *pending = backend->writes; pending != NULL; pending = pending->next) write_count++;
     struct pollfd fixed[3 + 8];
     struct pollfd *fds = fixed;
     size_t capacity    = sizeof(fixed) / sizeof(fixed[0]);
@@ -1180,7 +1180,7 @@ bool tbox_backend_wayland_poll(tbox_backend_wayland *backend, int timeout_ms) {
     if (backend->wake_fd >= 0) fds[count++] = (struct pollfd){ .fd = backend->wake_fd, .events = POLLIN };
     if (backend->paste_fd >= 0) fds[count++] = (struct pollfd){ .fd = backend->paste_fd, .events = POLLIN };
     size_t added = 0;
-    for (tbox_clipboard_write *pending = backend->writes; pending != NULL && added < write_count; pending = pending->next, added++)
+    for (const tbox_clipboard_write *pending = backend->writes; pending != NULL && added < write_count; pending = pending->next, added++)
         fds[count++] = (struct pollfd){ .fd = pending->fd, .events = POLLOUT };
 
     int ready      = poll(fds, count, tbox_backend_wayland_clamp_timeout(backend, timeout_ms));
@@ -1218,7 +1218,7 @@ bool tbox_backend_wayland_poll(tbox_backend_wayland *backend, int timeout_ms) {
     return true;
 }
 
-void tbox_backend_wayland_wake(tbox_backend_wayland *backend) {
+void tbox_backend_wayland_wake(const tbox_backend_wayland *backend) {
     if (backend == NULL || backend->wake_fd < 0) return;
     uint64_t one = 1;
     (void)!write(backend->wake_fd, &one, sizeof(one));

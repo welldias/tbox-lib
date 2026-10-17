@@ -641,7 +641,7 @@ static double tbox_app_now(void) {
  * capped by `max_wait_ms` (-1: no cap). A frame already due but not
  * allowed yet (pending frame callback or no free buffer) waits for the
  * backend event that allows it. Posted tasks wake the poll by themselves. */
-static int tbox_app_timeout(tbox_app *app, int32_t max_wait_ms) {
+static int tbox_app_timeout(const tbox_app *app, int32_t max_wait_ms) {
     if (max_wait_ms == 0 || app->hover_recheck)
         return 0;
     int32_t width  = 0;
@@ -698,7 +698,7 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
                 dirty = true;
                 break;
             }
-            dirty = tbox_context_set_active_at(app->ctx, true, event.data.click.x, event.data.click.y);
+            tbox_context_set_active_at(app->ctx, true, event.data.click.x, event.data.click.y);
 
             tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
             if (event.data.click.double_click) {

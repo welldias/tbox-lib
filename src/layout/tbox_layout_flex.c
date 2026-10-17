@@ -308,7 +308,7 @@ double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, con
     size_t line_start  = 0;
     double line_used   = 0.0;
     for (size_t i = 0; i < count; i++) {
-        tbox_layout_flex_item *item = &item_data[i];
+        const tbox_layout_flex_item *item = &item_data[i];
         double outer                = item->hypothetical + item->margin[main_start] + item->margin[main_end];
         if (multi_line && i > line_start && line_used + main_gap + outer > break_limit) {
             *(tbox_layout_flex_line *)tbox_vector_push(&lines) = (tbox_layout_flex_line){ line_start, i, 0.0, 0.0 };
@@ -345,7 +345,7 @@ double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, con
     /* 4. Flexible lengths (§9.7), per line. */
     double used_main = 0.0;
     for (size_t l = 0; l < line_count; l++) {
-        tbox_layout_flex_line *line = &line_data[l];
+        const tbox_layout_flex_line *line = &line_data[l];
         size_t n                    = line->end - line->start;
         double gaps                 = n > 1 ? main_gap * (double)(n - 1) : 0.0;
         double sum_hypothetical     = gaps;
@@ -517,7 +517,7 @@ double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, con
     /* 7. Positions: auto margins, justify-content, align-self. */
     double line_cross_pos = cross_offset;
     for (size_t l = 0; l < line_count; l++) {
-        tbox_layout_flex_line *line = &line_data[l];
+        const tbox_layout_flex_line *line = &line_data[l];
         size_t n                    = line->end - line->start;
         double free                 = main_extent - (n > 1 ? main_gap * (double)(n - 1) : 0.0);
         size_t auto_margins         = 0;
