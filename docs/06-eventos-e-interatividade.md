@@ -98,11 +98,14 @@ O foco pertence ao `tbox_context`.
   habilitados. O próximo frame rola os ancestrais para mostrar o elemento
   focado.
 - **Destaque de foco:** a folha UA dá a `button`, `input`, `select` e
-  `textarea` em `:focus` um anel `outline: 2px solid #0000ff` com
-  `outline-offset: -1px` (cobre a borda de 1px e passa 1px para fora).
+  `textarea` em `:focus` um anel `outline: 2px solid #808080` com
+  `outline-offset: -1px` (cobre a borda de 1px e passa 1px para fora). O
+  cinza é o da borda padrão; mudar `border-color` no documento não muda o
+  anel, só `outline-color` muda.
   Como `outline` não ocupa espaço, focar um controle não move nada; o anel
-  acompanha o `border-radius` (redondo no radio). `input type=range` e
-  `type=image` não mostram anel, como antes. Troque ou remova com
+  acompanha o `border-radius` (redondo no radio). Todo controle focado
+  mostra o anel, inclusive `input type=range` e `type=image`, para a
+  navegação por Tab sempre indicar o foco. Troque ou remova com
   `:focus { outline: … }`. Veja `tests/assets/145.html`.
 - **Enter / Espaço** ativam o botão focado pelos mesmos handlers do clique;
   Espaço alterna checkbox; Enter num campo de linha única envia o formulário.

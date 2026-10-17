@@ -10,6 +10,7 @@ static const char *const tbox_style_part_names[TBOX_STYLE_PART_COUNT] = {
     [TBOX_STYLE_PART_SLIDER_FILL]          = "slider-fill",
     [TBOX_STYLE_PART_SLIDER_THUMB]         = "slider-thumb",
     [TBOX_STYLE_PART_PICKER_ICON]          = "picker-icon",
+    [TBOX_STYLE_PART_PICKER]               = "picker(select)",
     [TBOX_STYLE_PART_CHECKMARK]            = "checkmark",
     [TBOX_STYLE_PART_FILE_SELECTOR_BUTTON] = "file-selector-button",
     [TBOX_STYLE_PART_CLEAR_ICON]           = "clear-icon",
@@ -34,7 +35,7 @@ static unsigned tbox_style_parts_of(const tbox_html_node *node) {
     if (tbox_string_view_equal_cstr(tag, "progress") || tbox_string_view_equal_cstr(tag, "meter"))
         return TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SLIDER_TRACK) | TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SLIDER_FILL);
     if (tbox_string_view_equal_cstr(tag, "select"))
-        return TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_PICKER_ICON);
+        return TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_PICKER_ICON) | TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_PICKER);
     if (tbox_string_view_equal_cstr(tag, "textarea"))
         return TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SELECTION);
     if (!tbox_string_view_equal_cstr(tag, "input"))

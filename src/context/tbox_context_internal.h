@@ -287,6 +287,12 @@ bool tbox_context_submit_form(tbox_context *ctx, const tbox_html_node *activator
 bool tbox_context_option_disabled(const tbox_html_node *option);
 size_t tbox_context_option_count(const tbox_html_node *select);
 tbox_select_field *tbox_context_select_field(tbox_context *ctx, const tbox_html_node *node);
+/* Marks each <option> under `node` (and its siblings) with whether its
+ * select has it chosen now (tbox_html_node.selectedness, `option:checked`). */
+void tbox_context_sync_option_selectedness(tbox_context *ctx, const tbox_html_node *node);
+/* Pointer at (x, y) over the open select list: highlights the enabled
+ * option under it (*changed when that moved). False when not over the list. */
+bool tbox_context_select_popup_hover(tbox_context *ctx, double x, double y, bool *changed);
 const tbox_layout_box *tbox_context_find_box(const tbox_layout_box *box, const tbox_html_node *node);
 void tbox_context_sync_select_boxes(tbox_context *ctx, tbox_layout_box *box);
 bool tbox_context_color_popup_visible(tbox_context *ctx);

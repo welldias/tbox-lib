@@ -317,6 +317,11 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
                            tbox_string_view_equal_cstr(tag, "fieldset");
             if (!control) return false;
             bool disabled = tbox_css_selector_find_attribute(node, tbox_string_view_make("disabled", 8)) != NULL;
+            /* An option in a disabled optgroup is disabled too (HTML). */
+            const tbox_html_node *group = node->parent;
+            if (!disabled && tbox_string_view_equal_cstr(tag, "option") && group != NULL && group->type == TBOX_HTML_NODE_ELEMENT &&
+                tbox_string_view_equal_cstr(group->element.tag_name, "optgroup"))
+                disabled = tbox_css_selector_find_attribute(group, tbox_string_view_make("disabled", 8)) != NULL;
             return tbox_string_view_equal_cstr(item->name, "disabled") ? disabled : !disabled;
         }
         if (tbox_string_view_equal_cstr(item->name, "required") || tbox_string_view_equal_cstr(item->name, "optional")) {
@@ -353,8 +358,12 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
                    tbox_css_selector_find_attribute(node, tbox_string_view_make("href", 4)) != NULL;
         }
         if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("checked", 7))) {
-            if (node->type != TBOX_HTML_NODE_ELEMENT ||
-                !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+            if (node->type != TBOX_HTML_NODE_ELEMENT) return false;
+            /* An option is checked when chosen in its select now, not by
+             * its `selected` attribute (see tbox_html_node.selectedness). */
+            if (tbox_string_view_equal_cstr(node->element.tag_name, "option"))
+                return node->element.selectedness;
+            if (!tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
             const tbox_html_attribute *type = tbox_css_selector_find_attribute(node, tbox_string_view_make("type", 4));
             return type != NULL &&
                    (tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("checkbox", 8)) ||

@@ -302,6 +302,33 @@ static bool tbox_css_parser_parse_pseudo_qualifier(tbox_css_parser *parser, tbox
      * resolves them separately (tbox_css_cascade_resolve_pseudo_element). */
     if (parser->current.type == TBOX_CSS_TOKEN_COLON) {
         tbox_css_parser_advance(parser);
+        /* A functional pseudo-element with one identifier argument
+         * ("::picker(select)"), kept as "::picker(select)": lowercased,
+         * spaces around the argument dropped. */
+        if (parser->current.type == TBOX_CSS_TOKEN_FUNCTION) {
+            tbox_string_view function = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
+            tbox_css_parser_advance(parser);
+            tbox_css_parser_skip_s(parser);
+            if (parser->current.type != TBOX_CSS_TOKEN_IDENT)
+                return false;
+            tbox_string_view argument = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
+            tbox_css_parser_advance(parser);
+            tbox_css_parser_skip_s(parser);
+            if (parser->current.type != TBOX_CSS_TOKEN_RPAREN)
+                return false;
+            tbox_css_parser_advance(parser);
+            size_t size  = 2 + function.size + 1 + argument.size + 1;
+            char *buffer = (char *)tbox_arena_alloc(parser->arena, size);
+            if (buffer == NULL)
+                return false;
+            buffer[0] = buffer[1] = ':';
+            memcpy(buffer + 2, function.data, function.size);
+            buffer[2 + function.size] = '(';
+            memcpy(buffer + 3 + function.size, argument.data, argument.size);
+            buffer[size - 1] = ')';
+            tbox_css_parser_push_simple_selector(out, TBOX_CSS_SIMPLE_SELECTOR_PSEUDO, combinator, tbox_string_view_make(buffer, size));
+            return true;
+        }
         if (parser->current.type != TBOX_CSS_TOKEN_IDENT)
             return false;
         tbox_string_view lower = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);

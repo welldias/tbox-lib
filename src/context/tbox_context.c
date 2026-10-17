@@ -557,9 +557,12 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * See tbox_context_update_hover and <tbox/css_selector.h>'s
      * tbox_css_selector_set_hover_context for the full sequencing
      * contract this call fulfills. */
-    tbox_css_selector_set_hover_context(ctx->hovered_node);
+    /* With a select's list open, :hover is its highlighted option (pointer
+     * or keyboard), which the list paints with `option:hover`. */
+    tbox_css_selector_set_hover_context(ctx->open_select != NULL && ctx->popup_highlight != NULL ? ctx->popup_highlight : ctx->hovered_node);
     tbox_css_selector_set_focus_context(ctx->focused_node);
     tbox_css_selector_set_active_context(ctx->active_node);
+    tbox_context_sync_option_selectedness(ctx, root);
 
     /* three cascade sources -- the user-agent stylesheet, the
      * application author stylesheet, and the document stylesheet assembled

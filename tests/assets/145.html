@@ -6,7 +6,8 @@
   <style>
     /* Alinhamento de checkbox/radio e anel de foco (docs/06-eventos-e-
      * interatividade.md, "Destaque de foco"). Marcar um checkbox não muda
-     * sua altura na linha: a marca não define a linha de base. O anel de
+     * sua altura na linha: a marca não define a linha de base. Um campo de
+     * texto vazio alinha como se tivesse uma linha de texto. O anel de
      * foco é um outline, que acompanha o border-radius; aqui ele é aplicado
      * por classe para aparecer sem foco. */
     body {
@@ -38,7 +39,7 @@
     }
 
     .anel {
-      outline: 2px solid #0000ff;
+      outline: 2px solid #808080;
       outline-offset: -1px;
     }
 
@@ -54,13 +55,23 @@
   <section>
     <h2>Marcado e desmarcado na mesma linha</h2>
     <p>Texto <input type="checkbox"> antes <input type="checkbox" checked> depois <input type="checkbox"> fim</p>
-    <p>Texto <input type="radio" name="a"> antes <input type="radio" name="b" checked> depois <input type="radio" name="c"> fim</p>
+    <p>Texto <input type="radio" name="a"> antes <input type="radio" name="b" checked> depois <input type="radio"
+        name="c"> fim</p>
+  </section>
+
+  <section>
+    <h2>Campos vazios e preenchidos na mesma linha</h2>
+    <p>Texto <input type="search" style="width: 90px"> <input type="search" value="busca" style="width: 90px">
+      <input type="number" value="7" style="width: 90px"> <input style="width: 90px"> fim
+    </p>
   </section>
 
   <section>
     <h2>Anel de foco (outline)</h2>
     <p><input type="radio" class="anel" checked> radio <input type="checkbox" class="anel" checked> checkbox
-      <button class="anel">Botão</button></p>
+      <button class="anel">Botão</button>
+    </p>
+    <p><input type="range" class="anel" value="40"> slider</p>
     <p><input class="anel" value="campo de texto"></p>
     <p><input class="anel arredondado" value="borda arredondada"></p>
   </section>

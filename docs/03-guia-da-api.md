@@ -55,6 +55,11 @@ leia com `tbox_style_part_find`. `color_declared`/`background_declared`
 dizem se a folha declarou a cor (senão vale a cor embutida do controle). O
 campo altera o tamanho de `tbox_style`: recompile consumidores.
 
+`tbox_html_node.element.selectedness` diz se um `<option>` é a escolha atual
+do seu `<select>`; o `tbox_context` o atualiza antes de cada resolução de
+estilo. Não confunda com o atributo `selected` (a escolha inicial). O campo
+altera o tamanho de `tbox_html_node`: recompile consumidores.
+
 ## 1. Aplicação com janela — `app.h`
 
 | Função | Uso |

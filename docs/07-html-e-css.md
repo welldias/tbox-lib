@@ -164,12 +164,15 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   `:nth-last-of-type()` (com `an+b`, `odd`, `even`).
 - Estado: `:hover`, `:active`, `:focus`, `:focus-within`, `:checked`,
   `:disabled`, `:enabled`, `:required`, `:optional`, `:link`/`:any-link`
-  (todo link é não visitado), `:lang()`.
+  (todo link é não visitado), `:lang()`. Em `<option>`, `:checked` é a
+  opção escolhida agora no select (não o atributo `selected`) e `:disabled`
+  inclui opções de um `<optgroup disabled>`.
 - `:not()` com um seletor simples.
 - Pseudo-elementos: `::marker`, `::before` e `::after` (também na forma
   CSS2 `:before`/`:after`); pesam como seletor de tipo na especificidade.
-  As partes dos controles de formulário (`::slider-thumb`, `::selection`…)
-  estão em [Formulários e controles](10-formularios-e-controles.md).
+  As partes dos controles de formulário (`::slider-thumb`, `::selection`,
+  o funcional `::picker(select)`…) estão em
+  [Formulários e controles](10-formularios-e-controles.md).
 
 ### Conteúdo gerado (`::before`/`::after`)
 

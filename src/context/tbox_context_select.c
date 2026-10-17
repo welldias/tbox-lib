@@ -13,7 +13,8 @@ static bool tbox_context_is_optgroup(const tbox_html_node *node);
 static const tbox_html_node *tbox_context_select_row_at(const tbox_html_node *select, size_t index);
 static size_t tbox_context_select_row_count(const tbox_html_node *select);
 static const tbox_html_node *tbox_context_option_at(const tbox_html_node *select, size_t index);
-static size_t tbox_context_option_index(const tbox_html_node *select, const tbox_html_node *option);
+static size_t tbox_context_select_row_index(const tbox_html_node *select, const tbox_html_node *row);
+static size_t tbox_context_option_position(const tbox_html_node *select, const tbox_html_node *option);
 static tbox_string_view tbox_context_option_text(tbox_context *ctx, const tbox_html_node *option);
 static tbox_string_view tbox_context_option_label(tbox_context *ctx, const tbox_html_node *option);
 static tbox_string_view tbox_context_option_value(tbox_context *ctx, const tbox_html_node *option);
@@ -89,11 +90,21 @@ static const tbox_html_node *tbox_context_option_at(const tbox_html_node *select
     return NULL;
 }
 
-static size_t tbox_context_option_index(const tbox_html_node *select, const tbox_html_node *option) {
+/* `row`'s index among the list rows (group labels included). */
+static size_t tbox_context_select_row_index(const tbox_html_node *select, const tbox_html_node *row) {
     size_t rows = tbox_context_select_row_count(select);
     for (size_t i = 0; i < rows; i++)
-        if (tbox_context_select_row_at(select, i) == option) return i;
+        if (tbox_context_select_row_at(select, i) == row) return i;
     return rows;
+}
+
+/* `option`'s index among the options alone (group labels skipped), the
+ * index tbox_context_option_at takes. */
+static size_t tbox_context_option_position(const tbox_html_node *select, const tbox_html_node *option) {
+    size_t count = tbox_context_option_count(select);
+    for (size_t i = 0; i < count; i++)
+        if (tbox_context_option_at(select, i) == option) return i;
+    return count;
 }
 
 static tbox_string_view tbox_context_option_text(tbox_context *ctx, const tbox_html_node *option) {
@@ -180,16 +191,59 @@ static bool tbox_context_select_commit(tbox_context *ctx, const tbox_html_node *
     return true;
 }
 
+/* A list row's style: the <option> or <optgroup> from this frame's style
+ * table, or the select's own when it has none. */
+static const tbox_style *tbox_context_select_row_style(tbox_context *ctx, const tbox_html_node *select,
+                                                       const tbox_html_node *row) {
+    const tbox_style *style = row != NULL ? tbox_style_table_find(&ctx->styles, row) : NULL;
+    return style != NULL ? style : tbox_style_table_find(&ctx->styles, select);
+}
+
+void tbox_context_sync_option_selectedness(tbox_context *ctx, const tbox_html_node *node) {
+    for (; node != NULL; node = node->next_sibling) {
+        if (tbox_context_is_select(node)) {
+            tbox_select_field *field = tbox_context_select_field(ctx, node);
+            for (size_t i = 0, count = tbox_context_option_count(node); i < count; i++) {
+                tbox_html_node *option = (tbox_html_node *)tbox_context_option_at(node, i);
+                if (option != NULL) option->element.selectedness = field != NULL && field->selected == option;
+            }
+            continue;
+        }
+        tbox_context_sync_option_selectedness(ctx, node->first_child);
+    }
+}
+
+bool tbox_context_select_popup_hover(tbox_context *ctx, double x, double y, bool *changed) {
+    tbox_popup_geometry popup;
+    *changed = false;
+    if (!tbox_context_popup_geometry(ctx, &popup) || !tbox_context_point_in_rect(popup.rect, x, y)) return false;
+    size_t row = (size_t)((y - popup.rect.y) / popup.row_height);
+    const tbox_html_node *option = row < popup.visible ? tbox_context_select_row_at(ctx->open_select, popup.first + row) : NULL;
+    if (tbox_context_is_option(option) && !tbox_context_option_disabled(option) && option != ctx->popup_highlight) {
+        ctx->popup_highlight = option;
+        *changed = true;
+    }
+    return true;
+}
+
 static bool tbox_context_popup_geometry(tbox_context *ctx, tbox_popup_geometry *out) {
     if (ctx->open_select == NULL) return false;
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_select);
     if (box == NULL || box->style == NULL) return false;
     size_t count = tbox_context_select_row_count(ctx->open_select);
     if (count == 0) return false;
-    const tbox_style *style = box->style;
-    const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
-    double row_height = face != NULL ? tbox_font_face_line_height(face) + 8.0 : 24.0;
-    if (row_height < 24.0) row_height = 24.0;
+    /* Every row is as tall as the tallest one: its text's line height plus
+     * its vertical padding (the <option>/<optgroup> style). */
+    double row_height = 0.0;
+    for (size_t i = 0; i < count; i++) {
+        const tbox_style *style = tbox_context_select_row_style(ctx, ctx->open_select, tbox_context_select_row_at(ctx->open_select, i));
+        const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
+        double height = (face != NULL ? tbox_context_style_line_height(style, face) : 16.0) +
+            tbox_style_length_resolve(style->padding[0], box->border_box.width) +
+            tbox_style_length_resolve(style->padding[2], box->border_box.width);
+        if (height > row_height) row_height = height;
+    }
+    if (row_height <= 0.0) row_height = 1.0;
     size_t desired = count < 6 ? count : 6;
     double below = ctx->viewport_height - (box->border_box.y + box->border_box.height);
     double above = box->border_box.y;
@@ -227,7 +281,7 @@ bool tbox_context_select_popup_scroll(tbox_context *ctx, double x, double y, dou
 void tbox_context_popup_reveal_highlight(tbox_context *ctx) {
     tbox_popup_geometry popup;
     if (!tbox_context_popup_geometry(ctx, &popup) || ctx->popup_highlight == NULL) return;
-    size_t index = tbox_context_option_index(ctx->open_select, ctx->popup_highlight);
+    size_t index = tbox_context_select_row_index(ctx->open_select, ctx->popup_highlight);
     if (index < ctx->popup_first) ctx->popup_first = index;
     else if (index >= ctx->popup_first + popup.visible) ctx->popup_first = index + 1 - popup.visible;
 }
@@ -261,42 +315,43 @@ void tbox_context_paint_select_arrows(const tbox_layout_box *box, tbox_vector *i
     }
 }
 
+/* The open list: ::picker(select) is its box; each row is painted with its
+ * <option>/<optgroup> style (background, border, radius, color, font,
+ * left padding), the highlighted option matching :hover. Options inside
+ * an optgroup are indented 12px more. */
 void tbox_context_paint_select_popup(tbox_context *ctx, tbox_vector *items) {
     tbox_popup_geometry popup;
     if (!tbox_context_popup_geometry(ctx, &popup)) return;
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->open_select);
-    const tbox_style *style = box->style;
-    const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
-    tbox_context_push_fill(items, popup.rect, (tbox_css_rgba){105, 112, 122, 255}, false, (tbox_rect){0});
-    tbox_rect inner = {popup.rect.x + 1.0, popup.rect.y + 1.0,
-                       popup.rect.width - 2.0, popup.rect.height - 2.0};
-    if (inner.width > 0.0 && inner.height > 0.0)
-        tbox_context_push_fill(items, inner, (tbox_css_rgba){255, 255, 255, 255}, false, (tbox_rect){0});
+    const tbox_style_part_style *picker = tbox_context_part(box->style, TBOX_STYLE_PART_PICKER);
+    tbox_context_paint_part(items, popup.rect, picker, (tbox_css_rgba){255, 255, 255, 255}, false, (tbox_rect){0});
+    tbox_rect inner = {popup.rect.x + picker->border_widths[3], popup.rect.y + picker->border_widths[0],
+                       popup.rect.width - picker->border_widths[1] - picker->border_widths[3],
+                       popup.rect.height - picker->border_widths[0] - picker->border_widths[2]};
+    if (inner.width <= 0.0 || inner.height <= 0.0) return;
     for (size_t i = 0; i < popup.visible; i++) {
         const tbox_html_node *option = tbox_context_select_row_at(ctx->open_select, popup.first + i);
         if (option == NULL) continue;
         bool group = tbox_context_is_optgroup(option);
-        tbox_rect row = {popup.rect.x + 1.0, popup.rect.y + popup.row_height * (double)i,
-                         popup.rect.width - 2.0, popup.row_height};
-        bool highlighted = !group && option == ctx->popup_highlight && !tbox_context_option_disabled(option);
-        if (highlighted)
-            tbox_context_push_fill(items, row, (tbox_css_rgba){65, 115, 195, 255}, true, inner);
-        if (face != NULL) {
-            const tbox_html_attribute *group_label = group ? tbox_html_node_get_attribute(option, tbox_string_view_make("label", 5)) : NULL;
-            tbox_string_view label = group ? (group_label != NULL ? group_label->value : tbox_string_view_make(NULL, 0)) : tbox_context_option_label(ctx, option);
-            if (label.size == 0) continue;
-            tbox_paint_op *op = tbox_vector_push(items);
-            *op = (tbox_paint_op){
-                .kind = TBOX_PAINT_TEXT_RUN,
-                .rect = {row.x + (group ? 7.0 : option->parent != ctx->open_select ? 19.0 : 7.0), row.y + (row.height - tbox_font_face_line_height(face)) / 2.0,
-                         row.width - 14.0, tbox_font_face_line_height(face)},
-                .color = (group ? tbox_html_node_get_attribute(option, tbox_string_view_make("disabled", 8)) != NULL : tbox_context_option_disabled(option)) ? (tbox_css_rgba){145, 145, 145, 255} :
-                         highlighted ? (tbox_css_rgba){255, 255, 255, 255} : style->color,
-                .text = label, .face = face, .has_clip = true,
-                .clip = tbox_context_rect_intersection(row, inner),
-            };
-            tbox_font_shape_into(items->arena, face, label, 0.0, &op->glyphs, &op->glyph_count);
-        }
+        const tbox_style *style = tbox_context_select_row_style(ctx, ctx->open_select, option);
+        tbox_rect row = {inner.x, popup.rect.y + popup.row_height * (double)i, inner.width, popup.row_height};
+        tbox_context_paint_control_box(items, row, style, true, inner);
+        const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
+        if (face == NULL) continue;
+        const tbox_html_attribute *group_label = group ? tbox_html_node_get_attribute(option, tbox_string_view_make("label", 5)) : NULL;
+        tbox_string_view label = group ? (group_label != NULL ? group_label->value : tbox_string_view_make(NULL, 0)) : tbox_context_option_label(ctx, option);
+        if (label.size == 0) continue;
+        double indent = tbox_style_length_resolve(style->padding[3], row.width) +
+                        (!group && option->parent != ctx->open_select ? 12.0 : 0.0);
+        double line_height = tbox_font_face_line_height(face);
+        tbox_paint_op *op = tbox_vector_push(items);
+        *op = (tbox_paint_op){
+            .kind = TBOX_PAINT_TEXT_RUN,
+            .rect = {row.x + indent, row.y + (row.height - line_height) / 2.0, row.width - indent, line_height},
+            .color = style->color, .text = label, .face = face, .has_clip = true,
+            .clip = tbox_context_rect_intersection(row, inner),
+        };
+        tbox_font_shape_into(items->arena, face, label, 0.0, &op->glyphs, &op->glyph_count);
     }
 }
 
@@ -320,7 +375,7 @@ bool tbox_context_popup_click(tbox_context *ctx, double x, double y) {
 static const tbox_html_node *tbox_context_select_neighbor(const tbox_html_node *select,
                                                            const tbox_html_node *current, tbox_key key) {
     size_t count = tbox_context_option_count(select);
-    size_t index = current != NULL ? tbox_context_option_index(select, current) : count;
+    size_t index = current != NULL ? tbox_context_option_position(select, current) : count;
     if (key == TBOX_KEY_HOME || key == TBOX_KEY_END) {
         const tbox_html_node *candidate = NULL;
         for (size_t i = 0; i < count; i++) {

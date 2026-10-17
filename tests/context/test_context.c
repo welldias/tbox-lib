@@ -1617,7 +1617,7 @@ int tbox_test_context_run(void) {
             const tbox_css_resolved_declaration *outline = tbox_css_computed_style_find(&computed, tbox_string_view_make("outline", 7));
             const tbox_css_resolved_declaration *offset  = tbox_css_computed_style_find(&computed, tbox_string_view_make("outline-offset", 14));
             TBOX_TEST_ASSERT_MSG(border != NULL && string_view_equal_cstr(border->value, "1px solid #808080"), "focus must keep the generic UA border");
-            TBOX_TEST_ASSERT_MSG(outline != NULL && string_view_equal_cstr(outline->value, "2px solid #0000ff"), "focused input must get the UA focus ring");
+            TBOX_TEST_ASSERT_MSG(outline != NULL && string_view_equal_cstr(outline->value, "2px solid #808080"), "focused input must get the UA focus ring, in the UA border's gray");
             TBOX_TEST_ASSERT_MSG(offset != NULL && string_view_equal_cstr(offset->value, "-1px"), "the focus ring covers the 1px border");
             tbox_css_computed_style_destroy(&computed);
             tbox_css_selector_set_focus_context(NULL);
@@ -3869,8 +3869,166 @@ int tbox_test_context_run(void) {
         }
     }
 
-    /* Range and image inputs show no focus ring (their UA rule clears it,
-     * as it cleared the old focus border); checking a checkbox or radio
+    /* The open select list follows the standard customizable-select CSS:
+     * ::picker(select) is its box, rows take their <option>/<optgroup>
+     * style, the highlighted option matches :hover (moved by keys and by
+     * the pointer), the chosen one :checked (not the `selected`
+     * attribute), and options in a disabled optgroup match :disabled. */
+    {
+        const char *html = "<div><select><option>Um</option><option selected>Dois</option>"
+            "<optgroup label='G' disabled><option>Tres</option></optgroup><option>Quatro</option></select></div>";
+        const char *css = "select::picker( select ) { border: 3px solid rgb(1, 2, 3); background-color: rgb(4, 5, 6); }"
+            "option { padding: 10px 20px; }"
+            "option:checked { background-color: rgb(7, 8, 9); }"
+            "option:hover { background-color: rgb(10, 11, 12); color: rgb(13, 14, 15); }"
+            "option:disabled { color: rgb(16, 17, 18); }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+            const tbox_html_node *select = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *one = select->first_child, *two = one->next_sibling;
+            const tbox_layout_box *box = find_context_box(ctx, select);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                double x = box->border_box.x + 10.0;
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+                tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+                /* Opening highlights the chosen option: Dois is both. */
+                double picker_y = -1.0, row_height = 0.0, checked_y = -1.0, hover_y = -1.0;
+                bool picker_bg = false, hover_text = false, disabled_text = false;
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    tbox_css_rgba c = op->color;
+                    if (op->kind == TBOX_PAINT_FILL_RECT && c.r == 1 && c.g == 2 && c.b == 3) picker_y = op->rect.y;
+                    if (op->kind == TBOX_PAINT_FILL_RECT && c.r == 4 && c.g == 5 && c.b == 6) picker_bg = true;
+                    if (op->kind == TBOX_PAINT_FILL_RECT && c.r == 7 && c.g == 8 && c.b == 9) checked_y = op->rect.y;
+                    if (op->kind == TBOX_PAINT_FILL_RECT && c.r == 10 && c.g == 11 && c.b == 12) { hover_y = op->rect.y; row_height = op->rect.height; }
+                    if (op->kind == TBOX_PAINT_TEXT_RUN && c.r == 13 && c.g == 14 && c.b == 15 && string_view_equal_cstr(op->text, "Dois")) hover_text = true;
+                    if (op->kind == TBOX_PAINT_TEXT_RUN && c.r == 16 && c.g == 17 && c.b == 18 && string_view_equal_cstr(op->text, "Tres")) disabled_text = true;
+                }
+                TBOX_TEST_ASSERT(picker_y >= 0.0 && picker_bg && hover_text && disabled_text);
+                TBOX_TEST_ASSERT(checked_y < 0.0); /* option:hover comes later and wins on Dois */
+                /* Row height: the font's line height plus 10px + 10px of padding.
+                 * (The frame above rebuilt the boxes: look the select up again.) */
+                box = find_context_box(ctx, select);
+                TBOX_TEST_ASSERT(box != NULL);
+                const tbox_font_face *face = box == NULL ? NULL :
+                    tbox_font_face_cache_get(fonts, tbox_string_view_make(box->style->font_family, strlen(box->style->font_family)),
+                                             box->style->font_weight_bold, box->style->font_italic, box->style->font_size);
+                TBOX_TEST_ASSERT(face != NULL && hover_y >= 0.0 && row_height == tbox_font_face_line_height(face) + 20.0);
+                /* The pointer over the first row highlights Um; Dois keeps :checked. */
+                TBOX_TEST_ASSERT(tbox_context_update_hover(ctx, true, x, picker_y + row_height / 2.0));
+                tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+                bool one_hover = false, two_checked = false;
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    tbox_css_rgba c = op->color;
+                    if (op->kind == TBOX_PAINT_FILL_RECT && c.r == 10 && c.g == 11 && op->rect.y == picker_y) one_hover = true;
+                    if (op->kind == TBOX_PAINT_FILL_RECT && c.r == 7 && c.g == 8 && op->rect.y == picker_y + row_height) two_checked = true;
+                }
+                TBOX_TEST_ASSERT(one_hover && two_checked);
+                /* Choosing Um moves :checked to it; the `selected` attribute stays on Dois. */
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, picker_y + row_height / 2.0));
+                tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+                TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Um"));
+                TBOX_TEST_ASSERT(one->element.selectedness && !two->element.selectedness);
+                TBOX_TEST_ASSERT(tbox_html_node_get_attribute(two, tbox_string_view_make("selected", 8)) != NULL);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Arrow keys step through options past optgroup labels: an option's
+     * place among the options, not among the list rows (which include the
+     * labels), picks its neighbor. */
+    {
+        const char *html = "<select><option>Um</option><optgroup label='G'><option>Dois</option><option>Tres</option></optgroup>"
+            "<optgroup label='H' disabled><option>Quatro</option></optgroup></select>";
+        const char *expected[] = { "Dois", "Tres", "Tres" };
+        for (int downs = 1; downs <= 3; downs++) {
+            tbox_context *ctx = open_cstr(html, "", fonts);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx == NULL) continue;
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+            const tbox_html_node *select = tbox_html_document_root(tbox_context_document(ctx))->first_child;
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            for (int i = 0; i < downs; i++)
+                tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false });
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), expected[downs - 1]));
+            if (downs == 2) {
+                /* Up from Tres on the closed select goes back to Dois. */
+                TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
+                TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Dois"));
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* An emptied text field keeps the baseline of one line of its text, so
+     * clearing it moves neither it nor its neighbors on the line. */
+    {
+        const char *css_cases[2] = { "", "input { line-height: 30px; }" };
+        for (int c = 0; c < 2; c++) {
+            tbox_context *ctx = open_cstr("<div><input type='search' value='busca'><input type='number' value='7'></div>", css_cases[c], fonts);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx == NULL) continue;
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 900.0, 200.0, &list);
+            const tbox_html_node *search = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *number = search->next_sibling;
+            const tbox_layout_box *search_box = find_context_box(ctx, search), *number_box = find_context_box(ctx, number);
+            TBOX_TEST_ASSERT(search_box != NULL && number_box != NULL);
+            if (search_box == NULL || number_box == NULL) { tbox_context_close(ctx); continue; }
+            tbox_rect search_before = search_box->border_box, number_before = number_box->border_box;
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true }));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_BACKSPACE, true, false, false }));
+            tbox_context_run_frame(ctx, 900.0, 200.0, &list);
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(search, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value == NULL || value->value.size == 0);
+            search_box = find_context_box(ctx, search);
+            number_box = find_context_box(ctx, number);
+            TBOX_TEST_ASSERT(search_box != NULL && memcmp(&search_box->border_box, &search_before, sizeof(tbox_rect)) == 0);
+            TBOX_TEST_ASSERT(number_box != NULL && memcmp(&number_box->border_box, &number_before, sizeof(tbox_rect)) == 0);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_text(ctx, tbox_string_view_make("x", 1)));
+            tbox_context_run_frame(ctx, 900.0, 200.0, &list);
+            number_box = find_context_box(ctx, number);
+            TBOX_TEST_ASSERT(number_box != NULL && memcmp(&number_box->border_box, &number_before, sizeof(tbox_rect)) == 0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* The focus ring is the UA border's gray; a document border-color
+     * leaves it gray, an outline-color replaces it. */
+    {
+        const char *sheets[2] = { "input { border-color: rgb(200, 0, 0); }", "input:focus { outline-color: rgb(0, 150, 0); }" };
+        for (int s = 0; s < 2; s++) {
+            tbox_context *ctx = open_cstr("<div><input value='a'></div>", sheets[s], fonts);
+            TBOX_TEST_ASSERT(ctx != NULL);
+            if (ctx == NULL) continue;
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            tbox_context_run_frame(ctx, 400.0, 100.0, &list);
+            const tbox_layout_box *box = find_context_box(ctx, tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child);
+            TBOX_TEST_ASSERT(box != NULL && box->style->outline_width == 2.0);
+            if (box != NULL) {
+                tbox_css_rgba ring = box->style->outline_color;
+                if (s == 0) TBOX_TEST_ASSERT(ring.r == 128 && ring.g == 128 && ring.b == 128 && box->style->border_colors[0].r == 200);
+                else TBOX_TEST_ASSERT(ring.r == 0 && ring.g == 150 && ring.b == 0);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Every focused control shows the focus ring, the range input included
+     * (Tab must always show where focus is); checking a checkbox or radio
      * moves neither it nor the text beside it. */
     {
         const char *html = "<p><input type='range'><input type='checkbox'>Aceito <input type='radio'>Sim</p>";
@@ -3888,7 +4046,8 @@ int tbox_test_context_run(void) {
             tbox_context_run_frame(ctx, 600.0, 200.0, &list);
             double x, y;
             const tbox_layout_box *range_box = hit_point_for(ctx, range, 600.0, 200.0, &x, &y) ? tbox_context_hit_test(ctx, x, y) : NULL;
-            TBOX_TEST_ASSERT(range_box != NULL && range_box->style->outline_width == 0.0);
+            TBOX_TEST_ASSERT(range_box != NULL && range_box->style->outline_width == 2.0 &&
+                             range_box->style->outline_style != TBOX_STYLE_BORDER_STYLE_NONE);
             const tbox_html_node *toggles[2] = { checkbox, radio };
             for (size_t t = 0; t < 2; t++) {
                 const tbox_layout_box *box = hit_point_for(ctx, toggles[t], 600.0, 200.0, &x, &y) ? tbox_context_hit_test(ctx, x, y) : NULL;

@@ -48,6 +48,11 @@ typedef struct tbox_html_node {
             tbox_html_attribute *attributes;
             size_t attribute_count;
             bool self_closing;
+            /* <option> only: chosen in its <select> right now. Kept in sync
+             * by tbox_context before each style resolution (`option:checked`
+             * reads it); the `selected` attribute is just the initial choice,
+             * which a form reset restores. */
+            bool selectedness;
         } element;
         /* Valid when type is TEXT, COMMENT or DOCTYPE. For DOCTYPE this
          * holds only the doctype name (e.g. "html"). */

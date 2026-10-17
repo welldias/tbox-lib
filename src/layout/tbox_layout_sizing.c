@@ -304,6 +304,16 @@ void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node,
     double best_y = -1e300, baseline = box->margin_box.y + box->margin_box.height;
     if (node_style->overflow_y == TBOX_STYLE_OVERFLOW_Y_VISIBLE && !tbox_layout_is_checkbox(node))
         tbox_layout_last_baseline(box, &best_y, &baseline);
+    /* An empty text field (no value line) still aligns like one line of
+     * its text, where that line would sit: the top of the content box plus
+     * the half-leading. Otherwise clearing it would drop its baseline to
+     * the bottom edge and shift everything on its line. */
+    if (best_y == -1e300 && tbox_string_view_equal_cstr(node->element.tag_name, "input") && tbox_layout_input_is_text_tag(node)) {
+        const tbox_font_face *face = tbox_layout_style_face(fonts, node_style);
+        if (face != NULL)
+            baseline = box->content_box.y + (tbox_layout_style_line_height(node_style, face) - tbox_font_face_line_height(face)) / 2.0 +
+                       tbox_font_face_ascent(face);
+    }
     word->atomic                  = box;
     word->atomic_node             = node;
     word->atomic_containing_width = containing_width;

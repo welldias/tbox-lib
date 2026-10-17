@@ -101,6 +101,7 @@ casa com os seletores do controle (`input:focus::slider-thumb`,
 | `::slider-track` | progress, meter | fundo, borda, raio (ocupa a caixa toda) | `#cdd2d8` |
 | `::slider-fill` | progress, meter | fundo, borda, raio (dentro da borda do trilho) | progress: `accent-color`; meter: verde/amarelo/vermelho |
 | `::picker-icon` | select | `width`, `height`, `color` da seta; fundo, borda | 10×6px, `color` do select |
+| `::picker(select)` | select | fundo, borda, raio da caixa da lista aberta (ver "Lista do select") | fundo branco, borda `#69707a` |
 | `::checkmark` | checkbox, radio | `color` da marca; `width` do ponto do radio | `accent-color` (ou `color`) |
 | `::file-selector-button` | file | `width`, fundo, borda, raio, `color` do texto | 88px, `#f0f2f6`, borda `#767c86`; cinza quando `disabled` |
 | `::clear-icon` | search | `width`, fundo, borda, `color` do X | 16px, `#f5f6f8` |
@@ -123,6 +124,41 @@ botão de arquivo segue em 13px), nem raios elípticos, sombras ou gradientes.
 A forma das marcas (triângulo da seta, X da busca, setas do number) é fixa.
 Veja `tests/assets/143.html`.
 
+### Lista do select
+
+A lista que abre num `<select>` segue o CSS padrão do *select customizável*
+(rascunhos HTML e CSS Form Control Styling): `::picker(select)` é a caixa
+da lista, e cada linha é o próprio `<option>` ou `<optgroup>` do documento,
+estilizado como qualquer elemento. O tbox não exige
+`appearance: base-select` (aceita e ignora), porque não há lista nativa a
+preservar.
+
+```css
+select::picker(select) { border: 2px solid #7c3aed; border-radius: 8px; }
+option { padding: 6px 12px; }
+option:checked { font-weight: bold; }            /* a escolhida */
+option:hover { background-color: #7c3aed; color: white; }  /* a destacada */
+option:disabled { color: #c4b5fd; }
+optgroup { color: #a21caf; }
+```
+
+- **Linha:** fundo, borda, raio, `color`, fonte e `padding` do `<option>`
+  ou do `<optgroup>` (o título do grupo). O texto começa no
+  `padding-left`; opções dentro de um grupo ficam 12px mais à direita.
+- **Altura:** todas as linhas têm a da mais alta (altura de linha da fonte
+  + `padding` de cima e de baixo).
+- **`:hover`** é a opção destacada, movida pelas setas ou pelo ponteiro
+  sobre a lista. Enquanto a lista está aberta, o `:hover` do documento
+  segue essa opção (e seus ancestrais).
+- **`:checked`** é a opção escolhida agora, não a que tem o atributo
+  `selected` (que é a escolha inicial, restaurada pelo reset).
+- **`:disabled`** vale também para opções dentro de um `<optgroup disabled>`.
+- Padrões na folha UA: `option, optgroup { padding: 4px 7px }`,
+  `option:hover { background-color: #4173c3; color: white }`,
+  `option:disabled, optgroup:disabled { color: #919191 }`.
+- Ainda sem `:open`, `option::checkmark`, `<selectedcontent>` e alturas
+  diferentes por linha. Veja `tests/assets/146.html`.
+
 ### Equivalentes em outros navegadores
 
 O tbox reconhece **só** os nomes da tabela acima. Os pseudo-elementos com
@@ -141,6 +177,7 @@ implementação de compatibilidade (ver
 | meter `::slider-track` | o próprio `meter` | `::-webkit-meter-bar` |
 | meter `::slider-fill` | `::-moz-meter-bar` | `::-webkit-meter-optimum-value`, `-suboptimum-value`, `-even-less-good-value` |
 | select `::picker-icon` | — | `::picker-icon` (Chrome, com `appearance: base-select`) |
+| `::picker(select)`, `option:hover`/`:checked` na lista | — (lista nativa) | iguais (Chrome 135+, com `appearance: base-select`) |
 | checkbox/radio `::checkmark` | — | — (o Chrome tem `::checkmark` só em `<option>`) |
 | `::file-selector-button` | igual | igual (antigo: `::-webkit-file-upload-button`) |
 | search `::clear-icon` | — | `::-webkit-search-cancel-button` |

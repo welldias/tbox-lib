@@ -118,4 +118,5 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 142 | `accent-color` em range, progress, checkbox e radio: padrão, herdada do contêiner, por controle (com `var()`), meter sem mudança |
 | 143 | Partes dos controles (`::slider-thumb`, `::slider-track`, `::slider-fill`, `::picker-icon`, `::checkmark`, `::file-selector-button`, `::step-*`, `::clear-icon`, `::color-swatch`, `::selection`), inclusive desabilitado, contêiner escuro com `var()` e raio por canto |
 | 144 | Quebra de linha do `<textarea>`: entre palavras, espaços repetidos pendurados, quebras do próprio texto, palavra maior que a linha |
-| 145 | Checkbox e radio marcados e desmarcados alinhados na mesma linha; `outline` como anel de foco em radio (redondo), checkbox, botão e campos com borda reta e arredondada |
+| 145 | Checkbox e radio marcados e desmarcados alinhados na mesma linha; campos de texto vazios e preenchidos alinhados; `outline` como anel de foco em radio (redondo), checkbox, botão, slider e campos com borda reta e arredondada |
+| 146 | Lista do `<select>` pelo CSS padrão: `::picker(select)`, `option`/`optgroup`, `:hover`, `:checked`, `:disabled` (inclusive em `optgroup` desabilitado), tema por `var()`. Abra a lista para ver; o Firefox ainda mostra a lista nativa |

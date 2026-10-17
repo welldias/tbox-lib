@@ -616,6 +616,7 @@ typedef enum tbox_style_part {
     TBOX_STYLE_PART_SLIDER_FILL,          /* ::slider-fill: range, progress, meter */
     TBOX_STYLE_PART_SLIDER_THUMB,         /* ::slider-thumb: range */
     TBOX_STYLE_PART_PICKER_ICON,          /* ::picker-icon: select */
+    TBOX_STYLE_PART_PICKER,               /* ::picker(select): select's open list box */
     TBOX_STYLE_PART_CHECKMARK,            /* ::checkmark: checkbox, radio */
     TBOX_STYLE_PART_FILE_SELECTOR_BUTTON, /* ::file-selector-button: file */
     TBOX_STYLE_PART_CLEAR_ICON,           /* ::clear-icon: search */

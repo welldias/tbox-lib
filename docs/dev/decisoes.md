@@ -135,6 +135,20 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   só os campos que as partes usam são copiados. Cada propriedade nova
   numa parte pede um campo. Só os elementos que pintam a parte a recebem
   (2026-10-16).
+- **Lista do select pelo CSS padrão, sem opt-in.** As linhas são os
+  `<option>`/`<optgroup>` do documento e a caixa é `::picker(select)`, como
+  no select customizável; `appearance: base-select` não é exigido, porque
+  o tbox não tem lista nativa a preservar (2026-10-16).
+- **`option:hover` reaproveita o contexto de hover**: com a lista aberta,
+  ele aponta para a opção destacada. Nenhum estado global novo; o `:hover`
+  dos ancestrais acompanha, como num navegador com o ponteiro sobre a
+  lista (2026-10-16).
+- **`option:checked` por um campo no nó, não por estado global.**
+  `tbox_html_node.selectedness` guarda a escolha atual, separada do
+  atributo `selected` (escolha inicial, usada pelo reset), como a
+  *selectedness* do HTML. O contexto o sincroniza antes de resolver
+  estilos; o seletor só lê o nó (escolha do mantenedor entre isso, um
+  estado global no seletor ou adiar, 2026-10-16).
 - **Padrões das partes na folha UA, cor de destaque no pintor.** Tamanhos,
   fundos e bordas padrão são regras UA, para o autor substituí-los como
   qualquer CSS (`border: 0` funciona). O tbox não tem a cor de sistema
@@ -144,13 +158,19 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   (2026-10-16).
 - **Foco por `outline`, não por borda**, como nos navegadores: o anel não
   ocupa espaço, então o foco não refaz o layout. O `outline-offset: -1px`
-  mantém o desenho anterior (2px azuis sobre a borda), passando só 1px
-  para fora da caixa (2026-10-16).
+  mantém o desenho anterior (2px sobre a borda), passando só 1px para fora
+  da caixa. A cor é o cinza da borda padrão (`#808080`), fixo: não segue
+  um `border-color` do documento, só `outline-color`. Vale para todo
+  controle focado, inclusive o slider: Tab precisa sempre mostrar o foco
+  (escolha do mantenedor, 2026-10-16).
 - **`outline` sólido acompanha `border-radius`**, como no Firefox e no
   Chrome atuais (o CSS 2 desenhava reto). Cantos elípticos e estilos não
   sólidos seguem retos (2026-10-16).
 - **A marca do checkbox não define a linha de base**: ela é decoração, e
   usá-la faria o controle mudar de altura ao ser marcado (2026-10-16).
+- **Campo de texto vazio alinha pela linha que o texto ocuparia**, não pela
+  borda de baixo: a linha de base de um controle não pode depender de ele
+  ter conteúdo, ou editar o valor desloca a linha (2026-10-16).
 - **O polegar do slider pode sair da caixa do input**, como nos navegadores;
   só ancestrais com rolagem o recortam. A largura do polegar define o
   percurso, para o clique cair sob o centro dele (2026-10-16).

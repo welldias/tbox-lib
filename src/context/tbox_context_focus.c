@@ -29,6 +29,11 @@ bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, d
     /* `has_position == false` (pointer left the window) or nothing under
      * the point both mean "nothing hovered" -- new_hovered stays NULL in
      * either case. */
+    /* Over the open select list, the pointer moves its highlight. */
+    bool highlight_changed = false;
+    if (has_position && tbox_context_select_popup_hover(ctx, x, y, &highlight_changed))
+        return highlight_changed;
+
     const tbox_html_node *new_hovered = NULL;
     if (has_position) {
         const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);

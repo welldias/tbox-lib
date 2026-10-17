@@ -732,3 +732,50 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
   fonte dos testes não tem o ✓, então o caso do glifo foi conferido com as
   fontes do sistema); outline arredondado vira um anel com os raios certos.
   Fixture `145`.
+
+## 2026-10-16 — Anel de foco cinza
+
+- A cor padrão do anel de foco passou de azul (`#0000ff`) para `#808080`, a
+  mesma da borda padrão dos controles (pedido do mantenedor). Um
+  `border-color` do documento não muda o anel; `outline-color` muda.
+- Teste: borda vermelha mantém o anel cinza; `outline-color` o substitui.
+
+## 2026-10-16 — Campo de texto vazio mantém a linha de base
+
+- Apagar o conteúdo de um `<input>` de texto (no `143`, a busca) descia o
+  `number` ao lado; digitar de novo o devolvia. Sem texto, a caixa não tinha
+  linha e a linha de base caía na borda de baixo, realinhando a linha toda.
+  Agora um campo de texto vazio alinha pela linha que o texto ocuparia
+  (topo do conteúdo + meia entrelinha + ascendente), como nos navegadores;
+  isso também vale para campos que já começam vazios.
+- Teste: apagar e redigitar a busca não move ela nem o `number` ao lado,
+  com `line-height` normal e explícito. Fixture `145`.
+
+## 2026-10-16 — Anel de foco em todos os controles
+
+- Desfeita a exceção do `range` e do `type=image`: sem anel, a navegação por
+  Tab não mostrava qual controle estava focado (pedido do mantenedor).
+  Todo controle focado recebe `outline: 2px solid #808080`.
+- Teste: o slider focado tem o anel. Fixture `145` com o slider.
+
+## 2026-10-16 — Lista do select pelo CSS padrão
+
+- Quarta fase da personalização: a lista aberta do `<select>` segue o
+  select customizável. `::picker(select)` (pseudo-elemento funcional, novo
+  no parser) é a caixa; cada linha usa o estilo do `<option>`/`<optgroup>`
+  (fundo, borda, raio, cor, fonte, `padding`). Padrões na UA, que ganhou
+  regras com pseudo-classe (`option:hover`). Sem `appearance: base-select`.
+- `option:hover` é a opção destacada: com a lista aberta, o contexto de
+  hover aponta para ela, e o ponteiro sobre a lista passa a movê-la
+  (antes só as setas). `option:checked` lê `tbox_html_node.selectedness`,
+  sincronizado do `tbox_select_field` antes de cada resolução de estilo.
+  `:disabled` inclui opções de `optgroup` desabilitado.
+- A altura das linhas é a da mais alta (fonte + `padding`); saiu o mínimo
+  fixo de 24px. Com as fontes padrão, nada muda.
+- Corrigido defeito antigo: com `<optgroup>`, as setas paravam no meio da
+  lista, porque a navegação usava a posição na lista de linhas (que conta
+  os títulos dos grupos) como índice de opção.
+- Testes: lista com CSS próprio (caixa, padding, `:checked`, `:hover` pelo
+  teclado e pelo ponteiro, `:disabled` no grupo), `selected` intacto após
+  escolher, setas atravessando grupos. Suíte limpa com ASan/UBSan.
+  Fixture `146`.

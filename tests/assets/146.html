@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* Lista do <select> pelo CSS padrão do select customizável
+     * (docs/10-formularios-e-controles.md, "Lista do select"). Abra cada
+     * select para ver a lista: ::picker(select) é a caixa, cada <option> e
+     * <optgroup> uma linha, :hover a opção destacada (mouse ou setas),
+     * :checked a escolhida, :disabled inclusive dentro de um optgroup
+     * desabilitado. O tbox não exige appearance: base-select; a regra fica
+     * aqui para o Chrome (135+) mostrar o mesmo. O Firefox ainda mostra a
+     * lista nativa. */
+    select,
+    ::picker(select) {
+      appearance: base-select;
+    }
+
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    section {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+    }
+
+    select {
+      width: 220px;
+    }
+
+    /* Tema roxo: caixa arredondada, linhas mais altas, escolhida em lilás,
+     * destacada em roxo com raio. */
+    .roxo::picker(select) {
+      border: 2px solid #7c3aed;
+      border-radius: 8px;
+      background-color: #faf5ff;
+    }
+
+    .roxo option {
+      padding: 6px 12px;
+      color: #3b0764;
+    }
+
+    .roxo option:checked {
+      background-color: #ede9fe;
+      font-weight: bold;
+    }
+
+    .roxo option:hover {
+      background-color: #7c3aed;
+      color: white;
+      border-radius: 6px;
+    }
+
+    .roxo option:disabled {
+      color: #c4b5fd;
+    }
+
+    .roxo optgroup {
+      color: #a21caf;
+      font-weight: bold;
+    }
+
+    /* Tema escuro por variáveis. */
+    .escuro {
+      --fundo: #1e293b;
+      --texto: #e2e8f0;
+      --destaque: #38bdf8;
+    }
+
+    .escuro::picker(select) {
+      background-color: var(--fundo);
+      border: 1px solid var(--destaque);
+    }
+
+    .escuro option {
+      color: var(--texto);
+    }
+
+    .escuro option:hover {
+      background-color: var(--destaque);
+      color: var(--fundo);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Lista do select</h1>
+
+  <section>
+    <h2>Padrão</h2>
+    <select>
+      <option>Primeira</option>
+      <option selected>Segunda</option>
+      <option disabled>Desabilitada</option>
+      <optgroup label="Grupo">
+        <option>Dentro A</option>
+        <option>Dentro B</option>
+      </optgroup>
+    </select>
+  </section>
+
+  <section>
+    <h2>Tema roxo</h2>
+    <select class="roxo">
+      <option>Primeira</option>
+      <option selected>Segunda</option>
+      <option disabled>Desabilitada</option>
+      <optgroup label="Grupo">
+        <option>Dentro A</option>
+        <option>Dentro B</option>
+      </optgroup>
+      <optgroup label="Grupo desabilitado" disabled>
+        <option>Dentro C</option>
+      </optgroup>
+    </select>
+  </section>
+
+  <section>
+    <h2>Tema escuro com var()</h2>
+    <select class="escuro">
+      <option>Norte</option>
+      <option>Sul</option>
+      <option selected>Leste</option>
+      <option>Oeste</option>
+    </select>
+  </section>
+</body>
+
+</html>
