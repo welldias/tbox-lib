@@ -425,7 +425,9 @@ bool tbox_context_clear_search(tbox_context *ctx, const tbox_html_node *node) {
 bool tbox_context_number_step(tbox_context *ctx, const tbox_html_node *node, int direction, bool large) {
     tbox_text_field *field = tbox_context_text_field(ctx, node);
     if (field == NULL) return false;
-    double min, max, step;
+    /* Initialized although only read behind has_min/has_max: optimized
+     * builds can't prove that (-Wmaybe-uninitialized). */
+    double min = 0.0, max = 0.0, step;
     bool has_min = tbox_context_number_attribute(node, "min", &min);
     bool has_max = tbox_context_number_attribute(node, "max", &max);
     if (!tbox_context_number_attribute(node, "step", &step) || step <= 0.0) step = 1.0;

@@ -816,3 +816,10 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
 - Os testes de mecânica de rolagem fixam a barra clássica por CSS
   (`scrollbar-width: auto`, `scrollbar-color`); um teste novo cobre o
   padrão discreto.
+
+## 2026-10-16 — Aviso do build Release em `tbox_context_number_step`
+
+- Com otimização, o GCC acusava `min`/`max` possivelmente não
+  inicializados (`-Wmaybe-uninitialized`, erro por `-Werror`), embora só
+  sejam lidos quando `has_min`/`has_max` são verdadeiros. Inicializados com
+  0. Era o único aviso do build Release; suíte passa em Debug e Release.
