@@ -172,9 +172,9 @@ elseif(TBOX_ENABLE_WAYLAND)
     )
 endif()
 
-# OpenCV backs tests/tbox_cmp.c (v10, see docs/dev/historico.md's "v10 --
+# OpenCV backs tests/tbox_cmp.cpp (v10, see docs/dev/historico.md's "v10 --
 # tbox_cmp"), a visual-regression tool that renders each tests/assets/*.html
-# fixture and compares it against its paired *.png reference via SSIM.
+# fixture and compares it against a headless Firefox capture of the same file.
 # Entirely optional, same graceful-skip pattern as Wayland/Fontconfig above:
 # absence must never fail configure -- the main test suite (tbox_tests, the
 # 21 groups in tests/CMakeLists.txt) never depends on it, only tbox_cmp

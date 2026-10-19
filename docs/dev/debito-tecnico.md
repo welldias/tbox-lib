@@ -562,8 +562,8 @@ tabela sobreposta copia os estilos da subárvore a cada frame.
   ignorado. A equivalência está em
   [Formulários e controles](../10-formularios-e-controles.md#equivalentes-em-outros-navegadores).
 - **Por que importa:** CSS existente não estiliza os controles do tbox sem
-  ser reescrito; e o PNG de referência de um fixture capturado no Firefox
-  não mostra as partes com os nomes do rascunho.
+  ser reescrito; e a captura de um fixture no Firefox (referência do
+  `tbox_cmp`) não mostra as partes com os nomes do rascunho.
 - **Quando revisitar:** quando houver CSS real a portar. Seria uma tabela
   de apelidos na resolução das partes (`src/style/tbox_style_parts.c`),
   com cuidado onde não há correspondência 1:1 (o spin button único do

@@ -14,7 +14,7 @@ Este arquivo é o mapa físico, para quem vai editar o código.
 | `include/tbox/` | API pública. `tbox.h` inclui todos os outros headers. |
 | `src/<módulo>/` | Implementação; um diretório por módulo. Os `.c` entram no build pelo glob de `src/CMakeLists.txt`. |
 | `tests/<módulo>/` | Testes unitários/integração, todos no binário `tbox_tests` (`tests/main.c`). |
-| `tests/assets/` | Fixtures visuais `NNN.html` (algumas com `NNN.png` de referência capturado num navegador). |
+| `tests/assets/` | Fixtures visuais `NNN.html`, com textos em inglês; a referência é capturada no Firefox pelo `tbox_cmp`. |
 | `tests/tbox_cmp.cpp` | Ferramenta opcional de comparação visual (C++/OpenCV). |
 | `example/` | Programas de exemplo e demos (ver [Exemplos](../04-exemplos.md)). |
 | `external/` | Código vendorizado: `utf8.h`, `stb_image`, fonte Liberation Sans. |

@@ -40,12 +40,12 @@
       background: #f1f5f9;
     }
 
-    /* Páginas: sempre para numa página inteira */
+    /* Pages: always stops on a whole page */
     .mandatory {
       scroll-snap-type: y mandatory;
     }
 
-    /* Proximity com itens menores, centralizados, e scroll-padding */
+    /* Proximity with smaller, centered items and scroll-padding */
     .proximity {
       scroll-snap-type: y proximity;
       scroll-padding: 10px 0;
@@ -56,7 +56,7 @@
       scroll-snap-align: center;
     }
 
-    /* scroll-snap-stop: always -- um gesto longo para no primeiro */
+    /* scroll-snap-stop: always -- a long gesture stops at the first one */
     .stop {
       scroll-snap-type: y mandatory;
     }
@@ -69,13 +69,13 @@
 
 <body>
   <h1>scroll-snap</h1>
-  <p>Role com a roda ou arraste a barra: ao parar, a lista se encaixa.</p>
+  <p>Scroll with the wheel or drag the bar: when it stops, the list snaps.</p>
 
   <div class="row">
     <div>
       <h2>y mandatory</h2>
       <div class="list mandatory">
-        <div>Página 1</div><div>Página 2</div><div>Página 3</div><div>Página 4</div>
+        <div>Page 1</div><div>Page 2</div><div>Page 3</div><div>Page 4</div>
       </div>
     </div>
     <div>
@@ -88,7 +88,7 @@
 
   <h2>scroll-snap-stop: always</h2>
   <div class="list stop">
-    <div>Etapa 1</div><div>Etapa 2</div><div>Etapa 3</div><div>Etapa 4</div>
+    <div>Step 1</div><div>Step 2</div><div>Step 3</div><div>Step 4</div>
   </div>
 </body>
 

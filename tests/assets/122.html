@@ -22,7 +22,7 @@
       background: white;
     }
 
-    /* Largura e padding: refazem o layout a cada frame */
+    /* Width and padding: redo the layout every frame */
     .grow {
       width: 160px;
       padding: 6px 10px;
@@ -36,7 +36,7 @@
       padding-left: 30px;
     }
 
-    /* Cor da borda, raio e contorno */
+    /* Border color, radius and outline */
     .frame {
       display: inline-block;
       padding: 10px 16px;
@@ -53,7 +53,7 @@
       outline-width: 3px;
     }
 
-    /* translate com cubic-bezier (passa do alvo e volta) */
+    /* translate with cubic-bezier (overshoots and comes back) */
     .move {
       display: inline-block;
       padding: 6px 12px;
@@ -65,7 +65,7 @@
       transform: translateX(80px);
     }
 
-    /* steps(): a cor muda em degraus */
+    /* steps(): the color changes in steps */
     .steps {
       padding: 6px 12px;
       background: #fee2e2;
@@ -76,7 +76,7 @@
       background-color: #dc2626;
     }
 
-    /* Longhands em lista, pareadas por índice */
+    /* Longhands in a list, paired by index */
     .lists {
       padding: 6px 12px;
       letter-spacing: 0;
@@ -94,31 +94,31 @@
 </head>
 
 <body>
-  <h1>transition em mais propriedades</h1>
+  <h1>transition on more properties</h1>
 
-  <h2>width e padding (passe o mouse)</h2>
+  <h2>width and padding (hover)</h2>
   <div class="card">
-    <div class="grow">Cresce com ease-out</div>
+    <div class="grow">Grows with ease-out</div>
   </div>
 
-  <h2>border-color, border-radius e outline-width</h2>
+  <h2>border-color, border-radius and outline-width</h2>
   <div class="card">
-    <span class="frame">Moldura</span>
+    <span class="frame">Frame</span>
   </div>
 
-  <h2>translate com cubic-bezier()</h2>
+  <h2>translate with cubic-bezier()</h2>
   <div class="card">
-    <span class="move">Desliza e quica</span>
+    <span class="move">Slides and bounces</span>
   </div>
 
   <h2>steps(4, jump-end)</h2>
   <div class="card">
-    <div class="steps">Escurece em quatro degraus</div>
+    <div class="steps">Darkens in four steps</div>
   </div>
 
-  <h2>Listas de longhands</h2>
+  <h2>Longhand lists</h2>
   <div class="card">
-    <div class="lists">letter-spacing em 300ms; a cor espera 300ms e leva 1s</div>
+    <div class="lists">letter-spacing in 300ms; the color waits 300ms and takes 1s</div>
   </div>
 </body>
 

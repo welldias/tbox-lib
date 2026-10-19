@@ -26,8 +26,7 @@
       background: white;
     }
 
-    /* isolation: sem ela, o filho com z-index: -1 pinta sob o fundo da
-   .scene (some); com isolation: isolate, pinta sobre o fundo do cartão. */
+    /* isolation: without it, the child with z-index: -1 paints under the .scene background (disappears); with isolation: isolate, it paints over the card background. */
     .scene {
       background: #cbd5e1;
       padding: 8px;
@@ -100,11 +99,11 @@
 </head>
 
 <body>
-  <h1>isolation, text-justify, line-break, font-variant-position e all</h1>
+  <h1>isolation, text-justify, line-break, font-variant-position and all</h1>
 
-  <h2>isolation (laranja: z-index: -1)</h2>
+  <h2>isolation (orange: z-index: -1)</h2>
   <div class="row scene">
-    <div class="stack">sem isolation<div class="under"></div>
+    <div class="stack">no isolation<div class="under"></div>
     </div>
     <div class="stack isolated">isolation: isolate<div class="under"></div>
     </div>
@@ -112,19 +111,19 @@
 
   <h2>text-justify</h2>
   <div class="row">
-    <p class="card justify">auto: o texto justificado distribui o espaço entre as palavras de cada linha.</p>
-    <p class="card no-justify">none: o texto justificado distribui o espaço entre as palavras de cada linha.</p>
+    <p class="card justify">auto: justified text spreads the space between the words of each line.</p>
+    <p class="card no-justify">none: justified text spreads the space between the words of each line.</p>
   </div>
 
   <h2>line-break</h2>
-  <p class="card break-normal">auto: http://exemplo.com/caminho/muito/longo</p>
-  <p class="card break-anywhere">anywhere: http://exemplo.com/caminho/muito/longo</p>
+  <p class="card break-normal">auto: http://example.com/a/very/long/path</p>
+  <p class="card break-anywhere">anywhere: http://example.com/a/very/long/path</p>
 
   <h2>font-variant-position</h2>
-  <p>H<span class="sub">2</span>O e E = mc<span class="sup">2</span>; nota<span class="sup">a, <b>b</b></span></p>
+  <p>H<span class="sub">2</span>O and E = mc<span class="sup">2</span>; note<span class="sup">a, <b>b</b></span></p>
 
   <h2>all</h2>
-  <p class="reset">Texto vermelho, <span>all: initial</span> e <em>all: unset (herda)</em>.</p>
+  <p class="reset">Red text, <span>all: initial</span> and <em>all: unset (inherits)</em>.</p>
 </body>
 
 </html>

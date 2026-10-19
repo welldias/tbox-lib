@@ -29,7 +29,7 @@
       font-weight: bold;
     }
 
-    /* opacity de grupo: o texto branco continua branco sobre o fundo */
+    /* group opacity: the white text stays white over the background */
     .faded {
       opacity: 0.5;
     }
@@ -42,7 +42,7 @@
       color: #2563eb;
     }
 
-    /* blur() de verdade, e encadeado com cor */
+    /* real blur(), and chained with color */
     .blur {
       filter: blur(3px);
     }
@@ -51,7 +51,7 @@
       filter: blur(1px) grayscale(1);
     }
 
-    /* drop-shadow segue a forma: cantos arredondados e o texto */
+    /* drop-shadow follows the shape: rounded corners and the text */
     .badge {
       width: 80px;
       height: 80px;
@@ -67,7 +67,7 @@
       filter: drop-shadow(3px 3px 2px rgba(0, 0, 0, 0.5));
     }
 
-    /* mask-image: gradiente que apaga a direita, e uma imagem */
+    /* mask-image: a gradient that fades the right side, and an image */
     .fade-out {
       width: 220px;
       padding: 10px;
@@ -83,7 +83,7 @@
       -webkit-mask: url(mask-star.png) center / contain no-repeat;
     }
 
-    /* mix-blend-mode sobre o fundo listrado */
+    /* mix-blend-mode over the striped background */
     .stage {
       display: flex;
       gap: 10px;
@@ -113,14 +113,14 @@
       mix-blend-mode: difference;
     }
 
-    /* isolation: o filho só mistura com o grupo isolado */
+    /* isolation: the child only blends with the isolated group */
     .stage .isolated {
       isolation: isolate;
       background: white;
       padding: 5px;
     }
 
-    /* backdrop-filter com blur (vidro fosco) */
+    /* backdrop-filter with blur (frosted glass) */
     .scene {
       position: relative;
       width: 480px;
@@ -147,7 +147,7 @@
       backdrop-filter: blur(3px) sepia(1);
     }
 
-    /* background-blend-mode isolado num fundo transparente */
+    /* isolated background-blend-mode on a transparent background */
     .tile {
       width: 120px;
       height: 50px;
@@ -158,34 +158,34 @@
 </head>
 
 <body>
-  <h1>Camadas de composição</h1>
+  <h1>Compositing layers</h1>
 
-  <h2>opacity de grupo, blur(), blur + grayscale</h2>
+  <h2>group opacity, blur(), blur + grayscale</h2>
   <div class="row">
-    <div class="card faded">50%<span>texto</span></div>
+    <div class="card faded">50%<span>text</span></div>
     <div class="card blur">blur(3px)</div>
-    <div class="card blur-gray">blur + cinza</div>
+    <div class="card blur-gray">blur + gray</div>
   </div>
 
-  <h2>drop-shadow() na forma</h2>
+  <h2>drop-shadow() on the shape</h2>
   <div class="row">
     <div class="badge"></div>
-    <div class="shadow-text">Sombra no texto</div>
+    <div class="shadow-text">Shadow on the text</div>
   </div>
 
-  <h2>mask-image e -webkit-mask</h2>
+  <h2>mask-image and -webkit-mask</h2>
   <div class="row">
-    <div class="fade-out">Este texto some aos poucos para a direita</div>
+    <div class="fade-out">This text fades out to the right</div>
     <div class="star"></div>
   </div>
 
-  <h2>mix-blend-mode e isolation</h2>
+  <h2>mix-blend-mode and isolation</h2>
   <div class="stage">
     <div class="multiply">multiply</div>
     <div class="screen">screen</div>
     <div class="difference">difference</div>
     <div class="isolated">
-      <div class="multiply" style="width: 60px">isolado</div>
+      <div class="multiply" style="width: 60px">isolated</div>
     </div>
   </div>
 
@@ -195,7 +195,7 @@
     <div class="frosted tint">blur + sepia</div>
   </div>
 
-  <h2>background-blend-mode isolado</h2>
+  <h2>isolated background-blend-mode</h2>
   <div class="tile"></div>
 </body>
 

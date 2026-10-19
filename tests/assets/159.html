@@ -4,11 +4,11 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* Texto bidirecional (docs/09-texto-e-fontes.md, "Texto bidirecional"):
-     * UAX #9 por parágrafo e reordenação por linha. Hebraico com número e
-     * palavra latina em bloco ltr e rtl, árabe em rtl, espelhamento de
-     * parênteses em rtl, <bdo dir=rtl>, unicode-bidi isolate x normal
-     * diante de um número e plaintext num bloco ltr. */
+    /* Bidirectional text (docs/09-texto-e-fontes.md, "Texto bidirecional"):
+     * UAX #9 per paragraph and reordering per line. Hebrew with a number and
+     * a Latin word in ltr and rtl blocks, Arabic in rtl, mirrored
+     * parentheses in rtl, <bdo dir=rtl>, unicode-bidi isolate vs normal
+     * before a number, and plaintext in an ltr block. */
     body {
       margin: 16px;
       background: white;
@@ -54,15 +54,15 @@
 
 <body>
   <div class="row">
-    <div class="lbl">ltr: hebraico + 123 + latim</div>
+    <div class="lbl">ltr: Hebrew + 123 + Latin</div>
     <div class="t">שלום 123 <span class="hl">hello</span> עולם</div>
   </div>
   <div class="row">
-    <div class="lbl">rtl: o mesmo texto</div>
+    <div class="lbl">rtl: the same text</div>
     <div class="t rtl">שלום 123 <span class="hl">hello</span> עולם</div>
   </div>
   <div class="row">
-    <div class="lbl">rtl: árabe</div>
+    <div class="lbl">rtl: Arabic</div>
     <div class="t rtl">مرحبا بالعالم 42</div>
   </div>
   <div class="row">
@@ -70,7 +70,7 @@
     <div class="t rtl">abc (def) ghi</div>
   </div>
   <div class="row">
-    <div class="lbl">rtl: parênteses espelhados</div>
+    <div class="lbl">rtl: mirrored parentheses</div>
     <div class="t rtl">שלום (עולם) [טוב] &lt;כן&gt;</div>
   </div>
   <div class="row">
@@ -88,15 +88,15 @@
         class="n">5</span> posts</div>
   </div>
   <div class="row">
-    <div class="lbl">bloco ltr, normal</div>
+    <div class="lbl">ltr block, normal</div>
     <div class="t">שלום world!</div>
   </div>
   <div class="row">
-    <div class="lbl">bloco ltr, plaintext</div>
+    <div class="lbl">ltr block, plaintext</div>
     <div class="t" style="unicode-bidi: plaintext">שלום world!</div>
   </div>
   <div class="row">
-    <div class="lbl">&lt;bdi&gt; e embed rtl</div>
+    <div class="lbl">&lt;bdi&gt; and embed rtl</div>
     <div class="t"><bdi>עברית</bdi> 7, <span style="direction: rtl; unicode-bidi: embed">abc def</span>, end</div>
   </div>
 </body>

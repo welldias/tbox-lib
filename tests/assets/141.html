@@ -4,10 +4,10 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* Shaping (docs/09-texto-e-fontes.md, "Shaping"). Com HarfBuzz
-     * (TBOX_ENABLE_HARFBUZZ=ON) cada linha "depois" difere da "antes"; sem
-     * ele, as duas saem iguais. Os exemplos usam DejaVu Sans, que tem
-     * ligaduras, kerning GPOS, árabe e hebraico. */
+    /* Shaping (docs/09-texto-e-fontes.md, "Shaping"). With HarfBuzz
+     * (TBOX_ENABLE_HARFBUZZ=ON) every "after" line differs from the "before"
+     * one; without it, both come out the same. The examples use DejaVu Sans,
+     * which has ligatures, GPOS kerning, Arabic and Hebrew. */
     body {
       font: 20px "DejaVu Sans";
       background: #eef2f7;
@@ -73,14 +73,14 @@
 </head>
 
 <body>
-  <h1>Shaping com HarfBuzz</h1>
+  <h1>Shaping with HarfBuzz</h1>
 
-  <h2>Ligaduras: "fi", "ffi" e "fl" viram um glifo</h2>
+  <h2>Ligatures: "fi", "ffi" and "fl" become one glyph</h2>
   <div class="card">
-    <div class="row"><span class="label">ligaduras (padrão)</span><span class="big">office affinity</span></div>
-    <div class="row"><span class="label">letter-spacing: 1px (desliga)</span><span class="big spaced">office
+    <div class="row"><span class="label">ligatures (default)</span><span class="big">office affinity</span></div>
+    <div class="row"><span class="label">letter-spacing: 1px (turns off)</span><span class="big spaced">office
         affinity</span></div>
-    <div class="row"><span class="label">monospace (sem ligaduras)</span><span class="big mono">office</span></div>
+    <div class="row"><span class="label">monospace (no ligatures)</span><span class="big mono">office</span></div>
   </div>
 
   <h2>Kerning OpenType (GPOS)</h2>
@@ -90,27 +90,27 @@
     </div>
   </div>
 
-  <h2>Acentos combinantes: "e" + U+0301 e marcas empilhadas</h2>
+  <h2>Combining accents: "e" + U+0301 and stacked marks</h2>
   <div class="card">
-    <div class="row"><span class="label">pré-composto (U+00E9)</span><span class="big">caf&#xE9; &#xC1;rvore</span>
+    <div class="row"><span class="label">precomposed (U+00E9)</span><span class="big">caf&#xE9; &#xC1;rvore</span>
     </div>
-    <div class="row"><span class="label">decomposto (e + U+0301)</span><span class="big">cafe&#x301;
+    <div class="row"><span class="label">decomposed (e + U+0301)</span><span class="big">cafe&#x301;
         A&#x301;rvore</span></div>
-    <div class="row"><span class="label">ponto embaixo + mácron</span><span class="big">e&#x323;&#x304; o&#x323;&#x302;
+    <div class="row"><span class="label">dot below + macron</span><span class="big">e&#x323;&#x304; o&#x323;&#x302;
         a&#x328;&#x301;</span></div>
   </div>
 
-  <h2>Formas contextuais: árabe e hebraico com sinais vocálicos</h2>
+  <h2>Contextual forms: Arabic and Hebrew with vowel marks</h2>
   <div class="card">
-    <div class="row"><span class="label">letras isoladas (com ZWNJ)</span><span
+    <div class="row"><span class="label">isolated letters (with ZWNJ)</span><span
         class="big">&#x633;&#x200C;&#x644;&#x200C;&#x627;&#x200C;&#x645;</span></div>
-    <div class="row"><span class="label">palavra (formas ligadas)</span><span class="big">سلام</span></div>
-    <div class="row"><span class="label">hebraico com niqqud</span><span class="big">שָׁלוֹם</span></div>
-    <div class="row"><span class="label">frase (sem bidi: ordem lógica)</span><span class="big">مرحبا بالعالم</span>
+    <div class="row"><span class="label">word (joined forms)</span><span class="big">سلام</span></div>
+    <div class="row"><span class="label">Hebrew with niqqud</span><span class="big">שָׁלוֹם</span></div>
+    <div class="row"><span class="label">sentence (no bidi: logical order)</span><span class="big">مرحبا بالعالم</span>
     </div>
   </div>
 
-  <h2>Edição: clique entre o "f" e o "i" de uma ligadura</h2>
+  <h2>Editing: click between the "f" and the "i" of a ligature</h2>
   <div class="card">
     <input value="office affinity"><br>
     <input type="password" value="office"><br>

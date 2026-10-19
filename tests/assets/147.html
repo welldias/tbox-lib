@@ -4,15 +4,15 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* Scrollbar (docs/06-eventos-e-interatividade.md, "Rolagem"): as
-     * propriedades padrão scrollbar-width e scrollbar-color, e as partes do
-     * tbox ::-tbox-scrollbar-track e ::-tbox-scrollbar-thumb (largura,
-     * fundo, borda, raio, margem, altura mínima e os estados :hover e
-     * :active do polegar). Passe o mouse e arraste o polegar das caixas da
-     * segunda linha. O padrão é discreto (thin, trilho transparente, polegar
-     * em pílula com 1px de recuo); scrollbar-width: auto volta aos 10px.
-     * O Firefox e o Chrome aplicam só scrollbar-width e
-     * scrollbar-color; as partes -tbox- não existem neles. */
+    /* Scrollbar (docs/06-eventos-e-interatividade.md, "Rolagem"): the
+     * standard scrollbar-width and scrollbar-color properties, and tbox's
+     * ::-tbox-scrollbar-track and ::-tbox-scrollbar-thumb parts (width,
+     * background, border, radius, margin, minimum height and the thumb's
+     * :hover and :active states). Hover and drag the thumbs of the boxes in
+     * the second row. The default is discreet (thin, transparent track,
+     * pill thumb inset by 1px); scrollbar-width: auto goes back to 10px.
+     * Firefox and Chrome only apply scrollbar-width and scrollbar-color;
+     * the -tbox- parts do not exist there. */
     body {
       margin: 24px;
       background: #f4f7fb;
@@ -104,7 +104,7 @@
   <h1>Scrollbar</h1>
 
   <div class="caixa">
-    <p>Padrão</p>
+    <p>Default</p>
     <p>a</p>
     <p>b</p>
     <p>c</p>
@@ -141,7 +141,7 @@
   </div>
 
   <div class="caixa larga">
-    <p>Larga, margem, :hover e :active</p>
+    <p>Wide, margin, :hover and :active</p>
     <p>a</p>
     <p>b</p>
     <p>c</p>
@@ -153,7 +153,7 @@
     <p>i</p>
   </div>
   <div class="caixa pilula">
-    <p>Pílula com borda</p>
+    <p>Pill with a border</p>
     <p>a</p>
     <p>b</p>
     <p>c</p>
@@ -165,7 +165,7 @@
     <p>i</p>
   </div>
   <div class="caixa reservada">
-    <p>scrollbar-gutter: stable com 20px</p>
+    <p>scrollbar-gutter: stable with 20px</p>
     <p>a</p>
     <p>b</p>
     <p>c</p>

@@ -738,6 +738,14 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
 
 ## Ferramentas
 
+- **Referência do `tbox_cmp` capturada no Firefox a cada execução**, em
+  vez de PNGs guardados no repositório. Uma imagem tirada à mão envelhece
+  quando o fixture muda, depende do navegador e da tela de quem a tirou e
+  não existia para a maioria dos fixtures. A captura headless com tamanho
+  fixo reproduz a medição de [paridade](../referencia/paridade-firefox.md)
+  e cobre todos. O custo é ter o Firefox na máquina para rodar a
+  ferramenta, que já era opcional e fora do `ctest` (2026-10-19).
+
 - **`tbox_cmp` em C++/OpenCV, opcional, fora do `ctest`**: a API C do OpenCV
   não existe mais; o mantenedor quis manter o algoritmo existente. Só
   `core`+`imgproc`+`imgcodecs` são linkados. O veredito por asset não vira

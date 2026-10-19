@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8">
-    <title>Recortes poligonais</title>
+    <title>Polygon clips</title>
     <style>
         body {
             margin: 0;
@@ -75,19 +75,19 @@
 </head>
 
 <body>
-    <h1>Recortes poligonais</h1>
-    <p>Recorte do elemento e dos descendentes, inclusive para eventos do ponteiro.</p>
-    <h2>Triângulo e polígono côncavo</h2>
+    <h1>Polygon clips</h1>
+    <p>Clips the element and its descendants, pointer events included.</p>
+    <h2>Triangle and concave polygon</h2>
     <div class="row">
         <div class="tile triangle"></div>
         <div class="tile concave"></div>
     </div>
-    <h2>Mesma estrela: nonzero e evenodd (centro vazado)</h2>
+    <h2>Same star: nonzero and evenodd (hollow center)</h2>
     <div class="row">
         <div class="tile star"></div>
         <div class="tile star-hole"></div>
     </div>
-    <h2>Interseção de polígonos aninhados e recorte depois do blur</h2>
+    <h2>Intersection of nested polygons and clipping after blur</h2>
     <div class="row">
         <div class="tile parent">
             <div class="child"></div>

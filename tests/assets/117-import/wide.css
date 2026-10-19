@@ -1,2 +1,2 @@
-/* Só vale numa janela com 5000px ou mais: não deve aplicar. */
+/* Only applies to a window of 5000px or more: must not apply. */
 .import-color { color: #dc2626; }

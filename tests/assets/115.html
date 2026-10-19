@@ -109,18 +109,18 @@
 </head>
 
 <body>
-  <h1>Propriedades lógicas, hifenização, clip e rolagem</h1>
+  <h1>Logical properties, hyphenation, clip and scrolling</h1>
 
-  <h2>border-block-* e border-inline-*</h2>
-  <div class="box axis-block">Bordas do eixo de bloco: 2px azul em cima, 8px vermelha embaixo</div>
-  <div class="box axis-inline">Bordas do eixo inline: tracejada à esquerda, pontilhada à direita</div>
+  <h2>border-block-* and border-inline-*</h2>
+  <div class="box axis-block">Block-axis borders: 2px blue on top, 8px red at the bottom</div>
+  <div class="box axis-inline">Inline-axis borders: dashed on the left, dotted on the right</div>
 
   <h2>hyphenate-character</h2>
-  <div class="hyph">padrão: extra&shy;ordinariamente</div>
-  <div class="hyph custom">igual: extra&shy;ordinariamente</div>
-  <div class="hyph tilde">til: extra&shy;ordinariamente</div>
+  <div class="hyph">default: extra&shy;ordinarily</div>
+  <div class="hyph custom">equal: extra&shy;ordinarily</div>
+  <div class="hyph tilde">tilde: extra&shy;ordinarily</div>
 
-  <h2>clip: rect() (à esquerda) e sem clip (à direita)</h2>
+  <h2>clip: rect() (left) and no clip (right)</h2>
   <div class="clip-host">
     <div class="clipped"></div>
     <div class="unclipped"></div>
@@ -129,12 +129,10 @@
   <h2>overscroll-behavior, scroll-margin, scroll-padding</h2>
   <div class="outer">
     <div class="inner">
-      <button>Um</button><button>Dois</button><button>Três</button>
-      <button>Quatro</button><button>Cinco</button><button>Seis</button>
+      <button>One</button><button>Two</button><button>Three</button>
+      <button>Four</button><button>Five</button><button>Six</button>
     </div>
-    <div class="filler">Rolar a lista azul até o fim não rola esta caixa
-      (overscroll-behavior: contain). Com Tab, o botão focado fica a 16px da
-      borda da lista (scroll-margin + scroll-padding).</div>
+    <div class="filler">Scrolling the blue list to the end does not scroll this box (overscroll-behavior: contain). With Tab, the focused button stays 16px from the list edge (scroll-margin + scroll-padding).</div>
   </div>
 </body>
 

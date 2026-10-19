@@ -1,5 +1,4 @@
-/* Importado em layer(reset): perde para qualquer regra fora de camada,
-   mesmo sendo mais específico. */
+/* Imported into layer(reset): loses to any unlayered rule, even though it is more specific. */
 p.layer-demo {
     color: #dc2626;
     margin: 0;

@@ -28,8 +28,11 @@ fontes instaladas.
 ## Fixtures visuais — `tests/assets/`
 
 Arquivos `NNN.html` que exercitam uma feature cada; o README e o
-[histórico](dev/historico.md) citam o número de cada um. Parte deles tem um
-`NNN.png` de referência, capturado num navegador real.
+[histórico](dev/historico.md) citam o número de cada um. Os textos são em
+inglês. Não há imagens de referência guardadas: o `tbox_cmp` captura cada
+fixture no Firefox a cada execução. Os PNGs que ficam em `tests/assets/`
+(`bird.png`, `mask-star.png`...) são imagens usadas pelos próprios
+fixtures.
 
 ```sh
 build/example/tbox_assets_showrun            # abre o primeiro; ← → navegam, Esc fecha
@@ -53,16 +56,28 @@ mudança visual sem risco de capturar outra coisa da tela.
 ## Comparação com referências — `tbox_cmp`
 
 ```sh
-build/tests/tbox_cmp tests/assets
+build/tests/tbox_cmp tests/assets                     # todos os fixtures
+build/tests/tbox_cmp --output /tmp/cmp tests/assets 065 110
+build/tests/tbox_cmp --size 1024x768 --firefox /opt/firefox/firefox tests/assets
 ```
 
-Para cada `NNN.html` com `NNN.png` irmão, renderiza no tamanho do PNG e
-compara. O veredito usa checagens locais de conteúdo, bordas e cor,
-tolerando pequenas diferenças de glifo e posição; o SSIM é impresso para
-diagnóstico. Imagens anotadas com as diferenças vão para o diretório
-temporário mostrado no início.
+Para cada `NNN.html` (ou só os nomeados), o `tbox_cmp`:
+1. Captura o fixture no Firefox headless (`--screenshot`), que é a referência. Usa um perfil temporário próprio, então não mexe num Firefox aberto nem no perfil do usuário, e desiste em 90 s.
+2. Renderiza o fixture com `tbox_app_screenshot_from_files` no mesmo tamanho, 800x600 por padrão (`--size`).
+3. Compara as duas imagens. O veredito usa checagens locais de conteúdo, bordas e cor, tolerando pequenas diferenças de glifo e posição; o SSIM é impresso para diagnóstico.
 
-- Opcional: só é construído com OpenCV (C++) e Fontconfig.
+As três imagens de cada fixture ficam no diretório de saída
+(`--output DIR`, ou um temporário mostrado no início):
+`NNN_firefox.png`, `NNN_render.png` e `NNN_diff.png`, com as diferenças
+anotadas.
+
+O Firefox vem do PATH, de `--firefox` ou de `TBOX_CMP_FIREFOX`. Sem ele,
+cada fixture conta como falha operacional. O resultado da última
+comparação completa está em
+[Paridade com o Firefox](referencia/paridade-firefox.md).
+
+- Opcional: só é construído com OpenCV (C++) e Fontconfig, e só roda com
+  o Firefox instalado.
 - Não faz parte do `ctest`. Vários fixtures usam features ainda não
   implementadas, e a fonte nunca é idêntica à do navegador que gerou a
   referência; `DIFFERENT` é diagnóstico, não falha. O código de saída só é

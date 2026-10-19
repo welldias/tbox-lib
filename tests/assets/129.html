@@ -29,7 +29,7 @@
       box-sizing: border-box;
       font-size: 12px;
       color: #0f172a;
-      /* gradiente sobre uma cor sólida: o modo mistura os dois */
+      /* gradient over a solid color: the mode blends both */
       background: linear-gradient(90deg, #ef4444, #3b82f6), #facc15;
     }
 
@@ -49,7 +49,7 @@
     .color { background-blend-mode: color; }
     .luminosity { background-blend-mode: luminosity; }
 
-    /* Várias camadas: a lista se repete */
+    /* Several layers: the list repeats */
     .layers {
       width: 560px;
       height: 64px;
@@ -66,7 +66,7 @@
 <body>
   <h1>background-blend-mode</h1>
 
-  <h2>Gradiente sobre amarelo, um modo por quadro</h2>
+  <h2>Gradient over yellow, one mode per tile</h2>
   <div class="grid">
     <div class="swatch">normal</div>
     <div class="swatch multiply">multiply</div>
@@ -86,7 +86,7 @@
     <div class="swatch luminosity">luminosity</div>
   </div>
 
-  <h2>Três camadas, lista "multiply, screen"</h2>
+  <h2>Three layers, list "multiply, screen"</h2>
   <div class="layers"></div>
 </body>
 

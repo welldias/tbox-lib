@@ -4,10 +4,9 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* accent-color nos controles (docs/10-formularios-e-controles.md, "Cor
-     * de destaque"): marca do checkbox, ponto do radio, preenchimento e
-     * polegar do range e barra do progress. O trilho e as cores do meter
-     * não mudam. */
+    /* accent-color on controls (docs/10-formularios-e-controles.md, "Cor
+     * de destaque"): checkbox mark, radio dot, range fill and thumb and
+     * progress bar. The meter's track and colors do not change. */
     body {
       margin: 24px;
       background: #f4f7fb;
@@ -41,12 +40,12 @@
       width: 200px;
     }
 
-    /* Herdada: definida no contêiner, vale para os controles dentro dele. */
+    /* Inherited: set on the container, applies to the controls inside it. */
     .magenta {
       accent-color: #c81e78;
     }
 
-    /* Por controle, inclusive por var(). */
+    /* Per control, including through var(). */
     :root {
       --envio: #0e9488;
     }
@@ -66,32 +65,32 @@
 </head>
 
 <body>
-  <h1>accent-color nos controles</h1>
+  <h1>accent-color on controls</h1>
 
   <section>
-    <h2>Padrão (auto)</h2>
+    <h2>Default (auto)</h2>
     <p><input type="range" value="60"> <progress value="60" max="100"></progress></p>
     <p><input type="checkbox" checked> Checkbox <input type="radio" checked> Radio</p>
   </section>
 
   <section class="magenta">
-    <h2>Herdada do contêiner</h2>
+    <h2>Inherited from the container</h2>
     <p><input type="range" value="60"> <progress value="60" max="100"></progress></p>
     <p><input type="checkbox" checked> Checkbox <input type="radio" checked> Radio</p>
   </section>
 
   <section>
-    <h2>Por controle</h2>
+    <h2>Per control</h2>
     <p>Volume <input id="volume" type="range" value="30"></p>
-    <p>Brilho <input id="brilho" type="range" value="80"></p>
-    <p>Envio <progress id="upload" value="45" max="100"></progress></p>
+    <p>Brightness <input id="brilho" type="range" value="80"></p>
+    <p>Upload <progress id="upload" value="45" max="100"></progress></p>
   </section>
 
   <section class="magenta">
-    <h2>meter ignora o destaque</h2>
-    <p>Bom <meter min="0" max="100" low="40" high="70" optimum="55" value="55"></meter></p>
-    <p>Atenção <meter min="0" max="100" low="40" high="70" optimum="55" value="85"></meter></p>
-    <p>Ruim <meter min="0" max="100" low="40" high="70" optimum="20" value="90"></meter></p>
+    <h2>meter ignores the accent</h2>
+    <p>Good <meter min="0" max="100" low="40" high="70" optimum="55" value="55"></meter></p>
+    <p>Warning <meter min="0" max="100" low="40" high="70" optimum="55" value="85"></meter></p>
+    <p>Poor <meter min="0" max="100" low="40" high="70" optimum="20" value="90"></meter></p>
   </section>
 </body>
 

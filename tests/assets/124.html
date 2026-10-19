@@ -22,7 +22,7 @@
       background: white;
     }
 
-    /* Caixa com fundo: a sombra segue a borda arredondada */
+    /* Box with a background: the shadow follows the rounded border */
     .tile {
       display: inline-block;
       width: 120px;
@@ -34,13 +34,13 @@
       filter: drop-shadow(4px 6px 6px rgba(15, 23, 42, 0.45));
     }
 
-    /* Com uma função de cor na mesma lista */
+    /* With a color function in the same list */
     .tile.gray {
       background: #16a34a;
       filter: grayscale(1) drop-shadow(0 4px 4px rgba(0, 0, 0, 0.5));
     }
 
-    /* Sem fundo: a sombra fica no texto (e nos descendentes) */
+    /* No background: the shadow goes on the text (and the descendants) */
     .title {
       font-size: 28px;
       font-weight: bold;
@@ -48,7 +48,7 @@
       filter: drop-shadow(2px 2px 0 #92400e);
     }
 
-    /* Duas sombras encadeadas */
+    /* Two chained shadows */
     .double {
       display: inline-block;
       padding: 10px 14px;
@@ -62,19 +62,19 @@
 <body>
   <h1>filter: drop-shadow()</h1>
 
-  <h2>Caixas com fundo</h2>
+  <h2>Boxes with a background</h2>
   <div class="card">
-    <span class="tile">Azul</span><span class="tile gray">grayscale + sombra</span>
+    <span class="tile">Blue</span><span class="tile gray">grayscale + shadow</span>
   </div>
 
-  <h2>Texto sem fundo</h2>
+  <h2>Text without a background</h2>
   <div class="card">
-    <div class="title">Título com <em>sombra</em></div>
+    <div class="title">Heading with <em>shadow</em></div>
   </div>
 
-  <h2>Duas sombras</h2>
+  <h2>Two shadows</h2>
   <div class="card">
-    <span class="double">Encadeadas</span>
+    <span class="double">Chained</span>
   </div>
 </body>
 

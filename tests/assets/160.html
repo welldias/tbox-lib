@@ -4,16 +4,16 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* Escrita vertical (docs/08-layout-e-pintura.md, "Escrita vertical";
-     * docs/09-texto-e-fontes.md, "Escrita vertical"). Linha 1: um bloco
-     * vertical-rl 200x220 com dois parágrafos (colunas da direita para a
-     * esquerda), o mesmo em vertical-lr (da esquerda para a direita) e
-     * text-orientation: upright num texto latino curto. Linha 2: um título
-     * vertical-rl com text-combine-upright: all em "2024", um rótulo
-     * sideways-lr (lido de baixo para cima) e um div horizontal com um
-     * filho vertical-rl (fluxo ortogonal) ao lado de uma caixa normal: o
-     * margin-block-start (verde, à direita) e o padding-inline-start (topo,
-     * dentro do fundo amarelo) mostram o mapeamento lógico. */
+    /* Vertical writing (docs/08-layout-e-pintura.md, "Escrita vertical";
+     * docs/09-texto-e-fontes.md, "Escrita vertical"). Row 1: a vertical-rl
+     * 200x220 block with two paragraphs (columns from right to left), the
+     * same in vertical-lr (left to right) and text-orientation: upright on a
+     * short Latin text. Row 2: a vertical-rl heading with
+     * text-combine-upright: all on "2024", a sideways-lr label (read bottom
+     * to top) and a horizontal div with a vertical-rl child (orthogonal
+     * flow) next to a normal box: the margin-block-start (green, on the
+     * right) and the padding-inline-start (top, inside the yellow
+     * background) show the logical mapping. */
     body {
       margin: 20px;
       background: white;
@@ -134,15 +134,15 @@
     <div class="celula">
       <div class="rotulo">vertical-rl</div>
       <div class="bloco rl">
-        <p>Primeiro texto em coluna.</p>
-        <p>Segundo par.</p>
+        <p>First text in a column.</p>
+        <p>Second par.</p>
       </div>
     </div>
     <div class="celula">
       <div class="rotulo">vertical-lr</div>
       <div class="bloco lr">
-        <p>Primeiro texto em coluna.</p>
-        <p>Segundo par.</p>
+        <p>First text in a column.</p>
+        <p>Second par.</p>
       </div>
     </div>
     <div class="celula">
@@ -153,14 +153,14 @@
   <div class="linha">
     <div class="celula">
       <div class="rotulo">combine</div>
-      <div class="titulo">Ano <span class="combinado">2024</span> fim</div>
+      <div class="titulo">Year <span class="combinado">2024</span> end</div>
     </div>
     <div class="celula">
       <div class="rotulo">sideways-lr</div>
-      <div class="lateral">Rótulo lateral</div>
+      <div class="lateral">Side label</div>
     </div>
     <div class="celula">
-      <div class="rotulo">fluxo ortogonal</div>
+      <div class="rotulo">orthogonal flow</div>
       <div class="horizontal">
         <div class="ortogonal">Vertical</div>
         <div class="normal">Normal</div>

@@ -1,9 +1,11 @@
 /* v10 (docs/dev/historico.md's "v10 -- tbox_cmp"): visual regression tool.
- * Renders every tests/assets/NNN.html fixture (via tbox_app_screenshot_from_files,
- * v7 -- offscreen, no Wayland window needed, see tests/CMakeLists.txt's
- * OpenCV and Fontconfig gate) and compares it
- * against the paired tests/assets/NNN.png "golden" reference. SSIM is
- * reported, while local content coverage determines the verdict.
+ * Captures every tests/assets/NNN.html fixture in headless Firefox (the
+ * "golden", taken on every run) and renders it with tbox at the same size
+ * (via tbox_app_screenshot_from_files, v7 -- offscreen, no Wayland window
+ * needed, see tests/CMakeLists.txt's OpenCV and Fontconfig gate), then
+ * compares the two. SSIM is reported, while local content coverage
+ * determines the verdict. Both screenshots and the annotated difference
+ * are kept in the output directory.
  *
  * .cpp, not .c: the original version of this file (written by the
  * project's maintainer outside this session) used OpenCV's legacy C API
@@ -30,12 +32,22 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
+#include <spawn.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+
+extern char **environ;
 
 // Result of comparing one pair of images.
 struct ComparisonResult {
@@ -295,45 +307,133 @@ static ComparisonResult compare_images(const std::string &golden_path, const std
     return result;
 }
 
-/* reads only the dimensions of an already-existing PNG (the
- * golden) -- used as the exact viewport to render the corresponding HTML
- * with, so the golden and the render are directly comparable without
- * silently cropping or resizing a mismatch. */
-static bool read_png_size(const std::string &path, int *out_width, int *out_height) {
-    cv::Mat img = cv::imread(path, cv::IMREAD_COLOR);
-    if (img.empty()) {
+/* Options of one run (see usage()). */
+struct Options {
+    const char *assets_dir = "tests/assets";
+    const char *output_dir = NULL; /* NULL: a fresh temporary directory */
+    const char *firefox    = NULL; /* NULL: $TBOX_CMP_FIREFOX, else "firefox" on PATH */
+    int width              = 800;
+    int height             = 600;
+    std::vector<std::string> only; /* fixture stems to run; empty = all */
+};
+
+static void usage(const char *argv0) {
+    fprintf(stderr,
+            "Usage: %s [--size WxH] [--output DIR] [--firefox PATH] [assets_dir] [fixture...]\n"
+            "  Captures every assets_dir/*.html in headless Firefox (the golden) and\n"
+            "  renders it with tbox at the same size (default 800x600), then compares\n"
+            "  them. DIR receives NNN_firefox.png, NNN_render.png and NNN_diff.png for\n"
+            "  each fixture (default: a new temporary directory). `fixture` limits the\n"
+            "  run to the named ones (\"065\" or \"065.html\").\n",
+            argv0);
+}
+
+/* Removes `path` and everything under it (the Firefox profile). */
+static void remove_tree(const std::string &path) {
+    DIR *dir = opendir(path.c_str());
+    if (dir != NULL) {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                continue;
+            std::string child = path + "/" + entry->d_name;
+            struct stat info;
+            if (lstat(child.c_str(), &info) == 0 && S_ISDIR(info.st_mode))
+                remove_tree(child);
+            else
+                unlink(child.c_str());
+        }
+        closedir(dir);
+    }
+    rmdir(path.c_str());
+}
+
+/* file:// URL of an absolute path, percent-encoding what a URL can't hold. */
+static std::string file_url(const char *absolute) {
+    static const char hex[] = "0123456789ABCDEF";
+    std::string url = "file://";
+    for (const unsigned char *c = (const unsigned char *)absolute; *c != '\0'; c++) {
+        if (isalnum(*c) || strchr("/-_.~", *c) != NULL) {
+            url += (char)*c;
+        } else {
+            url += '%';
+            url += hex[*c >> 4];
+            url += hex[*c & 15];
+        }
+    }
+    return url;
+}
+
+/* Captures `html_path` in headless Firefox at width x height into
+ * `out_path` -- the golden of the comparison, taken on every run instead
+ * of a PNG kept next to the fixture. `profile` is a scratch profile
+ * directory, so a running Firefox and the user's own profile are never
+ * touched. Gives up after 90 s. */
+static bool capture_firefox(const char *firefox, const std::string &profile, const std::string &html_path, int width, int height, const std::string &out_path) {
+    char absolute[PATH_MAX];
+    if (realpath(html_path.c_str(), absolute) == NULL) {
+        fprintf(stderr, "[%s] %s\n", html_path.c_str(), strerror(errno));
         return false;
     }
-    *out_width  = img.cols;
-    *out_height = img.rows;
+    std::string size = "--window-size=" + std::to_string(width) + "," + std::to_string(height);
+    std::string url  = file_url(absolute);
+    const char *argv[] = { firefox, "--headless", "--no-remote", "--profile", profile.c_str(), size.c_str(), "--screenshot", out_path.c_str(), url.c_str(), NULL };
+
+    remove(out_path.c_str());
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+    pid_t pid;
+    int error = posix_spawnp(&pid, firefox, &actions, NULL, (char *const *)argv, environ);
+    posix_spawn_file_actions_destroy(&actions);
+    if (error != 0) {
+        fprintf(stderr, "[%s] could not start %s: %s\n", html_path.c_str(), firefox, strerror(error));
+        return false;
+    }
+    int status = 0;
+    for (int waited = 0;; waited++) {
+        pid_t done = waitpid(pid, &status, WNOHANG);
+        if (done == pid)
+            break;
+        if (done < 0 || waited >= 900) {
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
+            fprintf(stderr, "[%s] Firefox did not finish the capture\n", html_path.c_str());
+            return false;
+        }
+        struct timespec pause = { 0, 100 * 1000 * 1000 };
+        nanosleep(&pause, NULL);
+    }
+    struct stat info;
+    if (stat(out_path.c_str(), &info) != 0 || info.st_size == 0) {
+        fprintf(stderr, "[%s] Firefox wrote no screenshot (exit status %d)\n", html_path.c_str(), WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        return false;
+    }
     return true;
 }
 
-/* renders html_path via tbox_app_screenshot_from_files (v7 --
- * offscreen, no Wayland at runtime) at golden_path's exact dimensions,
- * compares it against golden_path, and prints that pair's result. Returns
- * true if the comparison COMPLETED (even with a DIFFERENT verdict -- see
- * docs/dev/historico.md's v10 "Escopo": several assets still exercise
- * HTML/CSS tbox doesn't implement, that is expected, not an operational
- * failure); false on an operational failure (couldn't read the golden,
- * render, compare, or write the annotated image). `out_is_equal`, if non-NULL,
- * receives the EQUAL/DIFFERENT verdict when the function returns true. */
-static bool process_pair(const std::string &html_path, const std::string &golden_path, const std::string &render_path, const std::string &diff_path, bool *out_is_equal) {
-    int width, height;
-    if (!read_png_size(golden_path, &width, &height)) {
-        fprintf(stderr, "[%s] could not read dimensions of %s\n", html_path.c_str(), golden_path.c_str());
+/* Captures html_path in Firefox, renders it via tbox_app_screenshot_from_files
+ * (v7 -- offscreen, no Wayland at runtime) at the same size, compares the
+ * two and prints that pair's result. Both screenshots and the annotated
+ * difference stay in the output directory. Returns true if the comparison
+ * COMPLETED (even with a DIFFERENT verdict -- see docs/dev/historico.md's
+ * v10 "Escopo": several assets still exercise HTML/CSS tbox doesn't
+ * implement, that is expected, not an operational failure); false on an
+ * operational failure (couldn't capture, render, compare, or write the
+ * annotated image). `out_is_equal`, if non-NULL, receives the
+ * EQUAL/DIFFERENT verdict when the function returns true. */
+static bool process_fixture(const Options &options, const char *firefox, const std::string &profile, const std::string &html_path, const std::string &golden_path, const std::string &render_path, const std::string &diff_path, bool *out_is_equal) {
+    if (!capture_firefox(firefox, profile, html_path, options.width, options.height, golden_path))
         return false;
-    }
 
-    if (!tbox_app_screenshot_from_files(html_path.c_str(), NULL, width, height, render_path.c_str())) {
+    if (!tbox_app_screenshot_from_files(html_path.c_str(), NULL, options.width, options.height, render_path.c_str())) {
         fprintf(stderr, "[%s] failed to render (tbox_app_screenshot_from_files)\n", html_path.c_str());
         return false;
     }
 
     printf("--- %s vs. %s ---\n", html_path.c_str(), golden_path.c_str());
     ComparisonResult result = compare_images(golden_path, render_path, diff_path);
-    remove(render_path.c_str());
-
     if (!result.completed) {
         return false;
     }
@@ -350,33 +450,47 @@ static bool has_html_suffix(const char *name) {
     return len > 5 && strcmp(name + len - 5, ".html") == 0;
 }
 
-/* walks `assets_dir` looking for every *.html with a sibling
- * *.png (same name, different extension) -- pairs with no matching golden
- * are skipped with a warning, not treated as an error (an HTML fixture may
- * not have a captured golden yet). Returns false only if the directory
- * couldn't be opened; anything else (an operational failure on one
- * specific pair) is counted in `*out_operational_failures` and doesn't
- * stop the rest of the iteration. */
-static bool run_directory(const char *assets_dir, int *out_total, int *out_equal_count, int *out_operational_failures) {
-    DIR *dir = opendir(assets_dir);
+/* Walks `options.assets_dir` for every *.html (or the ones named in
+ * `options.only`) and compares each against its Firefox capture. Returns
+ * false only if the directories couldn't be opened or created; anything
+ * else (an operational failure on one fixture) is counted in
+ * `*out_operational_failures` and doesn't stop the rest of the run. */
+static bool run_directory(const Options &options, int *out_total, int *out_equal_count, int *out_operational_failures) {
+    DIR *dir = opendir(options.assets_dir);
     if (dir == NULL) {
-        fprintf(stderr, "Could not open directory \"%s\": %s\n", assets_dir, strerror(errno));
+        fprintf(stderr, "Could not open directory \"%s\": %s\n", options.assets_dir, strerror(errno));
         return false;
     }
 
     char output_dir[PATH_MAX];
-    int output_length = snprintf(output_dir, sizeof(output_dir), "%s/tbox_cmp_XXXXXX", P_tmpdir);
-    if (output_length < 0 || (size_t)output_length >= sizeof(output_dir)) {
-        fprintf(stderr, "Temporary directory path is too long.\n");
+    if (options.output_dir != NULL) {
+        int output_length = snprintf(output_dir, sizeof(output_dir), "%s", options.output_dir);
+        if (output_length < 0 || (size_t)output_length >= sizeof(output_dir) || (mkdir(output_dir, 0755) != 0 && errno != EEXIST)) {
+            fprintf(stderr, "Could not create output directory \"%s\"\n", options.output_dir);
+            closedir(dir);
+            return false;
+        }
+    } else {
+        int output_length = snprintf(output_dir, sizeof(output_dir), "%s/tbox_cmp_XXXXXX", P_tmpdir);
+        if (output_length < 0 || (size_t)output_length >= sizeof(output_dir) || mkdtemp(output_dir) == NULL) {
+            fprintf(stderr, "Could not create output directory: %s\n", strerror(errno));
+            closedir(dir);
+            return false;
+        }
+    }
+    printf("Screenshots and difference images: %s\n", output_dir);
+
+    const char *firefox = options.firefox;
+    if (firefox == NULL)
+        firefox = getenv("TBOX_CMP_FIREFOX");
+    if (firefox == NULL || firefox[0] == '\0')
+        firefox = "firefox";
+    std::string profile = std::string(output_dir) + "/firefox-profile-XXXXXX";
+    if (mkdtemp(&profile[0]) == NULL) {
+        fprintf(stderr, "Could not create the Firefox profile directory: %s\n", strerror(errno));
         closedir(dir);
         return false;
     }
-    if (mkdtemp(output_dir) == NULL) {
-        fprintf(stderr, "Could not create output directory: %s\n", strerror(errno));
-        closedir(dir);
-        return false;
-    }
-    printf("Difference images: %s\n", output_dir);
 
     int total                = 0;
     int equal_count          = 0;
@@ -393,33 +507,18 @@ static bool run_directory(const char *assets_dir, int *out_total, int *out_equal
     std::sort(names.begin(), names.end());
 
     for (const std::string &name : names) {
-        size_t stem_length = name.size() - 5; /* without ".html" */
-
-        char html_path[PATH_MAX];
-        char golden_path[PATH_MAX];
-        char render_path[PATH_MAX];
-        char diff_path[PATH_MAX];
-        int html_length   = snprintf(html_path, sizeof(html_path), "%s/%s", assets_dir, name.c_str());
-        int golden_length = snprintf(golden_path, sizeof(golden_path), "%s/%.*s.png", assets_dir, (int)stem_length, name.c_str());
-        int render_length = snprintf(render_path, sizeof(render_path), "%s/%.*s_render.png", output_dir, (int)stem_length, name.c_str());
-        int diff_length   = snprintf(diff_path, sizeof(diff_path), "%s/%.*s_diff.png", output_dir, (int)stem_length, name.c_str());
-        if (html_length < 0 || (size_t)html_length >= sizeof(html_path) || golden_length < 0 || (size_t)golden_length >= sizeof(golden_path) || render_length < 0 || (size_t)render_length >= sizeof(render_path) || diff_length < 0 || (size_t)diff_length >= sizeof(diff_path)) {
-            fprintf(stderr, "Path too long for fixture %s.\n", name.c_str());
-            operational_failures++;
-            total++;
+        std::string stem = name.substr(0, name.size() - 5); /* without ".html" */
+        if (!options.only.empty() && std::find(options.only.begin(), options.only.end(), stem) == options.only.end())
             continue;
-        }
 
-        FILE *golden_check = fopen(golden_path, "rb");
-        if (golden_check == NULL) {
-            fprintf(stderr, "[%s] no matching golden PNG (%s), skipping\n", html_path, golden_path);
-            continue;
-        }
-        fclose(golden_check);
+        std::string html_path   = std::string(options.assets_dir) + "/" + name;
+        std::string golden_path = std::string(output_dir) + "/" + stem + "_firefox.png";
+        std::string render_path = std::string(output_dir) + "/" + stem + "_render.png";
+        std::string diff_path   = std::string(output_dir) + "/" + stem + "_diff.png";
 
         total++;
         bool is_equal = false;
-        if (process_pair(html_path, golden_path, render_path, diff_path, &is_equal)) {
+        if (process_fixture(options, firefox, profile, html_path, golden_path, render_path, diff_path, &is_equal)) {
             if (is_equal) {
                 equal_count++;
             }
@@ -427,6 +526,7 @@ static bool run_directory(const char *assets_dir, int *out_total, int *out_equal
             operational_failures++;
         }
     }
+    remove_tree(profile);
 
     *out_total                = total;
     *out_equal_count          = equal_count;
@@ -434,35 +534,65 @@ static bool run_directory(const char *assets_dir, int *out_total, int *out_equal
     return true;
 }
 
+/* "WxH" with both in 1..8192. */
+static bool parse_size(const char *text, int *out_width, int *out_height) {
+    char *end      = NULL;
+    long width     = strtol(text, &end, 10);
+    if (end == text || *end != 'x')
+        return false;
+    const char *rest = end + 1;
+    long height      = strtol(rest, &end, 10);
+    if (end == rest || *end != '\0' || width < 1 || width > 8192 || height < 1 || height > 8192)
+        return false;
+    *out_width  = (int)width;
+    *out_height = (int)height;
+    return true;
+}
+
 int main(int argc, char **argv) {
-    if (argc > 3) {
-        fprintf(stderr, "Usage: %s [assets_dir] [legacy_ssim_threshold]\n", argv[0]);
-        return 1;
-    }
-    if (argc == 3) {
-        char *end               = NULL;
-        double legacy_threshold = strtod(argv[2], &end);
-        if (end == argv[2] || *end != '\0' || !std::isfinite(legacy_threshold) || legacy_threshold < 0.0 || legacy_threshold > 1.0) {
-            fprintf(stderr, "Invalid legacy SSIM threshold: %s\n", argv[2]);
-            return 1;
+    Options options;
+    bool have_dir = false;
+    for (int i = 1; i < argc; i++) {
+        const char *arg = argv[i];
+        if ((strcmp(arg, "--size") == 0 || strcmp(arg, "--output") == 0 || strcmp(arg, "--firefox") == 0) && i + 1 < argc) {
+            const char *value = argv[++i];
+            if (strcmp(arg, "--size") == 0) {
+                if (!parse_size(value, &options.width, &options.height)) {
+                    fprintf(stderr, "Invalid size: %s (expected WxH, e.g. 800x600)\n", value);
+                    return 1;
+                }
+            } else if (strcmp(arg, "--output") == 0) {
+                options.output_dir = value;
+            } else {
+                options.firefox = value;
+            }
+        } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0 || arg[0] == '-') {
+            usage(argv[0]);
+            return arg[0] == '-' && strcmp(arg, "--help") != 0 && strcmp(arg, "-h") != 0 ? 1 : 0;
+        } else if (!have_dir) {
+            options.assets_dir = arg;
+            have_dir           = true;
+        } else {
+            std::string stem = arg;
+            if (has_html_suffix(stem.c_str()))
+                stem.resize(stem.size() - 5);
+            options.only.push_back(stem);
         }
-        fprintf(stderr, "Note: the SSIM threshold argument is deprecated; SSIM is diagnostic only.\n");
     }
-    const char *assets_dir = argc > 1 ? argv[1] : "tests/assets";
 
     int total, equal_count, operational_failures;
-    if (!run_directory(assets_dir, &total, &equal_count, &operational_failures)) {
+    if (!run_directory(options, &total, &equal_count, &operational_failures)) {
         return 1;
     }
 
     printf("==================================================\n");
-    printf("Summary: %d pairs | %d EQUAL | %d DIFFERENT | %d operational failures\n", total, equal_count, total - equal_count - operational_failures, operational_failures);
+    printf("Summary: %d fixtures | %d EQUAL | %d DIFFERENT | %d operational failures\n", total, equal_count, total - equal_count - operational_failures, operational_failures);
     printf("==================================================\n");
 
     /* Exit code reflects only OPERATIONAL failure (couldn't open the
-     * directory, couldn't render, couldn't load an image) -- not each
-     * pair's EQUAL/DIFFERENT verdict. See docs/dev/historico.md's v10 "Escopo":
+     * directory, capture, render, load an image) -- not each fixture's
+     * EQUAL/DIFFERENT verdict. See docs/dev/historico.md's v10 "Escopo":
      * several assets still exercise HTML/CSS tbox doesn't implement,
-     * DIFFERENT is expected for them today and shouldn't break `ctest`. */
+     * DIFFERENT is expected for them today and shouldn't break anything. */
     return operational_failures > 0 ? 1 : 0;
 }

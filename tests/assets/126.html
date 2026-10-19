@@ -22,7 +22,7 @@
       background: white;
     }
 
-    /* Só de impressão: na tela não fazem nada (correto) */
+    /* Print only: they do nothing on screen (correct) */
     .print {
       break-before: page;
       break-inside: avoid;
@@ -31,7 +31,7 @@
       widows: 3;
     }
 
-    /* 3D sem transformações 3D: nada a mudar */
+    /* 3D without 3D transforms: nothing to change */
     .flat {
       perspective: 400px;
       perspective-origin: 50% 50%;
@@ -39,8 +39,7 @@
       backface-visibility: hidden;
     }
 
-    /* Sem float, clear não tem o que limpar; sem ancoragem de rolagem,
-       overflow-anchor: none já é o comportamento */
+    /* Without float, clear has nothing to clear; without scroll anchoring, overflow-anchor: none is already the behavior */
     .misc {
       clear: both;
       overflow-anchor: none;
@@ -60,7 +59,7 @@
       display: none;
     }
 
-    /* As de impressão contam como suportadas; as de 3D, não */
+    /* The print ones count as supported; the 3D ones do not */
     @supports (break-inside: avoid) and (orphans: 2) {
       .print-supported { display: block; }
     }
@@ -72,27 +71,27 @@
 </head>
 
 <body>
-  <h1>Propriedades aceitas sem efeito</h1>
+  <h1>Properties accepted without effect</h1>
 
-  <h2>Impressão (break-*, page-break-*, orphans, widows)</h2>
+  <h2>Print (break-*, page-break-*, orphans, widows)</h2>
   <div class="card print">
-    <div class="ok">Este bloco segue no fluxo normal da tela.</div>
+    <div class="ok">This block stays in the normal screen flow.</div>
   </div>
 
   <h2>3D (perspective, transform-style, backface-visibility)</h2>
   <div class="card flat">
-    <div class="ok">Sem rotação 3D, a face de trás nunca aparece.</div>
+    <div class="ok">Without 3D rotation, the back face never shows.</div>
   </div>
 
-  <h2>clear e overflow-anchor</h2>
+  <h2>clear and overflow-anchor</h2>
   <div class="card misc">
-    <div class="ok">Nada flutua; a rolagem não é ancorada.</div>
+    <div class="ok">Nothing floats; scrolling is not anchored.</div>
   </div>
 
   <h2>@supports</h2>
   <div class="card">
-    <div class="ok hide print-supported">(break-inside: avoid) and (orphans: 2) é verdadeiro</div>
-    <div class="bad hide threed-supported">(transform-style: preserve-3d) deveria ser falso</div>
+    <div class="ok hide print-supported">(break-inside: avoid) and (orphans: 2) is true</div>
+    <div class="bad hide threed-supported">(transform-style: preserve-3d) should be false</div>
   </div>
 </body>
 

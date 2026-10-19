@@ -4,14 +4,13 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* Lista do <select> pelo CSS padrão do select customizável
-     * (docs/10-formularios-e-controles.md, "Lista do select"). Abra cada
-     * select para ver a lista: ::picker(select) é a caixa, cada <option> e
-     * <optgroup> uma linha, :hover a opção destacada (mouse ou setas),
-     * :checked a escolhida, :disabled inclusive dentro de um optgroup
-     * desabilitado. O tbox não exige appearance: base-select; a regra fica
-     * aqui para o Chrome (135+) mostrar o mesmo. O Firefox ainda mostra a
-     * lista nativa. */
+    /* <select> list through the customizable select's standard CSS
+     * (docs/10-formularios-e-controles.md, "Lista do select"). Open each
+     * select to see the list: ::picker(select) is the box, each <option> and
+     * <optgroup> a row, :hover the highlighted option (mouse or arrows),
+     * :checked the chosen one, :disabled even inside a disabled optgroup.
+     * tbox does not require appearance: base-select; the rule is here so
+     * Chrome (135+) shows the same. Firefox still shows the native list. */
     select,
     ::picker(select) {
       appearance: base-select;
@@ -45,8 +44,8 @@
       width: 220px;
     }
 
-    /* Tema roxo: caixa arredondada, linhas mais altas, escolhida em lilás,
-     * destacada em roxo com raio. */
+    /* Purple theme: rounded box, taller rows, chosen one in lilac,
+     * highlighted one in purple with a radius. */
     .roxo::picker(select) {
       border: 2px solid #7c3aed;
       border-radius: 8px;
@@ -78,7 +77,7 @@
       font-weight: bold;
     }
 
-    /* Tema escuro por variáveis. */
+    /* Dark theme through variables. */
     .escuro {
       --fundo: #1e293b;
       --texto: #e2e8f0;
@@ -102,44 +101,44 @@
 </head>
 
 <body>
-  <h1>Lista do select</h1>
+  <h1>Select list</h1>
 
   <section>
-    <h2>Padrão</h2>
+    <h2>Default</h2>
     <select>
-      <option>Primeira</option>
-      <option selected>Segunda</option>
-      <option disabled>Desabilitada</option>
-      <optgroup label="Grupo">
-        <option>Dentro A</option>
-        <option>Dentro B</option>
+      <option>First</option>
+      <option selected>Second</option>
+      <option disabled>Disabled</option>
+      <optgroup label="Group">
+        <option>Inside A</option>
+        <option>Inside B</option>
       </optgroup>
     </select>
   </section>
 
   <section>
-    <h2>Tema roxo</h2>
+    <h2>Purple theme</h2>
     <select class="roxo">
-      <option>Primeira</option>
-      <option selected>Segunda</option>
-      <option disabled>Desabilitada</option>
-      <optgroup label="Grupo">
-        <option>Dentro A</option>
-        <option>Dentro B</option>
+      <option>First</option>
+      <option selected>Second</option>
+      <option disabled>Disabled</option>
+      <optgroup label="Group">
+        <option>Inside A</option>
+        <option>Inside B</option>
       </optgroup>
-      <optgroup label="Grupo desabilitado" disabled>
-        <option>Dentro C</option>
+      <optgroup label="Disabled group" disabled>
+        <option>Inside C</option>
       </optgroup>
     </select>
   </section>
 
   <section>
-    <h2>Tema escuro com var()</h2>
+    <h2>Dark theme with var()</h2>
     <select class="escuro">
-      <option>Norte</option>
-      <option>Sul</option>
-      <option selected>Leste</option>
-      <option>Oeste</option>
+      <option>North</option>
+      <option>South</option>
+      <option selected>East</option>
+      <option>West</option>
     </select>
   </section>
 </body>

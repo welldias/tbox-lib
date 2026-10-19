@@ -1,5 +1,5 @@
 @charset "UTF-8";
-/* Importado antes das regras desta folha; caminhos relativos a esta folha. */
+/* Imported before this sheet's rules; paths relative to this sheet. */
 @import url("117-import/base.css");
 @import "117-import/wide.css"(min-width: 5000px);
 

@@ -6,10 +6,9 @@
 
 Abra qualquer um com `build/example/tbox_assets_showrun` (setas navegam) ou
 gere um PNG com `tbox_app_screenshot_from_files`. Os fixtures `001`–`039`
-são casos gerais. Os de `001` a `052` têm um `NNN.png` de
-referência capturado num navegador, usado pelo `tbox_cmp` (o de `047` está
-salvo como `47.png` e por isso o `tbox_cmp` não o encontra); os demais não têm
-referência. A tabela abaixo cobre os que demonstram um recurso específico.
+são casos gerais. Os textos são em inglês. A referência de cada um é
+capturada no Firefox pelo `tbox_cmp` a cada execução, sem PNG guardado. A
+tabela abaixo cobre os que demonstram um recurso específico.
 
 | Fixture | Recurso |
 |---|---|

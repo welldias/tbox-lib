@@ -4,12 +4,12 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* Partes dos controles por pseudo-elementos (docs/10-formularios-e-
-     * controles.md, "Partes dos controles"). Firefox e Chrome não
-     * implementam a maioria destes nomes (ver "Equivalentes em outros
-     * navegadores" no mesmo capítulo). Cada seção usa um recurso da
-     * resolução: herança de color, var(), seletor de ancestral, estado do
-     * controle e raio por canto. */
+    /* Control parts through pseudo-elements (docs/10-formularios-e-
+     * controles.md, "Partes dos controles"). Firefox and Chrome do not
+     * implement most of these names (see "Equivalentes em outros
+     * navegadores" in the same chapter). Each section uses one resolution
+     * feature: color inheritance, var(), ancestor selector, control state
+     * and per-corner radius. */
     :root {
       --destaque: #c81e78;
       --trilho: #f1d5e4;
@@ -43,7 +43,7 @@
       margin: 6px 0;
     }
 
-    /* Slider: trilho, preenchimento e polegar. */
+    /* Slider: track, fill and thumb. */
     input[type=range]::slider-track {
       height: 6px;
       background-color: var(--trilho);
@@ -63,12 +63,12 @@
       border-radius: 50%;
     }
 
-    /* Estado do controle, não da parte. */
+    /* The control's state, not the part's. */
     input[type=range][disabled]::slider-thumb {
       border-color: #9aa3ae;
     }
 
-    /* progress e meter: trilho e barra; raio só nos cantos da direita. */
+    /* progress and meter: track and bar; radius only on the right corners. */
     progress::slider-track,
     meter::slider-track {
       background-color: #e2e8f0;
@@ -81,7 +81,7 @@
       border-bottom-right-radius: 4px;
     }
 
-    /* Seta do select herda color do controle. */
+    /* The select arrow inherits the control's color. */
     select {
       color: #7c3aed;
     }
@@ -91,13 +91,13 @@
       height: 8px;
     }
 
-    /* Checkbox e radio: a marca. */
+    /* Checkbox and radio: the mark. */
     input[type=checkbox]::checkmark,
     input[type=radio]::checkmark {
       color: #e67e22;
     }
 
-    /* Botão do input de arquivo. */
+    /* The file input button. */
     input[type=file]::file-selector-button {
       background-color: #263548;
       color: white;
@@ -105,7 +105,7 @@
       border-radius: 4px;
     }
 
-    /* Botões do number e o de limpar da busca. */
+    /* The number buttons and the search clear button. */
     input[type=number]::step-control {
       background-color: #eef2ff;
       border-left: 1px solid #a5b4fc;
@@ -120,20 +120,20 @@
       color: #be123c;
     }
 
-    /* Amostra do input de cor. */
+    /* The color input swatch. */
     input[type=color]::color-swatch {
       border: 1px solid #263548;
       border-radius: 4px;
     }
 
-    /* Seleção de texto (aparece ao selecionar com o mouse ou Shift+setas). */
+    /* Text selection (shows when selecting with the mouse or Shift+arrows). */
     input::selection,
     textarea::selection {
       background-color: #fde68a;
       color: #78350f;
     }
 
-    /* Tema escuro num contêiner: as partes seguem o ancestral. */
+    /* Dark theme on a container: the parts follow the ancestor. */
     .escuro {
       background: #1e293b;
       color: #e2e8f0;
@@ -144,7 +144,7 @@
 </head>
 
 <body>
-  <h1>Partes dos controles</h1>
+  <h1>Control parts</h1>
 
   <section>
     <h2>Slider</h2>
@@ -152,28 +152,28 @@
   </section>
 
   <section class="escuro">
-    <h2>Slider num contêiner escuro</h2>
+    <h2>Slider in a dark container</h2>
     <p><input type="range" value="60"></p>
   </section>
 
   <section>
-    <h2>progress e meter</h2>
+    <h2>progress and meter</h2>
     <p><progress value="60" max="100"></progress></p>
     <p><meter min="0" max="100" low="40" high="70" optimum="55" value="55"></meter></p>
   </section>
 
   <section>
-    <h2>Outros controles</h2>
+    <h2>Other controls</h2>
     <p><select>
-        <option>Primeira opção</option>
-        <option>Segunda opção</option>
+        <option>First option</option>
+        <option>Second option</option>
       </select></p>
     <p><input type="checkbox" checked> Checkbox <input type="radio" checked> Radio</p>
     <p><input type="file"></p>
-    <p><input type="number" value="7"> <input type="search" value="busca"></p>
+    <p><input type="number" value="7"> <input type="search" value="search"></p>
     <p><input type="color" value="#c81e78"></p>
-    <p><input value="Selecione este texto"></p>
-    <p><textarea rows="2">Ou este, numa área de texto.</textarea></p>
+    <p><input value="Select this text"></p>
+    <p><textarea rows="2">Or this one, in a text area.</textarea></p>
   </section>
 </body>
 

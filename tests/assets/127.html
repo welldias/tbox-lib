@@ -22,7 +22,7 @@
       background: white;
     }
 
-    /* Pulso infinito, alternado */
+    /* Infinite, alternating pulse */
     @keyframes pulse {
       from { opacity: 1; }
       to { opacity: 0.25; }
@@ -38,7 +38,7 @@
       animation: pulse 800ms ease-in-out infinite alternate;
     }
 
-    /* Barra de progresso indeterminada: translate com keyframe do meio */
+    /* Indeterminate progress bar: translate with a middle keyframe */
     @keyframes slide {
       0% { transform: translateX(0); }
       50% { transform: translateX(300px); background-color: #7c3aed; }
@@ -59,7 +59,7 @@
       animation: slide 2s linear infinite;
     }
 
-    /* steps() para um cursor piscando; atraso com fill-mode backwards */
+    /* steps() for a blinking cursor; delay with fill-mode backwards */
     @keyframes blink {
       50% { background-color: transparent; }
     }
@@ -73,7 +73,7 @@
       animation: blink 1s steps(1) 500ms infinite backwards;
     }
 
-    /* Entra uma vez e fica (forwards), com timing por keyframe */
+    /* Enters once and stays (forwards), with per-keyframe timing */
     @keyframes enter {
       from { padding-left: 0; color: #94a3b8; animation-timing-function: ease-out; }
       to { padding-left: 24px; color: #0f172a; }
@@ -83,7 +83,7 @@
       animation: enter 600ms 1 forwards;
     }
 
-    /* Pausada: fica parada no início */
+    /* Paused: stays still at the start */
     .paused {
       animation-name: pulse;
       animation-duration: 1s;
@@ -97,24 +97,24 @@
 </head>
 
 <body>
-  <h1>animation e @keyframes</h1>
+  <h1>animation and @keyframes</h1>
 
-  <h2>Indicador pulsando (infinite alternate)</h2>
-  <div class="card"><span class="dot"></span> Conectado</div>
+  <h2>Pulsing indicator (infinite alternate)</h2>
+  <div class="card"><span class="dot"></span> Online</div>
 
-  <h2>Progresso indeterminado (translate, keyframe 50%)</h2>
+  <h2>Indeterminate progress (translate, keyframe 50%)</h2>
   <div class="card">
     <div class="track"><div class="bar"></div></div>
   </div>
 
   <h2>Cursor (steps, delay, fill backwards)</h2>
-  <div class="card">Digite aqui<span class="caret"></span></div>
+  <div class="card">Type here<span class="caret"></span></div>
 
-  <h2>Entrada única (forwards, timing por keyframe)</h2>
-  <div class="card"><div class="enter">Mensagem enviada</div></div>
+  <h2>Single entrance (forwards, per-keyframe timing)</h2>
+  <div class="card"><div class="enter">Message sent</div></div>
 
   <h2>animation-play-state: paused</h2>
-  <div class="card"><div class="paused">Parada no primeiro keyframe</div></div>
+  <div class="card"><div class="paused">Stopped at the first keyframe</div></div>
 </body>
 
 </html>

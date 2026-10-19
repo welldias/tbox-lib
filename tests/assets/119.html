@@ -3,7 +3,7 @@
 
 <head>
   <style>
-    /* Ordem das camadas: reset < base < components; fora de camada vence todas. */
+    /* Layer order: reset < base < components; unlayered wins over all. */
     @layer reset, base, components;
     @import url(119-reset.css) layer(reset);
 
@@ -28,7 +28,7 @@
         border: 2px solid #94a3b8;
       }
 
-      /* Mais específico, mas a camada base vem antes de components. */
+      /* More specific, but the base layer comes before components. */
       div#especifico.card {
         background: #fee2e2;
         border-color: #dc2626;
@@ -45,7 +45,7 @@
         color: #dc2626 !important;
       }
 
-      /* Subcamada: vem antes das regras diretas de components. */
+      /* Sublayer: comes before the direct rules of components. */
       @layer details {
         .card {
           font-weight: bold;
@@ -58,7 +58,7 @@
       }
     }
 
-    /* Anônima, depois de components. */
+    /* Anonymous, after components. */
     @layer {
       .anon {
         border-style: dashed;
@@ -73,13 +73,13 @@
       }
     }
 
-    /* Fora de camada: vence qualquer camada nas declarações normais... */
+    /* Unlayered: wins over any layer in normal declarations... */
     .unlayered {
       background: #dbeafe;
       border-color: #2563eb;
     }
 
-    /* ...mas um !important em camada vence um !important fora dela. */
+    /* ...but a layered !important wins over an unlayered !important. */
     .card.important {
       color: #2563eb !important;
     }
@@ -89,18 +89,18 @@
 <body>
   <h1>@layer</h1>
 
-  <h2>@import com layer(reset): perde para a regra fora de camada</h2>
-  <p class="layer-demo" style="color: #1d4ed8">Texto azul (o vermelho vem da camada reset).</p>
+  <h2>@import with layer(reset): loses to the unlayered rule</h2>
+  <p class="layer-demo" style="color: #1d4ed8">Blue text (the red comes from the reset layer).</p>
 
-  <h2>Ordem das camadas</h2>
-  <div id="especifico" class="card">Verde: components vence base, mesmo com seletor menos específico.</div>
-  <div class="card">Negrito (subcamada details) e verde escuro (components direto vence a subcamada).</div>
-  <div class="card anon">Borda tracejada vinda de uma camada anônima.</div>
-  <div class="card media">Borda de 4px: @layer dentro de @media.</div>
+  <h2>Layer order</h2>
+  <div id="especifico" class="card">Green: components wins over base, even with a less specific selector.</div>
+  <div class="card">Bold (details sublayer) and dark green (direct components wins over the sublayer).</div>
+  <div class="card anon">Dashed border coming from an anonymous layer.</div>
+  <div class="card media">4px border: @layer inside @media.</div>
 
-  <h2>Fora de camada e !important</h2>
-  <div class="card unlayered">Azul: regra fora de camada vence todas as camadas.</div>
-  <div class="card important">Vermelho: o !important da camada components vence o !important fora de camada.</div>
+  <h2>Unlayered and !important</h2>
+  <div class="card unlayered">Blue: the unlayered rule wins over every layer.</div>
+  <div class="card important">Red: the components layer's !important wins over the unlayered !important.</div>
 </body>
 
 </html>

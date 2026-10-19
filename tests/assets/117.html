@@ -29,7 +29,7 @@
       background: white;
     }
 
-    /* Media features: só as que casam com o ambiente ficam verdes. */
+    /* Media features: only the ones that match the environment turn green. */
     .mq {
       display: inline-block;
       padding: 4px 8px;
@@ -120,33 +120,32 @@
 </head>
 
 <body>
-  <h1>@import, media features, font-synthesis e color-scheme</h1>
+  <h1>@import, media features, font-synthesis and color-scheme</h1>
 
   <h2>@import (117.css → 117-import/base.css → colors.css)</h2>
-  <p class="import-color import-base import-own">Estilo vindo de três folhas importadas; a de
-    media (min-width: 5000px) não se aplica.</p>
+  <p class="import-color import-base import-own">Style coming from three imported sheets; the one with media (min-width: 5000px) does not apply.</p>
 
-  <h2>Media features (verde = casou)</h2>
+  <h2>Media features (green = matched)</h2>
   <div>
     <span class="mq light">prefers-color-scheme: light</span>
     <span class="mq dark">prefers-color-scheme: dark</span>
     <span class="mq hover">hover + pointer: fine</span>
     <span class="mq coarse">pointer: coarse</span>
     <span class="mq res">min-resolution: 1dppx</span>
-    <span class="mq ratio">min-aspect-ratio: 1/1 (janela larga)</span>
+    <span class="mq ratio">min-aspect-ratio: 1/1 (wide window)</span>
     <span class="mq script">scripting: none</span>
   </div>
 
   <h2>font-synthesis</h2>
   <div class="row">
-    <p class="card caps">Small caps sintetizado</p>
-    <p class="card caps off">Small caps com font-synthesis: none</p>
+    <p class="card caps">Synthesized small caps</p>
+    <p class="card caps off">Small caps with font-synthesis: none</p>
   </div>
-  <p>nota<span class="pos">sup</span> e nota<span class="pos off">sem síntese</span></p>
+  <p>note<span class="pos">sup</span> and note<span class="pos off">no synthesis</span></p>
 
-  <h2>color-scheme e light-dark()</h2>
+  <h2>color-scheme and light-dark()</h2>
   <div class="row">
-    <p class="card scheme light">color-scheme: light dark (usa claro)</p>
+    <p class="card scheme light">color-scheme: light dark (uses light)</p>
     <p class="card scheme dark">color-scheme: dark</p>
   </div>
 </body>

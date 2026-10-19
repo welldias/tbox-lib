@@ -1083,3 +1083,10 @@ Defeitos apontados pela comparação de todos os fixtures com o Firefox
   Folha UA alinhada ao Firefox. Fixture 109.
 - `text-emphasis` herdado chega ao texto anônimo do bloco (os campos faltavam
   na cópia do estilo anônimo). Fixture 131.
+
+## 2026-10-19 — Referências capturadas no Firefox
+
+- **Fixtures:** os PNGs de referência (`tests/assets/NNN.png`, `47.png`, `a01.png`) foram apagados, e todos os textos dos fixtures passaram para o inglês. Também foram traduzidos os comentários e as folhas em `tests/assets/*.css`. Identificadores de CSS e atributos `lang` ficaram como estavam.
+- **Referência:** o `tbox_cmp` captura cada fixture no Firefox headless a cada execução e renderiza no mesmo tamanho (800x600 por padrão). As três imagens (`NNN_firefox.png`, `NNN_render.png`, `NNN_diff.png`) ficam no diretório de saída.
+- **Opções novas:** `--size`, `--output`, `--firefox` (ou `TBOX_CMP_FIREFOX`) e filtro por fixture. O argumento de limiar de SSIM, já obsoleto, saiu.
+

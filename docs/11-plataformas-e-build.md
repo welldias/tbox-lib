@@ -23,6 +23,7 @@
 | wayland-client, wayland-protocols, wayland-scanner, xkbcommon | não | janela interativa | sem janela (`tbox_app_backend_available()` = `false`) |
 | wayland-cursor | não | cursores CSS | cursor padrão |
 | OpenCV (core, imgproc, imgcodecs) + C++17 | não | ferramenta `tbox_cmp` | `tbox_cmp` não é construído |
+| Firefox (só em execução) | não | referência do `tbox_cmp`, capturada em headless | `tbox_cmp` falha em cada fixture |
 
 Toda dependência opcional é detectada no configure; se faltar, o CMake
 avisa e segue, removendo do build os arquivos que dependem dela.

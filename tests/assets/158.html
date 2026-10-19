@@ -4,14 +4,14 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* zoom e resize (docs/08-layout-e-pintura.md, "zoom";
-     * docs/06-eventos-e-interatividade.md, "Redimensionar"). Linha 1: a
-     * mesma caixa 100x60, borda 2px, texto 16px, com zoom 1, 1.5 e 50%, e
-     * um pai com zoom 2 cujo filho tem zoom .5 (tamanho normal). Linha 2:
-     * caixas com overflow: auto e resize: both / horizontal (alça no canto
-     * inferior direito) e um <textarea> padrão (no tbox, resize: none por
-     * padrão, como num app nativo; o Firefox desenha a alça) e um com
-     * resize: vertical. A alça do Firefox é diferente da do tbox. */
+    /* zoom and resize (docs/08-layout-e-pintura.md, "zoom";
+     * docs/06-eventos-e-interatividade.md, "Redimensionar"). Row 1: the
+     * same 100x60 box, 2px border, 16px text, with zoom 1, 1.5 and 50%, and
+     * a parent with zoom 2 whose child has zoom .5 (normal size). Row 2:
+     * boxes with overflow: auto and resize: both / horizontal (handle at the
+     * bottom right corner), a default <textarea> (in tbox, resize: none by
+     * default, as in a native app; Firefox draws the handle) and one with
+     * resize: vertical. Firefox's handle differs from tbox's. */
     body {
       margin: 20px;
       background: white;
@@ -109,7 +109,7 @@
       <div class="caixa z50">Ab</div>
     </div>
     <div class="celula">
-      <div class="rotulo">pai 2, filho .5</div>
+      <div class="rotulo">parent 2, child .5</div>
       <div class="z2">
         <div class="caixa z05">Ab</div>
       </div>
@@ -126,7 +126,7 @@
       <div class="redim horiz">Ab</div>
     </div>
     <div class="celula">
-      <div class="rotulo">textarea padrão</div>
+      <div class="rotulo">default textarea</div>
       <textarea>Ab</textarea>
     </div>
     <div class="celula">

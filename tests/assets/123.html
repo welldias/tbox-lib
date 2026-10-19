@@ -37,7 +37,7 @@
       background: #fee2e2;
     }
 
-    /* Cada linha só aparece se a condição for verdadeira */
+    /* Each line only shows if the condition is true */
     @supports (display: flex) {
       .flex {
         display: block;
@@ -86,7 +86,7 @@
       }
     }
 
-    /* Aninhado com @media */
+    /* Nested with @media */
     @media (min-width: 400px) {
       @supports (backdrop-filter: grayscale(1)) {
         .nested {
@@ -100,7 +100,7 @@
 <body>
   <h1>@supports</h1>
 
-  <h2>Verdes devem aparecer, vermelhos não</h2>
+  <h2>Greens must show, reds must not</h2>
   <div class="card">
     <div class="yes flex">(display: flex)</div>
     <div class="no nogrid">not (display: grid)</div>

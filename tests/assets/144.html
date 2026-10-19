@@ -4,10 +4,10 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* Quebra de linha do <textarea> (docs/10-formularios-e-controles.md):
-     * quebra depois dos espaços, que ficam pendurados no fim da linha; só
-     * uma palavra mais larga que a linha é cortada. Quebras de linha do
-     * próprio texto são mantidas. */
+    /* <textarea> line breaking (docs/10-formularios-e-controles.md):
+     * it breaks after spaces, which hang at the end of the line; only a
+     * word wider than the line is cut. The text's own line breaks are
+     * kept. */
     body {
       margin: 24px;
       background: #f4f7fb;
@@ -45,23 +45,23 @@
 </head>
 
 <body>
-  <h1>Quebra de linha no textarea</h1>
+  <h1>Line breaking in textarea</h1>
 
   <section>
-    <h2>Frase comum</h2>
-    <textarea>Ou este, numa área de texto que precisa quebrar entre as palavras.</textarea>
+    <h2>Plain sentence</h2>
+    <textarea>Or this one, in a text area that has to wrap between the words.</textarea>
   </section>
 
   <section>
-    <h2>Espaços repetidos e quebras do texto</h2>
-    <textarea>Vários     espaços     seguidos
-Segunda linha
-Terceira</textarea>
+    <h2>Repeated spaces and the text's own breaks</h2>
+    <textarea>Several     spaces     in a row
+Second line
+Third</textarea>
   </section>
 
   <section>
-    <h2>Palavra maior que a linha</h2>
-    <textarea class="estreito">Veja https://exemplo.com.br/caminho/muito/longo aqui</textarea>
+    <h2>Word longer than the line</h2>
+    <textarea class="estreito">See https://example.com/a/very/long/path here</textarea>
   </section>
 </body>
 

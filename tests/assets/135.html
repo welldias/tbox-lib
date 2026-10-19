@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Hipotenusa, arredondamento, restos e misturas</title>
+  <title>Hypotenuse, rounding, remainders and mixes</title>
   <style>
     body {
       margin: 0;
@@ -105,13 +105,13 @@
 </head>
 
 <body>
-  <h1>Funções matemáticas e pesos de cores</h1>
+  <h1>Math functions and color weights</h1>
   <h2>hypot(3, 4) * 30px = 150px</h2>
   <div class="track">
     <div class="bar hypot"></div>
   </div>
-  <h2>Arredondamento: passo de 10px</h2>
-  <p>nearest: 125px → 130px (empate para cima)</p>
+  <h2>Rounding: 10px step</h2>
+  <p>nearest: 125px → 130px (ties go up)</p>
   <div class="track">
     <div class="bar nearest"></div>
   </div>
@@ -127,33 +127,33 @@
   <div class="track">
     <div class="bar zero"></div>
   </div>
-  <h2>Sinais: mod(-18px, 5px) = 2px; rem = -3px</h2>
+  <h2>Signs: mod(-18px, 5px) = 2px; rem = -3px</h2>
   <div class="row">
     <div>
-      <p>mod: marcador em 100px</p>
+      <p>mod: marker at 100px</p>
       <div class="lane">
         <div class="dot mod"></div>
       </div>
     </div>
     <div>
-      <p>rem: marcador em 50px</p>
+      <p>rem: marker at 50px</p>
       <div class="lane">
         <div class="dot rem"></div>
       </div>
     </div>
   </div>
-  <h2>color-mix: pesos válidos e entrada inválida</h2>
+  <h2>color-mix: valid weights and invalid input</h2>
   <div class="row">
     <div>
-      <p>80% + 80%: opaco</p>
+      <p>80% + 80%: opaque</p>
       <div class="swatch normalized"></div>
     </div>
     <div>
-      <p>25% + 25%: alfa 50%</p>
+      <p>25% + 25%: alpha 50%</p>
       <div class="swatch alpha"></div>
     </div>
     <div>
-      <p>Espaço inválido: verde</p>
+      <p>Invalid space: green</p>
       <div class="swatch invalid"></div>
     </div>
   </div>

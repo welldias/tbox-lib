@@ -39,10 +39,10 @@ foreach(tbox_test_group arena list vector string number bidi debug html_parser_t
     add_test(NAME ${tbox_test_group} COMMAND tbox_tests ${tbox_test_group})
 endforeach()
 
-# tbox_cmp (v10, see docs/dev/historico.md's "v10 -- tbox_cmp") renders each
-# tests/assets/*.html fixture via tbox_app_screenshot_from_files (v7) and
-# compares it against its paired *.png reference via OpenCV/SSIM -- needs
-# OpenCV and Fontconfig. Wayland is unnecessary because screenshots render
+# tbox_cmp (v10, see docs/dev/historico.md's "v10 -- tbox_cmp") captures each
+# tests/assets/*.html fixture in headless Firefox and renders it via
+# tbox_app_screenshot_from_files (v7), then compares the two with OpenCV --
+# needs OpenCV and Fontconfig to build, Firefox to run. Wayland is unnecessary because screenshots render
 # without a window. This tool remains optional and outside ctest.
 if(TBOX_OPENCV_FOUND AND TBOX_FONTCONFIG_FOUND)
     add_executable(tbox_cmp tbox_cmp.cpp)

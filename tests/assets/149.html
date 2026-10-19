@@ -4,12 +4,13 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /* Transformações 2D (docs/08-layout-e-pintura.md, "Transformações"):
-     * rotate(), scale(), skewX(), matrix(), transform-origin, as
-     * propriedades individuais rotate/scale, composição translate+rotate
-     * e as funções 3D achatadas (rotateZ = rotate; rotateX sem perspectiva
-     * só encolhe a altura). Cada caixa tem 100x60, borda e uma palavra;
-     * a caixa transformada é desenhada inteira (fundo, borda, texto). */
+    /* 2D transforms (docs/08-layout-e-pintura.md, "Transformações"):
+     * rotate(), scale(), skewX(), matrix(), transform-origin, the
+     * individual rotate/scale properties, translate+rotate composition and
+     * the flattened 3D functions (rotateZ = rotate; rotateX without
+     * perspective only shrinks the height). Each box is 100x60 with a border
+     * and one word; the transformed box is drawn whole (background, border,
+     * text). */
     body {
       margin: 0;
       padding: 10px;
