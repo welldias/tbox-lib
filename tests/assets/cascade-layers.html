@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    /* Layer order: reset < base < components; unlayered wins over all. */
+    @layer reset, base, components;
+    @import url(cascade-layers-reset.css) layer(reset);
+
+    @layer base {
+      body {
+        font: 16px sans-serif;
+        background: #eef2f7;
+        color: #1e293b;
+        padding: 16px 24px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      h2 {
+        font-size: 16px;
+        margin: 12px 0 6px;
+      }
+
+      .card {
+        width: 560px;
+        padding: 6px 12px;
+        margin: 6px 0;
+        background: white;
+        border: 2px solid #94a3b8;
+      }
+
+      /* More specific, but the base layer comes before components. */
+      div#specific.card {
+        background: #fee2e2;
+        border-color: #dc2626;
+      }
+    }
+
+    @layer components {
+      .card {
+        background: #dcfce7;
+        border-color: #16a34a;
+      }
+
+      .card.important {
+        color: #dc2626 !important;
+      }
+
+      /* Sublayer: comes before the direct rules of components. */
+      @layer details {
+        .card {
+          font-weight: bold;
+          color: #7c3aed;
+        }
+      }
+
+      .card {
+        color: #14532d;
+      }
+    }
+
+    /* Anonymous, after components. */
+    @layer {
+      .anon {
+        border-style: dashed;
+      }
+    }
+
+    @media (min-width: 1px) {
+      @layer components {
+        .card.media {
+          border-width: 4px;
+        }
+      }
+    }
+
+    /* Unlayered: wins over any layer in normal declarations... */
+    .unlayered {
+      background: #dbeafe;
+      border-color: #2563eb;
+    }
+
+    /* ...but a layered !important wins over an unlayered !important. */
+    .card.important {
+      color: #2563eb !important;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>@layer</h1>
+
+  <h2>@import with layer(reset): loses to the unlayered rule</h2>
+  <p class="layer-demo" style="color: #1d4ed8">Blue text (the red comes from the reset layer).</p>
+
+  <h2>Layer order</h2>
+  <div id="specific" class="card">Green: components wins over base, even with a less specific selector.</div>
+  <div class="card">Bold (details sublayer) and dark green (direct components wins over the sublayer).</div>
+  <div class="card anon">Dashed border coming from an anonymous layer.</div>
+  <div class="card media">4px border: @layer inside @media.</div>
+
+  <h2>Unlayered and !important</h2>
+  <div class="card unlayered">Blue: the unlayered rule wins over every layer.</div>
+  <div class="card important">Red: the components layer's !important wins over the unlayered !important.</div>
+</body>
+
+</html>

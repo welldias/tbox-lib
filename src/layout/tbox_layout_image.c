@@ -73,7 +73,7 @@ tbox_string_view tbox_layout_image_url(tbox_arena *arena, const tbox_html_node *
  * attribute's text -- pushed as an ORDINARY text word (tbox_layout_push_words,
  * in `img_style`'s own face/color) rather than an image word, same fallback
  * every real browser shows in place of a broken image (see
- * tests/assets/024.html's `notfound.png`, alt="Image not found" -- the
+ * tests/assets/html-images.html's `notfound.png`, alt="Image not found" -- the
  * fixture this behavior was added to match). No broken-image ICON is drawn
  * (out of scope, no icon asset anywhere in this engine) -- text only. An
  * absent OR empty `alt` contributes nothing at all, matching a real

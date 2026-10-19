@@ -106,20 +106,20 @@ O foco pertence ao `tbox_context`.
   acompanha o `border-radius` (redondo no radio). Todo controle focado
   mostra o anel, inclusive `input type=range` e `type=image`, para a
   navegação por Tab sempre indicar o foco. Troque ou remova com
-  `:focus { outline: … }`. Veja `tests/assets/145.html`.
+  `:focus { outline: … }`. Veja `tests/assets/forms-checkbox-radio-and-focus.html`.
 - **Enter / Espaço** ativam o botão focado pelos mesmos handlers do clique;
   Espaço alterna checkbox; Enter num campo de linha única envia o formulário.
 - **`<summary>`** (primeiro filho `<summary>` de `<details>`) recebe foco e
   abre ou fecha o conteúdo com Enter, Espaço ou clique. O estado é o atributo
   `open` no DOM. Sem `open`, só o primeiro `<summary>` ocupa espaço e recebe
   eventos; não há título automático quando ele falta nem agrupamento pelo
-  atributo `name`. Veja `tests/assets/108.html`.
+  atributo `name`. Veja `tests/assets/forms-grouping.html`.
 - **`<map>`/`<area>`** associam regiões `rect`, `circle`, `poly` ou `default`
   a um `<img usemap="#nome">`. O clique usa coordenadas proporcionais ao
   tamanho desenhado e entrega o nó `<area>` aos handlers C; áreas com `href`
   também recebem foco e Enter. A biblioteca não navega automaticamente para
   o `href`. `object-fit` não altera o cálculo das regiões. Veja
-  `tests/assets/113.html`.
+  `tests/assets/html-picture-and-map.html`.
 - **Teclas de edição** agem no campo focado (setas, Home/End, Backspace,
   Delete, Shift para selecionar, Ctrl+A).
 - **Ctrl+C / Ctrl+X / Ctrl+V** usam o clipboard do sistema (no `tbox_app`).
@@ -194,7 +194,7 @@ clássica, use `scrollbar-width: auto` e, se quiser o trilho visível,
   pseudo-classe própria.
 - `scrollbar-width` e `scrollbar-color` continuam valendo onde as partes
   não declaram largura ou cor. A barra não tem setas, e a do `<textarea>`
-  não é desenhada. Veja `tests/assets/147.html`.
+  não é desenhada. Veja `tests/assets/layout-scrollbars.html`.
 
 Com `scroll-behavior: smooth` no bloco rolável, as rolagens que a tbox
 faz por conta própria — revelar o controle focado e o clique na trilha da
@@ -261,7 +261,7 @@ O `<textarea>` tem `resize: none` por padrão, como os campos de texto de
 aplicativos nativos (os navegadores usam `both`); declare `resize` para
 ativar. Sobre a alça, `tbox_context_cursor_at` devolve `nwse-resize`
 (`nesw-resize` em rtl), `ew-resize` ou `ns-resize` conforme os eixos.
-Veja `tests/assets/158.html`.
+Veja `tests/assets/interaction-zoom-and-resize.html`.
 
 ## Cursor
 

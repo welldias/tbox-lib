@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 15px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 14px 0 8px;
+    }
+
+    .row {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+    }
+
+    .outer {
+      width: 300px;
+      height: 180px;
+      overflow-y: auto;
+      background: white;
+      padding: 0 8px;
+    }
+
+    .inner {
+      height: 80px;
+      overflow-y: auto;
+      background: #dbeafe;
+      margin: 8px 0;
+      overscroll-behavior: contain;
+      scroll-padding-block: 10px;
+    }
+
+    .inner button {
+      display: block;
+      width: 200px;
+      margin: 6px 0;
+      scroll-margin-block: 6px;
+    }
+
+    .filler {
+      height: 160px;
+      color: #64748b;
+    }
+
+    .list {
+      width: 300px;
+      height: 120px;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+      background: #dbeafe;
+      padding: 0 8px;
+    }
+
+    .list button {
+      display: block;
+      width: 200px;
+      margin: 6px 0;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Scrolling behavior</h1>
+  <div class="row">
+    <div>
+      <h2>overscroll-behavior, scroll-margin, scroll-padding</h2>
+      <div class="outer">
+        <div class="inner">
+          <button>One</button><button>Two</button><button>Three</button>
+          <button>Four</button><button>Five</button><button>Six</button>
+        </div>
+        <div class="filler">Scrolling the blue list to the end does not scroll this box (overscroll-behavior: contain). With Tab, the focused button stays 16px from the list edge (scroll-margin + scroll-padding).</div>
+      </div>
+    </div>
+    <div>
+      <h2>scroll-behavior: smooth (use Tab)</h2>
+      <div class="list">
+        <button>One</button><button>Two</button><button>Three</button>
+        <button>Four</button><button>Five</button><button>Six</button>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

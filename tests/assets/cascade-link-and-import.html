@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <link rel="stylesheet" href="cascade-link.css">
+  <style>
+    @charset "UTF-8";
+    @import url(cascade-import.css);
+
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    /* Media features: only the ones that match the environment turn green. */
+    .mq {
+      display: inline-block;
+      padding: 4px 8px;
+      margin: 0 6px 6px 0;
+      background: #fecaca;
+      color: #7f1d1d;
+    }
+
+    @media (prefers-color-scheme: light) {
+      .mq.light {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .mq.dark {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      .mq.hover {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (pointer: coarse) {
+      .mq.coarse {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (min-resolution: 1dppx) {
+      .mq.res {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (min-aspect-ratio: 1/1) {
+      .mq.ratio {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    @media (scripting: none) {
+      .mq.script {
+        background: #bbf7d0;
+        color: #14532d;
+      }
+    }
+
+    /* Window width: narrow below 601px, wide above. */
+    .status {
+      padding: 10px 14px;
+      background: #dbeafe;
+      border: 1px solid #3b82f6;
+    }
+
+    .status .wide {
+      display: none;
+    }
+
+    @media screen and (min-width: 601px) {
+      .status {
+        background: #dcfce7;
+        border-color: #16a34a;
+      }
+
+      .status .narrow {
+        display: none;
+      }
+
+      .status .wide {
+        display: inline;
+      }
+    }
+
+    @media print {
+      .status {
+        background: #fecaca;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>&lt;link&gt;, @import and @media</h1>
+
+  <h2>&lt;link rel="stylesheet"&gt;</h2>
+  <p class="linked">This color and the border come from the cascade-link.css file.</p>
+
+  <h2>@import (cascade-import.css &rarr; cascade-import/base.css &rarr; colors.css)</h2>
+  <p class="import-color import-base import-own">Style coming from three imported sheets; the one with media (min-width: 5000px) does not apply.</p>
+
+  <h2>@media width (resize the window)</h2>
+  <div class="status"><span class="narrow">Narrow window</span><span class="wide">Wide window</span></div>
+
+  <h2>Media features (green = matched)</h2>
+  <div>
+    <span class="mq light">prefers-color-scheme: light</span>
+    <span class="mq dark">prefers-color-scheme: dark</span>
+    <span class="mq hover">hover + pointer: fine</span>
+    <span class="mq coarse">pointer: coarse</span>
+    <span class="mq res">min-resolution: 1dppx</span>
+    <span class="mq ratio">min-aspect-ratio: 1/1 (wide window)</span>
+    <span class="mq script">scripting: none</span>
+  </div>
+</body>
+
+</html>

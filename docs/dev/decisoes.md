@@ -738,6 +738,15 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
 
 ## Ferramentas
 
+- **Fixtures nomeados por categoria, um recurso em um só lugar**, em vez da
+  numeração na ordem de implementação. Com números, o mesmo estilo aparecia
+  em vários fixtures (bordas em 028, 029, 034, 036, 037...) e achar onde um
+  recurso era testado exigia a tabela. Com `<categoria>-<tema>`, o nome
+  diz o assunto, recursos vizinhos ficam juntos e uma regressão de
+  paridade aponta para um só arquivo. A alternativa de juntar tudo de uma
+  categoria num arquivo só foi descartada: o fixture precisa caber em
+  800x600 para a comparação com o Firefox (2026-10-19).
+
 - **Referência do `tbox_cmp` capturada no Firefox a cada execução**, em
   vez de PNGs guardados no repositório. Uma imagem tirada à mão envelhece
   quando o fixture muda, depende do navegador e da tela de quem a tirou e

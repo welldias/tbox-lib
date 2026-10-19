@@ -22,7 +22,7 @@ target_compile_definitions(tbox_tests PRIVATE
     TBOX_TEST_LIBERATION_SANS_PATH="${CMAKE_SOURCE_DIR}/external/liberation-sans/LiberationSans-Regular.ttf")
 
 # test_image.c decodes real fixtures already on disk (tests/assets/black.png/
-# yellow.png, the same ones tests/assets/024.html's <img> regression fixture
+# yellow.png, the same ones tests/assets/html-images.html's <img> regression fixture
 # uses) rather than a synthetic image, so it needs an absolute base_dir to
 # join against regardless of ctest's own working directory.
 target_compile_definitions(tbox_tests PRIVATE

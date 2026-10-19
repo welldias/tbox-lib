@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 10px 0 4px;
+    }
+
+    .box {
+      padding: 8px;
+      margin: 6px 0;
+      background: #bfdbfe;
+    }
+
+    .sizes {
+      inline-size: 280px;
+      block-size: 40px;
+    }
+
+    .second {
+      width: 320px;
+      inline-size: 220px;
+      background: #bbf7d0;
+    }
+
+    .minimum {
+      inline-size: 60px;
+      min-inline-size: 260px;
+      min-block-size: 45px;
+    }
+
+    .maximum {
+      inline-size: 420px;
+      max-inline-size: 240px;
+      block-size: 100px;
+      max-block-size: 30px;
+      background: #bbf7d0;
+    }
+
+    .spacing {
+      width: 220px;
+      margin-block: 6px 10px;
+      margin-inline-start: 40px;
+      padding-block: 4px;
+      padding-inline: 16px 4px;
+      background: #cfe3c6;
+      border: 1px solid #5f8b52;
+    }
+
+    .frame {
+      position: relative;
+      width: 300px;
+      height: 60px;
+      background: #dde6f0;
+      border: 1px solid #5b7590;
+    }
+
+    .inset {
+      position: absolute;
+      inset: 10px 20px auto auto;
+      width: 120px;
+      height: 24px;
+      background: #f0b86e;
+    }
+
+    .inset-logical {
+      position: absolute;
+      inset-block-end: 8px;
+      inset-inline-start: 16px;
+      width: 80px;
+      height: 20px;
+      background: #6ea8f0;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Logical sizes, spacing and insets</h1>
+  <h2>inline-size and block-size</h2>
+  <div class="box sizes">280px wide by 40px tall</div>
+  <div class="box second">later inline-size wins over width: 220px</div>
+  <h2>min/max-inline-size and min/max-block-size</h2>
+  <div class="box minimum">Minimum: 260 x 45</div>
+  <div class="box maximum">Maximum: 240 x 30</div>
+  <h2>margin-block/inline and padding-block/inline</h2>
+  <div class="spacing">margin-inline-start: 40px; padding-inline: 16px 4px</div>
+  <h2>inset and inset-block-end / inset-inline-start</h2>
+  <div class="frame">
+    <div class="inset"></div>
+    <div class="inset-logical"></div>
+  </div>
+</body>
+
+</html>

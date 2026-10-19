@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #f4f7fb;
+      color: #24364a;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 14px 0 6px;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .box {
+      width: 240px;
+      padding: 10px;
+      border: 2px solid #4a78a8;
+      background: #e9f3ff;
+      margin-bottom: 6px;
+    }
+
+    .border-box { box-sizing: border-box; }
+    .content-box { box-sizing: content-box; }
+
+    .row {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .card {
+      width: 220px;
+      padding: 10px;
+      border: 2px solid #496889;
+      background: white;
+    }
+
+    .min-card { min-height: 70px; }
+    .border-card { box-sizing: border-box; min-height: 70px; }
+    .scroll-card { max-height: 60px; overflow-y: auto; }
+    .scroll-card p { height: 25px; }
+
+    .panel {
+      width: 60px;
+      min-width: 220px;
+      max-width: 180px;
+      padding: 12px;
+      color: #245686;
+      background: #e9f3ff;
+      border: 2px solid currentColor;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Box sizing</h1>
+  <h2>box-sizing</h2>
+  <div class="box content-box">Content box: outer width is 264px.</div>
+  <div class="box border-box">Border box: outer width is 240px.</div>
+  <h2>min-height, and max-height with scrolling</h2>
+  <div class="row">
+    <div class="card min-card">At least 70px of content height.</div>
+    <div class="card border-card">At least 70px tall including padding and border.</div>
+    <div class="card scroll-card">
+      <p>First item</p><p>Second item</p><p>Third item</p><p>Fourth item</p>
+    </div>
+  </div>
+  <h2>min-width wins over max-width (and over width)</h2>
+  <div class="panel">min-width 220px, max-width 180px, width 60px.</div>
+</body>
+
+</html>

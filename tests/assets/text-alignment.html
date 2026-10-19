@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 12px 0 8px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 16px;
+    }
+
+    p {
+      background: white;
+      border-left: 4px solid #3b82f6;
+      padding: 8px;
+      margin: 0 0 10px;
+      text-align: justify;
+    }
+
+    .center { text-align-last: center; }
+    .right { text-align-last: right; }
+    .justify { text-align-last: justify; }
+    .start { text-align: center; text-align-last: left; }
+    .no-justify { text-justify: none; }
+  </style>
+</head>
+
+<body>
+  <h1>text-align, text-align-last and text-justify</h1>
+  <div class="grid">
+    <p>auto: the justified paragraph aligns its last line to the left, as we have always done so far.</p>
+    <p class="center">center: the justified paragraph centers the last line of this sample text.</p>
+    <p class="right">right: the justified paragraph pushes the last line to the right of the block.</p>
+    <p class="justify">justify: even the last line of this paragraph is stretched.</p>
+    <p class="start">text-align center with the last line on the left in this short test paragraph.</p>
+  </div>
+  <h2>text-justify</h2>
+  <div class="grid">
+    <p>auto: justified text spreads the space between the words of each line.</p>
+    <p class="no-justify">none: justified text spreads the space between the words of each line.</p>
+  </div>
+</body>
+
+</html>

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Conic gradients</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font: 16px sans-serif;
+            color: #172033;
+            background: #edf1f7;
+        }
+
+        h1 {
+            font-size: 24px;
+        }
+
+        h2 {
+            font-size: 17px;
+            margin: 20px 0 8px;
+        }
+
+        p {
+            margin: 8px 0;
+        }
+
+        .row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+
+        .tile {
+            width: 230px;
+            height: 140px;
+            border: 1px solid #172033;
+        }
+
+        .sweep {
+            background: conic-gradient(#ef4444, #f59e0b, #10b981, #2563eb, #ef4444);
+        }
+
+        .pie {
+            background: conic-gradient(from 90deg at 50% 50%, #ef4444 0 25%, #f59e0b 25% 50%, #2563eb 50% 100%);
+            border-radius: 70px;
+        }
+
+        .repeat {
+            background: repeating-conic-gradient(#2563eb 0 45deg, #dbeafe 45deg 90deg);
+        }
+
+        .checker {
+            background: repeating-conic-gradient(#172033 0 25%, white 25% 50%);
+            background-size: 32px 32px;
+        }
+
+        .offcenter {
+            background: conic-gradient(from asin(1) at 25% 75%, #ef4444, #2563eb, #ef4444);
+        }
+
+        .mask {
+            background: #2563eb;
+            mask-image: conic-gradient(black 0 75%, transparent 75% 100%);
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Conic gradients</h1>
+    <p>Clockwise angle from the top; positions in angles and percentages.</p>
+    <div class="row">
+        <div><p>continuous interpolation</p><div class="tile sweep"></div></div>
+        <div><p>sectors with two positions</p><div class="tile pie"></div></div>
+        <div><p>angular repetition</p><div class="tile repeat"></div></div>
+    </div>
+    <div class="row">
+        <div><p>tiling with background-size</p><div class="tile checker"></div></div>
+        <div><p>offset center, from asin(1)</p><div class="tile offcenter"></div></div>
+        <div><p>conic mask-image</p><div class="tile mask"></div></div>
+    </div>
+</body>
+
+</html>

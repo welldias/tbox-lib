@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    /* Several layers: the list repeats */
+    .layers {
+      width: 560px;
+      height: 64px;
+      margin-top: 12px;
+      background:
+        repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.35) 0 8px, transparent 8px 16px),
+        linear-gradient(90deg, #22c55e, #a855f7),
+        #f97316;
+      background-blend-mode: multiply, screen;
+    }
+
+    .stack {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+    }
+
+    .multi-short {
+      width: 300px;
+      height: 100px;
+      border: 2px solid #475569;
+      background: url(pixel-heart.png) right 10px top 10px / 32px no-repeat, radial-gradient(circle at 20% 70%, rgba(255, 255, 255, 0.8), transparent 40%), linear-gradient(135deg, #1d4ed8, #9333ea);
+      image-rendering: pixelated;
+      color: white;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+
+    .multi-long {
+      width: 300px;
+      height: 100px;
+      border: 2px solid #475569;
+      background-image: url(pixel-heart.png), url(pixel-heart.png), linear-gradient(#fef3c7, #fde68a);
+      background-size: 24px, 40px, auto;
+      background-position: 10px 10px, right 10px bottom 10px, 0 0;
+      background-repeat: repeat-x, no-repeat;
+      image-rendering: pixelated;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Background layers</h1>
+  <h2>Three layers, list "multiply, screen"</h2>
+  <div class="layers"></div>
+
+  <h2>Several layers: one shorthand, and longhand lists</h2>
+  <div class="stack">
+    <div class="multi-short">image + radial + linear</div>
+    <div class="multi-long">longhands, repeat list shorter than the layers</div>
+  </div>
+</body>
+
+</html>

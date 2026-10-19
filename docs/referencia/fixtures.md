@@ -5,134 +5,381 @@
 > - **Veja também:** [Ferramentas e testes](../12-ferramentas-e-testes.md), [CSS suportado](css-suportado.md)
 
 Abra qualquer um com `build/example/tbox_assets_showrun` (setas navegam) ou
-gere um PNG com `tbox_app_screenshot_from_files`. Os fixtures `001`–`039`
-são casos gerais. Os textos são em inglês. A referência de cada um é
-capturada no Firefox pelo `tbox_cmp` a cada execução, sem PNG guardado. A
-tabela abaixo cobre os que demonstram um recurso específico.
+gere um PNG com `tbox_app_screenshot_from_files`. A referência de cada um é
+capturada no Firefox pelo `tbox_cmp` a cada execução, sem PNG guardado.
+
+Convenções:
+
+- Nome `<categoria>-<tema>.html`. Cada recurso fica em **um** fixture; quando
+  um tema não cabe numa página, ele se divide em mais de um arquivo com o
+  mesmo prefixo (`text-shaping-latin` e `text-shaping-scripts`).
+- Cada fixture cabe em 800x600 (o tamanho padrão do `tbox_cmp`), sem rolagem.
+- Textos em inglês, `lang="en"` (exceto onde o idioma é o próprio teste, como
+  `:lang()`).
+- Recursos auxiliares levam o nome do fixture que os usa: `cascade-link.css`,
+  `cascade-import.css` e `cascade-import/`, `cascade-layers-reset.css`,
+  `base-demo/base.css`, `opentype-sans.ttf` (subset da Roboto, OFL; licença
+  em `opentype-sans-license.txt`). Imagens compartilhadas: `black.png`,
+  `yellow.png`, `bird.png`, `pixel-heart.png`, `mask-star.png`.
+
+Até 2026-10-19 os fixtures eram numerados (`001.html`…`163.html`, `a01.html`)
+na ordem em que os recursos foram implementados. A tabela no fim desta página
+mostra para onde foi cada um.
+
+## HTML
 
 | Fixture | Recurso |
 |---|---|
-| 040 | `object-fit` em imagens |
-| 041 | `object-position` |
-| 042 | `background-clip` |
-| 043 | `object-fit: none` e `scale-down` |
-| 044 | `:root`, `:first-of-type`, `:last-of-type`, `:only-of-type` |
-| 045 | `image-rendering: pixelated` |
-| 046 | `:nth-child()`, `:nth-of-type()` |
-| 047 | `:nth-last-child()`, `:nth-last-of-type()` |
-| 048 | combinador `~` |
-| 049 | `:not()` |
-| 050 | `:required`, `:optional` |
-| 051 | `:lang()` |
-| 052 | `image-rendering: crisp-edges` |
-| 053 | `:focus-within` |
-| 054 | `:link`, `:any-link` |
-| 055 | `list-style-type: decimal-leading-zero` |
-| 056 | seletores de atributo `^=`, `$=`, `*=` |
-| 057 | `text-decoration-style: wavy` |
-| 058 | `overflow-wrap: anywhere` |
-| 059 | `inline-size`, `block-size` |
-| 060 | min/max lógicos (`min-inline-size` etc.) |
-| 061 | `border-block`, `border-inline` |
-| 062 | `text-underline-position: under` |
-| 063 | `:hover` em ancestrais |
-| 064 | modificador `i` em seletores de atributo |
-| 065 | unidades `rem`, `ex`, `ch`, `pt`, `pc`, `in`, `cm`, `mm`, `Q`, `vw`/`vh`/`vmin`/`vmax` |
-| 066 | `calc()` |
-| 067 | `inherit`, `initial`, `unset` (`revert`) |
-| 068 | `overflow-x` e `overflow` com dois valores |
-| 069 | `text-align-last` |
-| 070 | `white-space: break-spaces`, `tab-size` |
-| 071 | `list-style-position` |
-| 072 | `empty-cells: hide`, `table-layout: fixed`, linhas `visibility: collapse` |
-| 073 | `aspect-ratio` |
-| 074 | `cursor`, `user-select` |
-| 075 | `border-radius` elíptico |
-| 076 | `background-image`, `-size`, `-position`, `-repeat` |
-| 077 | `linear-gradient()`, `radial-gradient()`, `repeating-*` |
-| 078 | listas de `box-shadow` (com `inset`) e `text-shadow` |
-| 079 | `z-index` e contextos de empilhamento |
-| 080 | `font-weight` numérico, `font-stretch` |
-| 081 | `font-variant: small-caps` |
-| 082 | `line-clamp` |
-| 083 | `transform: translate*()`, `translate` |
-| 084 | cores CSS 4/5 (`hwb`, `lab`, `lch`, `oklab`, `oklch`, `color-mix`) |
-| 085 | `min()`, `max()`, `clamp()` |
-| 086 | `width: min-content / max-content / fit-content` |
-| 087 | `place-content`, `place-items`, `place-self` |
-| 088 | bordas e contornos `groove`, `ridge`, `inset`, `outset` |
-| 089 | `scrollbar-color`, `scrollbar-width` |
-| 090 | `background-origin` e várias camadas de fundo |
-| 091 | `text-wrap` (`nowrap`, `balance`), `text-wrap-mode`, `white-space-collapse` |
-| 092 | `text-overflow: "<string>"` |
-| 093 | `display: flow-root`, `display: list-item` |
-| 094 | `text-indent` com `hanging`, `each-line` |
-| 095 | `clip-path: inset()`, `circle()`, `ellipse()` |
-| 096 | `filter` de cor |
-| 097 | custom properties e `var()` |
-| 098 | `list-style-image`, `::marker` |
-| 099 | bordas tracejadas e pontilhadas em caixas arredondadas |
-| 100 | `position: sticky` |
-| 101 | `font-kerning` |
-| 102 | soft hyphen (`&shy;`) e `hyphens` |
-| 103 | `word-wrap`, `text-wrap-style`, raios de canto lógicos, `background-repeat: space/round`, modificador `s` |
-| 104 | unidades `sv*`/`lv*`/`dv*`, mais cursores, `lower-greek`/`disclosure-*`, `:active`, `background-attachment: fixed`, `scrollbar-gutter: stable` |
-| 105 | `@media`, `transition`, `@font-face` |
-| 106 | `<output>`, `<progress>` e `<meter>` |
-| 107 | `<optgroup>` com grupos habilitados e desabilitados |
-| 108 | `<details>`/`<summary>` fechado e aberto |
-| 109 | `<legend>` na borda de `<fieldset>` |
-| 110 | `<link rel="stylesheet">` com CSS local |
-| 111 | `<source>` em `<picture>` com `<img>` fallback |
-| 112 | `<base href>` para CSS e imagens locais |
-| 113 | `<map>`/`<area>` com regiões retangulares, circulares e poligonais |
-| 114 | `<ruby>`, `<rt>` e `<rp>` com anotação simples e múltiplos trechos |
-| 115 | `border-block-*`/`border-inline-*` (longhands por eixo), `hyphenate-character`, `clip: rect()`, `overscroll-behavior`, `scroll-margin`, `scroll-padding` |
-| 116 | `isolation`, `text-justify`, `line-break: anywhere`, `font-variant-position`, `all` |
-| 117 | `@import` aninhado (`117.css`, `117-import/`), media features, `font-synthesis`, `color-scheme` e `light-dark()` |
-| 118 | bloco dentro de `<p>`/`<h3>`/`<li>`/`<td>`, listas aninhadas |
-| 119 | `@layer` (ordem, subcamadas, anônima, dentro de `@media`, `!important`) e `@import … layer()` (`119-reset.css`) |
-| 120 | `font-size-adjust`, `scroll-behavior: smooth` (com Tab), `@starting-style`, `@namespace` |
-| 121 | `::before`/`::after` (obrigatório, badge com `attr()`, status, breadcrumb, bloco vazio), `counter()`, `counters()`, `quotes` |
-| 122 | `transition` em propriedades de layout e pintura (`width`, `padding`, bordas, `outline`, `translate`), `cubic-bezier()`, `steps()`, listas de longhands (passe o mouse) |
-| 123 | `@supports` (`not`/`and`/`or`, `selector()`, custom property, dentro de `@media`) |
-| 124 | `filter: drop-shadow()` em caixas com fundo, em texto e encadeado (sombra na forma desde as camadas de composição) |
-| 125 | `backdrop-filter` (funções de cor e `blur()`) |
-| 126 | propriedades aceitas sem efeito (impressão, 3D, `clear`, `overflow-anchor`) e `@supports` delas |
-| 127 | `animation` e `@keyframes` (`infinite alternate`, keyframe intermediário, `steps()` com atraso, `forwards`, `paused`) |
-| 128 | `scroll-snap-type` (`mandatory`, `proximity`), `scroll-snap-align`, `scroll-snap-stop` (role a lista) |
-| 129 | `background-blend-mode` (16 modos, lista sobre várias camadas) |
-| 130 | `direction: rtl` e atributo `dir` (propriedades lógicas, flex, `text-align: start/end`) |
-| 131 | `text-emphasis` (formas cheias/abertas, `<string>`, `under`, herança) |
-| 132 | camadas de composição: `opacity` de grupo, `filter: blur()`, `drop-shadow()` na forma, `mask-image`/`-webkit-mask` (`mask-star.png`), `mix-blend-mode`, `isolation`, `backdrop-filter: blur()`, `background-blend-mode` isolado |
-| 133 | `min()`/`max()`/`clamp()` percentuais, `clip-path: xywh()`, raios percentuais em `inset(round ...)`, quatro percursos de matiz em `color-mix(in oklch)` |
-| 134 | `color(srgb)`/`color(srgb-linear)`, `clip-path: rect()` com `auto` e `round`, `pow()`/`sqrt()`/`exp()`/`log()` em cálculos de comprimento |
-| 135 | `hypot()`, `round()` com quatro estratégias, sinais de `mod()`/`rem()` e validação/normalização dos pesos de `color-mix()` |
-| 136 | `abs()`/`sign()`, `hypot()` com comprimentos, constantes `pi`/`e` e `opacity` calculada com números/percentuais |
-| 137 | `sin()`/`cos()`/`tan()` com radianos e ângulos literais; raios explícitos em gradientes radiais circulares, elípticos e repetidos |
-| 138 | `asin()`/`acos()`/`atan()`/`atan2()`: pares com ângulos literais em gradientes e filtros; aninhamento em largura e opacidade |
-| 139 | Gradientes cônicos: interpolação, setores, `from`/`at`, repetição angular, mosaico e máscara |
-| 140 | `polygon()`: triângulo, concavidade, `nonzero`/`evenodd`, interseção de recortes e filtros |
-| 141 | Shaping com HarfBuzz: ligaduras (e `letter-spacing` desligando-as), kerning GPOS com `font-kerning: none`, acentos combinantes e marcas empilhadas, formas contextuais árabes (isoladas com ZWNJ), hebraico com niqqud, frase árabe sem bidi; cursor dentro de ligadura em `<input>`/`<textarea>`. Sem HarfBuzz, as linhas "depois" saem iguais às "antes" |
-| 142 | `accent-color` em range, progress, checkbox e radio: padrão, herdada do contêiner, por controle (com `var()`), meter sem mudança |
-| 143 | Partes dos controles (`::slider-thumb`, `::slider-track`, `::slider-fill`, `::picker-icon`, `::checkmark`, `::file-selector-button`, `::step-*`, `::clear-icon`, `::color-swatch`, `::selection`), inclusive desabilitado, contêiner escuro com `var()` e raio por canto |
-| 144 | Quebra de linha do `<textarea>`: entre palavras, espaços repetidos pendurados, quebras do próprio texto, palavra maior que a linha |
-| 145 | Checkbox e radio marcados e desmarcados alinhados na mesma linha; campos de texto vazios e preenchidos alinhados; `outline` como anel de foco em radio (redondo), checkbox, botão, slider e campos com borda reta e arredondada |
-| 146 | Lista do `<select>` pelo CSS padrão: `::picker(select)`, `option`/`optgroup`, `:hover`, `:checked`, `:disabled` (inclusive em `optgroup` desabilitado), tema por `var()`. Abra a lista para ver; o Firefox ainda mostra a lista nativa |
-| 147 | Scrollbar: padrão discreto, `scrollbar-width: auto`, `scrollbar-color`, partes `::-tbox-scrollbar-track`/`-thumb` (largura, borda, raio, margem, altura mínima, `:hover`, `:active`) e `scrollbar-gutter: stable` com largura própria. O Firefox só aplica as propriedades padrão |
-| 148 | `border-image`: gradientes como fonte (`slice` numérico/percentual, `fill`, `round`), imagem com `stretch`/`repeat`/`round`/`space`, `border-image-width` (comprimento e número), `border-image-outset` |
-| 150 | Recursos OpenType com fonte local (`150-sans.ttf`, subset da Roboto, OFL): `tabular-nums`/`proportional-nums`, `oldstyle-nums`, `diagonal-fractions`, `font-variant-ligatures: none`, `font-feature-settings` (`"smcp"`, `"liga" 0`). Exige HarfBuzz |
-| 153 | `@scope` (limite `to`, proximidade, `:scope`), `@property` (`inherits: false`, valor inválido cai no `initial-value`), `@counter-style` (`cyclic`, `additive`, `alphabetic` com `prefix`/`suffix`, `fixed` com fallback) |
-| 149 | `transform` com `rotate()`, `scale()`, `skewX()`, `matrix()`, `rotateZ()`, `rotateX()` achatado, `transform-origin`, propriedades `rotate`/`scale`, composição `translate() rotate()` |
-| 151 | Grid: trilhas fixas + `fr`, `repeat()`, `minmax()`, `auto-fill`, spans, linhas negativas e nomeadas |
-| 152 | Grid: `grid-template-areas`, `grid-auto-flow: column`/`dense`, `justify-items`/`align-items`/`justify-self`/`place-self`, `justify-content: space-between`, `auto-fit` |
-| 154 | `float: left/right`, floats lado a lado, `clear: both`, `display: flow-root` contendo float x bloco comum, `shape-outside: circle()` |
-| 156 | `@container` em contêineres `inline-size` de 200/380/600px, unidades `cqi`, contêiner nomeado consultado através de um sem nome |
-| 158 | `zoom` (1, 1.5, 50%, pai 2 com filho .5) e `resize` (`both`, `horizontal`, textarea padrão sem alça, textarea `vertical`) |
-| 155 | Multicoluna: `column-count` com `column-rule`, `column-width`, `column-fill: auto` com altura fixa, `column-span: all`, regra tracejada com gap grande, bloco com fundo/borda partido entre colunas |
-| 159 | Texto bidirecional: hebraico/árabe com números e latim em `ltr` e `rtl`, espelhamento de parênteses, `<bdo>`, `unicode-bidi: normal` x `isolate`, `plaintext`, `<bdi>` + `embed` |
-| 163 | `-webkit-text-stroke` com `paint-order: normal` x `stroke`, texto vazado (`color: transparent`), `marker`/`mask-type`/`@page` aceitos sem quebrar a folha |
-| 161 | Motion path: `offset-path: path()` com `offset-distance` 0/50/100% e `offset-rotate: auto`, `circle()`, `ray()`, `offset-anchor` |
-| 157 | Duas camadas de `mask` com `mask-composite` (`add`, `subtract`, `intersect`, `exclude`), `box-decoration-break: slice` x `clone` em inline partido em 3 linhas, `-webkit-box-reflect` (N/A no Firefox) |
-| 162 | `::first-letter` flutuante, `initial-letter: 3` e `3 2` (N/A no Firefox), `hanging-punctuation: first` e `allow-end` com texto justificado (N/A no Firefox) |
-| 160 | Escrita vertical: `vertical-rl`, `vertical-lr`, `text-orientation: upright`, `text-combine-upright: all`, `sideways-lr`, fluxo ortogonal com `margin-block-start`/`padding-inline-start` |
+| `html-headings` | `<h1>`–`<h6>`, `<hr>` |
+| `html-paragraphs` | `<p>`, `<br>`, `<pre>`, espaços colapsados |
+| `html-text-formatting` | `<b>`, `<strong>`, `<i>`, `<em>`, `<mark>`, `<small>`, `<del>`, `<ins>`, `<sub>`, `<sup>`, `<q>`, `<blockquote>`, `<abbr>`, `<address>`, `<cite>`, `<bdo>` |
+| `html-links` | `<a href>` absoluto e relativo, `target` |
+| `html-images` | `<img>` com `width`/`height`, tamanho natural, `alt` de imagem ausente, imagem em link, `float` |
+| `html-picture-and-map` | `<source>` em `<picture>` com `<img>` de fallback; `<map>`/`<area>` retangular, circular e poligonal |
+| `html-base-href` | `<base href>` para CSS e imagens locais (`base-demo/`) |
+| `html-tables` | tabela básica, bordas colapsadas invisíveis, largura percentual de coluna |
+| `html-tables-layout` | `empty-cells: hide`, `table-layout: fixed`, linha `visibility: collapse`, `max-width`/`min-width`, `rules` |
+| `css-style-attribute` | atributo `style`: cor de texto e de fundo, tamanho de fonte |
+
+## Cores
+
+| Fixture | Recurso |
+|---|---|
+| `colors-names-and-formats` | nomes de cor em fundo, texto e borda; a mesma cor em cada notação |
+| `colors-rgb-and-hex` | `rgb()`/`rgba()`, hexadecimal de 3/4/6/8 dígitos |
+| `colors-hsl` | `hsl()`/`hsla()` |
+| `colors-modern` | `hwb`, `lab`, `lch`, `oklab`, `oklch`, `currentColor`, `color-scheme` e `light-dark()` |
+| `colors-mix-and-color-function` | `color-mix()` em vários espaços, pesos (normalização, alfa, espaço inválido), percursos de matiz em `oklch`, `color(srgb)`/`color(srgb-linear)` |
+
+## Caixa
+
+| Fixture | Recurso |
+|---|---|
+| `box-border-padding-margin` | `border`, `padding`, `margin` |
+| `box-border-styles` | `dashed`, `dotted`, `double`, estilo por lado, `hidden`; bordas por lado; `outline` (`thick`/`thin`, `outline-offset`, tracejado) |
+| `box-border-styles-3d` | `groove`, `ridge`, `inset`, `outset` em bordas e contornos |
+| `box-border-styles-rounded` | tracejado e pontilhado em caixas arredondadas |
+| `box-radius` | `border-radius` de um a quatro valores, longhands de canto, raio maior que a caixa, raios de canto lógicos |
+| `box-radius-elliptical` | raios elípticos (`/`) e percentuais |
+| `box-logical-borders` | `border-inline-*`/`border-block-*` (longhands e atalhos por eixo) |
+| `box-logical-sizes` | `inline-size`/`block-size`, min/max lógicos, `margin-block`/`padding-inline`, `inset-block`/`inset-inline` |
+| `box-sizing` | `box-sizing`, `min-height`/`max-height` com rolagem, `min-width` vencendo `max-width` |
+| `box-sizing-keywords` | `width: min-content / max-content / fit-content` |
+| `box-aspect-ratio` | `aspect-ratio` |
+
+## Texto e fontes
+
+| Fixture | Recurso |
+|---|---|
+| `text-font-size` | palavras-chave absolutas e relativas de tamanho, atalho `font`, `font-size-adjust` |
+| `text-font-weight-and-stretch` | `font-weight` numérico e relativo (`bolder`/`lighter`), `font-style` (`italic`, `oblique`), `font-stretch` |
+| `text-font-variants` | `font-variant: small-caps`, `font-variant-position`, `font-synthesis` |
+| `text-font-face-and-opentype` | `@font-face` com fonte local (`opentype-sans.ttf`); `tabular-nums`/`proportional-nums`, `oldstyle-nums`, `diagonal-fractions`, `font-variant-ligatures: none`, `font-feature-settings`. Exige HarfBuzz |
+| `text-shaping-latin` | HarfBuzz: ligaduras (e `letter-spacing` desligando-as), kerning com `font-kerning: auto`/`none`, acentos combinantes e marcas empilhadas |
+| `text-shaping-scripts` | HarfBuzz: formas contextuais árabes (ZWNJ), hebraico com niqqud; cursor dentro de ligadura em `<input>`/`<textarea>`. Sem HarfBuzz, "depois" sai igual a "antes" |
+| `text-decoration` | `underline`/`overline`/`line-through`, longhands, cor, estilos (`wavy`, `dashed`, `dotted`, `double`), espessura, `text-underline-position: under` |
+| `text-transform-and-shadow` | `text-transform`, listas de `text-shadow` |
+| `text-spacing` | `line-height`, `letter-spacing`, `word-spacing`, `vertical-align` |
+| `text-alignment` | `text-align`, `text-align-last`, `text-justify` |
+| `text-indent` | `text-indent` com `hanging` e `each-line` |
+| `text-white-space` | `white-space` (inclusive `break-spaces`), `text-wrap-mode`, `white-space-collapse`, `tab-size` |
+| `text-wrapping` | `overflow-wrap` (`break-word`, `anywhere`), `word-wrap`, `word-break` (`break-all`, `keep-all`), `line-break: anywhere` |
+| `text-hyphens-and-balance` | `&shy;` com `hyphens: manual`/`none`, `hyphenate-character`, `text-wrap: balance`, `text-wrap-style` |
+| `text-overflow` | `text-overflow: ellipsis` e `"<string>"`, `line-clamp` |
+| `text-emphasis` | `text-emphasis` (formas cheias/abertas, `<string>`, `under`, herança) |
+| `text-stroke` | `-webkit-text-stroke` com `paint-order`, texto vazado; `marker`/`mask-type`/`@page` aceitos sem quebrar a folha |
+| `text-initial-letter` | `::first-letter` flutuante, `initial-letter` (N/A no Firefox), `hanging-punctuation` |
+| `text-ruby` | `<ruby>`, `<rt>`, `<rp>` |
+| `text-direction` | `direction: rtl` e atributo `dir` (propriedades lógicas, flex, `text-align: start/end`) |
+| `text-bidi` | hebraico/árabe com números e latim, espelhamento, `<bdo>`, `<bdi>`, `unicode-bidi` (`isolate`, `plaintext`, `embed`) |
+| `text-vertical-writing` | `vertical-rl`/`vertical-lr`, `text-orientation: upright`, `text-combine-upright`, `sideways-lr`, fluxo ortogonal |
+
+## Listas e conteúdo gerado
+
+| Fixture | Recurso |
+|---|---|
+| `lists-style-type` | `list-style-type` (inclusive `decimal-leading-zero`, `lower-greek`, `disclosure-*`), listas aninhadas |
+| `lists-position-and-list-item` | `list-style-position`, `display: list-item` |
+| `lists-markers` | `list-style-image`, `::marker` |
+| `generated-content` | `::before`/`::after` (campo obrigatório, badge com `attr()`, status, breadcrumb, bloco vazio), `quotes` |
+| `generated-counters` | `counter()`, `counters()`, `@counter-style` (`cyclic`, `additive`, `alphabetic` com `prefix`/`suffix`, `fixed` com fallback) |
+
+## Seletores
+
+| Fixture | Recurso |
+|---|---|
+| `selectors-structural` | `:nth-child()`, `:nth-of-type()`, `:nth-last-child()`, `:nth-last-of-type()` |
+| `selectors-type-and-only` | `:root`, `:first-of-type`/`:last-of-type`/`:only-of-type`, `:only-child`, `:empty` |
+| `selectors-combinators-and-not` | combinador `~`, `:not()` |
+| `selectors-attributes-and-lang` | `^=`, `$=`, `*=`, modificadores `i` e `s`, `:lang()` |
+| `selectors-states` | `:required`/`:optional`, `:focus-within`, `:enabled`/`:disabled`, `:link`/`:any-link`, `:hover` em ancestrais |
+
+## Cascata e at-rules
+
+| Fixture | Recurso |
+|---|---|
+| `cascade-keywords` | `inherit`, `initial`, `unset`, `revert`, `all`; texto anônimo herda |
+| `cascade-custom-properties` | custom properties e `var()` (fallback, redefinição), `@property` (`inherits: false`, valor inválido cai no `initial-value`) |
+| `cascade-link-and-import` | `<link rel="stylesheet">`, `@import` aninhado e com media que não casa, `@media` por largura, media features |
+| `cascade-layers` | `@layer` (ordem, subcamadas, anônima, dentro de `@media`, `!important`) e `@import … layer()` |
+| `cascade-supports` | `@supports` (`not`/`and`/`or`, `selector()`, custom property, dentro de `@media`); propriedades aceitas sem efeito (impressão, 3D, `clear`, `overflow-anchor`) |
+| `cascade-scope-and-namespace` | `@scope` (limite `to`, proximidade, `:scope`), `@namespace` |
+| `cascade-container-queries` | `@container` em contêineres `inline-size`, unidades `cqi`, contêiner nomeado |
+
+## Unidades e funções
+
+| Fixture | Recurso |
+|---|---|
+| `units-lengths` | `rem`, `ex`, `ch`, `pt`, `pc`, `in`, `cm`, `mm`, `Q`, `vw`/`vh`/`vmin`/`vmax`, `sv*`/`lv*`/`dv*` |
+| `units-calc-min-max-clamp` | `calc()`, `min()`, `max()`, `clamp()` (inclusive percentuais) |
+| `units-math-functions` | `pow()`/`sqrt()`/`exp()`/`log()`, `hypot()`, `round()`, `mod()`/`rem()`, `abs()`/`sign()`, `pi`/`e`, `opacity` calculada |
+| `units-math-trig` | `sin()`/`cos()`/`tan()`, `asin()`/`acos()`/`atan()`/`atan2()` |
+
+## Fundos
+
+| Fixture | Recurso |
+|---|---|
+| `backgrounds-image` | `background-image`, `-size`, `-position`, `-repeat` (inclusive `space`/`round`), `background-attachment: fixed` |
+| `backgrounds-clip-and-origin` | `background-clip`, `background-origin` |
+| `backgrounds-layers` | várias camadas de fundo (atalho e listas de longhands), lista de `background-blend-mode` |
+| `backgrounds-blend-mode` | os 16 modos de `background-blend-mode` |
+| `backgrounds-gradients` | `linear-gradient()`, `radial-gradient()`, `repeating-*`, raios explícitos |
+| `backgrounds-gradients-conic` | gradientes cônicos: interpolação, setores, `from`/`at`, repetição, mosaico, máscara |
+| `backgrounds-border-image` | `border-image` com gradiente e imagem, `slice`, `fill`, `stretch`/`repeat`/`round`/`space`, `-width`, `-outset` |
+
+## Layout
+
+| Fixture | Recurso |
+|---|---|
+| `layout-inline-block` | `inline-block`, `vertical-align`, shrink-to-fit |
+| `layout-block-in-inline` | bloco dentro de `<p>`, `<h3>`, `<li>`, `<td>` |
+| `layout-flexbox` | flexbox: `grow`, `justify-content`, `align-items`, margem `auto`, `wrap`, `baseline`, `row-reverse`; layout de aplicação |
+| `layout-alignment` | `place-content`, `place-items`, `place-self` |
+| `layout-grid-tracks` | grid: trilhas fixas + `fr`, `repeat()`, `minmax()`, `auto-fill`, spans, linhas negativas e nomeadas |
+| `layout-grid-areas-and-alignment` | grid: `grid-template-areas`, `grid-auto-flow: column`/`dense`, alinhamento de itens, `auto-fit` |
+| `layout-floats` | `float`, `clear`, `display: flow-root`, `shape-outside: circle()` |
+| `layout-multicol` | `column-count`/`column-width`, `column-rule`, `column-fill`, `column-span`, bloco partido entre colunas |
+| `layout-positioning` | `position: sticky`, `absolute` esticado por `inset`, `relative` |
+| `layout-z-index` | `z-index` e contextos de empilhamento |
+| `layout-overflow` | `overflow-x`, `overflow` com dois valores, `overflow: clip`, `overflow-y: scroll` |
+| `layout-scrollbars` | scrollbar padrão discreto, `scrollbar-width`, `scrollbar-color`, partes `::-tbox-scrollbar-*`, `scrollbar-gutter: stable`. O Firefox só aplica as propriedades padrão |
+| `layout-scrolling` | `overscroll-behavior`, `scroll-margin`, `scroll-padding`, `scroll-behavior: smooth` (com Tab) |
+| `layout-scroll-snap` | `scroll-snap-type`, `scroll-snap-align`, `scroll-snap-stop` |
+
+## Efeitos
+
+| Fixture | Recurso |
+|---|---|
+| `effects-box-shadow` | listas de `box-shadow`, `inset`, spread e blur |
+| `effects-filter` | funções de cor de `filter` |
+| `effects-drop-shadow-and-backdrop` | `filter: drop-shadow()` na forma, `backdrop-filter` (cor e `blur()`) |
+| `effects-compositing` | `opacity` de grupo, `visibility`, `mix-blend-mode`, `isolation`, `background-blend-mode` isolado |
+| `effects-clip-path-shapes` | `clip-path: inset()`/`circle()`/`ellipse()`/`xywh()`/`rect()`, `clip: rect()` |
+| `effects-clip-path-polygon` | `polygon()`: concavidade, `nonzero`/`evenodd`, interseção de recortes |
+| `effects-masks-and-reflection` | `mask-image`/`-webkit-mask` (`mask-star.png`), `mask-composite`, `box-decoration-break`, `-webkit-box-reflect` (N/A no Firefox) |
+| `effects-transform-translate` | `transform: translate*()`, propriedade `translate` |
+| `effects-transform-functions` | `rotate()`, `scale()`, `skewX()`, `matrix()`, `rotateZ()`/`rotateX()`, `transform-origin`, propriedades `rotate`/`scale` |
+| `effects-motion-path` | `offset-path` (`path()`, `circle()`, `ray()`), `offset-distance`, `offset-rotate`, `offset-anchor` |
+
+## Animação
+
+| Fixture | Recurso |
+|---|---|
+| `animation-transitions` | `transition` (layout, bordas, `outline`, `translate`, cor, `opacity`), `cubic-bezier()`, `steps()`, listas de longhands, `prefers-reduced-motion`, `@starting-style` (passe o mouse) |
+| `animation-keyframes` | `animation` e `@keyframes` (`infinite alternate`, keyframe intermediário, `steps()` com atraso, `forwards`, `paused`) |
+
+## Interação
+
+| Fixture | Recurso |
+|---|---|
+| `interaction-cursor-and-pointer` | `cursor` (todos os valores), `user-select`, `pointer-events: none`, `:active` |
+| `interaction-zoom-and-resize` | `zoom`, `resize` (inclusive o `<textarea>` padrão) |
+
+## Formulários
+
+| Fixture | Recurso |
+|---|---|
+| `forms-grouping` | `<fieldset>`/`<legend>`, `<details>`/`<summary>`, `<optgroup>` habilitado e desabilitado |
+| `forms-progress-and-output` | `<output>`, `<progress>` determinado e indeterminado, `<meter>` |
+| `forms-accent-and-caret` | `accent-color` (padrão, herdado, por controle com `var()`, `meter` sem mudança), `caret-color` |
+| `forms-control-parts` | partes dos controles (`::slider-*`, `::picker-icon`, `::checkmark`, `::file-selector-button`, `::step-*`, `::clear-icon`, `::color-swatch`, `::selection`) |
+| `forms-checkbox-radio-and-focus` | checkbox e radio alinhados, campos vazios e preenchidos alinhados, `outline` como anel de foco |
+| `forms-select` | lista do `<select>`: `::picker(select)`, `option`/`optgroup`, `:hover`, `:checked`, `:disabled`, tema por `var()`. O Firefox mostra a lista nativa |
+| `forms-textarea-wrapping` | quebra de linha do `<textarea>` |
+
+## Imagens
+
+| Fixture | Recurso |
+|---|---|
+| `images-object-fit` | `object-fit` (inclusive `none` e `scale-down`) |
+| `images-object-position` | `object-position` |
+| `images-rendering` | `image-rendering: pixelated`/`crisp-edges`, herança |
+
+## Numeração antiga
+
+| Antigo | Agora em |
+|---|---|
+| 001 | `html-headings` |
+| 002 | `html-headings` |
+| 003 | `html-headings` |
+| 004 | `html-paragraphs` |
+| 005 | `html-headings` |
+| 006 | `html-paragraphs` |
+| 007 | `html-paragraphs` |
+| 008 | `css-style-attribute` |
+| 009 | `css-style-attribute` |
+| 010 | `css-style-attribute` |
+| 011 | `html-text-formatting` |
+| 012 | `html-text-formatting` |
+| 013 | `html-paragraphs` |
+| 014 | `colors-names-and-formats` |
+| 015 | `colors-names-and-formats` |
+| 016 | `colors-rgb-and-hex` |
+| 017 | `colors-rgb-and-hex` |
+| 018 | `colors-hsl` |
+| 019 | `css-style-attribute` |
+| 020 | `box-border-padding-margin` |
+| 021 | `box-border-padding-margin` |
+| 022 | `box-border-padding-margin` |
+| 023 | `html-links` |
+| 024 | `html-images` |
+| 025 | `html-tables` |
+| 026 | `html-tables` |
+| 027 | `html-tables` |
+| 028 | `box-border-styles`, `text-decoration`, `text-indent`, `text-spacing` |
+| 029 | `box-border-styles`, `box-sizing`, `html-tables-layout` |
+| 030 | `box-sizing`, `effects-compositing`, `text-overflow`, `text-spacing` |
+| 031 | `box-sizing`, `colors-modern`, `text-font-weight-and-stretch` |
+| 032 | `box-radius`, `text-font-size` |
+| 033 | `interaction-cursor-and-pointer`, `text-wrapping` |
+| 034 | `box-border-styles`, `box-logical-sizes`, `forms-accent-and-caret`, `layout-overflow`, `text-decoration`, `text-font-weight-and-stretch`, `text-spacing` |
+| 035 | `effects-box-shadow`, `lists-style-type`, `text-transform-and-shadow`, `text-wrapping` |
+| 036 | `box-border-styles`, `effects-compositing`, `html-tables-layout`, `text-white-space` |
+| 037 | `box-border-styles`, `box-radius-elliptical`, `cascade-keywords`, `layout-positioning`, `text-alignment`, `text-font-size` |
+| 038 | `layout-inline-block` |
+| 039 | `layout-flexbox` |
+| 040 | `box-logical-borders`, `images-object-fit`, `selectors-states`, `selectors-type-and-only`, `text-decoration` |
+| 041 | `images-object-position` |
+| 042 | `backgrounds-clip-and-origin` |
+| 043 | `images-object-fit` |
+| 044 | `selectors-type-and-only` |
+| 045 | `images-rendering` |
+| 046 | `selectors-structural` |
+| 047 | `selectors-structural` |
+| 048 | `selectors-combinators-and-not` |
+| 049 | `selectors-combinators-and-not` |
+| 050 | `selectors-states` |
+| 051 | `selectors-attributes-and-lang` |
+| 052 | `images-rendering` |
+| 053 | `selectors-states` |
+| 054 | `selectors-states` |
+| 055 | `lists-style-type` |
+| 056 | `selectors-attributes-and-lang` |
+| 057 | `text-decoration` |
+| 058 | `text-wrapping` |
+| 059 | `box-logical-sizes` |
+| 060 | `box-logical-sizes` |
+| 061 | `box-logical-borders` |
+| 062 | `text-decoration` |
+| 063 | `selectors-states` |
+| 064 | `selectors-attributes-and-lang` |
+| 065 | `units-lengths` |
+| 066 | `units-calc-min-max-clamp` |
+| 067 | `cascade-keywords` |
+| 068 | `layout-overflow`, `text-overflow` |
+| 069 | `text-alignment` |
+| 070 | `text-white-space`, `text-wrapping` |
+| 071 | `lists-position-and-list-item` |
+| 072 | `html-tables-layout` |
+| 073 | `box-aspect-ratio` |
+| 074 | `interaction-cursor-and-pointer` |
+| 075 | `box-radius-elliptical` |
+| 076 | `backgrounds-image` |
+| 077 | `backgrounds-gradients` |
+| 078 | `effects-box-shadow`, `text-transform-and-shadow` |
+| 079 | `layout-z-index` |
+| 080 | `text-font-size`, `text-font-weight-and-stretch` |
+| 081 | `text-font-variants` |
+| 082 | `text-overflow` |
+| 083 | `effects-transform-translate` |
+| 084 | `colors-mix-and-color-function`, `colors-modern` |
+| 085 | `units-calc-min-max-clamp` |
+| 086 | `box-sizing-keywords` |
+| 087 | `layout-alignment` |
+| 088 | `box-border-styles-3d` |
+| 089 | `layout-scrollbars` |
+| 090 | `backgrounds-clip-and-origin`, `backgrounds-layers` |
+| 091 | `text-hyphens-and-balance`, `text-white-space` |
+| 092 | `text-overflow` |
+| 093 | `layout-floats`, `lists-position-and-list-item` |
+| 094 | `text-indent` |
+| 095 | `effects-clip-path-shapes` |
+| 096 | `effects-filter` |
+| 097 | `cascade-custom-properties` |
+| 098 | `lists-markers` |
+| 099 | `box-border-styles-rounded` |
+| 100 | `layout-positioning` |
+| 101 | `text-shaping-latin` |
+| 102 | `text-hyphens-and-balance` |
+| 103 | `backgrounds-image`, `box-radius`, `images-object-position`, `selectors-attributes-and-lang`, `text-hyphens-and-balance`, `text-wrapping` |
+| 104 | `backgrounds-image`, `interaction-cursor-and-pointer`, `layout-scrollbars`, `lists-style-type`, `units-lengths` |
+| 105 | `animation-transitions`, `cascade-link-and-import`, `text-font-face-and-opentype` |
+| 106 | `forms-progress-and-output` |
+| 107 | `forms-grouping` |
+| 108 | `forms-grouping` |
+| 109 | `forms-grouping` |
+| 110 | `cascade-link-and-import` |
+| 111 | `html-picture-and-map` |
+| 112 | `html-base-href` |
+| 113 | `html-picture-and-map` |
+| 114 | `text-ruby` |
+| 115 | `box-logical-borders`, `effects-clip-path-shapes`, `layout-scrolling`, `text-hyphens-and-balance` |
+| 116 | `cascade-keywords`, `effects-compositing`, `text-alignment`, `text-font-variants`, `text-wrapping` |
+| 117 | `cascade-link-and-import`, `colors-modern`, `text-font-variants` |
+| 118 | `layout-block-in-inline`, `lists-style-type` |
+| 119 | `cascade-layers` |
+| 120 | `animation-transitions`, `cascade-scope-and-namespace`, `layout-scrolling`, `text-font-size` |
+| 121 | `generated-content`, `generated-counters` |
+| 122 | `animation-transitions` |
+| 123 | `cascade-supports` |
+| 124 | `effects-drop-shadow-and-backdrop` |
+| 125 | `effects-drop-shadow-and-backdrop` |
+| 126 | `cascade-supports` |
+| 127 | `animation-keyframes` |
+| 128 | `layout-scroll-snap` |
+| 129 | `backgrounds-blend-mode`, `backgrounds-layers` |
+| 130 | `text-direction` |
+| 131 | `text-emphasis` |
+| 132 | `effects-compositing`, `effects-drop-shadow-and-backdrop`, `effects-masks-and-reflection` |
+| 133 | `colors-mix-and-color-function`, `effects-clip-path-shapes`, `units-calc-min-max-clamp` |
+| 134 | `colors-mix-and-color-function`, `effects-clip-path-shapes`, `units-math-functions` |
+| 135 | `colors-mix-and-color-function`, `units-math-functions` |
+| 136 | `units-math-functions` |
+| 137 | `backgrounds-gradients`, `units-math-trig` |
+| 138 | `units-math-trig` |
+| 139 | `backgrounds-gradients-conic` |
+| 140 | `effects-clip-path-polygon` |
+| 141 | `text-shaping-latin`, `text-shaping-scripts` |
+| 142 | `forms-accent-and-caret` |
+| 143 | `forms-control-parts` |
+| 144 | `forms-textarea-wrapping` |
+| 145 | `forms-checkbox-radio-and-focus` |
+| 146 | `forms-select` |
+| 147 | `layout-scrollbars` |
+| 148 | `backgrounds-border-image` |
+| 149 | `effects-transform-functions` |
+| 150 | `text-font-face-and-opentype` |
+| 151 | `layout-grid-tracks` |
+| 152 | `layout-grid-areas-and-alignment` |
+| 153 | `cascade-custom-properties`, `cascade-scope-and-namespace`, `generated-counters` |
+| 154 | `layout-floats` |
+| 155 | `layout-multicol` |
+| 156 | `cascade-container-queries` |
+| 157 | `effects-masks-and-reflection` |
+| 158 | `interaction-zoom-and-resize` |
+| 159 | `text-bidi` |
+| 160 | `text-vertical-writing` |
+| 161 | `effects-motion-path` |
+| 162 | `text-initial-letter` |
+| 163 | `text-stroke` |
+| a01 | `box-radius`, `effects-box-shadow` |

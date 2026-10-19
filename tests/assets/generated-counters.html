@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font: 16px sans-serif;
+            background: #eef2f7;
+            color: #1e293b;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 24px;
+        }
+
+        h2 {
+            font: bold 16px sans-serif;
+            margin: 14px 0 8px;
+        }
+
+        h3 {
+            font: bold 16px sans-serif;
+            margin: 0;
+        }
+
+        .row {
+            display: flex;
+            gap: 14px;
+        }
+
+        .card {
+            width: 300px;
+            padding: 8px 12px;
+            margin: 0;
+            background: white;
+        }
+
+        /* Steps numbered with counter() */
+        .steps {
+          counter-reset: step;
+        }
+
+        .steps p {
+          counter-increment: step;
+          margin: 4px 0;
+        }
+
+        .steps p::before {
+          content: "Step " counter(step) ": ";
+          font-weight: bold;
+          color: #2563eb;
+        }
+
+        /* Nested numbering with counters() */
+        ol.toc,
+        ol.toc ol {
+          counter-reset: sec;
+          list-style: none;
+          margin: 0;
+        }
+
+        ol.toc li {
+          counter-increment: sec;
+        }
+
+        ol.toc li::before {
+          content: counters(sec, ".") "  ";
+          color: #16a34a;
+        }
+
+        @counter-style cyclic-marks {
+            system: cyclic;
+            symbols: "*" "+" "◆";
+            suffix: "  ";
+        }
+
+        @counter-style additive-roman {
+            system: additive;
+            additive-symbols: 10 X, 9 IX, 5 V, 4 IV, 1 I;
+            suffix: ". ";
+        }
+
+        @counter-style bracket-letters {
+            system: alphabetic;
+            symbols: A B C;
+            prefix: "(";
+            suffix: ") ";
+        }
+
+        @counter-style fixed-marks {
+            system: fixed;
+            symbols: "!" "?" "=";
+            suffix: "  ";
+        }
+
+        .list {
+            width: 150px;
+            padding: 10px;
+            background: #eaf1f8;
+        }
+
+        .list h3 {
+            height: 24px;
+        }
+
+        .list ol {
+            padding-left: 42px;
+            margin: 4px 0 0;
+        }
+
+        .list li {
+            height: 24px;
+        }
+
+        .cyclic-marks {
+            list-style-type: cyclic-marks;
+        }
+
+        .additive-roman {
+            list-style-type: additive-roman;
+        }
+
+        .bracket-letters {
+            list-style-type: bracket-letters;
+        }
+
+        .fixed-marks {
+            list-style-type: fixed-marks;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Counters: counter(), counters() and @counter-style</h1>
+    <div class="row">
+        <div>
+  <h2>counter()</h2>
+      <div class="card steps">
+        <p>Choose the file</p>
+        <p>Review the data</p>
+        <p>Confirm</p>
+      </div>
+    
+      <h2>counters()</h2>
+      <ol class="card toc">
+        <li>Introduction
+          <ol>
+            <li>Goal</li>
+            <li>Scope</li>
+          </ol>
+        </li>
+        <li>Installation</li>
+      </ol>
+    
+        </div>
+    </div>
+    <section>
+        <h2>@counter-style</h2>
+        <div class="row">
+            <div class="list">
+                <h3>Cyclic</h3>
+                <ol class="cyclic-marks">
+                    <li>A</li>
+                    <li>B</li>
+                    <li>C</li>
+                    <li>D</li>
+                    <li>E</li>
+                </ol>
+            </div>
+            <div class="list">
+                <h3>Additive</h3>
+                <ol class="additive-roman">
+                    <li>A</li>
+                    <li>B</li>
+                    <li>C</li>
+                    <li>D</li>
+                    <li>E</li>
+                </ol>
+            </div>
+            <div class="list">
+                <h3>Alphabetic</h3>
+                <ol class="bracket-letters">
+                    <li>A</li>
+                    <li>B</li>
+                    <li>C</li>
+                    <li>D</li>
+                    <li>E</li>
+                </ol>
+            </div>
+            <div class="list">
+                <h3>Fixed</h3>
+                <ol class="fixed-marks">
+                    <li>A</li>
+                    <li>B</li>
+                    <li>C</li>
+                    <li>D</li>
+                    <li>E</li>
+                </ol>
+            </div>
+        </div>
+    </section>
+</body>
+
+</html>

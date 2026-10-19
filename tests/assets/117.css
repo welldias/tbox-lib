@@ -1,8 +1,0 @@
-@charset "UTF-8";
-/* Imported before this sheet's rules; paths relative to this sheet. */
-@import url("117-import/base.css");
-@import "117-import/wide.css"(min-width: 5000px);
-
-.import-own {
-    border-left: 6px solid #0f766e;
-}

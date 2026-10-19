@@ -59,7 +59,7 @@ Regras que explicam a maior parte do comportamento:
 - Em `<picture>`, o primeiro `<source>` anterior ao `<img>` com `srcset` e
   tipo de imagem aceito fornece o arquivo desenhado. Usa a primeira URL do
   `srcset`; fontes com `media` são ignoradas e o `<img src>` serve de fallback.
-  Veja `tests/assets/111.html`.
+  Veja `tests/assets/html-picture-and-map.html`.
 - `<ruby>` participa da linha como uma unidade indivisível. Cada `<rt>` fica
   acima e centralizado no texto-base correspondente; sua altura aumenta a
   linha ao redor. Os caracteres de `<rp>` não são desenhados.
@@ -108,7 +108,7 @@ Limitações: `reset` não existe; `zoom: inherit` vale 1; não anima; tamanhos
 embutidos dos controles (caixa do checkbox, setas, barras de rolagem, a
 alça de `resize`) não ampliam; propriedades registradas por `@property`
 são substituídas sem zoom e ampliadas pela propriedade que as usa. Veja
-`tests/assets/158.html`.
+`tests/assets/interaction-zoom-and-resize.html`.
 
 ## Escrita vertical
 
@@ -177,7 +177,7 @@ bloco (`left` em `vertical-rl`) caem na simplificação de altura `auto`
 acima; `overflow` não troca de eixo e não há rolagem horizontal;
 tabelas e controles de formulário verticais não são suportados (giram como
 qualquer conteúdo); percentuais de margem/padding resolvem contra a
-largura do referencial. Veja `tests/assets/160.html`.
+largura do referencial. Veja `tests/assets/text-vertical-writing.html`.
 
 ## Floats
 
@@ -286,7 +286,7 @@ altura auto ainda só limita sua caixa depois de fragmentar. Há um limite
 operacional de 4096 colunas por conjunto; além dele o conteúdo restante
 transborda verticalmente na última coluna, preservando o texto.
 
-Fixture: `tests/assets/155.html` (seis variantes em três fileiras; body com
+Fixture: `tests/assets/layout-multicol.html` (seis variantes em três fileiras; body com
 margens ocupa 760×526px, com folga na janela 800×600).
 
 ## Gradientes cônicos e polígonos
@@ -628,7 +628,7 @@ cada fragmento visual; o shaping e os clusters lógicos permanecem os mesmos.
 Em `slice`, a direção RTL troca o extremo físico inicial/final da decoração.
 
 
-O fixture `157.html` mostra os quatro operadores, `slice`/`clone` e um
+O fixture `effects-masks-and-reflection.html` mostra os quatro operadores, `slice`/`clone` e um
 reflexo com gradiente. `@supports` reconhece as propriedades e os aliases,
 validando os valores novos de composição. Declarações inválidas são descartadas
 antes da cascata, preservando uma declaração válida anterior da mesma
@@ -695,7 +695,7 @@ como em `clip-path`. A tabela tem até 16384 segmentos e a subdivisão até
 16 níveis; esgotar esses limites descarta o termo offset daquele frame.
 Não há interpolação de `offset-path`; distâncias e posições com limites percentuais
 não resolvidos (`min()`/`max()`/`clamp()`) permanecem discretas. Fixture:
-`tests/assets/161.html` (curva em 0/50/100%, círculo, raio e âncoras).
+`tests/assets/effects-motion-path.html` (curva em 0/50/100%, círculo, raio e âncoras).
 
 - **Funções 2D**: `translate`/`translateX`/`translateY`, `rotate`/`rotateZ`,
   `scale`/`scaleX`/`scaleY` (números ou percentuais), `skew`/`skewX`/
@@ -837,7 +837,7 @@ as propriedades novas e os valores `display: grid`/`inline-grid`.
 
 Testes de comportamento: `tests/style/test_grid_style.c` e
 `tests/layout/test_grid.c`, executados nos grupos `style` e `layout`.
-Fixtures 151 e 152 mostram trilhas, repetições, spans, áreas, fluxo e
+`layout-grid-tracks.html` e `layout-grid-areas-and-alignment.html` mostram trilhas, repetições, spans, áreas, fluxo e
 alinhamento em 800×600.
 
 ## Capitulares e pontuação pendurada
@@ -865,6 +865,6 @@ justificação; os glifos continuam desenhados fora da largura de conteúdo.
 `allow-end` só desconta ponto/vírgula quando necessário para caber, enquanto
 `force-end` desconta também quando caberia sem pendurar.
 
-No fixture 162, o bloco (d) reserva padding à esquerda para a aspa ficar
+No fixture `text-initial-letter.html`, o bloco (d) reserva padding à esquerda para a aspa ficar
 inteira entre a borda e o início da linha; o bloco (e) tem uma borda de
 referência à direita e três linhas terminadas em ponto/vírgula pendurados.

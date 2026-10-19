@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #fafafa;
+      color: #253344;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 14px 0 6px;
+    }
+
+    p {
+      margin: 0 0 6px;
+    }
+
+    .lines { width: 300px; background: #edf7ed; }
+    .compact { line-height: 18px; }
+    .relaxed { line-height: 1.8; }
+    .letters { width: 300px; background: #fff1df; letter-spacing: 3px; }
+    .words { width: 420px; background: #e6f3ff; word-spacing: 8px; }
+    .small { font-size: 10px; color: #c2255c; }
+    .text-top { vertical-align: text-top; }
+    .text-bottom { vertical-align: text-bottom; }
+    .raise { vertical-align: 6px; }
+    .lower { vertical-align: -0.4em; }
+  </style>
+</head>
+
+<body>
+  <h1>Line, letter and word spacing; vertical-align</h1>
+  <h2>line-height: 18px and 1.8</h2>
+  <p class="lines compact">Compact first line<br>Compact second line</p>
+  <p class="lines relaxed">Relaxed first line<br>Relaxed second line</p>
+  <h2>letter-spacing and word-spacing</h2>
+  <p class="letters">Spaced letters: ABCDEFGHIJ</p>
+  <p class="words">Word spacing changes the distance between these words.</p>
+  <h2>vertical-align</h2>
+  <p>Base <span class="small text-top">text-top</span> base <span class="small text-bottom">text-bottom</span> base</p>
+  <p>Base <span class="raise">+6px</span> base <span class="lower">-0.4em</span> base</p>
+</body>
+
+</html>

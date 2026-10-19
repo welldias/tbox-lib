@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>container queries</title>
+  <style>
+    body {
+      margin: 0;
+      background: white;
+      color: #222;
+      font-family: sans-serif;
+    }
+
+    .c {
+      position: absolute;
+      container-type: inline-size;
+      outline: 1px solid #999;
+    }
+
+    #c1 {
+      left: 10px;
+      top: 10px;
+      width: 200px;
+    }
+
+    #c2 {
+      left: 230px;
+      top: 10px;
+      width: 380px;
+    }
+
+    #c3 {
+      left: 10px;
+      top: 170px;
+      width: 600px;
+    }
+
+    /* Narrow (default): stacked, light red. */
+    .card {
+      padding: 8px;
+      background: #ffd0d0;
+    }
+
+    .sw {
+      width: 40px;
+      height: 40px;
+      background: #cc0000;
+    }
+
+    .im {
+      width: 80px;
+      height: 40px;
+      background: #3366cc;
+      margin-top: 6px;
+    }
+
+    .extra {
+      display: none;
+      width: 60px;
+      height: 40px;
+      background: #008800;
+    }
+
+    .lbl {
+      font-size: 14px;
+      line-height: 18px;
+      margin-top: 6px;
+    }
+
+    /* Medium: side by side, light yellow. */
+    @container (300px <=width < 500px) {
+      .card {
+        display: flex;
+        background: #ffffb0;
+      }
+
+      .im,
+      .lbl {
+        margin: 0 0 0 8px;
+      }
+    }
+
+    /* Wide: side by side with the extra box, light green. */
+    @container (width >=500px) {
+      .card {
+        display: flex;
+        background: #c8f0c8;
+      }
+
+      .im,
+      .lbl,
+      .extra {
+        margin: 0 0 0 8px;
+      }
+
+      .extra {
+        display: block;
+      }
+    }
+
+    /* cqi units: half the container's width; font 4cqi. */
+    .bar {
+      width: 50cqi;
+      height: 12px;
+      background: #9933ff;
+      margin-top: 6px;
+    }
+
+    .big {
+      font-size: 4cqi;
+      line-height: 30px;
+      height: 30px;
+    }
+
+    /* Named container queried across an unnamed one. */
+    #outer {
+      position: absolute;
+      left: 10px;
+      top: 330px;
+      width: 360px;
+      padding: 10px;
+      background: #eeeeee;
+      container: panel / inline-size;
+    }
+
+    #inner {
+      width: 150px;
+      container-type: inline-size;
+      background: #dddddd;
+    }
+
+    .t {
+      width: 120px;
+      height: 40px;
+      background: #cc0000;
+      margin-bottom: 6px;
+    }
+
+    @container panel (width > 300px) {
+      #named {
+        background: #008800;
+      }
+    }
+
+    @container (width > 300px) {
+      #unnamed {
+        background: #008800;
+      }
+    }
+
+    .cap {
+      font-size: 12px;
+      line-height: 16px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="c" id="c1">
+    <div class="card">
+      <div class="sw"></div>
+      <div class="im"></div>
+      <div class="extra"></div>
+      <div class="lbl">200</div>
+    </div>
+    <div class="bar"></div>
+  </div>
+  <div class="c" id="c2">
+    <div class="card">
+      <div class="sw"></div>
+      <div class="im"></div>
+      <div class="extra"></div>
+      <div class="lbl">380</div>
+    </div>
+    <div class="bar"></div>
+  </div>
+  <div class="c" id="c3">
+    <div class="card">
+      <div class="sw"></div>
+      <div class="im"></div>
+      <div class="extra"></div>
+      <div class="lbl">600</div>
+    </div>
+    <div class="bar"></div>
+    <div class="big">cqi</div>
+  </div>
+  <div id="outer">
+    <div id="inner">
+      <div class="t" id="named"></div>
+      <div class="t" id="unnamed"></div>
+      <div class="cap">panel / unnamed</div>
+    </div>
+  </div>
+</body>
+
+</html>

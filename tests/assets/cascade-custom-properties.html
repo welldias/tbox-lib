@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    :root {
+      --brand: #2563eb;
+      --accent: oklch(0.65 0.2 30);
+      --gap: 12px;
+      --radius: 10px;
+      --pad: calc(var(--gap) / 2);
+    }
+
+    body {
+      font: 15px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      color: var(--brand);
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 18px 0 8px;
+    }
+
+    .row {
+      display: flex;
+      gap: var(--gap);
+      margin-bottom: var(--gap);
+    }
+
+    .card {
+      --bg: white;
+      background: var(--bg);
+      border: 2px solid var(--brand);
+      border-radius: var(--radius);
+      padding: var(--pad) calc(var(--pad) * 2);
+      width: 200px;
+    }
+
+    .card.warm {
+      --brand: var(--accent);
+      --bg: #fff7ed;
+    }
+
+    .card.missing {
+      color: var(--does-not-exist, #16a34a);
+      border-color: var(--also-missing);
+    }
+
+    .nested {
+      --size: 18px;
+      font-size: var(--size);
+    }
+
+    .nested span {
+      --bigger: calc(var(--size) + 6px);
+      font-size: var(--bigger);
+    }
+
+    /* @property: a registered, non-inherited <color>; an invalid value falls back to initial-value. */
+    @property --swatch {
+      syntax: '<color>';
+      inherits: false;
+      initial-value: #16834b;
+    }
+
+    .swatch {
+      --swatch: #b22c4b;
+      background-color: var(--swatch);
+      color: white;
+      width: 210px;
+      height: 76px;
+      padding: 12px;
+    }
+
+    .child {
+      width: 170px;
+      height: 30px;
+      margin-top: 10px;
+      background-color: var(--swatch);
+    }
+
+    .invalid {
+      --swatch: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Custom properties (--x, var() and @property)</h1>
+  <div class="row">
+    <div class="card">uses the blue --brand</div>
+    <div class="card warm">redefines --brand on the element itself</div>
+    <div class="card missing">green fallback; a border without a value becomes unset</div>
+  </div>
+  <div class="nested">size 18px <span>and 24px on the child</span></div>
+
+  <h2>@property --swatch (inherits: false)</h2>
+  <div class="row">
+    <div class="swatch">Parent: red<div class="child">Child: initial green</div></div>
+    <div class="swatch invalid">Invalid: initial green</div>
+  </div>
+</body>
+
+</html>

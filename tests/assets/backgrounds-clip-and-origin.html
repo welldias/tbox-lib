@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      background: #dbeafe;
+      color: #1e293b;
+      font: 15px sans-serif;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 10px 0 6px;
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 10px;
+    }
+
+    .column {
+      width: 160px;
+    }
+
+    .label {
+      margin: 0 0 4px;
+      font-weight: bold;
+    }
+
+    .box {
+      width: 110px;
+      height: 60px;
+      padding: 16px;
+      border: 6px solid rgba(220, 38, 38, 0.65);
+      background-color: #16a34a;
+      color: white;
+    }
+
+    .rounded { border-radius: 24px; }
+    .border { background-clip: border-box; }
+    .padding { background-clip: padding-box; }
+    .content { background-clip: content-box; }
+
+    .o {
+      width: 150px;
+      height: 70px;
+      padding: 16px;
+      border: 10px dashed rgba(71, 85, 105, 0.6);
+      background: #fff url(pixel-heart.png) no-repeat 0 0 / 24px;
+      image-rendering: pixelated;
+    }
+
+    .ob { background-origin: border-box; }
+    .oc { background-origin: content-box; }
+  </style>
+</head>
+
+<body>
+  <h1>background-clip and background-origin</h1>
+  <h2>background-clip (the blue around the green is the transparent padding)</h2>
+  <div class="row">
+    <div class="column"><p class="label">border-box</p><div class="box border">Content</div></div>
+    <div class="column"><p class="label">padding-box</p><div class="box padding">Content</div></div>
+    <div class="column"><p class="label">content-box</p><div class="box content">Content</div></div>
+  </div>
+  <div class="row">
+    <div class="column"><p class="label">curved border</p><div class="box rounded border">Content</div></div>
+    <div class="column"><p class="label">curved padding</p><div class="box rounded padding">Content</div></div>
+    <div class="column"><p class="label">curved content</p><div class="box rounded content">Content</div></div>
+  </div>
+  <h2>background-origin: padding-box (default), border-box, content-box</h2>
+  <div class="row">
+    <div class="o">padding-box</div>
+    <div class="o ob">border-box</div>
+    <div class="o oc">content-box</div>
+  </div>
+</body>
+
+</html>

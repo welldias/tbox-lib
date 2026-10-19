@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #f5f7fa;
+      color: #25364a;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 230px);
+      gap: 10px 14px;
+      align-items: start;
+    }
+
+    .panel {
+      padding: 6px;
+      margin: 0;
+      border: 2px solid #356581;
+      background: #e3eff7;
+      font-size: 15px;
+    }
+
+    .break-word { overflow-wrap: break-word; }
+    .word-wrap { word-wrap: break-word; }
+    .nowrap { overflow-wrap: break-word; white-space: nowrap; overflow: hidden; }
+    .break-all { word-break: break-all; }
+    .keep-all { word-break: keep-all; }
+    .line-anywhere { line-break: anywhere; }
+
+    .row {
+      display: flex;
+      width: 300px;
+      border: 1px solid #94a3b8;
+      background: white;
+      margin-top: 10px;
+    }
+
+    .word {
+      flex: 1 1 auto;
+      padding: 6px;
+      background: #dbeafe;
+    }
+
+    .badge {
+      flex: 0 0 70px;
+      padding: 6px;
+      background: #bbf7d0;
+    }
+
+    .anywhere { overflow-wrap: anywhere; }
+  </style>
+</head>
+
+<body>
+  <h1>Breaking long words</h1>
+  <div class="grid">
+    <p class="panel">default: https://example.com/averyveryverylongpathwithoutspaces</p>
+    <p class="panel break-word">overflow-wrap: break-word https://example.com/averyveryverylongpathwithoutspaces</p>
+    <p class="panel break-word">break-word: éééééééééééééééééééééééééééééééééééé</p>
+    <p class="panel word-wrap">word-wrap: break-word Supercalifragilisticexpialidocious</p>
+    <p class="panel nowrap">nowrap: https://example.com/averyveryverylongpathwithoutspaces</p>
+    <p class="panel">default: supercalifragilisticexpialidocious word</p>
+    <p class="panel break-all">word-break: break-all supercalifragilisticexpialidocious word</p>
+    <p class="panel keep-all">word-break: keep-all keeps latin words whole</p>
+    <p class="panel">line-break auto: http://example.com/a/very/long/path</p>
+    <p class="panel line-anywhere">line-break: anywhere http://example.com/a/very/long/path</p>
+  </div>
+  <div class="row">
+    <div class="word break-word">supercalifragilisticexpialidocious</div>
+    <div class="badge">break-word</div>
+  </div>
+  <div class="row">
+    <div class="word anywhere">supercalifragilisticexpialidocious</div>
+    <div class="badge">anywhere</div>
+  </div>
+</body>
+
+</html>

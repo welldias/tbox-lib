@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      background: #eef2f7;
+      color: #1e293b;
+      font: 16px sans-serif;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    .row {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 14px;
+      align-items: flex-start;
+    }
+
+    .card {
+      padding: 10px;
+      background: white;
+      border: 1px solid #cbd5e1;
+    }
+
+    h2 {
+      margin: 0 0 6px;
+      font-size: 16px;
+    }
+
+    .item {
+      display: block;
+      padding: 5px 8px;
+      margin: 0 0 4px;
+      background: #e2e8f0;
+    }
+
+    .card { width: 220px; }
+    .striped .items > .item:nth-child(odd) { background: #bfdbfe; }
+    .typed p:nth-of-type(2n) { background: #bbf7d0; }
+    .first-three .items > .item:nth-child(-n+3) { background: #fecaca; }
+    .last-three .items > .item:nth-last-child(-n+3) { background: #fecaca; }
+    .alternate .items > .item:nth-last-child(odd) { background: #bfdbfe; }
+    .by-type .items > p:nth-last-of-type(2n) { background: #bbf7d0; }
+  </style>
+</head>
+
+<body>
+  <h1>:nth-child(), :nth-of-type() and the nth-last variants</h1>
+  <div class="row">
+    <div class="card striped">
+      <h2>:nth-child(odd)</h2>
+      <div class="items">
+        <div class="item">Item 1: blue</div><div class="item">Item 2</div><div class="item">Item 3: blue</div><div class="item">Item 4</div><div class="item">Item 5: blue</div>
+      </div>
+    </div>
+    <div class="card typed">
+      <h2>p:nth-of-type(2n)</h2>
+      <p class="item">Paragraph 1</p><span class="item">Span between paragraphs</span><p class="item">Paragraph 2: green</p><p class="item">Paragraph 3</p><p class="item">Paragraph 4: green</p>
+    </div>
+    <div class="card first-three">
+      <h2>:nth-child(-n+3)</h2>
+      <div class="items">
+        <div class="item">Item 1: red</div><div class="item">Item 2: red</div><div class="item">Item 3: red</div><div class="item">Item 4</div><div class="item">Item 5</div>
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="card last-three">
+      <h2>:nth-last-child(-n+3)</h2>
+      <div class="items">
+        <div class="item">Item 1</div><div class="item">Item 2</div><div class="item">Item 3: red</div><div class="item">Item 4: red</div><div class="item">Item 5: red</div>
+      </div>
+    </div>
+    <div class="card alternate">
+      <h2>:nth-last-child(odd)</h2>
+      <div class="items">
+        <div class="item">Item 1: blue</div><div class="item">Item 2</div><div class="item">Item 3: blue</div><div class="item">Item 4</div><div class="item">Item 5: blue</div>
+      </div>
+    </div>
+    <div class="card by-type">
+      <h2>p:nth-last-of-type(2n)</h2>
+      <div class="items">
+        <p class="item">Paragraph 1: green</p><span class="item">Span between paragraphs</span><p class="item">Paragraph 2</p><p class="item">Paragraph 3: green</p><p class="item">Paragraph 4</p>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

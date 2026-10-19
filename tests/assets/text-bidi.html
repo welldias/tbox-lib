@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* Bidirectional text (docs/09-texto-e-fontes.md, "Texto bidirecional"):
+     * UAX #9 per paragraph and reordering per line. Hebrew with a number and
+     * a Latin word in ltr and rtl blocks, Arabic in rtl, mirrored
+     * parentheses in rtl, <bdo dir=rtl>, unicode-bidi isolate vs normal
+     * before a number, and plaintext in an ltr block. */
+    body {
+      margin: 16px;
+      background: white;
+      color: #1e293b;
+      font: 12px sans-serif;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      height: 40px;
+      margin-bottom: 6px;
+    }
+
+    .lbl {
+      width: 190px;
+    }
+
+    .t {
+      width: 420px;
+      box-sizing: border-box;
+      height: 32px;
+      padding: 4px 8px 0;
+      font: 18px sans-serif;
+      background: #e2e8f0;
+      text-align: left;
+    }
+
+    .rtl {
+      direction: rtl;
+      text-align: right;
+    }
+
+    .hl {
+      background: #fde68a;
+    }
+
+    .n {
+      color: #b91c1c;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="row">
+    <div class="lbl">ltr: Hebrew + 123 + Latin</div>
+    <div class="t">שלום 123 <span class="hl">hello</span> עולם</div>
+  </div>
+  <div class="row">
+    <div class="lbl">rtl: the same text</div>
+    <div class="t rtl">שלום 123 <span class="hl">hello</span> עולם</div>
+  </div>
+  <div class="row">
+    <div class="lbl">rtl: Arabic</div>
+    <div class="t rtl">مرحبا بالعالم 42</div>
+  </div>
+  <div class="row">
+    <div class="lbl">rtl: abc (def) ghi</div>
+    <div class="t rtl">abc (def) ghi</div>
+  </div>
+  <div class="row">
+    <div class="lbl">rtl: mirrored parentheses</div>
+    <div class="t rtl">שלום (עולם) [טוב] &lt;כן&gt;</div>
+  </div>
+  <div class="row">
+    <div class="lbl">&lt;bdo dir=rtl&gt;</div>
+    <div class="t"><bdo dir="rtl">Hello world 2024</bdo> | normal</div>
+  </div>
+  <div class="row">
+    <div class="lbl">unicode-bidi: normal</div>
+    <div class="t">user: <span class="hl" style="direction: rtl; unicode-bidi: normal">שלום</span> <span
+        class="n">5</span> posts</div>
+  </div>
+  <div class="row">
+    <div class="lbl">unicode-bidi: isolate</div>
+    <div class="t">user: <span class="hl" style="direction: rtl; unicode-bidi: isolate">שלום</span> <span
+        class="n">5</span> posts</div>
+  </div>
+  <div class="row">
+    <div class="lbl">ltr block, normal</div>
+    <div class="t">שלום world!</div>
+  </div>
+  <div class="row">
+    <div class="lbl">ltr block, plaintext</div>
+    <div class="t" style="unicode-bidi: plaintext">שלום world!</div>
+  </div>
+  <div class="row">
+    <div class="lbl">&lt;bdi&gt; and embed rtl</div>
+    <div class="t"><bdi>עברית</bdi> 7, <span style="direction: rtl; unicode-bidi: embed">abc def</span>, end</div>
+  </div>
+</body>
+
+</html>

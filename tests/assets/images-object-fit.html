@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      background: #eef2f7;
+      color: #1e293b;
+      font: 16px sans-serif;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      margin: 10px 0 6px;
+      font-size: 17px;
+    }
+
+    p {
+      margin: 0 0 10px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .card {
+      padding: 8px;
+      background: white;
+      border: 1px solid #cbd5e1;
+    }
+
+    .label {
+      margin: 0 0 6px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    img {
+      display: block;
+      border: 2px solid #334155;
+      background: #dbeafe;
+    }
+
+    .small { width: 140px; height: 92px; }
+    .large { width: 400px; height: 276px; }
+    .fill { object-fit: fill; }
+    .contain { object-fit: contain; }
+    .cover { object-fit: cover; }
+    .none { object-fit: none; }
+    .scale-down { object-fit: scale-down; }
+  </style>
+</head>
+
+<body>
+  <h1>object-fit (the image is 386 x 270)</h1>
+  <div class="row">
+    <div class="card"><p class="label">fill (default)</p><img class="small fill" src="bird.png" alt="Bird"></div>
+    <div class="card"><p class="label">contain</p><img class="small contain" src="bird.png" alt="Bird"></div>
+    <div class="card"><p class="label">cover</p><img class="small cover" src="bird.png" alt="Bird"></div>
+    <div class="card"><p class="label">none: centered crop</p><img class="small none" src="bird.png" alt="Bird"></div>
+  </div>
+  <h2>Box larger than the image</h2>
+  <div class="row">
+    <div class="card"><p class="label">scale-down: natural size, no enlarging</p><img class="large scale-down" src="bird.png" alt="Bird"></div>
+    <div class="card"><p class="label">scale-down, small box: reduced</p><img class="small scale-down" src="bird.png" alt="Bird"></div>
+  </div>
+</body>
+
+</html>

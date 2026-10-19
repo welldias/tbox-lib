@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 16px 0 6px;
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+    }
+
+    .box {
+      width: 300px;
+      padding: 12px;
+      margin: 6px 0;
+      background: white;
+    }
+
+    .logical {
+      width: 210px;
+      border: 1px solid #cbd5e1;
+      border-inline-start: 6px solid #2563eb;
+      border-inline-end: 3px dashed #f59e0b;
+      border-block-start: 3px dotted #16a34a;
+      border-block-end: 4px double #dc2626;
+    }
+
+    .logical-alt {
+      border-inline-start-width: 10px;
+      border-block-end-color: #9333ea;
+    }
+
+    .block {
+      border-block: 5px solid #2563eb;
+    }
+
+    .inline {
+      border-inline: 5px dashed #16a34a;
+    }
+
+    .both {
+      border-block: 4px solid #2563eb;
+      border-inline: 4px solid #16a34a;
+      border-top: 8px solid #ef4444;
+    }
+
+    .axis-block {
+      border-block-style: solid;
+      border-block-width: 2px 8px;
+      border-block-color: #2563eb #ef4444;
+    }
+
+    .axis-inline {
+      border-inline-style: dashed dotted;
+      border-inline-width: 6px;
+      border-inline-color: #16a34a;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Logical borders</h1>
+  <h2>border-inline-start/end and border-block-start/end, longhands</h2>
+  <div class="row">
+    <div class="box logical">Start, end, top and bottom</div>
+    <div class="box logical logical-alt">Logical longhands</div>
+  </div>
+  <h2>border-block and border-inline shorthands</h2>
+  <div class="row">
+    <div class="box block">Top and bottom borders</div>
+    <div class="box inline">Left and right borders</div>
+  </div>
+  <div class="box both">Both axes; the individual top border wins</div>
+  <h2>border-block-* and border-inline-* per axis</h2>
+  <div class="row">
+    <div class="box axis-block">Block axis: 2px blue on top, 8px red at the bottom</div>
+    <div class="box axis-inline">Inline axis: dashed on the left, dotted on the right</div>
+  </div>
+</body>
+
+</html>

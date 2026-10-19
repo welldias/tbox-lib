@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* accent-color on controls (docs/10-formularios-e-controles.md, "Cor
+     * de destaque"): checkbox mark, radio dot, range fill and thumb and
+     * progress bar; caret-color on a text field. The meter's track and colors do not change. */
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    section {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 14px 18px;
+      margin: 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+
+    h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+    }
+
+    p {
+      margin: 6px 0;
+    }
+
+    progress,
+    meter {
+      width: 200px;
+    }
+
+    /* Inherited: set on the container, applies to the controls inside it. */
+    .magenta {
+      accent-color: #c81e78;
+    }
+
+    /* Per control, including through var(). */
+    :root {
+      --upload: #0e9488;
+    }
+
+    #volume {
+      accent-color: #e67e22;
+    }
+
+    #brightness {
+      accent-color: #7c3aed;
+    }
+
+    #upload {
+      accent-color: var(--upload);
+    }
+
+    .caret {
+      width: 200px;
+      caret-color: #e03131;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>accent-color and caret-color on controls</h1>
+  <div class="grid">
+  <section>
+    <h2>Default (auto)</h2>
+    <p><input type="range" value="60"> <progress value="60" max="100"></progress></p>
+    <p><input type="checkbox" checked> Checkbox <input type="radio" checked> Radio</p>
+  </section>
+
+  <section class="magenta">
+    <h2>Inherited from the container</h2>
+    <p><input type="range" value="60"> <progress value="60" max="100"></progress></p>
+    <p><input type="checkbox" checked> Checkbox <input type="radio" checked> Radio</p>
+  </section>
+
+  <section>
+    <h2>Per control</h2>
+    <p>Volume <input id="volume" type="range" value="30"></p>
+    <p>Brightness <input id="brightness" type="range" value="80"></p>
+    <p>Upload <progress id="upload" value="45" max="100"></progress></p>
+    <p>Caret <input class="caret" value="Focus: red caret"></p>
+  </section>
+
+  <section class="magenta">
+    <h2>meter ignores the accent</h2>
+    <p>Good <meter min="0" max="100" low="40" high="70" optimum="55" value="55"></meter></p>
+    <p>Warning <meter min="0" max="100" low="40" high="70" optimum="55" value="85"></meter></p>
+    <p>Poor <meter min="0" max="100" low="40" high="70" optimum="20" value="90"></meter></p>
+  </section>
+  </div>
+</body>
+
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 12px 0 8px;
+    }
+
+    .box {
+      width: 180px;
+      background: white;
+      border: 1px solid #94a3b8;
+      padding: 6px;
+      margin: 0 12px 8px 0;
+      display: inline-block;
+      vertical-align: top;
+    }
+
+    .none { hyphens: none; }
+    .narrow { width: 120px; }
+    .equal { hyphenate-character: "="; }
+    .tilde { hyphenate-character: "~"; }
+
+    .title {
+      font-size: 22px;
+      width: 340px;
+      margin: 0 0 8px;
+    }
+
+    .unbalanced { background: #fee2e2; }
+    .balanced { text-wrap: balance; background: #dbeafe; }
+    .balanced-style { text-wrap-style: balance; width: 160px; }
+  </style>
+</head>
+
+<body>
+  <h1>Hyphenation and balanced lines</h1>
+  <h2>&amp;shy; with hyphens: manual and none; hyphenate-character</h2>
+  <p class="box">hyphens: manual (default) breaks extra&shy;or&shy;di&shy;nar&shy;i&shy;ly long&shy;er words with a hy&shy;phen</p>
+  <p class="box none">hyphens: none ignores the break points extra&shy;or&shy;di&shy;nar&shy;i&shy;ly</p>
+  <p class="box narrow">default: extra&shy;ordinarily</p>
+  <p class="box narrow equal">equal: extra&shy;ordinarily</p>
+  <p class="box narrow tilde">tilde: extra&shy;ordinarily</p>
+  <h2>text-wrap: balance and text-wrap-style: balance</h2>
+  <p class="title unbalanced">A rather long title that shows the effect of balancing</p>
+  <p class="title balanced">A rather long title that shows the effect of balancing</p>
+  <p class="box balanced-style">text-wrap-style: balance<br>A sentence with several words spread over more balanced lines.</p>
+</body>
+
+</html>

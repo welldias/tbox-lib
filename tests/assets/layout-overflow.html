@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 15px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 300px 300px;
+      gap: 14px 120px;
+    }
+
+    .box {
+      width: 260px;
+      height: 70px;
+      border: 2px solid #475569;
+      background: white;
+    }
+
+    .wide { width: 420px; height: 30px; background: #93c5fd; }
+    .tall { width: 120px; height: 120px; background: #fca5a5; }
+    .x { overflow-x: hidden; }
+    .both { overflow: hidden clip; }
+    .vis { overflow: visible; }
+    .clip { overflow: clip; }
+    .scroll { overflow-y: scroll; }
+    .text { padding: 4px; height: 44px; }
+  </style>
+</head>
+
+<body>
+  <h1>overflow</h1>
+  <div class="grid">
+    <div class="box vis"><div class="wide">visible: overflows to the right</div></div>
+    <div class="box x"><div class="wide">overflow-x: hidden clips the right</div></div>
+    <div class="box both"><div class="tall">overflow: hidden clip</div></div>
+    <div class="box clip text">overflow: clip hides the second line of this text, which is long enough to wrap around and past the bottom.</div>
+    <div class="box scroll text">overflow-y: scroll behaves as auto, so this long text can be scrolled vertically inside the box.</div>
+  </div>
+</body>
+
+</html>

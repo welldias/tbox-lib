@@ -2914,7 +2914,7 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
-    /* 57:  -- the exact mixed pattern 011.html exercises: a <div>
+    /* 57:  -- the exact mixed pattern html-text-formatting.html exercises: a <div>
      * with a loose inline element (<small>) as its FIRST child, followed by
      * two block <p>s. Produces THREE child boxes in document order: an
      * anonymous box for the <small>'s text, then the two <p> boxes --
@@ -3105,7 +3105,7 @@ int tbox_test_layout_run(void) {
     }
 
     /* NOVO (image support): <img> as an inline "word" -- black.png/
-     * yellow.png (tests/assets/, also used by tests/assets/024.html's real
+     * yellow.png (tests/assets/, also used by tests/assets/html-images.html's real
      * regression fixture) are known 200x200 RGBA fixtures. */
     {
         tbox_image_cache *images = tbox_image_cache_create(TBOX_TEST_ASSETS_DIR);
@@ -3140,7 +3140,7 @@ int tbox_test_layout_run(void) {
 
             /* 2: bare HTML width/height attributes (no style="") override
              * AUTO -- see tbox_style_resolve_img_dimension_attribute in
-             * src/style/tbox_style.c, same behavior tests/assets/024.html's
+             * src/style/tbox_style.c, same behavior tests/assets/html-images.html's
              * first <img> (width="100" height="100") exercises for real. */
             {
                 tbox_html_document *doc    = parse_html_cstr("<div><img src=\"black.png\" width=\"50\" height=\"50\"></div>");
@@ -3219,7 +3219,7 @@ int tbox_test_layout_run(void) {
 
             /* 4b: a missing/undecodable src WITH a non-empty `alt` falls
              * back to that text, rendered as an ordinary text run (not an
-             * image run) -- the exact tests/assets/024.html scenario
+             * image run) -- the exact tests/assets/html-images.html scenario
              * (`<img src="notfound.png" alt="Image not found">`). */
             {
                 tbox_html_document *doc    = parse_html_cstr("<div><img src=\"does-not-exist.png\" alt=\"Image not found\"></div>");
@@ -3270,7 +3270,7 @@ int tbox_test_layout_run(void) {
             }
 
             /* 5: <a><img></a> -- the bounded one-level img-in-inline
-             * extension (tests/assets/024.html's linked-image case). The
+             * extension (tests/assets/html-images.html's linked-image case). The
              * <a> itself is display:inline with no <img> sibling text, so
              * this must still produce exactly one image run, not a
              * flattened-to-empty-text run. */
@@ -4301,7 +4301,7 @@ int tbox_test_layout_run(void) {
      * explicit spans. Their run width must match the selected face. */
     {
         size_t ot_size = 0;
-        char *ot_data = read_file(TBOX_TEST_ASSETS_DIR "/150-sans.ttf", &ot_size);
+        char *ot_data = read_file(TBOX_TEST_ASSETS_DIR "/opentype-sans.ttf", &ot_size);
         TBOX_TEST_REQUIRE(ot_data != NULL);
         tbox_font_face_cache *ot_fonts = tbox_font_face_cache_create(ot_data, ot_size, ot_data, ot_size, NULL, NULL, NULL);
         free(ot_data);

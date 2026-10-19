@@ -27,9 +27,11 @@ fontes instaladas.
 
 ## Fixtures visuais — `tests/assets/`
 
-Arquivos `NNN.html` que exercitam uma feature cada; o README e o
-[histórico](dev/historico.md) citam o número de cada um. Os textos são em
-inglês. Não há imagens de referência guardadas: o `tbox_cmp` captura cada
+Arquivos `<categoria>-<tema>.html` (`layout-grid-tracks.html`,
+`forms-select.html`...) agrupados por recurso: cada propriedade ou elemento
+é exercitado em um só fixture, e cada fixture cabe em 800x600. O mapa
+recurso → fixture, e a numeração antiga, estão em
+[fixtures](referencia/fixtures.md). Os textos são em inglês. Não há imagens de referência guardadas: o `tbox_cmp` captura cada
 fixture no Firefox a cada execução. Os PNGs que ficam em `tests/assets/`
 (`bird.png`, `mask-star.png`...) são imagens usadas pelos próprios
 fixtures.
@@ -57,18 +59,18 @@ mudança visual sem risco de capturar outra coisa da tela.
 
 ```sh
 build/tests/tbox_cmp tests/assets                     # todos os fixtures
-build/tests/tbox_cmp --output /tmp/cmp tests/assets 065 110
+build/tests/tbox_cmp --output /tmp/cmp tests/assets units-lengths cascade-layers
 build/tests/tbox_cmp --size 1024x768 --firefox /opt/firefox/firefox tests/assets
 ```
 
-Para cada `NNN.html` (ou só os nomeados), o `tbox_cmp`:
+Para cada `.html` (ou só os nomeados), o `tbox_cmp`:
 1. Captura o fixture no Firefox headless (`--screenshot`), que é a referência. Usa um perfil temporário próprio, então não mexe num Firefox aberto nem no perfil do usuário, e desiste em 90 s.
 2. Renderiza o fixture com `tbox_app_screenshot_from_files` no mesmo tamanho, 800x600 por padrão (`--size`).
 3. Compara as duas imagens. O veredito usa checagens locais de conteúdo, bordas e cor, tolerando pequenas diferenças de glifo e posição; o SSIM é impresso para diagnóstico.
 
 As três imagens de cada fixture ficam no diretório de saída
 (`--output DIR`, ou um temporário mostrado no início):
-`NNN_firefox.png`, `NNN_render.png` e `NNN_diff.png`, com as diferenças
+`<nome>_firefox.png`, `<nome>_render.png` e `<nome>_diff.png`, com as diferenças
 anotadas.
 
 O Firefox vem do PATH, de `--firefox` ou de `TBOX_CMP_FIREFOX`. Sem ele,

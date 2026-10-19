@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <style>
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 18px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin: 14px 0 6px;
+    }
+
+    .cols {
+      display: grid;
+      grid-template-columns: 360px 360px;
+      gap: 24px;
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    /* fieldset and legend */
+    fieldset {
+      background: white;
+      border: 2px solid #52709a;
+      margin: 8px 0 14px;
+    }
+
+    legend {
+      color: #274876;
+      font-weight: bold;
+    }
+
+    label {
+      display: inline-block;
+      width: 80px;
+    }
+
+    fieldset input {
+      width: 200px;
+    }
+
+    /* details and summary */
+    details {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 12px;
+      margin: 8px 0;
+    }
+
+    summary {
+      font-weight: bold;
+    }
+
+    details p {
+      margin: 10px 0 0;
+    }
+
+    /* select with optgroup */
+    select {
+      width: 260px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>fieldset, details and optgroup</h1>
+  <div class="cols">
+    <div>
+      <fieldset>
+        <legend>Personal data</legend>
+        <p><label>Name</label><input type="text" value="Ana"></p>
+        <p><label>Age</label><input type="number" value="28"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Preferences</legend>
+        <p><label>Color</label><input type="color" value="#52709a"></p>
+      </fieldset>
+    </div>
+    <div>
+      <h2>Expandable details (click, or Tab and Enter/Space)</h2>
+      <details>
+        <summary>Closed question</summary>
+        <p>This answer appears when the item is opened.</p>
+      </details>
+      <details open>
+        <summary>Question open at first</summary>
+        <p>This answer starts visible.</p>
+      </details>
+
+      <h2>Option groups (open the select)</h2>
+      <select>
+        <option value="none">Choose an option</option>
+        <optgroup label="Fruits">
+          <option value="apple">Apple</option>
+          <option value="banana">Banana</option>
+        </optgroup>
+        <optgroup label="Unavailable" disabled>
+          <option value="pear">Pear</option>
+        </optgroup>
+        <optgroup label="Drinks">
+          <option value="water">Water</option>
+          <option value="juice">Juice</option>
+        </optgroup>
+      </select>
+    </div>
+  </div>
+</body>
+
+</html>

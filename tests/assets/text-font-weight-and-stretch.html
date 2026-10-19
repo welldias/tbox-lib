@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 20px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 24px;
+    }
+
+    p {
+      margin: 3px 0;
+    }
+
+    .w100 { font-weight: 100; }
+    .w200 { font-weight: 200; }
+    .w300 { font-weight: 300; }
+    .w400 { font-weight: 400; }
+    .w500 { font-weight: 500; }
+    .w600 { font-weight: 600; }
+    .w700 { font-weight: 700; }
+    .w800 { font-weight: 800; }
+    .w900 { font-weight: 900; }
+    .rel { font-weight: 300; }
+    .rel b { font-weight: bolder; }
+    .rel b i { font-weight: lighter; font-style: normal; }
+    .bold-parent { font-weight: bold; }
+    .bold-parent span { font-weight: lighter; }
+    .regular-parent span { font-weight: bolder; }
+    .oblique { font-weight: 900; font-style: oblique; }
+    .italic { font-style: italic; }
+    .cond { font-stretch: condensed; }
+    .exp { font-stretch: 125%; }
+  </style>
+</head>
+
+<body>
+  <h1>font-weight, font-style and font-stretch</h1>
+  <div class="grid">
+    <div>
+      <p class="w100">100 Thin</p>
+      <p class="w200">200 Extra Light</p>
+      <p class="w300">300 Light</p>
+      <p class="w400">400 Regular</p>
+      <p class="w500">500 Medium</p>
+      <p class="w600">600 Semi Bold</p>
+      <p class="w700">700 Bold</p>
+      <p class="w800">800 Extra Bold</p>
+      <p class="w900">900 Black</p>
+    </div>
+    <div>
+      <p class="rel">300 <b>bolder = 400 <i>lighter = 100</i></b></p>
+      <p class="regular-parent">Regular <span>bolder</span> regular</p>
+      <p class="bold-parent">Bold <span>lighter</span> bold</p>
+      <p class="italic">font-style: italic</p>
+      <p class="oblique">900 plus oblique</p>
+      <p class="cond">font-stretch: condensed</p>
+      <p class="exp">font-stretch: 125%</p>
+    </div>
+  </div>
+</body>
+
+</html>

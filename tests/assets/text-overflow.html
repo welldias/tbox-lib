@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 15px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 12px 0 8px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 20px;
+      align-items: start;
+    }
+
+    .line {
+      width: 300px;
+      white-space: nowrap;
+      overflow: hidden;
+      background: white;
+      border: 1px solid #94a3b8;
+      padding: 6px;
+      margin: 0 0 8px;
+    }
+
+    .e { text-overflow: ellipsis; }
+    .s1 { text-overflow: " [...]"; }
+    .s2 { text-overflow: "~"; }
+    .s3 { text-overflow: clip "->"; }
+
+    .card {
+      width: 320px;
+      background: white;
+      border: 1px solid #94a3b8;
+      padding: 8px;
+      margin-bottom: 10px;
+    }
+
+    .c2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+    .c3 { line-clamp: 3; overflow: hidden; }
+    .c1 { -webkit-line-clamp: 1; display: -webkit-box; overflow: hidden; }
+    p.c2 { margin: 0; }
+  </style>
+</head>
+
+<body>
+  <h1>text-overflow and line-clamp</h1>
+  <h2>text-overflow: ellipsis and strings</h2>
+  <div class="grid">
+    <p class="line e">ellipsis: a text far too long to fit in this box</p>
+    <p class="line s1">string " [...]": a text far too long to fit here</p>
+    <p class="line s2">string "~": a text far too long to fit in this box</p>
+    <p class="line s3">two values, the end one applies: text far too long to fit</p>
+  </div>
+  <h2>line-clamp</h2>
+  <div class="grid">
+    <div>
+      <div class="card">No limit: this long paragraph goes on for several lines without any cut, showing all the text up to the end of the sentence.</div>
+      <div class="card c2">-webkit-line-clamp: 2 cuts this long paragraph at the second line and ends with an ellipsis in place of the rest of the text.</div>
+    </div>
+    <div>
+      <div class="card c3">line-clamp: 3 shows up to three lines of this sample text, which is long on purpose to go past the configured limit.</div>
+      <div class="card c1">a single line with an ellipsis at the end of the text</div>
+      <div class="card">
+        <p class="c2">It also works on a paragraph: a two-line limit applied to the p element inside the card.</p>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* zoom and resize (docs/08-layout-e-pintura.md, "zoom";
+     * docs/06-eventos-e-interatividade.md, "Redimensionar"). Row 1: the
+     * same 100x60 box, 2px border, 16px text, with zoom 1, 1.5 and 50%, and
+     * a parent with zoom 2 whose child has zoom .5 (normal size). Row 2:
+     * boxes with overflow: auto and resize: both / horizontal (handle at the
+     * bottom right corner), a default <textarea> (in tbox, resize: none by
+     * default, as in a native app; Firefox draws the handle) and one with
+     * resize: vertical. Firefox's handle differs from tbox's. */
+    body {
+      margin: 20px;
+      background: white;
+      color: black;
+      font-family: sans-serif;
+      font-size: 16px;
+    }
+
+    .row {
+      display: flex;
+      align-items: flex-start;
+      height: 150px;
+      margin-bottom: 30px;
+    }
+
+    .cell {
+      margin-right: 30px;
+    }
+
+    .label {
+      font-size: 12px;
+      height: 20px;
+      color: #333;
+    }
+
+    .box {
+      width: 100px;
+      height: 60px;
+      border: 2px solid #1d4ed8;
+      background: #bfdbfe;
+      font-size: 16px;
+    }
+
+    .z1 {
+      zoom: 1;
+    }
+
+    .z15 {
+      zoom: 1.5;
+    }
+
+    .z50 {
+      zoom: 50%;
+    }
+
+    .z2 {
+      zoom: 2;
+    }
+
+    .z05 {
+      zoom: .5;
+    }
+
+    .resizable {
+      width: 140px;
+      height: 90px;
+      overflow: auto;
+      border: 2px solid #15803d;
+      background: #dcfce7;
+    }
+
+    .both {
+      resize: both;
+    }
+
+    .horiz {
+      resize: horizontal;
+    }
+
+    .vert {
+      resize: vertical;
+    }
+
+    textarea {
+      width: 140px;
+      height: 80px;
+      font-family: sans-serif;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="row">
+    <div class="cell">
+      <div class="label">zoom: 1</div>
+      <div class="box z1">Ab</div>
+    </div>
+    <div class="cell">
+      <div class="label">zoom: 1.5</div>
+      <div class="box z15">Ab</div>
+    </div>
+    <div class="cell">
+      <div class="label">zoom: 50%</div>
+      <div class="box z50">Ab</div>
+    </div>
+    <div class="cell">
+      <div class="label">parent 2, child .5</div>
+      <div class="z2">
+        <div class="box z05">Ab</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="cell">
+      <div class="label">resize: both</div>
+      <div class="resizable both">Ab</div>
+    </div>
+    <div class="cell">
+      <div class="label">resize: horizontal</div>
+      <div class="resizable horiz">Ab</div>
+    </div>
+    <div class="cell">
+      <div class="label">default textarea</div>
+      <textarea>Ab</textarea>
+    </div>
+    <div class="cell">
+      <div class="label">textarea vertical</div>
+      <textarea class="vert">Ab</textarea>
+    </div>
+  </div>
+</body>
+
+</html>

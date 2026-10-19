@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      margin: 24px;
+    }
+
+    .row {
+      display: flex;
+      gap: 32px;
+      align-items: flex-start;
+    }
+
+    picture img {
+      width: 160px;
+      height: 160px;
+    }
+
+    .map {
+      width: 200px;
+      height: 200px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Picture sources and image maps</h1>
+  <div class="row">
+    <div>
+      <picture>
+        <source type="image/png" srcset="yellow.png">
+        <img src="black.png" alt="Colored square">
+      </picture>
+      <p>&lt;picture&gt;: the yellow image comes<br>from source; black.png is the<br>img fallback.</p>
+    </div>
+    <div>
+      <img class="map" src="yellow.png" alt="Image map" usemap="#regions">
+      <map name="regions">
+        <area shape="rect" coords="0,0,66,133" href="#left" alt="Left">
+        <area shape="circle" coords="100,33,27" href="#circle" alt="Circle">
+        <area shape="poly" coords="73,73,127,73,100,127" href="#triangle" alt="Triangle">
+      </map>
+      <p>&lt;map&gt;: hover the regions (left, circle at the<br>top right, triangle below); the application<br>can register click callbacks for them.</p>
+    </div>
+  </div>
+</body>
+
+</html>

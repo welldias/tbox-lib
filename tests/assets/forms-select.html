@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* <select> list through the customizable select's standard CSS
+     * (docs/10-formularios-e-controles.md, "Lista do select"). Open each
+     * select to see the list: ::picker(select) is the box, each <option> and
+     * <optgroup> a row, :hover the highlighted option (mouse or arrows),
+     * :checked the chosen one, :disabled even inside a disabled optgroup.
+     * tbox does not require appearance: base-select; the rule is here so
+     * Chrome (135+) shows the same. Firefox still shows the native list. */
+    select,
+    ::picker(select) {
+      appearance: base-select;
+    }
+
+    body {
+      margin: 24px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    section {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+    }
+
+    select {
+      width: 220px;
+    }
+
+    /* Purple theme: rounded box, taller rows, chosen one in lilac,
+     * highlighted one in purple with a radius. */
+    .purple::picker(select) {
+      border: 2px solid #7c3aed;
+      border-radius: 8px;
+      background-color: #faf5ff;
+    }
+
+    .purple option {
+      padding: 6px 12px;
+      color: #3b0764;
+    }
+
+    .purple option:checked {
+      background-color: #ede9fe;
+      font-weight: bold;
+    }
+
+    .purple option:hover {
+      background-color: #7c3aed;
+      color: white;
+      border-radius: 6px;
+    }
+
+    .purple option:disabled {
+      color: #c4b5fd;
+    }
+
+    .purple optgroup {
+      color: #a21caf;
+      font-weight: bold;
+    }
+
+    /* Dark theme through variables. */
+    .dark {
+      --bg: #1e293b;
+      --text: #e2e8f0;
+      --accent: #38bdf8;
+    }
+
+    .dark::picker(select) {
+      background-color: var(--bg);
+      border: 1px solid var(--accent);
+    }
+
+    .dark option {
+      color: var(--text);
+    }
+
+    .dark option:hover {
+      background-color: var(--accent);
+      color: var(--bg);
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Select list</h1>
+
+  <section>
+    <h2>Default</h2>
+    <select>
+      <option>First</option>
+      <option selected>Second</option>
+      <option disabled>Disabled</option>
+      <optgroup label="Group">
+        <option>Inside A</option>
+        <option>Inside B</option>
+      </optgroup>
+    </select>
+  </section>
+
+  <section>
+    <h2>Purple theme</h2>
+    <select class="purple">
+      <option>First</option>
+      <option selected>Second</option>
+      <option disabled>Disabled</option>
+      <optgroup label="Group">
+        <option>Inside A</option>
+        <option>Inside B</option>
+      </optgroup>
+      <optgroup label="Disabled group" disabled>
+        <option>Inside C</option>
+      </optgroup>
+    </select>
+  </section>
+
+  <section>
+    <h2>Dark theme with var()</h2>
+    <select class="dark">
+      <option>North</option>
+      <option>South</option>
+      <option selected>East</option>
+      <option>West</option>
+    </select>
+  </section>
+</body>
+
+</html>

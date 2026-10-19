@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 15px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: flex-start;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid #94a3b8;
+      padding: 8px 10px;
+      width: 160px;
+    }
+
+    .card ul,
+    .card ol {
+      margin: 4px 0 0;
+    }
+
+    .circle { list-style-type: circle; }
+    .square { list-style: square inside; }
+    .alpha { list-style-type: upper-alpha; }
+    .roman { list-style-type: lower-roman; }
+    .none { list-style-type: none; }
+    .leading { list-style-type: decimal-leading-zero; }
+    .greek { list-style-type: lower-greek; }
+    .disclosure { list-style-position: inside; padding: 0; }
+    .disclosure li:first-child { list-style-type: disclosure-open; }
+    .disclosure li:last-child { list-style-type: disclosure-closed; }
+  </style>
+</head>
+
+<body>
+  <h1>list-style-type</h1>
+  <div class="row">
+    <div class="card"><strong>circle</strong>
+      <ul class="circle"><li>one</li><li>two</li></ul>
+    </div>
+    <div class="card"><strong>square inside</strong>
+      <ul class="square"><li>one</li><li>two</li></ul>
+    </div>
+    <div class="card"><strong>upper-alpha</strong>
+      <ol class="alpha"><li>one</li><li>two</li><li>three</li></ol>
+    </div>
+    <div class="card"><strong>lower-roman, none</strong>
+      <ol class="roman"><li>one</li><li>two</li><li>three</li><li class="none">none</li></ol>
+    </div>
+  </div>
+  <div class="row">
+    <div class="card"><strong>decimal-leading-zero</strong>
+      <ol class="leading"><li>one</li><li>two</li><li>three</li><li>four</li><li>five</li><li>six</li><li>seven</li><li>eight</li><li>nine</li><li>ten</li></ol>
+    </div>
+    <div class="card"><strong>lower-greek</strong>
+      <ol class="greek"><li>alpha</li><li>beta</li><li>gamma</li></ol>
+    </div>
+    <div class="card"><strong>disclosure</strong>
+      <ul class="disclosure"><li>open</li><li>closed</li></ul>
+    </div>
+    <div class="card"><strong>nested defaults</strong>
+      <ul>
+        <li>disc
+          <ul>
+            <li>circle
+              <ul>
+                <li>square</li>
+              </ul>
+            </li>
+          </ul>
+        </li>
+        <li>disc again</li>
+      </ul>
+    </div>
+  </div>
+</body>
+
+</html>

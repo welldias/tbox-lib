@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px 24px;
+      font: 13px sans-serif;
+      color: #172033;
+      background: #edf1f7;
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 0 0 10px;
+    }
+
+    h2 {
+      font-size: 15px;
+      margin: 12px 0 6px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 340px 340px;
+      gap: 0 24px;
+    }
+
+    p {
+      margin: 4px 0 2px;
+    }
+
+    .track { width: 320px; background: white; }
+    .bar { height: 14px; background: #2563eb; }
+    .pow { width: calc(pow(2, 3) * 20px); }
+    .sqrt { width: calc(sqrt(16) * 40px); }
+    .exp { width: calc(exp(0) * 160px); }
+    .log { width: calc(log(8, 2) * 40px); }
+    .hypot { width: calc(hypot(3, 4) * 30px); }
+    .hypot-len { width: hypot(90px, 120px); }
+    .abs { width: abs(-120px); }
+    .sign { width: calc((sign(-8px) + 2) * 50px); }
+    .pi { width: calc(pi * 40px); }
+    .e { width: calc(e * 40px); }
+    .nearest { width: round(125px, 10px); }
+    .up { width: round(up, 123px, 10px); }
+    .down { width: round(down, 123px, 10px); }
+    .zero { width: round(to-zero, 123px, 10px); }
+
+    .row { display: flex; gap: 16px; }
+    .lane { width: 200px; height: 24px; background: white; }
+    .dot { position: relative; width: 20px; height: 24px; background: #2563eb; }
+    .mod { left: calc(80px + mod(-18px, 5px) * 10); }
+    .rem { left: calc(80px + rem(-18px, 5px) * 10); }
+    .frame { width: 140px; height: 50px; background: white; }
+    .red { width: 140px; height: 50px; background: red; }
+    .quarter { opacity: calc(pow(.5, 2)); }
+    .threequarters { opacity: calc(50% + .25); }
+    .half { opacity: sqrt(.25); }
+  </style>
+</head>
+
+<body>
+  <h1>Math functions: exponential, rounding, sign and constants</h1>
+  <div class="grid">
+    <div>
+      <p>pow(2, 3) * 20px = 160px</p><div class="track"><div class="bar pow"></div></div>
+      <p>sqrt(16) * 40px = 160px</p><div class="track"><div class="bar sqrt"></div></div>
+      <p>exp(0) * 160px = 160px</p><div class="track"><div class="bar exp"></div></div>
+      <p>log(8, 2) * 40px = 120px</p><div class="track"><div class="bar log"></div></div>
+      <p>hypot(3, 4) * 30px = 150px</p><div class="track"><div class="bar hypot"></div></div>
+      <p>hypot(90px, 120px) = 150px</p><div class="track"><div class="bar hypot-len"></div></div>
+      <p>abs(-120px) = 120px</p><div class="track"><div class="bar abs"></div></div>
+      <p>(sign(-8px) + 2) * 50px = 50px</p><div class="track"><div class="bar sign"></div></div>
+    </div>
+    <div>
+      <p>pi * 40px = 125.66px</p><div class="track"><div class="bar pi"></div></div>
+      <p>e * 40px = 108.73px</p><div class="track"><div class="bar e"></div></div>
+      <p>round: 125px → 130px (nearest, ties go up)</p><div class="track"><div class="bar nearest"></div></div>
+      <p>round(up): 123px → 130px</p><div class="track"><div class="bar up"></div></div>
+      <p>round(down): 123px → 120px</p><div class="track"><div class="bar down"></div></div>
+      <p>round(to-zero): 123px → 120px</p><div class="track"><div class="bar zero"></div></div>
+    </div>
+  </div>
+  <h2>Signs: mod(-18px, 5px) = 2px (marker at 100px); rem = -3px (marker at 50px)</h2>
+  <div class="row">
+    <div class="lane"><div class="dot mod"></div></div>
+    <div class="lane"><div class="dot rem"></div></div>
+  </div>
+  <h2>Calculated opacity over white: pow(.5, 2) = 25%, 50% + .25 = 75%, sqrt(.25) = 50%</h2>
+  <div class="row">
+    <div class="frame"><div class="red quarter"></div></div>
+    <div class="frame"><div class="red threequarters"></div></div>
+    <div class="frame"><div class="red half"></div></div>
+  </div>
+</body>
+
+</html>

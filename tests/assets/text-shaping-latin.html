@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* Shaping (docs/09-texto-e-fontes.md, "Shaping"). With HarfBuzz
+     * (TBOX_ENABLE_HARFBUZZ=ON) every "after" line differs from the "before"
+     * one; without it, both come out the same. The examples use DejaVu Sans,
+     * which has ligatures, GPOS kerning, Arabic and Hebrew. */
+    body {
+      font: 20px "DejaVu Sans";
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 16px 24px;
+      line-height: 1.35;
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 0 0 8px;
+    }
+
+    h2 {
+      font-size: 15px;
+      line-height: 1.2;
+      margin: 14px 0 6px;
+      color: #475569;
+    }
+
+    .card {
+      width: 640px;
+      padding: 6px 12px;
+      background: white;
+    }
+
+    .row {
+      white-space: nowrap;
+    }
+
+    .label {
+      display: inline-block;
+      width: 230px;
+      white-space: normal;
+      line-height: 1.2;
+      vertical-align: middle;
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .mono {
+      font-family: monospace;
+    }
+
+    .spaced {
+      letter-spacing: 1px;
+    }
+
+    .no-kern {
+      font-kerning: none;
+    }
+
+    .big {
+      font-size: 30px;
+    }
+
+    input,
+    textarea {
+      font: 20px "DejaVu Sans";
+      width: 300px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Shaping with HarfBuzz: ligatures, kerning and marks</h1>
+  <h2>Ligatures: "fi", "ffi" and "fl" become one glyph</h2>
+  <div class="card">
+    <div class="row"><span class="label">ligatures (default)</span><span class="big">office affinity</span></div>
+    <div class="row"><span class="label">letter-spacing: 1px (turns off)</span><span class="big spaced">office
+        affinity</span></div>
+    <div class="row"><span class="label">monospace (no ligatures)</span><span class="big mono">office</span></div>
+  </div>
+
+  <h2>Kerning: font-kerning auto (default) and none</h2>
+  <div class="card">
+    <div class="row"><span class="label">font-kerning: auto</span><span class="big">AVATAR Tower WAVE To</span></div>
+    <div class="row"><span class="label">font-kerning: none</span><span class="big no-kern">AVATAR Tower WAVE To</span>
+    </div>
+  </div>
+
+  <h2>Combining accents: "e" + U+0301 and stacked marks</h2>
+  <div class="card">
+    <div class="row"><span class="label">precomposed (U+00E9)</span><span class="big">caf&#xE9; &#xC1;rvore</span>
+    </div>
+    <div class="row"><span class="label">decomposed (e + U+0301)</span><span class="big">cafe&#x301;
+        A&#x301;rvore</span></div>
+    <div class="row"><span class="label">dot below + macron</span><span class="big">e&#x323;&#x304; o&#x323;&#x302;
+        a&#x328;&#x301;</span></div>
+  </div>
+
+</body>
+
+</html>

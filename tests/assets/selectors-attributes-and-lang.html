@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      background: #eef2f7;
+      color: #1e293b;
+      font: 16px sans-serif;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    .row {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 14px;
+      align-items: flex-start;
+    }
+
+    .card {
+      padding: 10px;
+      background: white;
+      border: 1px solid #cbd5e1;
+    }
+
+    h2 {
+      margin: 0 0 6px;
+      font-size: 16px;
+    }
+
+    .item {
+      display: block;
+      padding: 5px 8px;
+      margin: 0 0 4px;
+      background: #e2e8f0;
+    }
+
+    .card { width: 330px; }
+    [data-path^="docs/"] { border-left: 5px solid #2563eb; }
+    [data-path$=".png"] { background: #bbf7d0; }
+    [data-path*="guide"] { color: #b91c1c; }
+    [data-label="ALPHA" i] { background: #bbf7d0; border-left: 5px solid #16a34a; }
+    [data-label="ALPHA"] { color: #dc2626; }
+    [data-label^="be" i] { background: #bfdbfe; border-left: 5px solid #2563eb; }
+    .state[data-state="Active" s] { background: #bbf7d0; }
+    .state[data-state="active" s] { background: #fecaca; }
+    p:lang(pt) { background: #bbf7d0; }
+    p:lang(en) { background: #bfdbfe; }
+  </style>
+</head>
+
+<body>
+  <h1>Attribute selectors and :lang()</h1>
+  <div class="row">
+    <div class="card">
+      <h2>^= $= *=</h2>
+      <p class="item" data-path="docs/start.html">Starts with docs/: blue border</p>
+      <p class="item" data-path="images/icon.png">Ends with .png: green background</p>
+      <p class="item" data-path="docs/guide.png">All three criteria: border, background and red text</p>
+      <p class="item" data-path="other.txt">No criterion: gray</p>
+    </div>
+    <div class="card">
+      <h2>i and s modifiers</h2>
+      <div class="item" data-label="Alpha">Alpha matches case-insensitively</div>
+      <div class="item" data-label="Beta">Beta matches the prefix be</div>
+      <div class="item" data-label="gamma">gamma stays unhighlighted</div>
+      <div class="item state" data-state="Active">[data-state="Active" s]: green</div>
+      <div class="item state" data-state="active">[data-state="active" s]: red</div>
+    </div>
+  </div>
+  <div class="card" lang="pt-BR">
+    <h2>:lang(pt) and :lang(en)</h2>
+    <p class="item">Inherited from pt-BR: green</p>
+    <div><p class="item">Inherited through two levels: green</p></div>
+    <section lang="en-US"><p class="item">Language en-US: blue</p></section>
+    <p class="item" lang="">Empty language: gray</p>
+  </div>
+</body>
+
+</html>

@@ -387,7 +387,7 @@ int tbox_test_font_run(void) {
      * identity, measurement and prefix carets must all see the selection. */
     {
         size_t ot_size = 0;
-        char *ot_data = read_file(TBOX_TEST_ASSETS_DIR "/150-sans.ttf", &ot_size);
+        char *ot_data = read_file(TBOX_TEST_ASSETS_DIR "/opentype-sans.ttf", &ot_size);
         TBOX_TEST_REQUIRE(ot_data != NULL);
         tbox_font_face_cache *ot_cache = tbox_font_face_cache_create(ot_data, ot_size, ot_data, ot_size, NULL, NULL, NULL);
         free(ot_data);

@@ -12,11 +12,11 @@ static tbox_string_view tbox_test_image_view_from_cstr(const char *nul_terminate
     return tbox_string_view_make(nul_terminated, strlen(nul_terminated));
 }
 
-/* Real fixtures already on disk (see tests/assets/024.html, the maintainer's
+/* Real fixtures already on disk (see tests/assets/html-images.html, the maintainer's
  * own <img> regression fixture) -- black.png/yellow.png are both 200x200
  * RGBA PNGs, confirmed via PIL when this feature was designed; reused here
  * rather than a synthetic image so this test exercises the SAME stb_image
- * decode path the real 024.html/.png regression pair does. */
+ * decode path the real html-images.html fixture does. */
 #ifndef TBOX_TEST_ASSETS_DIR
 #define TBOX_TEST_ASSETS_DIR "tests/assets"
 #endif

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 12px 0 6px;
+    }
+
+    .card {
+      width: 460px;
+      padding: 8px 12px;
+      margin: 6px 0;
+      background: white;
+    }
+
+    /* Logical properties: the "start" side switches sides */
+    .note {
+      padding-inline-start: 12px;
+      border-inline-start: 4px solid #2563eb;
+      border-start-end-radius: 10px;
+      border-end-end-radius: 10px;
+      margin-inline-end: 40px;
+      background: #eff6ff;
+    }
+
+    /* A flex row starts on the right in rtl */
+    .toolbar {
+      display: flex;
+      gap: 8px;
+    }
+
+    .toolbar span {
+      padding: 4px 10px;
+      background: #e2e8f0;
+    }
+
+    .toolbar .primary {
+      background: #2563eb;
+      color: white;
+    }
+
+    .end {
+      text-align: end;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>direction</h1>
+
+  <h2>ltr (default)</h2>
+  <div class="card">
+    <div class="note">Note with a border at the start of the line.</div>
+    <div class="toolbar"><span class="primary">1 Save</span><span>2 Copy</span><span>3 Delete</span></div>
+    <p class="end">text-align: end</p>
+  </div>
+
+  <h2>dir="rtl" (HTML attribute)</h2>
+  <div class="card" dir="rtl">
+    <div class="note">Note with a border at the start of the line.</div>
+    <div class="toolbar"><span class="primary">1 Save</span><span>2 Copy</span><span>3 Delete</span></div>
+    <p class="end">text-align: end</p>
+    <p>Right-aligned by default (start).</p>
+  </div>
+
+  <h2>direction: rtl with a dir="ltr" child</h2>
+  <div class="card" style="direction: rtl">
+    <p>This paragraph inherits rtl.</p>
+    <p dir="ltr">This one goes back to ltr and aligns left.</p>
+  </div>
+</body>
+
+</html>

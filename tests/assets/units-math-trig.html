@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px 24px;
+      font: 13px sans-serif;
+      background: #edf1f7;
+      color: #172033;
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 0 0 8px;
+    }
+
+    p {
+      margin: 6px 0 3px;
+    }
+
+    .track { width: 300px; background: white; }
+    .bar { height: 14px; background: #2563eb; }
+    .sin { width: calc(sin(pi / 2) * 150px); }
+    .cos { width: calc(cos(60deg) * 150px); }
+    .tan { width: calc(tan(.125turn) * 150px); }
+    .faded { width: 150px; height: 30px; background: #2563eb; opacity: cos(60deg); }
+
+    .pairs {
+      display: grid;
+      grid-template-columns: repeat(2, 340px);
+      gap: 0 20px;
+    }
+
+    .pair { display: flex; gap: 10px; }
+    .tile { width: 160px; height: 44px; border: 1px solid #172033; }
+    .asin { background: linear-gradient(asin(1), #ef4444, #2563eb); }
+    .asin-ref { background: linear-gradient(90deg, #ef4444, #2563eb); }
+    .acos { background: linear-gradient(acos(-1), #f59e0b, #059669); }
+    .acos-ref { background: linear-gradient(180deg, #f59e0b, #059669); }
+    .atan { background: linear-gradient(atan(1), #7c3aed, #06b6d4); }
+    .atan-ref { background: linear-gradient(45deg, #7c3aed, #06b6d4); }
+    .atan2 { background: linear-gradient(atan2(-1, -1), #ef4444, #2563eb); }
+    .atan2-ref { background: linear-gradient(-135deg, #ef4444, #2563eb); }
+    .filter { background: #ef4444; filter: hue-rotate(acos(0)); }
+    .filter-ref { background: #ef4444; filter: hue-rotate(90deg); }
+    .wide-bar { height: 24px; background: #2563eb; }
+    .computed { width: calc(sin(asin(.5)) * 400px); opacity: cos(acos(.75)); }
+    .literal { width: 200px; opacity: .75; }
+  </style>
+</head>
+
+<body>
+  <h1>Trigonometric functions</h1>
+  <p>sin(pi / 2) * 150px = 150px</p><div class="track"><div class="bar sin"></div></div>
+  <p>cos(60deg) * 150px = 75px</p><div class="track"><div class="bar cos"></div></div>
+  <p>tan(.125turn) * 150px = 150px</p><div class="track"><div class="bar tan"></div></div>
+  <p>opacity: cos(60deg) = .5</p><div class="faded"></div>
+  <p><b>Inverse functions:</b> expression on the left, literal result on the right; the pairs must match.</p>
+  <div class="pairs">
+    <div><p>asin(1) = 90deg</p><div class="pair"><div class="tile asin"></div><div class="tile asin-ref"></div></div></div>
+    <div><p>acos(-1) = 180deg</p><div class="pair"><div class="tile acos"></div><div class="tile acos-ref"></div></div></div>
+    <div><p>atan(1) = 45deg</p><div class="pair"><div class="tile atan"></div><div class="tile atan-ref"></div></div></div>
+    <div><p>atan2(-1, -1) = -135deg</p><div class="pair"><div class="tile atan2"></div><div class="tile atan2-ref"></div></div></div>
+    <div><p>hue-rotate(acos(0)) = hue-rotate(90deg)</p><div class="pair"><div class="tile filter"></div><div class="tile filter-ref"></div></div></div>
+  </div>
+  <p>Nesting: sin(asin(.5)) × 400px = 200px; cos(acos(.75)) = .75</p>
+  <div class="pair"><div class="wide-bar computed"></div><div class="wide-bar literal"></div></div>
+</body>
+
+</html>

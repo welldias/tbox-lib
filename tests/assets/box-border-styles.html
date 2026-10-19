@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #f5f5f2;
+      color: #26303d;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 16px 0 8px;
+    }
+
+    .row {
+      display: flex;
+      gap: 22px;
+      flex-wrap: wrap;
+    }
+
+    .b {
+      width: 110px;
+      height: 44px;
+      background: #ffffff;
+      border-width: 3px;
+      border-color: #3b5bdb;
+    }
+
+    .dashed { border-style: dashed; }
+    .dotted { border-style: dotted; }
+    .double { border-width: 6px; border-style: double; }
+    .mixed { border-style: solid dashed dotted double; border-width: 6px; }
+    .hidden { border: 3px solid #b44; border-style: hidden; }
+
+    .sides {
+      width: 150px;
+      height: 40px;
+      padding: 4px;
+      background: #eef3e8;
+    }
+
+    .left-accent { border-left: 6px solid #2f9e44; }
+    .bottom-only { border-bottom: 3px solid #1c7ed6; }
+    .four-colors { border-style: solid; border-width: 2px 4px 6px 8px; border-color: #e03131 #f08c00 #2f9e44 #1971c2; }
+    .top-override { border: 2px solid #868e96; border-top-color: #c2255c; border-top-width: 5px; border-right-style: none; }
+
+    .o {
+      width: 150px;
+      height: 44px;
+      padding: 6px;
+      background: #e9f3ff;
+      color: #245686;
+    }
+
+    .keywords { border: thick solid currentColor; outline: thin solid currentColor; outline-offset: 6px; }
+    .outline-solid { border: 1px solid #7799bb; outline: 2px solid #336699; }
+    .outline-dashed { border: 1px solid #adb5bd; outline: 2px dashed #e8590c; outline-offset: 3px; }
+  </style>
+</head>
+
+<body>
+  <h1>Border and outline styles</h1>
+  <h2>dashed, dotted, double, one style per side, hidden</h2>
+  <div class="row">
+    <div class="b dashed"></div>
+    <div class="b dotted"></div>
+    <div class="b double"></div>
+    <div class="b mixed"></div>
+    <div class="b hidden">hidden: the 3px red border is not drawn</div>
+  </div>
+  <h2>Per-side borders</h2>
+  <div class="row">
+    <div class="sides left-accent">border-left</div>
+    <div class="sides bottom-only">border-bottom</div>
+    <div class="sides four-colors">1-4 values</div>
+    <div class="sides top-override">side longhands</div>
+  </div>
+  <h2>Outlines: thick/thin keywords, outline-offset, dashed</h2>
+  <div class="row">
+    <div class="o keywords">thick border, thin outline 6px away</div>
+    <div class="o outline-solid">2px solid outline</div>
+    <div class="o outline-dashed">dashed outline, offset 3px</div>
+  </div>
+</body>
+
+</html>

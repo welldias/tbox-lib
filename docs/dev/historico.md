@@ -1090,3 +1090,25 @@ Defeitos apontados pela comparação de todos os fixtures com o Firefox
 - **Referência:** o `tbox_cmp` captura cada fixture no Firefox headless a cada execução e renderiza no mesmo tamanho (800x600 por padrão). As três imagens (`NNN_firefox.png`, `NNN_render.png`, `NNN_diff.png`) ficam no diretório de saída.
 - **Opções novas:** `--size`, `--output`, `--firefox` (ou `TBOX_CMP_FIREFOX`) e filtro por fixture. O argumento de limiar de SSIM, já obsoleto, saiu.
 
+
+## 2026-10-19 — Fixtures reorganizados por categoria
+
+- **Nomes:** os 164 fixtures numerados (`001.html`…`163.html`, `a01.html`)
+  viraram 114 arquivos `<categoria>-<tema>.html` (html, colors, box, text,
+  lists, generated, selectors, cascade, units, backgrounds, layout, effects,
+  animation, interaction, forms, images). Cada propriedade ou elemento fica
+  num só fixture; temas grandes se dividem com o mesmo prefixo
+  (`text-shaping-latin`/`-scripts`, `backgrounds-layers`/`-blend-mode`). A
+  tabela antigo → novo está em [fixtures](../referencia/fixtures.md).
+- **Tamanho:** todos cabem em 800x600, inclusive os que antes passavam
+  (`forms-accent-and-caret`, `forms-control-parts`,
+  `forms-textarea-wrapping`, `cascade-layers`).
+- **Recursos auxiliares** renomeados com o fixture: `110.css` →
+  `cascade-link.css` (agora restrito a `.linked`), `117.css`/`117-import/` →
+  `cascade-import.css`/`cascade-import/`, `119-reset.css` →
+  `cascade-layers-reset.css`, `base-demo/112.css` → `base-demo/base.css`,
+  `150-sans.ttf` → `opentype-sans.ttf`. Os testes de `test_context.c`,
+  `test_font.c` e `test_layout.c` que os carregam foram ajustados.
+- Classes e variáveis em português dentro dos fixtures passaram para o
+  inglês, e `lang="pt-BR"` virou `lang="en"` (menos em
+  `selectors-attributes-and-lang`, que testa `:lang()`).

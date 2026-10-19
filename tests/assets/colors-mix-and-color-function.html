@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 15px sans-serif;
+      background: #edf1f7;
+      color: #172033;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 14px 0 6px;
+    }
+
+    p {
+      margin: 0 0 4px;
+      font-size: 13px;
+    }
+
+    .row {
+      display: flex;
+      gap: 14px;
+    }
+
+    .swatch {
+      width: 150px;
+      height: 54px;
+      border-radius: 8px;
+    }
+
+    .mix-srgb { background: color-mix(in srgb, #2563eb, #dc2626); }
+    .mix-oklch { background: color-mix(in oklch, #2563eb, #dc2626); }
+    .mix-white { background: color-mix(in oklab, #16a34a 30%, white); }
+    .normalized { background: color-mix(in srgb, red 80%, blue 80%); }
+    .alpha { background: color-mix(in srgb, red 25%, blue 25%); }
+    .invalid { background-color: #16a34a; background-image: linear-gradient(color-mix(in misspelled, red, blue), white); }
+    .shorter { background: color-mix(in oklch shorter hue, oklch(0.65 0.08 30), oklch(0.65 0.08 90)); }
+    .longer { background: color-mix(in oklch longer hue, oklch(0.65 0.08 30), oklch(0.65 0.08 90)); }
+    .increasing { background: color-mix(in oklch increasing hue, oklch(0.65 0.08 30), oklch(0.65 0.08 90)); }
+    .decreasing { background: color-mix(in oklch decreasing hue, oklch(0.65 0.08 30), oklch(0.65 0.08 90)); }
+    .srgb { background: color(srgb .5 0 0); }
+    .linear { background: color(srgb-linear .5 0 0); }
+    .rgb { background: rgb(188 0 0); }
+  </style>
+</head>
+
+<body>
+  <h1>color-mix() and color()</h1>
+  <h2>color-mix() spaces</h2>
+  <div class="row">
+    <div><p>srgb 50/50</p><div class="swatch mix-srgb"></div></div>
+    <div><p>oklch 50/50</p><div class="swatch mix-oklch"></div></div>
+    <div><p>oklab, 30% green + white</p><div class="swatch mix-white"></div></div>
+  </div>
+  <h2>color-mix() weights: normalized, below 100% (alpha) and an invalid space (green fallback)</h2>
+  <div class="row">
+    <div><p>80% + 80%: opaque</p><div class="swatch normalized"></div></div>
+    <div><p>25% + 25%: alpha 50%</p><div class="swatch alpha"></div></div>
+    <div><p>invalid space: green</p><div class="swatch invalid"></div></div>
+  </div>
+  <h2>OKLCH hue interpolation: shorter = increasing; longer = decreasing</h2>
+  <div class="row">
+    <div><p>shorter</p><div class="swatch shorter"></div></div>
+    <div><p>longer</p><div class="swatch longer"></div></div>
+    <div><p>increasing</p><div class="swatch increasing"></div></div>
+    <div><p>decreasing</p><div class="swatch decreasing"></div></div>
+  </div>
+  <h2>color(): linear sRGB 0.5 equals rgb(188 0 0)</h2>
+  <div class="row">
+    <div><p>srgb: 0.5</p><div class="swatch srgb"></div></div>
+    <div><p>srgb-linear: 0.5</p><div class="swatch linear"></div></div>
+    <div><p>rgb: 188</p><div class="swatch rgb"></div></div>
+  </div>
+</body>
+
+</html>

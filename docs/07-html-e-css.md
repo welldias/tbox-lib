@@ -69,7 +69,8 @@ user-agent < user < autor < autor-inline
   afeta `src` de `<img>` e `<source>` em `<picture>`. Não há URLs de rede,
   `target`, atualização dinâmica de `<link>` ou `@import`. URLs de fontes em
   folhas vinculadas ainda usam `asset_base_dir`, sem resolução relativa ao
-  arquivo CSS. Exemplos: `tests/assets/110.html` e `112.html`.
+  arquivo CSS. Exemplos: `tests/assets/cascade-link-and-import.html` e
+  `html-base-href.html`.
 
 ### A folha user-agent
 
@@ -269,7 +270,8 @@ a folha; os campos novos alteram o tamanho de `tbox_css_ruleset`,
 `tbox_css_resolved_declaration` e `tbox_style`, exigindo recompilação.
 
 `@supports selector(:scope)` é verdadeiro. A função `at-rule()` não existe
-no parser de supports e continua falsa. Fixture: `tests/assets/153.html`.
+no parser de supports e continua falsa. Fixtures: `tests/assets/cascade-scope-and-namespace.html`,
+`cascade-custom-properties.html` e `generated-counters.html`.
 
 ## Seletores
 
@@ -340,7 +342,7 @@ a letra em capitular; `@supports` valida esta sintaxe e a de
 `hanging-punctuation`. Valores literais inválidos são ignorados antes da
 cascata, preservando declarações válidas anteriores. Veja
 [capitulares e pontuação](08-layout-e-pintura.md#capitulares-e-pontuação-pendurada)
-e o fixture `162.html`.
+e o fixture `text-initial-letter.html`.
 
 ## Valores
 
@@ -499,7 +501,7 @@ veja [Texto e fontes](09-texto-e-fontes.md#contorno-e-ordem-de-pintura-do-texto)
 `@page` é lido e descartado como um bloco balanceado, inclusive seletores
 como `:first` e at-rules de margem aninhadas (`@top-left`, etc.). As regras
 seguintes continuam sendo processadas. Não há paginação nem suporte à função
-`at-rule()` em `@supports` (ela continua falsa). Fixture: `tests/assets/163.html`.
+`at-rule()` em `@supports` (ela continua falsa). Fixture: `tests/assets/text-stroke.html`.
 
 ## O que fica de fora
 

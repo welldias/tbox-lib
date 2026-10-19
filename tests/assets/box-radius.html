@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #f5f7fa;
+      color: #25364a;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 14px 0 6px;
+    }
+
+    .row {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .card {
+      width: 130px;
+      height: 56px;
+      padding: 8px;
+      border: 3px solid #2d6079;
+      background: #c7e7e4;
+      font-size: 14px;
+    }
+
+    .one { border-radius: 16px; }
+    .two { border-radius: 24px 4px; }
+    .three { border-radius: 24px 8px 0px; }
+    .four { border-radius: 24px 8px 0px 16px; }
+    .corner { border-radius: 4px; border-top-left-radius: 30px; border-bottom-right-radius: 20px; }
+
+    .logical {
+      border-radius: 4px;
+      border-start-start-radius: 24px 12px;
+      border-end-end-radius: 24px 12px;
+      background: #c7d2fe;
+    }
+
+    .plain {
+      width: 150px;
+      height: 70px;
+      background-color: tomato;
+      border-radius: 20px;
+    }
+
+    .bordered {
+      width: 150px;
+      height: 70px;
+      background-color: dodgerblue;
+      border: 6px solid navy;
+      border-radius: 24px;
+    }
+
+    .round {
+      width: 80px;
+      height: 80px;
+      background-color: orange;
+      border-radius: 1000px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>border-radius</h1>
+  <h2>One to four values (clockwise) and corner longhands</h2>
+  <div class="row">
+    <div class="card one">One value: 16px</div>
+    <div class="card two">Two values: 24px 4px</div>
+    <div class="card three">Three values: 24px 8px 0</div>
+    <div class="card four">Four values: 24px 8px 0 16px</div>
+    <div class="card corner">top-left and bottom-right longhands</div>
+    <div class="card logical">start-start and end-end (logical)</div>
+  </div>
+  <h2>Without a border, with a border, and a radius larger than the box</h2>
+  <div class="row">
+    <div class="plain"></div>
+    <div class="bordered"></div>
+    <div class="round"></div>
+  </div>
+</body>
+
+</html>

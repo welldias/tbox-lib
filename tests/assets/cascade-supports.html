@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 15px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 15px;
+      margin: 12px 0 6px;
+    }
+
+    .cols {
+      display: grid;
+      grid-template-columns: 360px 360px;
+      gap: 24px;
+    }
+
+    .card {
+      padding: 6px 10px;
+      margin: 6px 0;
+      background: white;
+    }
+
+    .yes,
+    .no {
+      display: none;
+      padding: 3px 8px;
+      margin: 3px 0;
+    }
+
+    .yes {
+      background: #dcfce7;
+    }
+
+    .no {
+      background: #fee2e2;
+    }
+
+    /* Each line only shows if the condition is true */
+    @supports (display: flex) {
+      .flex {
+        display: block;
+      }
+    }
+
+    @supports not (display: grid) {
+      .nogrid {
+        display: block;
+      }
+    }
+
+    @supports (display: grid) {
+      .grid {
+        display: block;
+      }
+    }
+
+    @supports (gap: 8px) and (transform: translateX(4px)) {
+      .and {
+        display: block;
+      }
+    }
+
+    @supports (transform: rotate(10deg)) or (float: left) {
+      .or {
+        display: block;
+      }
+    }
+
+    @supports selector(:nth-last-child(2)) {
+      .selector {
+        display: block;
+      }
+    }
+
+    @supports selector(::-webkit-scrollbar) {
+      .webkit {
+        display: block;
+      }
+    }
+
+    @supports (--brand: #2563eb) {
+      .custom {
+        display: block;
+      }
+    }
+
+    /* Nested with @media */
+    @media (min-width: 400px) {
+      @supports (backdrop-filter: grayscale(1)) {
+        .nested {
+          display: block;
+        }
+      }
+    }
+
+    /* Print only: they do nothing on screen (correct) */
+    .print {
+      break-before: page;
+      break-inside: avoid;
+      page-break-after: always;
+      orphans: 3;
+      widows: 3;
+    }
+
+    /* 3D without 3D transforms: nothing to change */
+    .flat {
+      perspective: 400px;
+      perspective-origin: 50% 50%;
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+    }
+
+    /* Without float, clear has nothing to clear; without scroll anchoring, overflow-anchor: none is already the behavior */
+    .misc {
+      clear: both;
+      overflow-anchor: none;
+    }
+
+    .ok {
+      padding: 3px 8px;
+      background: #dcfce7;
+    }
+
+    .bad {
+      padding: 3px 8px;
+      background: #fee2e2;
+    }
+
+    .hide {
+      display: none;
+    }
+
+    /* The print ones count as supported; the 3D ones do not */
+    @supports (break-inside: avoid) and (orphans: 2) {
+      .print-supported { display: block; }
+    }
+
+    @supports (transform-style: preserve-3d) {
+      .threed-supported { display: block; }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>@supports and properties accepted without effect</h1>
+  <div class="cols">
+    <div>
+  <h2>Greens must show, reds must not</h2>
+  <div class="card">
+    <div class="yes flex">(display: flex)</div>
+    <div class="no nogrid">not (display: grid)</div>
+    <div class="yes grid">(display: grid)</div>
+    <div class="yes and">(gap) and (transform: translateX())</div>
+    <div class="yes or">(transform: rotate()) or (float: left)</div>
+    <div class="yes selector">selector(:nth-last-child(2))</div>
+    <div class="no webkit">selector(::-webkit-scrollbar)</div>
+    <div class="yes custom">(--brand: #2563eb)</div>
+    <div class="yes nested">@media + @supports (backdrop-filter)</div>
+  </div>
+    </div>
+    <div>
+  <h2>Print (break-*, page-break-*, orphans, widows)</h2>
+  <div class="card print">
+    <div class="ok">This block stays in the normal screen flow.</div>
+  </div>
+
+  <h2>3D (perspective, transform-style, backface-visibility)</h2>
+  <div class="card flat">
+    <div class="ok">Without 3D rotation, the back face never shows.</div>
+  </div>
+
+  <h2>clear and overflow-anchor</h2>
+  <div class="card misc">
+    <div class="ok">Nothing floats; scrolling is not anchored.</div>
+  </div>
+
+  <h2>@supports for them</h2>
+  <div class="card">
+    <div class="ok hide print-supported">(break-inside: avoid) and (orphans: 2) is true</div>
+    <div class="bad hide threed-supported">(transform-style: preserve-3d) should be false</div>
+  </div>
+    </div>
+  </div>
+</body>
+
+</html>

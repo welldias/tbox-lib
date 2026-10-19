@@ -1,5 +1,5 @@
 /* v10 (docs/dev/historico.md's "v10 -- tbox_cmp"): visual regression tool.
- * Captures every tests/assets/NNN.html fixture in headless Firefox (the
+ * Captures every .html fixture in tests/assets in headless Firefox (the
  * "golden", taken on every run) and renders it with tbox at the same size
  * (via tbox_app_screenshot_from_files, v7 -- offscreen, no Wayland window
  * needed, see tests/CMakeLists.txt's OpenCV and Fontconfig gate), then
@@ -322,9 +322,10 @@ static void usage(const char *argv0) {
             "Usage: %s [--size WxH] [--output DIR] [--firefox PATH] [assets_dir] [fixture...]\n"
             "  Captures every assets_dir/*.html in headless Firefox (the golden) and\n"
             "  renders it with tbox at the same size (default 800x600), then compares\n"
-            "  them. DIR receives NNN_firefox.png, NNN_render.png and NNN_diff.png for\n"
+            "  them. DIR receives NAME_firefox.png, NAME_render.png and NAME_diff.png for\n"
             "  each fixture (default: a new temporary directory). `fixture` limits the\n"
-            "  run to the named ones (\"065\" or \"065.html\").\n",
+            "  run to the named ones (\"layout-grid-tracks\" or\n"
+            "  \"layout-grid-tracks.html\").\n",
             argv0);
 }
 

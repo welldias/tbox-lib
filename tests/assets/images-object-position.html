@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      background: #eef2f7;
+      color: #1e293b;
+      font: 16px sans-serif;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      margin: 14px 0 8px;
+      font-size: 17px;
+    }
+
+    p {
+      margin: 0 0 10px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .card {
+      padding: 8px;
+      background: white;
+      border: 1px solid #cbd5e1;
+    }
+
+    .label {
+      margin: 0 0 6px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    img {
+      display: block;
+      border: 2px solid #334155;
+      background: #dbeafe;
+    }
+
+    .photo { width: 130px; height: 128px; }
+    .wide-photo { width: 185px; height: 105px; object-fit: cover; }
+    .cover { object-fit: cover; }
+    .contain { object-fit: contain; }
+    .left { object-position: left center; }
+    .middle { object-position: center; }
+    .right { object-position: right center; }
+    .top { object-position: top; }
+    .bottom { object-position: bottom; }
+    .offset { object-position: 25% 20px; }
+    .edges-a { object-position: right 20px bottom 10px; }
+    .edges-b { object-position: left 10% bottom 12px; }
+  </style>
+</head>
+
+<body>
+  <h1>object-position</h1>
+  <div class="row">
+    <div class="card"><p class="label">cover, left center</p><img class="photo cover left" src="bird.png" alt="Bird"></div>
+    <div class="card"><p class="label">cover, center</p><img class="photo cover middle" src="bird.png" alt="Bird"></div>
+    <div class="card"><p class="label">cover, right center</p><img class="photo cover right" src="bird.png" alt="Bird"></div>
+  </div>
+  <div class="row" style="margin-top: 12px">
+    <div class="card"><p class="label">contain, top</p><img class="photo contain top" src="bird.png" alt="Bird"></div>
+    <div class="card"><p class="label">contain, bottom</p><img class="photo contain bottom" src="bird.png" alt="Bird"></div>
+    <div class="card"><p class="label">contain, 25% 20px</p><img class="photo contain offset" src="bird.png" alt="Bird"></div>
+    <div>
+      <div class="card"><p class="label">right 20px bottom 10px</p><img class="wide-photo edges-a" src="bird.png" alt="Bird"></div>
+      <div class="card" style="margin-top: 8px"><p class="label">left 10% bottom 12px</p><img class="wide-photo edges-b" src="bird.png" alt="Bird"></div>
+    </div>
+  </div>
+</body>
+
+</html>

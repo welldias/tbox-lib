@@ -237,7 +237,8 @@ não interpolam.
 
 O blur de `box-shadow` sai mais largo e em faixas que no Firefox (visto ao
 testar a T02, com ou sem transformação). O fundo do `body` não se propaga
-para o canvas como no CSS (fixture 123).
+para o canvas como no CSS (visto no antigo fixture 123, hoje
+`cascade-supports.html`).
 
 ### Limites dos floats
 
@@ -318,7 +319,8 @@ escrita horizontal LTR.
 O tbox não dá largura ao espaço em branco entre caixas `inline-block`
 (o navegador dá um espaço da fonte): duas caixas que somadas cabem
 exatamente na linha ficam lado a lado no tbox e quebram no navegador.
-Visto nos fixtures 148 (1px) e 154/155 quando reformatados.
+Visto em `backgrounds-border-image.html` (1px), `layout-floats.html` e
+`layout-multicol.html` quando reformatados.
 
 ### Limites da escrita vertical
 

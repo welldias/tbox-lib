@@ -14,6 +14,10 @@ A versão com as imagens (Firefox, tbox e diferenças anotadas de cada
 fixture) está publicada como artifact:
 https://claude.ai/artifact/239uqseV43MdeKDrD9YXLP.
 
+> Esta medição usa a numeração antiga dos fixtures (`001`…`163`, `a01`).
+> Depois dela os fixtures foram reorganizados por categoria; a tabela
+> antigo → novo está em [fixtures](fixtures.md#numeração-antiga).
+
 **Resultado:** 164 fixtures. São 72 EQUAL depois das correções;
 antes eram 66. Os fixtures anteriores não foram escritos para
 caber em 800×600, e vários mostram só o começo. Os dois desvios mais

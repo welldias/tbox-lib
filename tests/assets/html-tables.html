@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        .basic,
+        .basic th,
+        .basic td {
+            border: 1px solid black;
+        }
+
+        .invisible,
+        .invisible th,
+        .invisible td {
+            border: 1px solid white;
+            border-collapse: collapse;
+        }
+
+        .invisible th,
+        .invisible td {
+            background-color: #96D4D4;
+        }
+
+        .collapsed,
+        .collapsed th,
+        .collapsed td {
+            border: 1px solid black;
+            border-collapse: collapse;
+        }
+
+        h2 {
+            margin: 14px 0 6px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>A basic HTML table (separated borders)</h2>
+    <table class="basic" style="width:100%">
+        <tr>
+            <th>Company</th>
+            <th>Contact</th>
+            <th>Country</th>
+        </tr>
+        <tr>
+            <td>Alfreds Futterkiste</td>
+            <td>Maria Anders</td>
+            <td>Germany</td>
+        </tr>
+        <tr>
+            <td>Centro comercial Moctezuma</td>
+            <td>Francisco Chang</td>
+            <td>Mexico</td>
+        </tr>
+    </table>
+
+    <h2>Invisible borders: white collapsed borders over colored cells</h2>
+    <table class="invisible" style="width:100%">
+        <tr>
+            <th>Firstname</th>
+            <th>Lastname</th>
+            <th>Age</th>
+        </tr>
+        <tr>
+            <td>Jill</td>
+            <td>Smith</td>
+            <td>50</td>
+        </tr>
+        <tr>
+            <td>Eve</td>
+            <td>Jackson</td>
+            <td>94</td>
+        </tr>
+    </table>
+
+    <h2>The first column takes 70% of the table width</h2>
+    <table class="collapsed" style="width:100%">
+        <tr>
+            <th style="width:70%">Firstname</th>
+            <th>Lastname</th>
+            <th>Age</th>
+        </tr>
+        <tr>
+            <td>Jill</td>
+            <td>Smith</td>
+            <td>50</td>
+        </tr>
+        <tr>
+            <td>Eve</td>
+            <td>Jackson</td>
+            <td>94</td>
+        </tr>
+    </table>
+
+</body>
+
+</html>

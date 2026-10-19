@@ -103,7 +103,9 @@ adicionada. Tabelas `static const` (dados imutáveis) não entram nessa regra.
      elemento HTML mudou de status;
   3. acrescente uma entrada em [historico.md](historico.md) e, se houve
      escolha entre alternativas, em [decisoes.md](decisoes.md);
-  4. inclua um teste de comportamento e, quando fizer sentido, um fixture em
-     `tests/assets/NNN.html`.
+  4. inclua um teste de comportamento e, quando fizer sentido, um fixture: acrescente ao
+     `tests/assets/<categoria>-<tema>.html` que já cobre o assunto, ou crie
+     um novo na categoria (veja `docs/referencia/fixtures.md`); ele precisa
+     caber em 800x600.
 - Testes: `ctest --test-dir build --output-on-failure` precisa passar.
 - Depois de mudar código, rode `graphify update .` se `graphify-out/` existir.

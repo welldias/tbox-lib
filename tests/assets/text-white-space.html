@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 24px;
+      align-items: start;
+    }
+
+    .box {
+      width: 300px;
+      background: white;
+      border: 1px solid #64748b;
+      padding: 6px;
+      margin: 0;
+    }
+
+    .mono { font-family: monospace; }
+    .pre { white-space: pre; }
+    .pre-wrap { white-space: pre-wrap; }
+    .pre-line { white-space: pre-line; }
+    .break-spaces { white-space: break-spaces; }
+    .nowrap { text-wrap: nowrap; overflow: hidden; }
+    .mode { text-wrap-mode: nowrap; overflow: hidden; }
+    .preserve { white-space-collapse: preserve; }
+    .preserve-breaks { white-space-collapse: preserve-breaks; }
+    .tab { white-space: pre; background: #fefce8; font-family: monospace; }
+    .t2 { tab-size: 2; }
+    .t8 { tab-size: 8; }
+    .tpx { tab-size: 48px; }
+  </style>
+</head>
+
+<body>
+  <h1>white-space, text-wrap, white-space-collapse and tab-size</h1>
+  <div class="grid">
+    <p class="box pre">pre:   keeps   spaces
+    and newlines, never wraps at the width</p>
+    <p class="box pre-wrap">pre-wrap:   keeps   spaces
+    and newlines, and wraps at the width</p>
+    <p class="box pre-line">pre-line:   collapses   spaces
+    but keeps newlines</p>
+    <p class="box mono pre-wrap">pre-wrap: the spaces at the end of the line hang outside the box</p>
+    <p class="box mono break-spaces">break-spaces: the spaces at the end of the line take room and wrap</p>
+    <p class="box nowrap">text-wrap: nowrap keeps everything on a single line and clips</p>
+    <p class="box mode">text-wrap-mode: nowrap has the same effect on long text</p>
+    <p class="box preserve">preserve: spaces   kept
+        and line breaks too</p>
+    <p class="box preserve-breaks">preserve-breaks: spaces   collapse
+        but line breaks stay</p>
+    <p class="box tab t2">tab-size: 2
+		one
+		two</p>
+    <p class="box tab t8">tab-size: 8
+		one
+		two</p>
+    <p class="box tab tpx">tab-size: 48px
+		one
+		two</p>
+  </div>
+</body>
+
+</html>

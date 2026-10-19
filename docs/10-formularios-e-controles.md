@@ -25,7 +25,7 @@ usuário disparam `tbox_context_on_input` (ou `on_select` para `<select>`).
 | `input type=image` | Botão com imagem (`src`, `width`/`height`); mostra `alt` se a imagem falhar. |
 | `input type=checkbox` / `radio` | Clique ou Espaço. Radios com o mesmo `name` no mesmo form se excluem. `:checked` reflete o estado. |
 | `input` de texto: `text`, `search`, `email`, `url`, `tel`, `password`, `number` | Edição UTF-8 com cursor, seleção (Shift+setas, arrasto, duplo clique, Ctrl+A), clipboard, rolagem horizontal. `search` tem botão de limpar e Esc limpa. `password` mascara e não copia. `number` aceita setas/botões e `step`/`min`/`max`. |
-| `<textarea>` | Multilinha, quebra e rolagem internas; `rows`/`cols` definem o tamanho inicial (CSS vence). Quebra depois dos espaços (que ficam pendurados no fim da linha); só uma palavra mais larga que a linha é cortada. Como no layout de texto, só espaço e tab são oportunidades de quebra. Veja `tests/assets/144.html`. |
+| `<textarea>` | Multilinha, quebra e rolagem internas; `rows`/`cols` definem o tamanho inicial (CSS vence). Quebra depois dos espaços (que ficam pendurados no fim da linha); só uma palavra mais larga que a linha é cortada. Como no layout de texto, só espaço e tab são oportunidades de quebra. Veja `tests/assets/forms-textarea-wrapping.html`. |
 | `input type=range` | Slider; clique, arrasto, setas por `step`, Home/End. Padrão 0–100. |
 | `input type=color` | Amostra; abre um seletor RGB (clique/arrasto nos canais, teclado). Valor `#rrggbb`. |
 | `input type=date`, `datetime-local`, `month`, `week`, `time` | Abrem calendário / grade de meses / barras de hora. `min`/`max` respeitados. Valores em formato ISO, sem fuso. |
@@ -37,7 +37,7 @@ usuário disparam `tbox_context_on_input` (ou `on_select` para `<select>`).
 As opções dentro de um grupo `disabled` aparecem desabilitadas e são
 ignoradas pela navegação e por `_select_set_value`. Feche explicitamente
 `<optgroup>` e `<option>`: o parser ainda não faz o fechamento implícito.
-Veja `tests/assets/107.html`.
+Veja `tests/assets/forms-grouping.html`.
 
 `<fieldset>` recebe borda e espaçamento padrão dos navegadores: padding de
 6px 12px 10px, margem lateral de 2px e `padding-inline: 2px` na legenda.
@@ -46,7 +46,7 @@ Quando `<legend>` é o primeiro elemento filho, ela começa no topo do
 interrompida exatamente na largura da legenda. O conteúdo segue logo abaixo
 da legenda mais o padding. A interrupção acompanha bordas retas; bordas
 arredondadas e estilos de borda complexos não têm tratamento especial.
-Veja `tests/assets/109.html`.
+Veja `tests/assets/forms-grouping.html`.
 
 ## Indicadores e resultado
 
@@ -64,7 +64,7 @@ Os atributos podem ser alterados pela API de mutação do DOM; o frame seguinte
 mostra o novo valor. Ambos são controles passivos: não recebem entrada nem
 disparam `on_input`. Seu texto filho permanece no DOM como fallback, mas não
 é pintado. Largura e altura podem ser definidas por CSS. Veja
-`tests/assets/106.html`.
+`tests/assets/forms-progress-and-output.html`.
 
 ## Validação
 
@@ -86,7 +86,7 @@ requisição: leia os campos (por seletor dentro do form) e aja.
 preenchimento e o polegar do `input type=range` e a barra do `<progress>`.
 Com `auto`, checkbox e radio usam `color`; range e progress mantêm o azul
 embutido. O trilho e as cores do `<meter>` não mudam. Veja
-`tests/assets/142.html`.
+`tests/assets/forms-accent-and-caret.html`.
 
 ## Partes dos controles
 
@@ -125,7 +125,7 @@ use o estado do controle (`input:hover::slider-thumb`). Transições e
 animações não se aplicam às partes. Não há fonte nas partes (o texto do
 botão de arquivo segue em 13px), nem raios elípticos, sombras ou gradientes.
 A forma das marcas (triângulo da seta, X da busca, setas do number) é fixa.
-Veja `tests/assets/143.html`.
+Veja `tests/assets/forms-control-parts.html`.
 
 ### Lista do select
 
@@ -160,7 +160,7 @@ optgroup { color: #a21caf; }
   `option:hover { background-color: #4173c3; color: white }`,
   `option:disabled, optgroup:disabled { color: #919191 }`.
 - Ainda sem `:open`, `option::checkmark`, `<selectedcontent>` e alturas
-  diferentes por linha. Veja `tests/assets/146.html`.
+  diferentes por linha. Veja `tests/assets/forms-select.html`.
 
 ### Equivalentes em outros navegadores
 

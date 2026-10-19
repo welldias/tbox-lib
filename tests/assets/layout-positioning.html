@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 15px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    .scroller {
+      width: 360px;
+      height: 240px;
+      overflow-y: auto;
+      background: white;
+      border: 2px solid #94a3b8;
+    }
+
+    .section h2 {
+      position: sticky;
+      top: 0;
+      margin: 0;
+      padding: 6px 10px;
+      background: #1e40af;
+      color: white;
+      font-size: 15px;
+    }
+
+    .section p {
+      margin: 0;
+      padding: 6px 10px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .footer {
+      position: sticky;
+      bottom: 0;
+      background: #fef3c7;
+      padding: 6px 10px;
+      margin: 0;
+    }
+    .row {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+    }
+
+    .stage {
+      position: relative;
+      width: 320px;
+      height: 110px;
+      background: #dfe7ef;
+      border: 1px solid #5c7cfa;
+    }
+
+    .stretch {
+      position: absolute;
+      inset: 12px 20px;
+      background: rgba(92, 124, 250, 0.35);
+      border: 2px dashed #364fc7;
+    }
+
+    .stretch p {
+      margin: 0;
+      padding: 6px;
+    }
+
+    .relative {
+      position: relative;
+      left: 20px;
+      top: 8px;
+      width: 200px;
+      padding: 6px;
+      background: #fde68a;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>position: sticky, absolute and relative</h1>
+  <p>Scroll the box in tbox_app_demo: the headings stick to the top and the footer to the bottom.</p>
+  <div class="row">
+  <div class="scroller">
+    <div class="section">
+      <h2>Section A</h2>
+      <p>A1</p>
+      <p>A2</p>
+      <p>A3</p>
+      <p>A4</p>
+      <p>A5</p>
+    </div>
+    <div class="section">
+      <h2>Section B</h2>
+      <p>B1</p>
+      <p>B2</p>
+      <p>B3</p>
+      <p>B4</p>
+      <p>B5</p>
+    </div>
+    <div class="section">
+      <h2>Section C</h2>
+      <p>C1</p>
+      <p>C2</p>
+      <p>C3</p>
+    </div>
+    <p class="footer">sticky bottom footer</p>
+  </div>
+  <div>
+    <div class="stage">
+      <div class="stretch">
+        <p>absolute, inset: 12px 20px, no width or height</p>
+      </div>
+    </div>
+    <p class="relative">relative: left 20px, top 8px</p>
+  </div>
+  </div>
+</body>
+
+</html>

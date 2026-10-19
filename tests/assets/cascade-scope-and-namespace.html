@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    /* @namespace with the HTML namespace as default: every selector below still matches. */
+    @namespace url(http://www.w3.org/1999/xhtml);
+
+    body {
+      margin: 20px;
+      background: white;
+      color: #222;
+      font: 16px sans-serif;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    h3 {
+      font: bold 16px sans-serif;
+      margin: 0;
+      height: 28px;
+    }
+
+    .row {
+      display: flex;
+      gap: 14px;
+    }
+
+    .card,
+    .outside {
+      width: 210px;
+      padding: 12px;
+      background: #eee;
+    }
+
+    .content {
+      padding: 8px;
+      background: white;
+      color: #222;
+    }
+
+    .inner {
+      padding: 8px;
+      background: #fff4dd;
+    }
+
+    @scope (.inner) {
+      h3 {
+        color: #b54a00;
+      }
+    }
+
+    @scope (.card) to (.content) {
+      h3 {
+        color: #1768ac;
+      }
+
+      :scope {
+        border: 2px solid #1768ac;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>@scope and @namespace</h1>
+  <div class="row">
+    <div class="card">
+      <h3>Card: blue</h3>
+      <div class="content">
+        <h3>Limit: black</h3>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Outer: blue</h3>
+      <div class="inner">
+        <h3>Nearest: orange</h3>
+      </div>
+    </div>
+    <div class="outside">
+      <h3>Outside: black</h3>
+    </div>
+  </div>
+</body>
+
+</html>

@@ -5325,7 +5325,7 @@ int tbox_test_context_run(void) {
     {
         tbox_context_options options = tbox_context_options_default();
         options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
-        const char *html = "<div><link rel='stylesheet' href='110.css'><p>Ligado</p></div>";
+        const char *html = "<div><link rel='stylesheet' href='cascade-link.css'><p class='linked'>Ligado</p></div>";
         tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
@@ -5336,7 +5336,7 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(p != NULL && p->style->color.r == 160 && p->style->color.g == 52);
             tbox_context_close(ctx);
         }
-        html = "<div><link rel='stylesheet' href='110.css'><style>p { color: blue; }</style><p>Depois</p></div>";
+        html = "<div><link rel='stylesheet' href='cascade-link.css'><style>.linked { color: blue; }</style><p class='linked'>Depois</p></div>";
         ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
@@ -5355,8 +5355,8 @@ int tbox_test_context_run(void) {
     {
         tbox_context_options options = tbox_context_options_default();
         options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
-        const char *html = "<div><style>@import url(117.css); .import-base { padding-left: 3px; } @import url(110.css);</style>"
-                           "<p class='import-color import-base'>Importado</p></div>";
+        const char *html = "<div><style>@import url(cascade-import.css); .import-base { padding-left: 3px; } @import url(cascade-link.css);</style>"
+                           "<p class='import-color import-base linked'>Importado</p></div>";
         tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
         TBOX_TEST_ASSERT(ctx != NULL);
         if (ctx != NULL) {
@@ -5366,7 +5366,7 @@ int tbox_test_context_run(void) {
                 tbox_html_document_root(tbox_context_document(ctx))->first_child), "p");
             TBOX_TEST_ASSERT(p != NULL && p->style->color.r == 15 && p->style->color.g == 118 && p->style->color.b == 110);
             TBOX_TEST_ASSERT(p != NULL && p->style->padding[0].value == 8.0 && p->style->padding[3].value == 3.0);
-            TBOX_TEST_ASSERT(p != NULL && p->style->border_widths[0] == 0.0); /* 110.css not imported */
+            TBOX_TEST_ASSERT(p != NULL && p->style->border_widths[0] == 0.0); /* cascade-link.css not imported */
             tbox_context_close(ctx);
         }
     }
@@ -5377,7 +5377,7 @@ int tbox_test_context_run(void) {
     {
         tbox_context_options options = tbox_context_options_default();
         options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
-        const char *html = "<div><style>@layer reset, theme; @import url(119-reset.css) layer(reset);"
+        const char *html = "<div><style>@layer reset, theme; @import url(cascade-layers-reset.css) layer(reset);"
                            "@layer theme { p { background: #dbeafe; } } p { color: #1d4ed8; }</style>"
                            "<p class='layer-demo'>camadas</p></div>";
         tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, NULL, &options);
@@ -5437,7 +5437,7 @@ int tbox_test_context_run(void) {
         tbox_image_cache *images = tbox_image_cache_create(TBOX_TEST_ASSETS_DIR);
         tbox_context_options options = tbox_context_options_default();
         options.asset_base_dir = TBOX_TEST_ASSETS_DIR;
-        const char *html = "<div><base href='base-demo/'><link rel='stylesheet' href='112.css'>"
+        const char *html = "<div><base href='base-demo/'><link rel='stylesheet' href='base.css'>"
             "<p>Base</p><img src='yellow.png' width='40' height='40'></div>";
         tbox_context *ctx = tbox_context_open_with_options(html, strlen(html), "", 0, fonts, images, &options);
         TBOX_TEST_ASSERT(ctx != NULL);

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 14px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 20px 24px;
+      margin: 0;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(18px, 3vw, 24px);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 360px 360px;
+      gap: 8px 20px;
+    }
+
+    .wrap {
+      background: #cbd5e1;
+      padding: 6px;
+    }
+
+    .bar {
+      background: #3b82f6;
+      color: white;
+      padding: 4px;
+      box-sizing: border-box;
+      font-size: 12px;
+    }
+
+    .a { width: calc(100% - 40px); }
+    .b { width: calc(50% + 2em); background: #10b981; }
+    .c { width: calc((100% - 20px) / 3); height: 30px; display: inline-block; background: #f59e0b; margin-right: 10px; padding: 0; }
+    .c:last-child { margin-right: 0; }
+    .d { margin-left: calc(25% - 10px); width: calc(2 * 100px); background: #ef4444; }
+    .e { font-size: calc(10px + 0.25rem); padding: calc(2px * 2) calc(1em - 4px); background: #8b5cf6; }
+    .m1 { width: min(100%, 300px); }
+    .m2 { width: max(50%, 200px); background: #10b981; }
+    .m3 { width: clamp(200px, 40%, 600px); background: #f59e0b; }
+    .m4 { width: clamp(100px, 90%, 300px); background: #ef4444; }
+    .m5 { width: min(150px, 30px * 4); background: #8b5cf6; }
+    .m6 { padding-left: max(1em, 40px); background: #0ea5e9; }
+    .wide { width: 400px; background: white; }
+    .p1 { width: min(20%, 50%); height: 18px; background: #2563eb; }
+    .p2 { width: max(20%, 50%); height: 18px; background: #2563eb; }
+    .p3 { width: clamp(20%, 70%, 50%); height: 18px; background: #2563eb; }
+    p { margin: 8px 0 3px; }
+  </style>
+</head>
+
+<body>
+  <h1>calc(), min(), max() and clamp()</h1>
+  <div class="grid">
+    <div class="wrap"><div class="bar a">calc(100% - 40px)</div></div>
+    <div class="wrap"><div class="bar m1">min(100%, 300px) = 300px</div></div>
+    <div class="wrap"><div class="bar b">calc(50% + 2em)</div></div>
+    <div class="wrap"><div class="bar m2">max(50%, 200px)</div></div>
+    <div class="wrap"><div class="bar c"></div><div class="bar c"></div><div class="bar c"></div></div>
+    <div class="wrap"><div class="bar m3">clamp(200px, 40%, 600px)</div></div>
+    <div class="wrap"><div class="bar d">margin-left: calc(25% - 10px)</div></div>
+    <div class="wrap"><div class="bar m4">clamp(100px, 90%, 300px) = 300px</div></div>
+    <div class="wrap"><div class="bar e">font-size: calc(10px + 0.25rem)</div></div>
+    <div class="wrap"><div class="bar m5">min(150px, 120px)</div></div>
+    <div></div>
+    <div class="wrap"><div class="bar m6">padding-left: max(1em, 40px)</div></div>
+  </div>
+  <p>Percentages in a 400px box: min(20%, 50%) = 80px, max(20%, 50%) = 200px, clamp(20%, 70%, 50%) = 200px</p>
+  <div class="wide"><div class="p1"></div></div>
+  <div class="wide" style="margin-top: 4px"><div class="p2"></div></div>
+  <div class="wide" style="margin-top: 4px"><div class="p3"></div></div>
+</body>
+
+</html>

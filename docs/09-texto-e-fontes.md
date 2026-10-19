@@ -88,7 +88,8 @@ No HarfBuzz:
   simples faz o mesmo percorrendo os codepoints de trás para a frente com
   `tbox_bidi_mirror`.
 
-Veja `tests/assets/141.html` (compare com um build
+Veja `tests/assets/text-shaping-latin.html` e `text-shaping-scripts.html`
+(compare com um build
 `-DTBOX_ENABLE_HARFBUZZ=OFF`).
 
 `tbox_font_shape` (`src/font/tbox_font_measure.h`) grava os glifos numa
@@ -151,7 +152,7 @@ flowchart LR
   campo `rtl` soma o deslocamento do alinhamento. Seleção, clique e setas
   continuam lógicos.
 
-Veja `tests/assets/159.html`.
+Veja `tests/assets/text-bidi.html`.
 
 ## Escrita vertical
 
@@ -193,7 +194,7 @@ formas verticais (`vert`/`vrt2`), então pontuação CJK fica na forma
 horizontal; `text-combine-upright: digits <n>` não é suportado; sublinhado
 e outras decorações seguem o lado de baixo da linha no referencial (à
 esquerda em `vertical-rl`, à direita em `vertical-lr`). Veja
-`tests/assets/160.html`.
+`tests/assets/text-vertical-writing.html`.
 
 ## Largura de cada prefixo
 
@@ -269,7 +270,7 @@ desenha a máscara com o mesmo shaper, então cursor e texto coincidem.
   tamanho. `left`/`right` em `-position` são aceitos sem efeito (não há
   texto vertical). As marcas não reservam espaço na linha: com
   `line-height` apertado, encostam na linha de cima. Veja
-  `tests/assets/131.html`.
+  `tests/assets/text-emphasis.html`.
 - UTF-8 em todo o pipeline; glifos ausentes na fonte não quebram nada.
   Texto vindo de fora (`tbox_html_parse`, `tbox_css_parse`,
   `tbox_html_node_set_attribute`/`_set_text_content` e paste) passa por
@@ -294,7 +295,7 @@ desenha a máscara com o mesmo shaper, então cursor e texto coincidem.
 - `<ruby>` desenha cada trecho de texto-base com seu `<rt>` centralizado
   acima. O `<rt>` usa metade do tamanho da fonte por padrão e `<rp>` fica
   oculto. A unidade ruby não quebra entre trechos. Veja
-  `tests/assets/114.html`.
+  `tests/assets/text-ruby.html`.
 
 ## O que não funciona (ainda)
 
@@ -358,10 +359,10 @@ altera o raster alfa atual. Valores inválidos são ignorados. Uma lista de
 `font-feature-settings` admite até 64 tags distintas (tags repetidas usam o
 último valor); nomes de paletas têm até 63 bytes.
 
-O fixture `tests/assets/150.html` compara algarismos proporcionais e tabulares,
+O fixture `tests/assets/text-font-face-and-opentype.html` compara algarismos proporcionais e tabulares,
 oldstyle, frações, ligaduras e small-caps OpenType a 24px. Usa um subset local
-da Roboto (família `Tbox150 Sans`, fallback `sans-serif`), com licença OFL em
-`150-font-license.txt`: a Liberation Sans embutida e a DejaVu Sans padrão do
+da Roboto (arquivo `opentype-sans.ttf`, família `Tbox OpenType Sans`, fallback
+`sans-serif`), com licença OFL em `opentype-sans-license.txt`: a Liberation Sans embutida e a DejaVu Sans padrão do
 Fontconfig não contêm todos os recursos usados nessa comparação.
 
 Sintaxes disponíveis:
@@ -418,7 +419,7 @@ auxiliar pertence à face e é liberado na próxima rasterização de contorno
 ou na destruição da face; não há novo estado global. O contorno não muda
 avanços, quebras de linha ou métricas; seus pixels extras participam do
 recorte, das camadas e do cálculo de dano. Fontes sem outlines vetoriais
-não produzem contorno. Veja `tests/assets/163.html`.
+não produzem contorno. Veja `tests/assets/text-stroke.html`.
 
 ## Capitulares e pontuação
 
@@ -449,7 +450,7 @@ não produzem contorno. Veja `tests/assets/163.html`.
   `src/base/tbox_unicode.c`. A direção continua horizontal LTR, como o
   restante do layout de texto.
 
-O fixture `162.html` compara `::first-letter` flutuante, capitulares de
+O fixture `text-initial-letter.html` compara `::first-letter` flutuante, capitulares de
 três linhas (sink 3 e 2), aspas penduradas e pontuação em texto justificado.
 O caminho comum de caixas anônimas também recebe esses estilos. `::first-letter`
 não se propaga por cadeias de blocos descendentes; aplique a regra ao bloco

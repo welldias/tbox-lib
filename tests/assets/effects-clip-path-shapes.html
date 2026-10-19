@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 13px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 20px 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      width: 760px;
+    }
+
+    .cell p {
+      margin: 0 0 3px;
+    }
+
+    .frame {
+      width: 170px;
+      height: 92px;
+      background: #d6deea;
+      position: relative;
+    }
+
+    .c {
+      width: 170px;
+      height: 92px;
+      background: linear-gradient(135deg, #2563eb, #db2777);
+      color: white;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+
+    .img { background: url(bird.png) center / cover; }
+    .i1 { clip-path: inset(10px 20px); }
+    .i2 { clip-path: inset(10% round 20px); }
+    .c1 { clip-path: circle(); }
+    .c2 { clip-path: circle(40px at 30% 40%); }
+    .e1 { clip-path: ellipse(); }
+    .e2 { clip-path: ellipse(60px 30px at right 20px bottom 30px); }
+    .xywh { clip-path: xywh(10% 10px 80% 80px round 15% / 20%); }
+    .inset-pct { clip-path: inset(10px 10% round 15% / 20%); }
+    .rect { clip-path: rect(10px 150px 82px 20px round 10% / 20%); }
+    .inset-rect { clip-path: inset(10px 20px 10px 20px round 10% / 20%); }
+    .rect-auto { clip-path: rect(auto auto auto 20px round 12px); }
+    .legacy { position: absolute; top: 0; left: 0; clip: rect(10px, 150px, 80px, 20px); }
+  </style>
+</head>
+
+<body>
+  <h1>clip-path basic shapes and the clip property</h1>
+  <div class="grid">
+    <div class="cell"><p>inset(10px 20px)</p><div class="c i1"></div></div>
+    <div class="cell"><p>inset(10% round 20px)</p><div class="c i2"></div></div>
+    <div class="cell"><p>circle()</p><div class="c img c1"></div></div>
+    <div class="cell"><p>circle(40px at 30% 40%)</p><div class="c c2">text that goes past the clip</div></div>
+    <div class="cell"><p>ellipse()</p><div class="c img e1"></div></div>
+    <div class="cell"><p>ellipse(... at right 20px bottom 30px)</p><div class="c e2"></div></div>
+    <div class="cell"><p>xywh(10% 10px 80% 80px round ...)</p><div class="frame"><div class="c xywh"></div></div></div>
+    <div class="cell"><p>inset(10px 10% round ...), same shape</p><div class="frame"><div class="c inset-pct"></div></div></div>
+    <div class="cell"><p>rect(10px 150px 90px 20px round ...)</p><div class="frame"><div class="c rect"></div></div></div>
+    <div class="cell"><p>inset(), same shape as rect()</p><div class="frame"><div class="c inset-rect"></div></div></div>
+    <div class="cell"><p>rect(auto ...): auto keeps the edge</p><div class="frame"><div class="c rect-auto"></div></div></div>
+    <div class="cell"><p>clip: rect() on an absolute box</p><div class="frame"><div class="c legacy"></div></div></div>
+  </div>
+</body>
+
+</html>

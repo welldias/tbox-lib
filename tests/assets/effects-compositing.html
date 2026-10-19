@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 14px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 20px 24px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 15px;
+      margin: 12px 0 6px;
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .card {
+      width: 110px;
+      padding: 8px;
+      background: #2563eb;
+      color: white;
+      font-weight: bold;
+    }
+
+    .faded { opacity: 0.5; }
+    .faded span { display: block; margin-top: 4px; padding: 3px; background: white; color: #2563eb; }
+    .blur { filter: blur(3px); }
+    .blur-gray { filter: blur(1px) grayscale(1); }
+
+    .tiles { position: relative; height: 54px; width: 420px; background: white; border: 1px solid #b5b5b5; }
+    .tile { position: absolute; top: 6px; width: 90px; height: 42px; background: #d9480f; color: white; font-weight: bold; padding: 4px; box-sizing: border-box; }
+    .o100 { left: 10px; }
+    .o60 { left: 110px; opacity: 0.6; }
+    .o30 { left: 210px; opacity: 30%; }
+    .o0 { left: 310px; opacity: 0; }
+
+    .hidden-panel { width: 300px; height: 40px; background: #ffe7e7; visibility: hidden; }
+    .hidden-panel p { margin: 0; }
+    .revealed { visibility: visible; }
+    .after { margin: 0; }
+
+    .stage { display: flex; gap: 10px; padding: 8px; background: repeating-linear-gradient(90deg, #fde047 0 20px, #0ea5e9 20px 40px); }
+    .stage div { width: 70px; height: 44px; background: #dc2626; color: white; font-size: 12px; padding: 4px; box-sizing: border-box; }
+    .multiply { mix-blend-mode: multiply; }
+    .screen { mix-blend-mode: screen; }
+    .difference { mix-blend-mode: difference; }
+    .stage .isolated { isolation: isolate; background: white; padding: 5px; }
+    .blend-tile { width: 120px; height: 44px; background: linear-gradient(90deg, #ef4444, #3b82f6), linear-gradient(#fde047, #fde047); background-blend-mode: multiply; }
+
+    .scene { background: #cbd5e1; padding: 6px; }
+    .stack { position: relative; width: 150px; height: 50px; padding: 6px; background: rgba(255, 255, 255, 0.6); }
+    .stack .under { position: absolute; z-index: -1; left: 40px; top: 24px; width: 90px; height: 36px; background: #f97316; }
+    .isolate { isolation: isolate; }
+  </style>
+</head>
+
+<body>
+  <h1>Compositing: opacity, visibility, blending and isolation</h1>
+  <h2>Group opacity (the white text stays white), blur() and blur + grayscale</h2>
+  <div class="row">
+    <div class="card faded">50%<span>text</span></div>
+    <div class="card blur">blur(3px)</div>
+    <div class="card blur-gray">blur + gray</div>
+  </div>
+  <h2>opacity: 1, 0.6, 30%, 0</h2>
+  <div class="tiles">
+    <div class="tile o100">1</div>
+    <div class="tile o60">0.6</div>
+    <div class="tile o30">30%</div>
+    <div class="tile o0">0</div>
+  </div>
+  <h2>visibility: hidden keeps its space; a visible child still shows</h2>
+  <div class="hidden-panel"><p>Hidden text and background</p><p class="revealed">Visible child inside hidden parent</p></div>
+  <p class="after">This line follows the reserved hidden space.</p>
+  <h2>mix-blend-mode, isolation and an isolated background-blend-mode</h2>
+  <div class="row">
+    <div class="stage">
+      <div class="multiply">multiply</div>
+      <div class="screen">screen</div>
+      <div class="difference">difference</div>
+      <div class="isolated"><div class="multiply" style="width: 60px">isolated</div></div>
+    </div>
+    <div class="blend-tile"></div>
+  </div>
+  <h2>isolation: without it the z-index: -1 child (orange) goes under the gray background</h2>
+  <div class="row scene">
+    <div class="stack">no isolation<div class="under"></div></div>
+    <div class="stack isolate">isolation: isolate<div class="under"></div></div>
+  </div>
+</body>
+
+</html>

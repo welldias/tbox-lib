@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 15px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 14px 0 8px;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      width: 760px;
+    }
+
+    .c {
+      width: 175px;
+      height: 54px;
+      padding: 6px;
+      box-sizing: border-box;
+      color: white;
+      font-size: 12px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .card {
+      width: 220px;
+      padding: 8px;
+      margin: 0;
+    }
+
+    .ink { color: #27786b; background: currentColor; }
+    .ink-longhand { color: #8b4b7f; background-color: currentColor; }
+    .ink-child { color: white; margin: 0; }
+    .scheme { color: light-dark(#0f172a, #f8fafc); background: light-dark(#f8fafc, #0f172a); border: 2px solid light-dark(#2563eb, #facc15); }
+    .scheme.light { color-scheme: light dark; }
+    .scheme.dark { color-scheme: dark; }
+  </style>
+</head>
+
+<body>
+  <h1>Modern color syntax (CSS Color 4/5)</h1>
+  <div class="grid">
+    <div class="c" style="background: rgb(37 99 235)">rgb(37 99 235)</div>
+    <div class="c" style="background: rgb(37 99 235 / 50%)">rgb(37 99 235 / 50%)</div>
+    <div class="c" style="background: hsl(150deg 70% 35%)">hsl(150deg 70% 35%)</div>
+    <div class="c" style="background: hsl(0.9turn 80 50 / .8)">hsl(0.9turn 80 50 / .8)</div>
+    <div class="c" style="background: hwb(30 10% 20%)">hwb(30 10% 20%)</div>
+    <div class="c" style="background: lab(45 60 -60)">lab(45 60 -60)</div>
+    <div class="c" style="background: lch(55 70 40)">lch(55 70 40)</div>
+    <div class="c" style="background: oklab(0.6 0.15 0.05)">oklab(0.6 0.15 0.05)</div>
+    <div class="c" style="background: oklch(0.65 0.2 145)">oklch(0.65 0.2 145)</div>
+  </div>
+  <p style="color: oklch(0.45 0.18 260); border-bottom: 3px solid rgb(220 38 38 / 60%)">Text in oklch with an rgb(... / 60%) border</p>
+  <h2>currentColor</h2>
+  <div class="row">
+    <div class="card ink"><p class="ink-child">background shorthand uses the text color</p></div>
+    <div class="card ink-longhand"><p class="ink-child">background-color longhand too</p></div>
+  </div>
+  <h2>color-scheme and light-dark()</h2>
+  <div class="row">
+    <p class="card scheme light">color-scheme: light dark (uses light)</p>
+    <p class="card scheme dark">color-scheme: dark</p>
+  </div>
+</body>
+
+</html>

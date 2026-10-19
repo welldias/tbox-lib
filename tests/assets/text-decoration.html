@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      font: 16px sans-serif;
+      background: #eef2f7;
+      color: #1e293b;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 24px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      font-size: 19px;
+    }
+
+    .overline { text-decoration: overline; text-decoration-color: #336699; }
+    .short { text-decoration: underline #d9480f 2px; }
+    .line { text-decoration: underline; text-decoration-line: line-through; text-decoration-color: #1c7ed6; }
+    .over-current { text-decoration: overline currentColor 3px; color: #2b8a3e; }
+    .offset { text-decoration: underline; text-underline-offset: 6px; }
+    .solid { text-decoration: underline solid #dc2626 2px; }
+    .dotted { text-decoration: underline overline #2563eb 2px; text-decoration-style: dotted; }
+    .dashed { text-decoration-line: underline line-through; text-decoration-color: #dc2626; text-decoration-style: dashed; }
+    .double { text-decoration-line: underline overline; text-decoration-color: #9333ea; text-decoration-style: double; }
+    .wavy { text-decoration: underline wavy #2563eb 2px; }
+    .wavy-strike { text-decoration: line-through wavy #16a34a 2px; }
+    .pos-auto { text-decoration: underline; text-underline-position: auto; }
+    .pos-under { text-decoration: underline; text-underline-position: under; }
+    .pos-offset { text-decoration: underline; text-underline-position: under; text-underline-offset: 2px; }
+  </style>
+</head>
+
+<body>
+  <h1>text-decoration</h1>
+  <div class="grid">
+    <p class="overline">Overline with a color</p>
+    <p class="short">underline #d9480f 2px</p>
+    <p class="line">text-decoration-line: line-through</p>
+    <p class="over-current">overline currentColor 3px</p>
+    <p class="offset">text-underline-offset: 6px</p>
+    <p class="solid">Solid 2px underline</p>
+    <p class="dotted">Dotted underline and overline</p>
+    <p class="dashed">Dashed underline and strike</p>
+    <p class="double">Double underline and overline</p>
+    <p class="wavy">Wavy underline</p>
+    <p class="wavy-strike">Wavy line-through</p>
+    <p class="pos-auto">Automatic position: gypq</p>
+    <p class="pos-under">Below the descenders: gypq</p>
+    <p class="pos-offset">Explicit offset wins: gypq</p>
+  </div>
+</body>
+
+</html>

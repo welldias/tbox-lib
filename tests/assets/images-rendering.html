@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      background: #eef2f7;
+      color: #1e293b;
+      font: 16px sans-serif;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    h2 {
+      margin: 14px 0 8px;
+      font-size: 17px;
+    }
+
+    p {
+      margin: 0 0 10px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .card {
+      padding: 8px;
+      background: white;
+      border: 1px solid #cbd5e1;
+    }
+
+    .label {
+      margin: 0 0 6px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    img {
+      display: block;
+      border: 2px solid #334155;
+      background: #dbeafe;
+    }
+
+    img { width: 144px; height: 144px; background: none; }
+    .pixelated { image-rendering: pixelated; }
+    .crisp { image-rendering: crisp-edges; }
+    .auto { image-rendering: auto; }
+  </style>
+</head>
+
+<body>
+  <h1>image-rendering</h1>
+  <p>The same 8 by 8 pixel image enlarged to 144 by 144.</p>
+  <div class="row">
+    <div class="card"><p class="label">auto: smooth</p><img src="pixel-heart.png" alt="Smooth heart"></div>
+    <div class="card"><p class="label">pixelated</p><img class="pixelated" src="pixel-heart.png" alt="Pixelated heart"></div>
+    <div class="card"><p class="label">crisp-edges</p><img class="crisp" src="pixel-heart.png" alt="Sharp heart"></div>
+    <div class="card pixelated"><p class="label">auto overrides inheritance</p><img class="auto" src="pixel-heart.png" alt="Smooth heart"></div>
+  </div>
+</body>
+
+</html>

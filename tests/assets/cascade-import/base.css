@@ -1,0 +1,4 @@
+/* Relative to cascade-import/, not to the document. */
+@import url(colors.css);
+
+.import-base { padding: 8px; background: #ccfbf1; }
