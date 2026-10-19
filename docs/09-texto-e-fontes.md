@@ -66,9 +66,9 @@ nunca as duas (ver [Plataformas e build](11-plataformas-e-build.md#dependências
 No HarfBuzz:
 
 - **A fonte é lida dos bytes que a face já guarda** (`hb_face` sobre o
-  mesmo buffer do `FT_Face`), sem `hb-ft`: o processo tem dois FreeType (o
-  estático do build e o do sistema, de que o HarfBuzz depende), e o `hb-ft`
-  chamaria o errado.
+  mesmo buffer do `FT_Face`), sem `hb-ft`. Essa integração é preservada com
+  o FreeType do sistema: as funções OpenType do HarfBuzz são combinadas com
+  o callback de avanços com hinting do FreeType.
 - **Avanços vêm do FreeType** (`FT_Load_Glyph`, com hinting) — os mesmos
   que o raster usa para os bitmaps; o HarfBuzz decide quais glifos e os
   deslocamentos (kerning, marcas).

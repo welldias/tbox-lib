@@ -9,6 +9,16 @@ Cada item: **decisão** — motivo (versão em que foi tomada). Itens marcados
 formato atual do código. O texto integral original de cada versão está em
 `git show fe51140:ARCHITECTURE.md`.
 
+## FreeType obrigatório do sistema
+
+O build usa `find_package(Freetype REQUIRED)` e o alvo importado
+`Freetype::Freetype` para a biblioteca, os exemplos e as ferramentas.
+FreeType continua responsável pelas métricas com hinting, rasterização e
+contornos; HarfBuzz permanece opcional para shaping. A instalação de
+desenvolvimento do FreeType é pré-requisito, sem download ou fallback via
+`FetchContent`. Isso elimina a compilação de uma cópia própria e permite
+usar a mesma biblioteca do sistema que atende Fontconfig e HarfBuzz.
+
 ## Gradientes cônicos e recortes poligonais
 
 Cônicos reutilizam `tbox_style_gradient`, com tipo CONIC, `angle` como
@@ -456,11 +466,12 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
 - **HarfBuzz como shaper opcional, em arquivo próprio**: pela regra de
   dependências, `tbox_font_shaper_harfbuzz.c` ou `tbox_font_shaper_simple.c`
   é compilado, nunca os dois, atrás de `src/font/tbox_font_face_internal.h`.
-  Sem `hb-ft`: o processo tem o FreeType estático do build e o do sistema
-  (de que o HarfBuzz depende), e o `hb-ft` chamaria o do sistema com um
-  `FT_Face` do nosso; o `hb_face` lê os bytes que a face já guarda e um
-  sub-font troca só o avanço pelo do nosso FreeType (com hinting, o mesmo dos
-  bitmaps). `hb_font`/`hb_buffer` ficam na face, sem estado global.
+  Na integração original, evitar `hb-ft` impedia misturar o FreeType estático
+  do build com o do sistema. Com FreeType obrigatório do sistema, esse
+  motivo fica superado, mas a integração é preservada: o `hb_face` lê os
+  bytes que a face já guarda e um sub-font troca só o avanço pelo do
+  FreeType (com hinting, o mesmo dos bitmaps). `hb_font`/`hb_buffer` ficam na
+  face, sem estado global.
   `letter-spacing` ≠ 0 desliga `liga`/`clig`/`dlig` e entra uma vez por
   cluster; `font-kerning: none` desliga `kern`. O medidor molda o trecho
   inteiro e reparte a largura de um cluster entre seus codepoints, como os

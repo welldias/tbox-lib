@@ -7,7 +7,8 @@
 ## Requisitos
 
 - Linux, compilador C com suporte a C23, CMake ≥ 4.0.
-- **FreeType**: baixado e compilado pelo próprio CMake.
+- **FreeType**: instalado no sistema, incluindo headers de desenvolvimento
+  (`freetype2` no Arch Linux; `libfreetype-dev` no Debian/Ubuntu).
 - **Fontconfig** (opcional): necessário para `tbox_app` e para screenshots.
 - **Wayland** (opcional): `wayland-client`, `wayland-protocols`,
   `wayland-scanner`, `xkbcommon` (e `wayland-cursor` para cursores CSS) para
@@ -74,9 +75,9 @@ cc -std=c23 -I tbox-lib/include ola.c -o ola \
    -L tbox-lib/build/src -ltbox -Wl,-rpath,"$PWD/tbox-lib/build/src"
 ```
 
-A `libtbox.so` já traz o FreeType embutido e suas dependências de sistema
-(Fontconfig, Wayland). Com a estática (`libtbox.a`) é preciso listar tudo à
-mão — FreeType do build e as bibliotecas que ele e os backends usam; veja
+A `libtbox.so` referencia as dependências de sistema usadas pelo build
+(FreeType e, quando habilitados, Fontconfig, HarfBuzz e Wayland). Com a
+estática (`libtbox.a`) é preciso listar essas dependências ao linkar; veja
 [Plataformas e build](11-plataformas-e-build.md#usar-em-outro-projeto).
 
 O projeto ainda não tem regras de `install`, arquivo `pkg-config` nem

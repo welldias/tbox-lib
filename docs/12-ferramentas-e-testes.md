@@ -78,6 +78,13 @@ cada fixture conta como falha operacional. O resultado da última
 comparação completa está em
 [Paridade com o Firefox](referencia/paridade-firefox.md).
 
+Esse relatório lista cada HTML atual uma vez, com veredito, SSIM,
+checagens locais reprovadas e observação da revisão visual. Registre também
+o ambiente (build, Firefox, fontes e tamanho): os números dependem dele.
+`EQUAL` admite diferenças dentro das tolerâncias e pode deixar passar um
+defeito localizado; uma captura inicial não valida hover, foco, popups,
+rolagem nem a evolução das animações.
+
 - Opcional: só é construído com OpenCV (C++) e Fontconfig, e só roda com
   o Firefox instalado.
 - Não faz parte do `ctest`. Vários fixtures usam features ainda não

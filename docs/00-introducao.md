@@ -42,7 +42,7 @@ ser recalculado e repintado.
   mundo, separam aparência de lógica e podem ser trocados sem recompilar
   (`tbox_app_load_from_files`).
 - **C puro e pequeno.** Sem runtime, sem coletor de lixo, sem motor de
-  navegador. Só o FreeType é obrigatório (baixado pelo build).
+  navegador. Só o FreeType é obrigatório (instalado no sistema).
 - **Sem GPU.** Rasterização em software; roda em qualquer hardware.
 - **Testável sem janela.** O pipeline inteiro funciona headless e é
   determinístico com a fonte embutida — dá para testar a UI em CI.

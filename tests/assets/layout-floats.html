@@ -17,12 +17,16 @@
       font: 14px/17px sans-serif;
     }
 
+    /* A grid, not inline-blocks: the white space between inline-blocks
+     * made Firefox wrap the second column. */
+    .cells {
+      display: grid;
+      grid-template-columns: 360px 360px;
+      gap: 4px 20px;
+    }
+
     .cell {
-      display: inline-block;
-      vertical-align: top;
-      width: 360px;
       height: 178px;
-      margin: 0 20px 4px 0;
     }
 
     .lbl {
@@ -122,63 +126,65 @@
 </head>
 
 <body>
-  <div class="cell">
-    <div class="lbl">float: left</div>
-    <div class="box">
-      <div class="fl"></div>
-      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
-        magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation.</p>
-    </div>
-  </div>
-  <div class="cell">
-    <div class="lbl">float: right</div>
-    <div class="box">
-      <div class="fr"></div>
-      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
-        magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation.</p>
-    </div>
-  </div>
-  <div class="cell">
-    <div class="lbl">three floats side by side</div>
-    <div class="box">
-      <div class="small a"></div>
-      <div class="small b"></div>
-      <div class="small c"></div>
-      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
-        magna aliqua.</p>
-    </div>
-  </div>
-  <div class="cell">
-    <div class="lbl">clear: both</div>
-    <div class="box">
-      <div class="fl"></div>
-      <div class="fr" style="height: 80px"></div>
-      <p>Lorem ipsum dolor sit amet.</p>
-      <div class="cleared">clear: both</div>
-    </div>
-  </div>
-  <div class="cell">
-    <div class="lbl">flow-root vs plain block</div>
-    <div class="pair">
-      <div class="wrap root">
-        <div class="tall"></div>
-        Lorem ipsum
+  <div class="cells">
+    <div class="cell">
+      <div class="lbl">float: left</div>
+      <div class="box">
+        <div class="fl"></div>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
+          magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation.</p>
       </div>
     </div>
-    <div class="pair">
-      <div class="wrap">
-        <div class="tall"></div>
-        Lorem ipsum
+    <div class="cell">
+      <div class="lbl">float: right</div>
+      <div class="box">
+        <div class="fr"></div>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
+          magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation.</p>
       </div>
-      <div class="under"></div>
     </div>
-  </div>
-  <div class="cell">
-    <div class="lbl">shape-outside: circle()</div>
-    <div class="box">
-      <div class="circle"></div>
-      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
-        magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+    <div class="cell">
+      <div class="lbl">three floats side by side</div>
+      <div class="box">
+        <div class="small a"></div>
+        <div class="small b"></div>
+        <div class="small c"></div>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
+          magna aliqua.</p>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="lbl">clear: both</div>
+      <div class="box">
+        <div class="fl"></div>
+        <div class="fr" style="height: 80px"></div>
+        <p>Lorem ipsum dolor sit amet.</p>
+        <div class="cleared">clear: both</div>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="lbl">flow-root vs plain block</div>
+      <div class="pair">
+        <div class="wrap root">
+          <div class="tall"></div>
+          Lorem ipsum
+        </div>
+      </div>
+      <div class="pair">
+        <div class="wrap">
+          <div class="tall"></div>
+          Lorem ipsum
+        </div>
+        <div class="under"></div>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="lbl">shape-outside: circle()</div>
+      <div class="box">
+        <div class="circle"></div>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore
+          magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+      </div>
     </div>
   </div>
 </body>

@@ -103,10 +103,7 @@ set_target_properties(css_cascade_origins PROPERTIES OUTPUT_NAME css_cascade_ori
 # example's own C source and behavior are unchanged; only how it's wired up
 # to those already-detected results is different.
 if(TBOX_WAYLAND_FOUND)
-    # FreeType is declared once in the root CMakeLists.txt (a core libtbox
-    # dependency now, not just an example concern) and made available before
-    # add_subdirectory(example) runs, so the `freetype` target already exists
-    # here -- just link it.
+    # The root CMakeLists.txt provides the system FreeType imported target.
     add_executable(tbox_wayland
         tbox_wayland.c
         "${TBOX_XDG_SHELL_PROTOCOL_C}"
@@ -125,7 +122,7 @@ if(TBOX_WAYLAND_FOUND)
     )
     target_link_libraries(tbox_wayland
         PRIVATE tbox tbox_warnings tbox_sanitizers
-                freetype
+                Freetype::Freetype
                 ${WAYLAND_CLIENT_LIBRARIES}
                 ${XKBCOMMON_LIBRARIES}
     )
@@ -166,7 +163,7 @@ if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
 
     target_link_libraries(tbox_app_demo
         PRIVATE tbox tbox_warnings tbox_sanitizers
-                freetype
+                Freetype::Freetype
                 ${WAYLAND_CLIENT_LIBRARIES}
                 ${XKBCOMMON_LIBRARIES}
                 ${FONTCONFIG_LIBRARIES}

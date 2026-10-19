@@ -50,29 +50,10 @@ if(TBOX_ENABLE_SANITIZERS)
     endif()
 endif()
 
-# FreeType is a core dependency of libtbox (the Fonte/Texto layer wraps
-# FT_Face for metrics/rasterization), not just an example concern -- it used
-# to be fetched only by example/CMakeLists.txt for the tbox_wayland smoke
-# test, but now src/ links it too, so it is declared once here, before
-# add_subdirectory(src), and reused by both. Fetched and built from source
-# (rather than found on the system) so its build can be forced to produce
-# only a static library, regardless of how the system package happens to be
-# built.
-include(FetchContent)
-
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
-FetchContent_Declare(freetype
-    GIT_REPOSITORY https://github.com/freetype/freetype.git
-    GIT_TAG VER-2-14-3
-)
-FetchContent_MakeAvailable(freetype)
-
-# Force PIC even though freetype is a static archive: tbox_shared (a .so)
-# links it in, and without this its object files aren't relocatable enough
-# for a shared object (surfaces as an "R_X86_64_PC32 ... recompile with
-# -fPIC" link error the moment anything actually calls into FreeType).
-set_target_properties(freetype PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# FreeType is required for font metrics, rasterization and outlines.
+# Use the system development package; the imported target supplies its
+# include paths and library to src/, examples and tools.
+find_package(Freetype REQUIRED)
 
 # Wayland/xkbcommon/wayland-scanner/xdg-shell protocol codegen detection --
 # used to live entirely in example/CMakeLists.txt (only tbox_wayland needed

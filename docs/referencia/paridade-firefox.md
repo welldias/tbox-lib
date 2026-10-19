@@ -1,229 +1,409 @@
 # Referência — paridade visual com o Firefox
 
-> - **Escopo:** resultado da comparação de todos os fixtures de `tests/assets/` renderizados pelo Firefox e pela tbox, e as correções feitas a partir dela.
+> - **Escopo:** comparação visual atual dos 114 fixtures de `tests/assets/`, com métricas por arquivo, diferenças observadas e limites da medição.
 > - **Código relacionado:** `tests/assets/`, `tests/tbox_cmp.cpp`
 > - **Veja também:** [Fixtures](fixtures.md), [Ferramentas e testes](../12-ferramentas-e-testes.md), [Débito técnico](../dev/debito-tecnico.md)
 
-Medição de 2026-10-19. Cada fixture foi capturado no Firefox 158 headless e
-renderizado pela tbox (`tbox_app_screenshot_from_files`), ambos em 800×600.
-O par foi comparado pelo `tbox_cmp`. **EQUAL/DIFFERENT** é o veredito dele,
-e o SSIM é só diagnóstico. A **nota** (0–10) e a **categoria** vêm de um
-agente testador, que olhou as capturas lado a lado antes das correções.
+## Medição e ambiente
 
-A versão com as imagens (Firefox, tbox e diferenças anotadas de cada
-fixture) está publicada como artifact:
-https://claude.ai/artifact/239uqseV43MdeKDrD9YXLP.
+Revalidação de **2026-10-19**, com os **114 HTML reorganizados por
+categoria** existentes em `tests/assets/`. Todos foram novamente capturados
+no Firefox e renderizados pela tbox; os 114 pares foram revisados visualmente.
+Não houve alteração dos fixtures, do comparador ou da biblioteca nesta
+revalidação.
 
-> Esta medição usa a numeração antiga dos fixtures (`001`…`163`, `a01`).
-> Depois dela os fixtures foram reorganizados por categoria; a tabela
-> antigo → novo está em [fixtures](fixtures.md#numeração-antiga).
+| Item | Valor desta execução |
+|---|---|
+| Referência | Mozilla Firefox 158.0, `/usr/bin/firefox`, headless |
+| Renderizador | `tbox_app_screenshot_from_files`, chamado pelo `tbox_cmp` |
+| Área capturada | 800×600 pixels em ambos |
+| Build | `build/`, Debug, sanitizers desligados |
+| Integrações | Fontconfig 2.18.3, HarfBuzz 14.6.0 e OpenCV 5.0.0 habilitados |
+| Fontes genéricas do ambiente | DejaVu Serif, DejaVu Sans e DejaVu Sans Mono (`fc-match`) |
+| Árvore medida | Base Git `2270a4e`, incluindo as alterações locais já presentes |
+| Recursos | Arquivos locais via `file://`, com perfil temporário próprio do Firefox |
 
-**Resultado:** 164 fixtures. São 72 EQUAL depois das correções;
-antes eram 66. Os fixtures anteriores não foram escritos para
-caber em 800×600, e vários mostram só o começo. Os dois desvios mais
-frequentes são escolhas documentadas, não defeitos:
-- a margem do primeiro filho não colapsa com a do pai;
-- as margens da folha UA são px fixos.
+Os números dependem dessas fontes, desse navegador e dos fixtures atuais.
+Eles não são diretamente comparáveis aos da antiga coleção de 164 HTML:
+a reorganização fundiu casos e mudou o espaço ocupado pelos exemplos.
 
-Eles deslocam o conteúdo de 5 a 20px em 29 fixtures.
+## Resultado
 
-## Correções feitas a partir da medição
+**114 comparações concluídas: 46 EQUAL, 68 DIFFERENT e zero falhas
+operacionais.** Os 25 grupos de testes do `ctest` também passaram.
 
-- **Quebra de linha:** oportunidades depois de `-` entre letras e depois de `/` (nunca antes de dígito nem em `//`), também no `min-content`. Fixtures 033, 086, 103, 116, 122.
-- **Tabelas:** layout automático por min/max-content com colunas `%` e fixas, tabela `width: auto` encolhendo ao conteúdo, linha `visibility: collapse` dimensionando colunas, `border-spacing: 2px` e `padding: 1px` na folha UA. Fixtures 025, 026, 027, 029, 072.
-- **`text-overflow`:** a reticência ou string vem colada ao texto cortado. Fixtures 068, 092.
-- **`image-rendering: auto`:** ampliação com filtro triangular (bilinear), sem overshoot. Fixtures 045, 052.
-- **Unidades `ex`/`ch`:** medidas na face da `font-family` por um provedor de métricas passado à Style (`tbox_style_font_metrics`). Fixtures 065.
-- **Folha UA de texto:** `pre` com `monospace` de 13px (tamanho derivado de palavra-chave, como no Gecko) e margem, quebra de linha inicial do `` descartada, `blockquote`/`figure` com recuo, `address` itálico, `abbr[title]` pontilhado, aspas em `q`, cor de link só em `a:any-link`, listas aninhadas com `circle`/`square` e sem margem. Fixtures 007, 012, 054, 118.
-- **Escolha de fonte:** `font-family` guarda a lista inteira e o cache tenta cada nome; o Fontconfig recusa substitutos fracos; a família padrão (serif) também no itálico. Fixtures 010, 011, 019.
-- **Posicionamento absoluto:** `width: auto` sem `left` e `right` juntos é shrink-to-fit, limitado ao espaço depois do deslocamento. Fixtures 083.
-- **Bordas:** 3D com a cor e a cor × 2/3 e cantos em diagonal; `dashed` com traço e intervalo de 3× e meio traço junto aos cantos; tracejado arredondado carimbado com quadrados. Fixtures 088, 099.
-- **`fieldset`/`legend`:** legenda no topo, borda pelo meio dela, conteúdo logo abaixo; folha UA alinhada à do Firefox. Fixtures 109.
-- **`` inline com borda:** padding, borda e margem ocupam espaço na linha e são pintados; a imagem fica no content box. Fixtures 103.
-- **`text-emphasis` herdado:** as marcas chegam ao texto anônimo do bloco. Fixtures 131.
-- **Decoração em link:** `text-decoration` se propaga a descendentes e ao texto anônimo (o alt text de imagem dentro de `` e links em bloco ganham sublinhado). Fixtures 023, 054.
+| Área | Fixtures | EQUAL | DIFFERENT |
+|---|---:|---:|---:|
+| HTML | 10 | 3 | 7 |
+| Cores | 5 | 1 | 4 |
+| Caixa | 11 | 10 | 1 |
+| Texto e fontes | 22 | 8 | 14 |
+| Listas e conteúdo gerado | 5 | 3 | 2 |
+| Seletores | 5 | 1 | 4 |
+| Cascata e at-rules | 7 | 3 | 4 |
+| Unidades e funções | 4 | 1 | 3 |
+| Fundos | 7 | 4 | 3 |
+| Layout | 14 | 7 | 7 |
+| Efeitos | 10 | 4 | 6 |
+| Animação | 2 | 0 | 2 |
+| Interação | 2 | 1 | 1 |
+| Formulários | 7 | 0 | 7 |
+| Imagens | 3 | 0 | 3 |
+| **Total** | **114** | **46** | **68** |
 
-## Pendências
+### Como interpretar
 
-- Escolhas documentadas que continuam: sem colapso de margem pai/filho e margens da folha UA em px fixo.
-- `` usa a fonte do documento (app nativo), não a monoespaçada, e quebra palavra longa em qualquer caractere.
-- Espaço em branco entre `inline-block`/imagens sem largura; `` sozinho entre blocos; blur de `box-shadow`; fundo do `body` não propagado (débitos anteriores).
-- Fallback de fonte por glifo, layout de tabela aproximado e padrão de `dashed` medido no Firefox (registrados em `debito-tecnico.md`).
+`EQUAL` significa que o par passou nas tolerâncias do comparador, não que
+os pixels ou todos os comportamentos coincidem. As checagens de conteúdo
+e bordas permitem proximidade de 8px e exigem cobertura mínima de 80%;
+checagens de cor também participam do veredito. O **SSIM é diagnóstico**:
+não há um limiar de SSIM que decida EQUAL/DIFFERENT.
 
-## CSS faltante (148–163)
+Dois exemplos mostram por que as capturas precisam ser revisadas:
+`html-tables` passa com SSIM 0,5642, enquanto `text-bidi` fica DIFFERENT
+com 0,9586. `layout-multicol` passa, mesmo com bordas indevidas por linha.
+Assim, os 46 EQUAL não representam uma porcentagem de conformidade CSS/HTML.
 
-| Fixture | Tarefa | Nota | Antes | Agora | SSIM |
-|---|---|---|---|---|---|
-| 148 | T01 · border-image | 9 | EQUAL | EQUAL | 0,9773 |
-| 149 | T02 · Transformações | 9 | EQUAL | EQUAL | 0,9863 |
-| 150 | T03 · Recursos OpenType | 9 | EQUAL | EQUAL | 0,8877 |
-| 151 | T04 · CSS Grid | 9,5 | EQUAL | EQUAL | 0,8417 |
-| 152 | T04 · CSS Grid | 9,5 | EQUAL | EQUAL | 0,8196 |
-| 153 | T05 · @scope, @property, @counter-style | 9 | EQUAL | EQUAL | 0,8751 |
-| 154 | T06 · Floats | 9 | EQUAL | EQUAL | 0,9230 |
-| 155 | T07 · Multicoluna | 9 | EQUAL | EQUAL | 0,9514 |
-| 156 | T08 · Container queries | 10 | EQUAL | EQUAL | 0,9992 |
-| 157 | T09 · Máscaras, reflexo, box-decoration-break | 9 | DIFFERENT | DIFFERENT | 0,9428 |
-| 158 | T10 · zoom e resize | 9 | EQUAL | EQUAL | 0,9740 |
-| 159 | T11 · Texto bidirecional | 9,5 | DIFFERENT | DIFFERENT | 0,9588 |
-| 160 | T12 · Escrita vertical | 9 | EQUAL | EQUAL | 0,9527 |
-| 161 | T13 · Motion path | 10 | EQUAL | EQUAL | 0,9802 |
-| 162 | T14 · Capitulares e pontuação pendurada | 8 | DIFFERENT | DIFFERENT | 0,8085 |
-| 163 | T15 · Contorno de texto, SVG e impressão | 9 | EQUAL | EQUAL | 0,9737 |
+A categoria de cada fixture descreve a diferença principal observada no
+recurso mostrado. **Recurso equivalente** admite as diferenças comuns de
+canvas, texto e rasterização descritas abaixo; não significa igualdade da
+página inteira. As categorias são qualitativas e não substituem as métricas.
 
-154 e 155 foram medidos com o HTML aprovado pelo testador. O arquivo atual
-foi reformatado, e o espaço em branco entre os `inline-block` faz o Firefox
-empilhar as células.
+| Categoria | Fixtures | Interpretação |
+|---|---:|---|
+| Recurso equivalente | 46 | O recurso mostrado tem desenho comparável; persistem diferenças comuns de texto, rasterização ou canvas. |
+| Fonte e métricas | 21 | Larguras ou alturas de linha mudam quebras e posições. |
+| Escolha documentada | 16 | Margens, fonte de controles ou barras seguem decisões já registradas. |
+| Tema dos controles | 10 | Aparência própria, dimensões ou partes de controles diferentes. |
+| Referência e ambiente | 7 | Diferença de aceitação/suporte ou do ambiente de captura; não determina qual implementação está conforme. |
+| Tempo ou interação | 2 | O instante de captura difere ou o comportamento exige entrada. |
+| Débito conhecido | 3 | Diferença já descrita no débito técnico, incluindo quebra de textarea. |
+| Defeito observado | 9 | Desvio visual concreto da tbox, ainda aberto; ver lista abaixo. |
 
-## Fixtures anteriores (001–147, a01)
+## Diferenças que se repetem
 
-| Fixture | Recurso | Categoria | Nota | Antes | Agora | SSIM | O que o testador viu |
-|---|---|---|---|---|---|---|---|
-| 001 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,9684 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px): todos os títulos começam 8px mais abaixo no tbox (h1 em y=49 contra 41), e os espaços entre títulos ficam 1-2px menores. Cores e tamanhos iguais. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 002 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,9678 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px) (h1 8px mais baixo); hierarquia h1/h2/h3 e tamanhos equivalentes. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 003 | caso geral | escolha documentada | 6 | DIFFERENT | DIFFERENT | 0,9158 | Margens em em dos UA (h1 0.67em, p 1em) parecem ser resolvidas contra o font-size herdado, não o do elemento com font-size inline: h1 de 60px tem margens de ~21px em vez de ~40px, e o parágrafo sobe ~32px (y=129 contra 161). (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 004 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,8655 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px): os três parágrafos ficam 8px mais baixos; quebra de linha e espaçamento entre parágrafos equivalentes. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 005 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,8925 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px) (+8px no h1); hr e títulos equivalentes, hr 6px mais baixo no primeiro e ~3px no segundo. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 006 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,9866 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px): parágrafo com br 8px mais baixo; as três linhas quebram igual. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 007 | caso geral | defeito corrigido | 6 | DIFFERENT | DIFFERENT | 0,9335 | O pre usa monospace de 16px no tbox; o Firefox usa 13px (escala padrão de monospace), então texto maior e linhas mais espaçadas (38px contra 30px). Mais o deslocamento de 8px do body. **Corrigido:** Folha UA de texto. |
-| 008 | caso geral | escolha documentada | 6 | DIFFERENT | DIFFERENT | 0,9644 | Margem 1em do p com font-size:50px é resolvida com 16px (deveria ser 50px): 'I am big' fica ~27px mais acima no tbox. Mais o deslocamento de 8px do body. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 009 | caso geral | débito conhecido | 5 | DIFFERENT | DIFFERENT | 0,8919 | fundo do body: o powderblue do body não preenche a janela (só o retângulo do conteúdo, a partir de y=8). Também o deslocamento de 8px do primeiro filho e o parágrafo tomato com fundo igual. |
-| 010 | caso geral | defeito corrigido | 5 | DIFFERENT | DIFFERENT | 0,8912 | font-family:verdana (não instalada) cai em sans-serif no tbox, enquanto o Firefox cai na fonte serifada padrão; títulos com font-size:300% e parágrafo 160% com margens em em subdimensionadas (título grande ~9px mais acima). Courier e text-align:center corretos. **Corrigido:** Escolha de fonte. |
-| 011 | caso geral | defeito corrigido | 7 | DIFFERENT | DIFFERENT | 0,8998 | i/em saem em itálico sem serifa (DejaVu Sans Oblique) enquanto o Firefox usa serifada itálica; negrito, mark, del, ins, sub e sup equivalentes. Mais o deslocamento de 8px e ~6px extras antes do último parágrafo. **Corrigido:** Escolha de fonte. |
-| 012 | caso geral | defeito corrigido | 5 | EQUAL | EQUAL | 0,7310 | Faltam estilos UA: blockquote sem recuo lateral de 40px; q sem aspas tipográficas; abbr[title] sem sublinhado pontilhado; address sem itálico. cite em itálico e bdo rtl corretos. **Corrigido:** Folha UA de texto. |
-| 013 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,9546 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px): cinco parágrafos 8px mais baixos; comentários HTML ignorados corretamente. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 014 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,6311 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px) (+8px), e as caixas h1 saem 1px mais baixas e com ~2px menos de passo. Cores corretas, fundo cobre a largura útil igual. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 015 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,7198 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px) (+8px), com deriva de ~2px no fim; bordas, rgb/hex/hsl e alfa com cores equivalentes. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 016 | caso geral | escolha documentada | 7 | DIFFERENT | DIFFERENT | 0,6087 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px) (+8px); cores rgb e rgba equivalentes. A página passa de 600px de altura em ambos (fixture cortado), então só dá para comparar as primeiras 9 linhas. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 017 | caso geral | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,9570 | Spans inline com cores hex e alfa quebrando em linhas iguais; sem diferença relevante (não há margem de bloco a colapsar). |
-| 018 | caso geral | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,8241 | Cores hsl/hsla e quebras de linha equivalentes; diferenças de 1-2px na posição das quebras por métrica de fonte (ex.: 'hsl(0, 100%, 100%)' quebra em ponto ligeiramente distinto). |
-| 019 | caso geral | defeito corrigido | 6 | DIFFERENT | DIFFERENT | 0,9541 | font-family:verdana via folha de estilo cai em sans-serif no tbox, enquanto o Firefox usa serifada (fallback diferente para família não instalada); h1 sai 8px e o parágrafo ~18px mais acima por margens em em subdimensionadas (font-size 300%/160%). Cores e courier corretas. **Corrigido:** Escolha de fonte. |
-| 020 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,8530 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px) (+8px); bordas de 2px powderblue nos parágrafos equivalentes, com passo vertical ~2px menor. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 021 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,8365 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px) (+8px no h1, +6px nas caixas); padding de 30px e bordas equivalentes. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 022 | caso geral | escolha documentada | 7 | EQUAL | EQUAL | 0,8639 | Margem superior do primeiro filho do body não colapsa com a margem do body (8px) (+8px no h1, +7px nas caixas); margin:50px lateral e entre parágrafos equivalente. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 023 | caso geral | defeito corrigido | 7 | EQUAL | EQUAL | 0,9375 | Links, títulos e botão equivalentes (botão = controles, tema próprio). Diferença real: o alt text do link com imagem ausente ('HTML tutorial') não é sublinhado no tbox. Deslocamento vertical de ~3px nos títulos. **Corrigido:** Decoração em link. |
-| 024 | caso geral | limite do fixture | 7 | EQUAL | EQUAL | 0,9468 | O fixture passa de 600px (bird.png 600x500 cortada nos dois). Diferença de ~5px de deslocamento vertical (margem do h2 com o body) e do alt text 'Image not found'; imagens com tamanhos e posições equivalentes. Floats ficam fora da área capturada. |
-| 025 | caso geral | defeito corrigido | 6 | DIFFERENT | EQUAL | 0,8200 | Tabela sem border-spacing padrão de 2px: o Firefox mostra bordas duplas separadas, o tbox mostra bordas coladas/compartilhadas de 1px; larguras de coluna (405/241/139 contra 408/236/130) e altura das linhas (~29px contra 25px) diferentes. Mais o deslocamento de 8px. **Corrigido:** Tabelas. |
-| 026 | caso geral | defeito corrigido | 6 | DIFFERENT | EQUAL | 0,8261 | Tabela: padding padrao de td/th do tbox e maior que o do Firefox (1px): texto a 5px da borda esquerda (Firefox 2px) e linhas com 29px de altura contra 22px. Titulo h2 8px mais baixo: a margem superior do primeiro filho nao colapsa com a do body. Fundo do body so cobre o body. **Corrigido:** Tabelas. |
-| 027 | caso geral | defeito corrigido | 6 | DIFFERENT | EQUAL | 0,8252 | Mesmos desvios de 026 (padding de celula e linhas 29px contra 22px). Alem disso a coluna com width:70% sai com ~75% (588px contra 548px) e as colunas restantes ficam mais estreitas (124px contra 167px). **Corrigido:** Tabelas. |
-| 028 | caso geral | débito conhecido | 8 | DIFFERENT | DIFFERENT | 0,8793 | Caixa, outline, word-spacing, text-indent e overline equivalentes. Diferencas: fundo do body nao propagado e deslocamento vertical de ~6-8px no topo (margem do h2 nao colapsa com a do body). |
-| 029 | caso geral | defeito corrigido | 7 | DIFFERENT | DIFFERENT | 0,9071 | Min/max-width e outline-offset iguais. A tabela sem border-collapse nao tem border-spacing padrao de 2px: celulas coladas e tabela 2px mais a esquerda; 'Other cell' nao quebra em duas linhas como no Firefox. Fundo do body so no body. **Corrigido:** Tabelas. |
-| 030 | caso geral | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,8277 | box-sizing, line-height, letter-spacing, visibility e ellipsis equivalentes; so metricas de fonte (deslocamento vertical de 3-8px acumulado) e fundo do body nao propagado. |
-| 031 | caso geral | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,7496 | min-height, max-height com scroll (scrollbar fina), currentColor e pesos equivalentes. Deslocamento vertical de ~5px e metrica de fonte; fundo do body nao propagado. |
-| 032 | caso geral | fonte/antialiasing | 9 | DIFFERENT | DIFFERENT | 0,7874 | Palavras-chave de font-size e border-radius individuais com sombra iguais; so deslocamento vertical de 1-8px e metrica de fonte. |
-| 033 | caso geral | defeito corrigido | 6 | DIFFERENT | DIFFERENT | 0,7618 | tbox nao oferece quebra de linha apos '/' em URLs: em 'Default overflow' a URL fica numa linha so (Firefox quebra depois de 'example.com/'), e com overflow-wrap:break-word quebra no meio da palavra em vez de depois da barra. Paineis ficam mais baixos. Nowrap e botao com overlay equivalentes. **Corrigido:** Quebra de linha. |
-| 034 | caso geral | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,7901 | inset, margens logicas, bolder/lighter, overflow clip/scroll (scrollbar fina), border hidden equivalentes na parte visivel; fundo do body nao propagado e leve deslocamento vertical. Parte inferior do fixture fica fora de 800x600. |
-| 035 | caso geral | débito conhecido | 8 | DIFFERENT | DIFFERENT | 0,8084 | list-style, text-transform e text-shadow equivalentes. box-shadow com blur/spread: sombra do cartao central mais larga e a de spread negativo mais clara e larga (sombra). Deslocamento vertical de ~5px por fonte. |
-| 036 | caso geral | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,7712 | white-space, opacity e bordas por lado equivalentes; so metrica de fonte (~4px de deslocamento) e fundo do body nao propagado. |
-| 037 | caso geral | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,7252 | Bordas dashed/dotted/double/mista, outline, raios em porcentagem, font shorthand e inset equivalentes. No text-align:justify o tbox coloca 'except' na segunda linha (quebra diferente por metrica de fonte de 1-3px). |
-| 038 | caso geral | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,7414 | inline-block, vertical-align, cards shrink-to-fit e tags centralizadas equivalentes; so metrica de fonte (deslocamento de 2-5px) e fundo do body nao propagado. |
-| 039 | caso geral | fonte/antialiasing | 9 | DIFFERENT | DIFFERENT | 0,7276 | Flexbox (grow, space-between/evenly, center, wrap, baseline, row-reverse) com geometria equivalente; so deslocamento vertical de 1-7px. Layout de aplicacao fica abaixo de 600px. |
-| 040 | `object-fit` em imagens | tema dos controles | 8 | DIFFERENT | DIFFERENT | 0,7605 | Bordas logicas, pseudoclasses, decoracao de texto equivalentes. Inputs do tbox bem maiores (254px de largura contra 196px, fonte 16px contra 13px do Firefox). Object-fit fica fora do recorte de 600px. |
-| 041 | `object-position` | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,7777 | object-position com cover e contain equivalente; deslocamento vertical de 1-3px. Fundo do body so aparece parcialmente no tbox fora do corte visivel. |
-| 042 | `background-clip` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9058 | background-clip border/padding/content com e sem raio equivalente; apenas fundo do body nao propagado abaixo do conteudo (area branca no tbox). |
-| 043 | `object-fit: none` e `scale-down` | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,7059 | object-fit none/scale-down/contain equivalente em caixa pequena e grande; diferenca de 1-3px vertical. |
-| 044 | `:root`, `:first-of-type`, `:last-of-type`, `:only-of-type` | débito conhecido | 9 | DIFFERENT | DIFFERENT | 0,8434 | Seletores first/last/only-of-type equivalentes. O fundo vem de :root e o tbox pinta so ate o fim do body (faixa branca abaixo): mesma causa do fundo do body. |
-| 045 | `image-rendering: pixelated` | defeito corrigido | 7 | DIFFERENT | DIFFERENT | 0,8933 | pixelated correto. Em image-rendering:auto a ampliacao 8x8 para 144x144 do tbox gera pontos vermelhos escuros (overshoot, filtro tipo bicubico/lanczos) em vez do gradiente suave do Firefox (interpolacao bilinear). **Corrigido:** `image-rendering: auto`. |
-| 046 | `:nth-child()`, `:nth-of-type()` | débito conhecido | 9 | EQUAL | EQUAL | 0,8147 | nth-child e nth-of-type iguais; so o fundo do body nao propagado (faixa branca abaixo) e 2px de deslocamento. |
-| 047 | `:nth-last-child()`, `:nth-last-of-type()` | débito conhecido | 9 | DIFFERENT | DIFFERENT | 0,8482 | nth-last-child e nth-last-of-type iguais; so fundo do body nao propagado e 2-3px de deslocamento. |
-| 048 | combinador `~` | débito conhecido | 9 | DIFFERENT | DIFFERENT | 0,8651 | Combinador ~ igual; so fundo do body nao propagado e 1-2px de deslocamento. |
-| 049 | `:not()` | débito conhecido | 9 | DIFFERENT | DIFFERENT | 0,9259 | Seletor :not() igual (bordas e fundos corretos); so fundo do body nao propagado. |
-| 050 | `:required`, `:optional` | tema dos controles | 8 | DIFFERENT | DIFFERENT | 0,8648 | Estados :required/:optional com as cores certas. Inputs com 2px mais altos e textarea 54px contra 48px, fonte sans em vez de monospace do Firefox na textarea e sem alca de redimensionar; fundo do body nao propagado. |
-| 051 | `:lang()` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9403 | Cores e geometria dos itens :lang() iguais (verde, verde, azul, cinza); apenas o fundo do body não cobre a janela inteira e há deslocamento de 1px. |
-| 052 | `image-rendering: crisp-edges` | defeito corrigido | 6 | DIFFERENT | DIFFERENT | 0,8894 | crisp-edges e pixelated iguais ao Firefox; em 'auto' o tbox amplia 8x8 com artefatos (pontos vermelhos escuros nos centros dos pixels) em vez do borrão suave uniforme do Firefox; provável erro de interpolação/pré-multiplicação no upscaling bilinear. **Corrigido:** `image-rendering: auto`. |
-| 053 | `:focus-within` | tema dos controles | 7 | DIFFERENT | DIFFERENT | 0,9267 | Cartões e inputs na mesma posição; inputs do tbox têm fonte maior (16px contra ~13px) e tema próprio, cartões um pouco mais largos (~30px). O estado :focus-within só aparece com foco (não aparece na captura estática). |
-| 054 | `:link`, `:any-link` | defeito corrigido | 6 | EQUAL | EQUAL | 0,9541 | O link sem href ('Sem href: cinza') sai azul puro no tbox; no Firefox fica com a cor herdada (preto). A regra a:link não deveria casar e o UA do tbox aplica cor de link a todo <a>. Links com href também não têm sublinhado no tbox (padrão de app). **Corrigido:** Folha UA de texto; Decoração em link. |
-| 055 | `list-style-type: decimal-leading-zero` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9386 | Marcadores decimal-leading-zero idênticos; cartão ~6px mais alto/largo por métrica de fonte. |
-| 056 | seletores de atributo `^=`, `$=`, `*=` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9303 | Seletores ^=, $= e *= aplicam as mesmas bordas, fundos e cores nos quatro itens; diferença apenas de 1-2px de métrica. |
-| 057 | `text-decoration-style: wavy` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9425 | Os três estilos (sólido, ondulado, risco ondulado) aparecem como no Firefox; ondulação do tbox é um pouco mais baixa/fina e cartão ~7px mais baixo. |
-| 058 | `overflow-wrap: anywhere` | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,9146 | break-word igual; em 'anywhere' a quebra ocorre em 'expialid\|ocious' no tbox contra 'expiali\|docious' no Firefox, por pequena diferença de largura da fonte; layout flex com largura mínima reduzida funciona. |
-| 059 | `inline-size`, `block-size` | sem diferença relevante | 10 | EQUAL | EQUAL | 0,9370 | inline-size/block-size produzem as mesmas caixas (280x80 e 220 de largura); só ~2px de deslocamento vertical. |
-| 060 | min/max lógicos (`min-inline-size` etc.) | sem diferença relevante | 10 | EQUAL | EQUAL | 0,9691 | min/max-inline-size e block-size iguais ao Firefox (260x75 e 240x50). |
-| 061 | `border-block`, `border-inline` | sem diferença relevante | 10 | EQUAL | EQUAL | 0,9130 | border-block, border-inline e override por border-top idênticos, inclusive o tracejado verde. |
-| 062 | `text-underline-position: under` | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,8341 | Os três sublinhados (auto, under, com offset) aparecem com posições equivalentes; diferença é só a altura do título em duas linhas (~9px) por métrica de fonte. |
-| 063 | `:hover` em ancestrais | sem diferença relevante | 10 | EQUAL | EQUAL | 0,9338 | Estrutura do cartão e da área interna igual; :hover só se vê com o ponteiro (captura estática igual), diferença de 2px. |
-| 064 | modificador `i` em seletores de atributo | sem diferença relevante | 10 | EQUAL | EQUAL | 0,8936 | Modificador i casa Alpha e prefixo 'be' (verde e azul) e o terceiro permanece neutro, como no Firefox; o seletor sem i não casa (texto não fica vermelho). |
-| 065 | unidades `rem`, `ex`, `ch`, `pt`, `pc`, `in`, `cm`, `mm`, `Q`,… | defeito corrigido | 7 | EQUAL | EQUAL | 0,9008 | rem, pt, pc, in, cm, mm, vw, vh e vmin batem com o Firefox (300, 288, 227, 189, 400, 120, 180px); a unidade ch está errada: 40ch dá 260px no tbox contra ~331px no Firefox, ou seja ch usa ~0,5em em vez da largura do glifo '0'. **Corrigido:** Unidades `ex`/`ch`. |
-| 066 | `calc()` | débito conhecido | 7 | DIFFERENT | DIFFERENT | 0,7993 | calc() de largura, margem e font-size corretos; os três inline-blocks de calc((100% - 30px)/3) ficam na mesma linha no tbox e no Firefox quebram (2+1) por causa do espaço entre inline-block. |
-| 067 | `inherit`, `initial`, `unset` (`revert`) | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,6360 | inherit, initial, unset e revert se comportam igual (borda tracejada herdada, 16px preto, border-width inicial, fundo transparente, texto centralizado); só deslocamentos de 2-4px por métrica de fonte. |
-| 068 | `overflow-x` e `overflow` com dois valores | defeito corrigido | 8 | DIFFERENT | DIFFERENT | 0,9104 | overflow-x hidden/clip/visible iguais; em text-overflow: ellipsis o tbox corta em fronteira de palavra e mostra 'text-o ...' com espaço antes das reticências, enquanto o Firefox corta no caractere ('text-o…', reticências coladas). **Corrigido:** `text-overflow`. |
-| 069 | `text-align-last` | sem diferença relevante | 10 | EQUAL | EQUAL | 0,8851 | text-align-last auto/center/right/justify e combinação com text-align: center idênticos ao Firefox. |
-| 070 | `white-space: break-spaces`, `tab-size` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,8550 | pre-wrap, break-spaces, tab-size 2/8/48px e keep-all equivalentes; diferença de 1px e rodapé do body. |
-| 071 | `list-style-position` | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,8532 | list-style-position outside/inside, shorthand square inside e upper-roman iguais; marcadores e quebras conferem. |
-| 072 | `empty-cells: hide`, `table-layout: fixed`, linhas `visibility:… | defeito corrigido | 4 | DIFFERENT | EQUAL | 0,8754 | Tabelas com width:auto esticam até a largura do container no tbox (as duas de empty-cells e a de visibility ocupam ~730px) em vez de encolher ao conteúdo; no layout auto de 500px o Firefox dá largura por conteúdo (curto estreito, texto longo em uma linha) e o tbox distribui colunas quase iguais com quebra em 3 linhas. empty-cells: hide e visibility: collapse funcionam. **Corrigido:** Tabelas. |
-| 073 | `aspect-ratio` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,8939 | aspect-ratio 1/1, 16/9, 1/2, border-box 2/1, crescimento por conteúdo e bloco auto 5/1 com as mesmas proporções; só ~1-7px de diferença vertical por métrica. |
-| 074 | `cursor`, `user-select` | só com interação | 9 | EQUAL | EQUAL | 0,8960 | Grade de caixas idêntica; os cursores só aparecem com o mouse sobre cada caixa e a captura estática não os mostra. |
-| 075 | `border-radius` elíptico | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9289 | border-radius elíptico (40px/20px, 50%, 10px 60px/40px 10px, longhands, com borda, 100% 0/100% 0) com as mesmas formas; borda do 3º cartão tem pequena imprecisão nas pontas. |
-| 076 | `background-image`, `-size`, `-position`, `-repeat` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,8596 | Todos os blocos de background (repeat, no-repeat, cover, contain, posicao, repeat-x, border-radius, content-box) batem. So o fundo do body nao propagado (conhecido). |
-| 077 | `linear-gradient()`, `radial-gradient()`, `repeating-*` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,8821 | Gradientes lineares, radiais e repetidos equivalentes em cor e geometria; unica diferenca e o fundo do body fora da area do conteudo (conhecido). |
-| 078 | listas de `box-shadow` (com `inset`) e `text-shadow` | débito conhecido | 7 | DIFFERENT | DIFFERENT | 0,8998 | Sombras multiplas e inset batem; a sombra difusa de 'externa + inset' sai mais larga e acinzentada que no Firefox (sombra). text-shadow equivalente. |
-| 079 | `z-index` e contextos de empilhamento | sem diferença relevante | 9 | EQUAL | EQUAL | 0,8775 | Ordem de empilhamento por z-index identica nos dois contextos; deslocamento de 1px vertical apenas. |
-| 080 | `font-weight` numérico, `font-stretch` | fonte/antialiasing | 9 | DIFFERENT | DIFFERENT | 0,8508 | Pesos 100-900 e font-stretch renderizados de forma equivalente; linhas ficam 1px mais compactas no tbox (28 contra 29px). |
-| 081 | `font-variant: small-caps` | fonte/antialiasing | 8 | EQUAL | EQUAL | 0,8615 | Small-caps sintetizado equivalente; no item em negrito azul as versaletes do tbox saem um pouco menores e os blocos 1px mais baixos. |
-| 082 | `line-clamp` | N/A no Firefox | 7 | DIFFERENT | DIFFERENT | 0,7908 | O Firefox nao implementa line-clamp sem prefixo: os cards c3 e c1 aparecem sem corte, enquanto o tbox aplica reticencias. No -webkit-line-clamp: 2 o Firefox deixa a terceira linha espiando; o tbox corta exatamente em duas. |
-| 083 | `transform: translate*()`, `translate` | defeito corrigido | 5 | DIFFERENT | EQUAL | 0,9218 | No bloco 'centrado com -50% -50%' o span absolute com left:50% fica com 300px de largura (nao e shrink-to-fit limitado ao espaco restante de 150px, nao quebra em duas linhas) e o translate -50% o empurra para x=0. Os demais translate batem. **Corrigido:** Posicionamento absoluto. |
-| 084 | cores CSS 4/5 (`hwb`, `lab`, `lch`, `oklab`, `oklch`, `color-mix`) | sem diferença relevante | 9 | EQUAL | EQUAL | 0,8716 | Todas as sintaxes de cor (rgb, hsl, hwb, lab, lch, oklab, oklch, color-mix) produzem as mesmas cores do Firefox. |
-| 085 | `min()`, `max()`, `clamp()` | fonte/antialiasing | 9 | DIFFERENT | DIFFERENT | 0,7647 | min(), max() e clamp() dao as mesmas larguras; barras 1px mais baixas por metrica de fonte. |
-| 086 | `width: min-content / max-content / fit-content` | defeito corrigido | 7 | DIFFERENT | DIFFERENT | 0,7993 | Em width:min-content o Firefox quebra 'min-content:' no hifen ('min-' / 'content:'), dando caixa de ~77px; o tbox nao quebra no hifen e a caixa fica com ~112px. Mesmo efeito no item flex com min-content. **Corrigido:** Quebra de linha. |
-| 087 | `place-content`, `place-items`, `place-self` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9120 | place-content, place-items e place-self posicionam os itens de forma identica nos quatro quadros. |
-| 088 | bordas e contornos `groove`, `ridge`, `inset`, `outset` | defeito corrigido | 6 | DIFFERENT | EQUAL | 0,8984 | Bordas groove/ridge/inset/outset: o tbox usa tons claro/escuro bem mais contrastados que o Firefox e junta os lados em esquadro, sem a emenda diagonal nos cantos. Botao e outline ridge proximos. **Corrigido:** Bordas. |
-| 089 | `scrollbar-color`, `scrollbar-width` | débito conhecido | 9 | DIFFERENT | DIFFERENT | 0,9071 | scrollbar-color e scrollbar-width batem; no caixa 'padrao' o tbox mostra a scrollbar fina por padrao e o Firefox nao desenha nenhuma (scrollbar). |
-| 090 | `background-origin` e várias camadas de fundo | fonte/antialiasing | 9 | EQUAL | EQUAL | 0,8532 | background-origin e as tres camadas batem; blocos terminam 2-3px mais acima por metrica de fonte. |
-| 091 | `text-wrap` (`nowrap`, `balance`), `text-wrap-mode`,… | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,8026 | text-wrap nowrap, white-space-collapse e balance equivalentes, mesmas quebras; diferenca de 1px por linha. |
-| 092 | `text-overflow: "<string>"` | defeito corrigido | 7 | EQUAL | EQUAL | 0,8949 | text-overflow com string: o Firefox desenha a reticencias/string logo apos o ultimo glifo visivel; o tbox corta o texto antes e deixa um vao (~10px) entre o texto e a string, posicionada na borda direita. **Corrigido:** `text-overflow`. |
-| 093 | `display: flow-root`, `display: list-item` | fonte/antialiasing | 8 | EQUAL | EQUAL | 0,7628 | flow-root e list-item batem; marcador quadrado e itens com espacamento 1-2px diferentes, linhas um pouco mais compactas. |
-| 094 | `text-indent` com `hanging`, `each-line` | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,8259 | text-indent com hanging e each-line replicado: mesmas quebras e recuos; 1-2px de altura por linha. |
-| 095 | `clip-path: inset()`, `circle()`, `ellipse()` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9383 | clip-path inset, circle e ellipse recortam as mesmas formas e posicoes, com e sem imagem. |
-| 096 | `filter` de cor | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,7319 | Todas as funcoes de filter produzem cores equivalentes. A faixa preta na base da captura do Firefox e artefato da captura. |
-| 097 | custom properties e `var()` | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9250 | Variaveis CSS, calc com var, fallback e herdado resolvem para as mesmas cores e tamanhos. |
-| 098 | `list-style-image`, `::marker` | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,7840 | list-style-image, inside e ::marker batem em cor, tamanho e posicao; linhas ~1px mais compactas no tbox. |
-| 099 | bordas tracejadas e pontilhadas em caixas arredondadas | defeito corrigido | 7 | EQUAL | EQUAL | 0,9206 | Borda dashed com border-radius:50% (elipse): no tbox o traco fica com aspecto de linha fina quase continua, sem os tracos largos do Firefox. dashed/dotted em retangulos arredondados batem. **Corrigido:** Bordas. |
-| 100 | `position: sticky` | débito conhecido | 8 | EQUAL | EQUAL | 0,9102 | position: sticky equivalente (titulos e rodape). O tbox mostra scrollbar fina que o Firefox nao desenha (scrollbar); linhas 1px mais baixas deslocam 'Secao B' ~6px por metrica de fonte. |
-| 101 | `font-kerning` | débito conhecido | 9 | EQUAL | EQUAL | 0,9034 | Texto, larguras e kerning equivalentes (diferença de 1-2px); só o fundo do body não cobre a janela inteira. |
-| 102 | soft hyphen (`&shy;`) e `hyphens` | débito conhecido | 9 | EQUAL | EQUAL | 0,9230 | Caixas, quebra com &shy; e hyphens idênticas a menos de 1px; diferença só no fundo do body, que não cobre a janela. |
-| 103 | `word-wrap`, `text-wrap-style`, raios de canto lógicos,… | defeito corrigido | 6 | DIFFERENT | DIFFERENT | 0,6917 | As imagens .photo (width 185, height 105, border 1px, object-fit cover) saem menores (~165x95) e sem a borda; falta quebra de linha após hífen ('text-wrap-/style:', 'border-start-start-/radius'), então o texto do cartão arredondado quebra diferente. **Corrigido:** Quebra de linha; `` inline com borda. |
-| 104 | unidades `sv*`/`lv*`/`dv*`, mais cursores,… | tema dos controles | 7 | DIFFERENT | DIFFERENT | 0,7865 | Unidades dvw/svh/lvh, cursores, marcadores de lista e background-attachment batem; botões têm fonte maior (16px contra 13px) e quebram 'Segure para :active' em duas linhas. Captura corta a parte inferior do fixture. |
-| 105 | `@media`, `transition`, `@font-face` | débito conhecido | 9 | EQUAL | EQUAL | 0,8282 | Layout, media query e cartões equivalentes; o fundo do body aparece só dentro da área do body, não na janela inteira. |
-| 106 | `<output>`, `<progress>` e `<meter>` | tema dos controles | 7 | DIFFERENT | DIFFERENT | 0,8002 | progress e meter do tbox são barras retas, com altura de 18px e cor própria (o Firefox desenha barras finas arredondadas); posição e largura de 260px conferem, e o indeterminate mostra um trecho deslocado. |
-| 107 | `<optgroup>` com grupos habilitados e desabilitados | escolha documentada | 7 | DIFFERENT | DIFFERENT | 0,8929 | select tem tema próprio (270x30 contra 260x22 no Firefox, fonte maior), aceitável como controle. Colapso de margem: a margem superior do h1 (0.67em) não colapsa com a margem do body; o título e tudo abaixo descem cerca de 20px em relação ao Firefox. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 108 | `<details>`/`<summary>` fechado e aberto | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,8155 | details/summary com marcadores e conteúdo iguais, caixas ~3px mais altas por fonte. Colapso de margem: a margem superior do h1 (0.67em) não colapsa com a margem do body; o título e tudo abaixo descem cerca de 20px em relação ao Firefox. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 109 | `<legend>` na borda de `<fieldset>` | defeito corrigido | 6 | DIFFERENT | DIFFERENT | 0,7831 | fieldset/legend: o tbox deixa cerca de 20px a mais de espaço entre a legenda e o primeiro campo (fieldset 138px contra 108px de altura) e acrescenta folga horizontal à legenda; controles com tema próprio (30px contra 22px). Colapso de margem: a margem superior do h1 (0.67em) não colapsa com a margem do body; o título e tudo abaixo descem cerca de 20px em relação ao Firefox. **Corrigido:** `fieldset`/`legend`. |
-| 110 | `<link rel="stylesheet">` com CSS local | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,8923 | CSS externo (110.css) aplicado corretamente: cor, borda e texto iguais. Colapso de margem: a margem superior do h1 (0.67em) não colapsa com a margem do body; o título e tudo abaixo descem cerca de 20px em relação ao Firefox. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 111 | `<source>` em `<picture>` com `<img>` fallback | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,9064 | picture/source escolhe a imagem amarela corretamente, 160x160 como no Firefox. Colapso de margem: a margem superior do h1 (0.67em) não colapsa com a margem do body; o título e tudo abaixo descem cerca de 20px em relação ao Firefox. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 112 | `<base href>` para CSS e imagens locais | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,9089 | base href resolve CSS e imagem de base-demo corretamente (barra azul no parágrafo e imagem 120x120). Colapso de margem: a margem superior do h1 (0.67em) não colapsa com a margem do body; o título e tudo abaixo descem cerca de 20px em relação ao Firefox. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 113 | `<map>`/`<area>` com regiões retangulares, circulares e poligonais | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,8564 | Imagem 300x300 com usemap idêntica, sem indicação visual das áreas (esperado, só há efeito ao passar o ponteiro). Colapso de margem: a margem superior do h1 (0.67em) não colapsa com a margem do body; o título e tudo abaixo descem cerca de 20px em relação ao Firefox. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 114 | `<ruby>`, `<rt>` e `<rp>` com anotação simples e múltiplos trechos | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,8980 | Anotações ruby posicionadas acima da base de forma equivalente (rt pequeno, 'alpha' e 'beta' lado a lado). Colapso de margem: a margem superior do h1 (0.67em) não colapsa com a margem do body; o título e tudo abaixo descem cerca de 20px em relação ao Firefox. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 115 | `border-block-*`/`border-inline-*` (longhands por eixo),… | fonte/antialiasing | 8 | DIFFERENT | DIFFERENT | 0,7963 | Bordas lógicas, hyphenate-character e clip batem; tbox ~3px mais alto a partir do primeiro h2 por métrica de linha; título quebra em 'clip e' contra 'clip' no Firefox por diferença mínima de largura. Captura corta o fim da página. |
-| 116 | `isolation`, `text-justify`, `line-break: anywhere`,… | defeito corrigido | 7 | DIFFERENT | DIFFERENT | 0,8442 | Em line-break: auto o tbox não quebra a URL após '/' ('http://exemplo.com/caminho/muito/longo' transborda a caixa de 130px, o Firefox quebra em 4 linhas); isolation, text-justify iguais. **Corrigido:** Quebra de linha. |
-| 117 | `@import` aninhado (`117.css`, `117-import/`), media features,… | limite do fixture | 7 | DIFFERENT | DIFFERENT | 0,7581 | Folhas @import e cores de media features coincidem, mas hover+pointer:fine e scripting:none saem verdes no tbox e vermelhos no Firefox headless (depende do ambiente); small-caps sintetizado fica menor e em uma linha no tbox, duas no Firefox. |
-| 118 | bloco dentro de `<p>`/`<h3>`/`<li>`/`<td>`, listas aninhadas | defeito corrigido | 8 | DIFFERENT | DIFFERENT | 0,8408 | Blocos dentro de p/h3 iguais; em listas aninhadas o ul de 2o nível usa marcador disco (•) em vez de círculo (○) como no Firefox (list-style-type padrão por nível de aninhamento). **Corrigido:** Folha UA de texto. |
-| 119 | `@layer` (ordem, subcamadas, anônima, dentro de `@media`,… | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,6745 | @layer, @import layer() e ordem das camadas resultam nas mesmas cores e bordas; diferença de 2px vertical. |
-| 120 | `font-size-adjust`, `scroll-behavior: smooth` (com Tab),… | só com interação | 8 | DIFFERENT | DIFFERENT | 0,8542 | font-size-adjust equivalente; o cartão com @starting-style aparece no tbox mas não no Firefox na captura (fade-in inicial em opacidade 0); lista de rolagem usa botões do tema do tbox e scrollbar fina. |
-| 121 | `::before`/`::after` (obrigatório, badge com `attr()`, status,… | sem diferença relevante | 9 | DIFFERENT | DIFFERENT | 0,8667 | ::before/::after, contadores e quotes iguais, deslocamento de 2px por métrica de linha. |
-| 122 | `transition` em propriedades de layout e pintura (`width`,… | defeito corrigido | 9 | DIFFERENT | DIFFERENT | 0,8467 | Transições estáticas iguais; só 'Cresce com ease-out' quebra diferente (o Firefox quebra após o hífen 'ease-/out', o tbox não quebra em hífen). **Corrigido:** Quebra de linha. |
-| 123 | `@supports` (`not`/`and`/`or`, `selector()`, custom property,… | sem diferença relevante | 10 | DIFFERENT | DIFFERENT | 0,8869 | Todas as linhas de @supports verdes como no Firefox; 2px de deslocamento vertical. |
-| 124 | `filter: drop-shadow()` em caixas com fundo, em texto e encadeado… | sem diferença relevante | 9 | EQUAL | EQUAL | 0,9157 | drop-shadow em caixas, texto e duas sombras equivalente; sombras do tbox com leve diferença de blur e 2px de deslocamento. |
-| 125 | `backdrop-filter` (funções de cor e `blur()`) | N/A no Firefox | 8 | DIFFERENT | DIFFERENT | 0,9235 | Geometria idêntica; o Firefox headless não aplica backdrop-filter (painéis só translúcidos), enquanto o tbox aplica grayscale, sepia e blur+invert. |
-| 126 | propriedades aceitas sem efeito (impressão, 3D, `clear`,… | N/A no Firefox | 9 | DIFFERENT | DIFFERENT | 0,8425 | Tudo igual, exceto o ultimo cartao: o Firefox implementa transform-style e mostra o aviso vermelho 'deveria ser falso'; o tbox corretamente nao o aplica (@supports falso) e mostra o verde. Deslocamento de 2px nos h2 (metrica de fonte) e fundo do body nao propagado abaixo. |
-| 127 | `animation` e `@keyframes` (`infinite alternate`, keyframe… | só com interação | 8 | EQUAL | EQUAL | 0,8630 | Geometria igual. Pulso, barra e cursor dependem do instante da captura; o 'Mensagem enviada' esta invisivel no Firefox (opacity 0 inicial) e visivel e deslocado a direita no tbox, tambem diferenca de instante da animacao. Fundo do body nao propagado. |
-| 128 | `scroll-snap-type` (`mandatory`, `proximity`),… | débito conhecido | 8 | EQUAL | EQUAL | 0,9164 | Mesmos blocos e posicoes (deslocamento de 2px). A barra de rolagem do Firefox e larga e clara, a do tbox e fina e escura (decisao de projeto). Fundo do body nao propagado. |
-| 129 | `background-blend-mode` (16 modos, lista sobre várias camadas) | fonte/antialiasing | 9 | EQUAL | EQUAL | 0,8215 | Os 12 modos de background-blend-mode e as tres camadas coincidem em cor e geometria; apenas 2px de deslocamento vertical por metrica de fonte e o fundo do body nao propagado. |
-| 130 | `direction: rtl` e atributo `dir` (propriedades lógicas, flex,… | fonte/antialiasing | 9 | DIFFERENT | DIFFERENT | 0,8516 | ltr, rtl e herdado batem: bordas, alinhamento end e ordem dos botoes. Apenas 2px de deslocamento vertical por metrica de fonte. |
-| 131 | `text-emphasis` (formas cheias/abertas, `<string>`, `under`, herança) | defeito corrigido | 6 | EQUAL | EQUAL | 0,8179 | Marcas de text-emphasis: no cartao 'Heranca' o tbox so desenha marcas sobre o filho <b> e nao sobre o texto do proprio bloco ('Texto com ', ' e pontuacao'), onde o Firefox marca tudo menos espacos/pontuacao; provavel falha na heranca de text-emphasis para texto anonimo dentro do bloco. Sesame sai com glifo diferente (quadrados no Firefox por falta de glifo, ovais no tbox) e os cartoes ficam mais altos no Firefox (reserva de espaco das marcas). **Corrigido:** `text-emphasis` herdado. |
-| 132 | camadas de composição: `opacity` de grupo, `filter: blur()`,… | limite do fixture | 7 | DIFFERENT | DIFFERENT | 0,8479 | Camadas de composicao batem (opacity, blur, drop-shadow, mask gradiente, mix-blend-mode). A estrela de -webkit-mask: url(mask-star.png) aparece no tbox e nao no Firefox (provavel bloqueio de mascara em file://); diferenca vem do ambiente da captura. Fixture nao cabe em 600px (parte inferior cortada). |
-| 133 | `min()`/`max()`/`clamp()` percentuais, `clip-path: xywh()`, raios… | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,8269 | O h1 do tbox fica 5-6px mais baixo (e o conteudo seguinte desloca junto): a margem UA dos titulos e fixa em px (21px) e nao em em (0.67em do font-size do autor, ~15-16px no Firefox). Resto igual. Barras, clip-path xywh/inset e cores iguais. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 134 | `color(srgb)`/`color(srgb-linear)`, `clip-path: rect()` com `auto`… | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,7967 | O h1 do tbox fica 5-6px mais baixo (e o conteudo seguinte desloca junto): a margem UA dos titulos e fixa em px (21px) e nao em em (0.67em do font-size do autor, ~15-16px no Firefox). Resto igual. Cores sRGB linear, rect/inset/auto e pow/sqrt/exp iguais. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 135 | `hypot()`, `round()` com quatro estratégias, sinais de… | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,7556 | O h1 do tbox fica 5-6px mais baixo (e o conteudo seguinte desloca junto): a margem UA dos titulos e fixa em px (21px) e nao em em (0.67em do font-size do autor, ~15-16px no Firefox). Resto igual. Hypot, round, mod/rem e color-mix iguais. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 136 | `abs()`/`sign()`, `hypot()` com comprimentos, constantes `pi`/`e`… | N/A no Firefox | 7 | DIFFERENT | DIFFERENT | 0,8061 | Em 'opacity: calc(50% + .25)' o Firefox rejeita a mistura de porcentagem e numero e deixa o quadrado opaco (vermelho puro); o tbox aplica 0.75, como o rotulo pede. Alem disso h1 ~6px mais baixo (margem UA fixa em px) e fundo do body nao propagado no rodape. |
-| 137 | `sin()`/`cos()`/`tan()` com radianos e ângulos literais; raios… | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,7826 | O h1 do tbox fica 5-6px mais baixo (e o conteudo seguinte desloca junto): a margem UA dos titulos e fixa em px (21px) e nao em em (0.67em do font-size do autor, ~15-16px no Firefox). Resto igual. Funcoes trigonometricas e raios radiais iguais. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 138 | `asin()`/`acos()`/`atan()`/`atan2()`: pares com ângulos literais… | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,7426 | O h1 do tbox fica 5-6px mais baixo (e o conteudo seguinte desloca junto): a margem UA dos titulos e fixa em px (21px) e nao em em (0.67em do font-size do autor, ~15-16px no Firefox). Resto igual. Gradientes das funcoes trigonometricas inversas iguais; deslocamento acumulado de ~11px por h1 + paragrafo. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 139 | Gradientes cônicos: interpolação, setores, `from`/`at`, repetição… | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,7099 | O h1 do tbox fica 5-6px mais baixo (e o conteudo seguinte desloca junto): a margem UA dos titulos e fixa em px (21px) e nao em em (0.67em do font-size do autor, ~15-16px no Firefox). Resto igual. Gradientes conicos (continuo, repeticao, mosaico) iguais. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 140 | `polygon()`: triângulo, concavidade, `nonzero`/`evenodd`,… | escolha documentada | 8 | DIFFERENT | DIFFERENT | 0,7666 | O h1 do tbox fica 5-6px mais baixo (e o conteudo seguinte desloca junto): a margem UA dos titulos e fixa em px (21px) e nao em em (0.67em do font-size do autor, ~15-16px no Firefox). Resto igual. Recortes poligonais (nonzero/evenodd, aninhados) iguais. (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
-| 141 | Shaping com HarfBuzz: ligaduras (e `letter-spacing`… | sem diferença relevante | 10 | DIFFERENT | DIFFERENT | 0,9063 | Ligaduras, kerning e acentos combinantes iguais; sem diferenca relevante alem do fundo do body nao propagado. |
-| 142 | `accent-color` em range, progress, checkbox e radio: padrão,… | tema dos controles | 7 | DIFFERENT | DIFFERENT | 0,7058 | Slider, progress e meter usam o tema proprio do tbox (accent-color aplicado com as cores certas: padrao, herdada, por controle); checkbox/radio sao menores e sem preenchimento, e o meter tem barras mais grossas. Cores de destaque batem. Fundo do body nao propagado. |
-| 143 | Partes dos controles (`::slider-thumb`, `::slider-track`,… | tema dos controles | 7 | DIFFERENT | DIFFERENT | 0,6936 | Slider, progress, meter, select, file, number, search e color com aparencia propria do tbox; cores de parte (rosa, azul claro no escuro) diferem do padrao do Firefox, o fixture so exercita estilizacao, e as posicoes coincidem (+-3px). Fundo do body nao propagado. |
-| 144 | Quebra de linha do `<textarea>`: entre palavras, espaços repetidos… | tema dos controles | 7 | DIFFERENT | DIFFERENT | 0,8174 | Textarea: o Firefox usa fonte monoespacada por padrao e o tbox herda a serifada do documento (largura util e quebras diferentes); na palavra longa o tbox quebra em qualquer caractere ('exempl\|o.com.br/cami\|nho') e o Firefox quebra apos '/' e '.'. Sem alca de redimensionamento no tbox. |
-| 145 | Checkbox e radio marcados e desmarcados alinhados na mesma linha;… | tema dos controles | 7 | DIFFERENT | DIFFERENT | 0,7657 | Checkbox, radio, campos e botao com tema proprio do tbox (check fino, borda cinza); anel de foco do Firefox em azul versus contorno cinza no tbox. Layout e linhas coincidem (+-3px). Fundo do body nao propagado. |
-| 146 | Lista do `<select>` pelo CSS padrão: `::picker(select)`,… | tema dos controles | 8 | DIFFERENT | DIFFERENT | 0,8457 | Tres selects com mesma largura e posicao; o tbox usa borda reta, fonte serifada e seta propria, o Firefox arredonda e usa sans. Fundo do body nao propagado. |
-| 147 | Scrollbar: padrão discreto, `scrollbar-width: auto`,… | N/A no Firefox | 6 | DIFFERENT | DIFFERENT | 0,9029 | Os seis caixotes batem em posicao, mas o Firefox so mostra barra no caso scrollbar-color (nao implementa ::-webkit-scrollbar, largura e gutter customizados); o tbox desenha barras finas em todas, com pilula, margem, :hover e gutter estavel. Scrollbar fina por padrao no tbox e fundo do body nao propagado. |
-| a01 | caso geral | escolha documentada | 7 | DIFFERENT | DIFFERENT | 0,9364 | O tbox comeca 8px mais baixo: no Firefox a margem de 16px do primeiro filho colapsa com a margem de 8px do body (16px no total), no tbox somam-se (24px). Faltam colapso de margem entre body e primeiro filho. Resto igual; a sombra tem blur mais largo/em faixas (sombra). (Escolhas documentadas do tbox: sem collapsing pai/filho — docs/08 — e margens da folha UA em px fixo — decisoes.md.) |
+- **Fundo da página e canvas:** o fundo da tbox termina com a caixa pintada,
+  deixando faixas brancas nas bordas ou abaixo do conteúdo; no Firefox o
+  fundo da página cobre a captura. Aparece também no fixture com fundo em
+  `:root`. O débito de propagação do fundo não deve ser confundido com
+  falha de cada recurso testado sobre ele.
+- **Margem do primeiro filho:** sem colapso pai/filho, títulos e parágrafos
+  deslocam o conjunto cerca de 6–20px. As margens da folha UA também são
+  fixas em px; fontes grandes deixam `html-headings` e
+  `css-style-attribute` mais compactos. São escolhas documentadas em
+  [layout](../08-layout-e-pintura.md#o-que-está-implementado) e
+  [decisões](../dev/decisoes.md).
+- **Métricas de texto:** linhas normais de fontes pequenas ficam cerca de
+  1px mais baixas na tbox. Pequenas diferenças de largura mudam quebras,
+  alturas e posições acumuladas. Em `effects-compositing`, por exemplo,
+  o título ocupa uma linha na tbox e duas no Firefox.
+- **Controles e rolagem:** os controles usam o tema da tbox e normalmente
+  herdam a fonte do documento. A barra padrão fina sobrepõe o conteúdo;
+  na referência, várias caixas reservam calha, mesmo sem barra visível.
+  Isso altera a largura útil e as quebras.
+- **Rasterização:** há diferenças pequenas em glifos, curvas, tracejados,
+  marcas de ênfase e sombras. O blur de `box-shadow`, em particular, é
+  visivelmente mais largo e escuro na tbox e continua como débito.
+
+## Defeitos encontrados
+
+A revisão confirma **oito tipos de defeito em nove fixtures** classificados
+como Defeito observado, já registrados no
+[débito técnico](../dev/debito-tecnico.md#defeitos-da-medição-de-paridade-de-2026-10-19):
+
+1. **Floats em item de grid** — `layout-floats`: as duas primeiras células
+   deslocam os floats e comprimem o texto; há sobreposição com o painel
+   seguinte. Os demais casos do fixture não apresentam o mesmo desvio.
+2. **Bordas na fragmentação multicoluna** — `layout-multicol`: o bloco
+   dividido recebe bordas em torno de cada linha, além das do fragmento.
+   É um defeito visível apesar do EQUAL; esta rodada não determina quando
+   ele foi introduzido.
+3. **Altura de fundo/borda de inline** — `effects-masks-and-reflection`:
+   o span partido usa a altura de linha de 36px para pintar suas caixas.
+4. **Alinhamento vertical de células** — `html-tables-layout` e
+   `layout-block-in-inline`: o conteúdo fica no topo onde o Firefox o
+   centraliza. A folha UA da tbox não define `vertical-align: middle`
+   para `td`/`th`.
+5. **Texto do botão de tamanho fixo** — `interaction-cursor-and-pointer`:
+   fica no canto superior esquerdo em vez do centro.
+6. **Marcador ampliado não aumenta a linha** — `lists-markers`: o marcador
+   serifado de 24px e o bullet maior deixam as linhas apertadas.
+7. **Inline deslocado não aumenta a linha** — `text-spacing`:
+   `vertical-align: +6px`/`-0.4em` não expande a caixa como na referência.
+8. **Ajuste de x-height** — `text-font-size`: `font-size-adjust` produz
+   escalas diferentes das do Firefox entre as famílias. A captura confirma
+   o desvio, mas não isola a causa interna.
+
+Outro desvio já conhecido aparece em `forms-textarea-wrapping`: palavras
+longas são cortadas sem aproveitar oportunidades como `/`. Uma comparação
+complementar em cópia temporária igualou a família (`DejaVu Sans Mono`),
+line-height, padding, borda e largura dos campos. A URL continuou quebrando
+em posições diferentes, embora essa prova tenha recebido **EQUAL**
+(SSIM 0,8433). Portanto, o problema não pode ser atribuído apenas à fonte
+padrão do controle. Esse caso está na categoria Débito conhecido e em
+[quebra de linha do textarea](../dev/debito-tecnico.md#quebra-de-linha-do-textarea).
+
+## Limites da referência e da cobertura
+
+Estas observações valem para o Firefox 158.0 **neste ambiente headless**:
+
+- Os painéis de `backdrop-filter` não filtram o fundo na captura de
+  `effects-drop-shadow-and-backdrop`; isso não estabelece o comportamento
+  de uma janela com composição gráfica.
+- A estrela de máscara `url()` não aparece ao carregar o fixture via
+  `file://`. O teste não isola a política de carregamento/CORS de suporte
+  ao desenho da máscara; as máscaras de gradiente aparecem.
+- `initial-letter`, `hanging-punctuation` e `-webkit-box-reflect` não
+  produzem o mesmo resultado da tbox nos exemplos. Não há referência
+  equivalente para validar esses resultados específicos.
+- `@supports` diverge em recursos como `preserve-3d` e `orphans`. As media
+  features `hover`/`pointer` e `scripting` também dependem das capacidades
+  anunciadas por cada ambiente.
+- `opacity: calc(50% + .25)` é rejeitada pela referência e aceita pela
+  tbox. Esta medição registra a diferença, sem concluir conformidade.
+- `text-overflow` mistura formas de clamp: um painel omite
+  `-webkit-box-orient: vertical`, e o texto do painel de três linhas já
+  cabe no limite. Eles não validam isoladamente o suporte ao clamp. O
+  painel de duas linhas com padding ainda mostra recorte diferente.
+- `::-tbox-scrollbar-*` é específico da tbox. Os fixtures de partes e
+  pickers misturam seletores com suporte diferente; capturas dos selects
+  fechados não verificam a lista ou seu tema.
+
+A rodada usa **uma captura inicial por fixture**, sem mouse, teclado ou
+sequência temporal sincronizada. Não valida navegação de links/mapas,
+foco/caret, seleção, edição dentro de ligaduras, abertura de popups,
+rolagem/snap/overscroll, arrasto de resize, nem evolução de transições e
+keyframes. Mesmo que esses recursos sejam suportados pela biblioteca,
+esta rodada só confirma sua aparência no estado capturado.
+
+## Como repetir e consultar as evidências
+
+Com as dependências instaladas e Firefox no caminho indicado:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
+  -DTBOX_ENABLE_FONTCONFIG=ON -DTBOX_ENABLE_HARFBUZZ=ON \
+  -DTBOX_ENABLE_SANITIZERS=OFF
+cmake --build build --target tbox_cmp tbox_tests -j 4
+build/tests/tbox_cmp --firefox /usr/bin/firefox --size 800x600 \
+  --output /tmp/tbox-paridade-20261019 tests/assets \
+  > /tmp/tbox-paridade-20261019.log 2>&1
+ctest --test-dir build --output-on-failure
+```
+
+A ferramenta não faz parte do `ctest`. Seu código de saída indica erro
+operacional, não DIFFERENT. O log deve terminar com:
+
+```text
+Summary: 114 fixtures | 46 EQUAL | 68 DIFFERENT | 0 operational failures
+```
+
+As evidências desta execução estão em `/tmp/tbox-paridade-20261019/`:
+`<fixture>_firefox.png`, `<fixture>_render.png` e `<fixture>_diff.png`
+(342 PNGs de comparação), além de `index.html` para consulta lado a lado,
+`resultados.csv` com métricas e `assets-sha256.txt` com hashes dos insumos.
+O índice, o CSV e o manifesto são auxiliares desta revisão; o comando
+`tbox_cmp` acima gera as capturas e o log.
+O log integral é `/tmp/tbox-paridade-20261019.log`. A prova adicional do
+textarea está em `/tmp/tbox-paridade-probes/` e seu HTML em
+`/tmp/tbox-paridade-probes-assets/`. Esses arquivos são locais e temporários;
+as métricas e conclusões permanentes estão nas tabelas deste documento.
+Não há artifact publicado correspondente a esta rodada.
+
+## Por fixture
+
+Cada HTML atual aparece uma vez, agrupado como no mapa de
+[fixtures](fixtures.md). **Falhas locais** é o contador diagnóstico de
+checagens reprovadas do comparador; não são falhas operacionais nem uma
+contagem de bugs. SSIM e contador foram transcritos do log da nova execução.
+As observações referem-se ao recurso do fixture e complementam as
+diferenças comuns e os limites descritos acima.
+
+### HTML
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `css-style-attribute` | DIFFERENT | 0,7307 | 24 | Escolha documentada | Estilos inline aplicados igual, mas a página é bem mais compacta: as margens da folha UA são px fixos na tbox, e o p de 40px e os títulos perdem as margens em em do Firefox. |
+| `html-base-href` | DIFFERENT | 0,9119 | 9 | Escolha documentada | CSS e imagem vêm de base-demo/ nos dois; tudo 20px mais baixo porque a margem do h1 não colapsa com a do body. |
+| `html-headings` | DIFFERENT | 0,7789 | 28 | Escolha documentada | Tamanhos de h1–h6 iguais; o h1 de 60px fica com a margem de um h1 normal (margens da folha UA em px fixos), e o resto sobe 40px. |
+| `html-images` | EQUAL | 0,9150 | 0 | Escolha documentada | Igual; deslocamento de 6px no topo (margem do h1 com a do body). |
+| `html-links` | EQUAL | 0,9375 | 0 | Tema dos controles | Links e sublinhados equivalentes na captura; botão com fonte e tema da tbox. Destinos e navegação não foram exercitados. |
+| `html-paragraphs` | DIFFERENT | 0,8413 | 3 | Escolha documentada | Igual; tudo 8px mais baixo (margem do primeiro p com a do body). |
+| `html-picture-and-map` | DIFFERENT | 0,8380 | 16 | Escolha documentada | As duas imagens aparecem como esperado; conjunto cerca de 20px abaixo pela margem inicial. As regiões de map/area não são verificáveis nesta captura. |
+| `html-tables` | EQUAL | 0,5642 | 0 | Escolha documentada | Larguras de coluna e bordas iguais; deslocamento de 8px no topo e linhas 1px mais altas. |
+| `html-tables-layout` | DIFFERENT | 0,7531 | 2 | Defeito observado | Colunas e bordas semelhantes; na tabela fixed e nas células de alturas diferentes, o texto fica no topo em vez de centralizado verticalmente. |
+| `html-text-formatting` | DIFFERENT | 0,8167 | 1 | Escolha documentada | Formatação, aspas e recuos comparáveis; conjunto cerca de 8px abaixo pela margem inicial e pequenas diferenças nas métricas do texto. |
+
+### Cores
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `colors-hsl` | DIFFERENT | 0,8241 | 1 | Fonte e métricas | Cores iguais; o texto serifado é um pouco mais estreito na tbox e as linhas quebram em outros pontos. |
+| `colors-mix-and-color-function` | DIFFERENT | 0,7475 | 2 | Fonte e métricas | Todas as cores iguais; textos pequenos com altura de linha menor sobem o conteúdo até 9px. |
+| `colors-modern` | EQUAL | 0,8247 | 0 | Recurso equivalente | Igual. |
+| `colors-names-and-formats` | DIFFERENT | 0,6582 | 1 | Fonte e métricas | Cores iguais; o primeiro bloco desce 4px (margem do body não colapsa) e as faixas com texto serifado negrito ficam 2 a 4px mais baixas. |
+| `colors-rgb-and-hex` | DIFFERENT | 0,5666 | 1 | Fonte e métricas | Cores iguais; deslocamento de 3px no topo e altura de linha serifada levemente diferente. |
+
+### Caixa
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `box-aspect-ratio` | EQUAL | 0,8957 | 0 | Fonte e métricas | Proporções explícitas coincidem. A caixa dependente do conteúdo fica mais baixa na tbox por diferenças na altura das linhas. |
+| `box-border-padding-margin` | EQUAL | 0,7024 | 0 | Escolha documentada | Caixas iguais; tudo 6px mais baixo porque a margem do h1 não colapsa com a do body. |
+| `box-border-styles` | EQUAL | 0,8624 | 0 | Recurso equivalente | Igual; pontos da borda dotted com espaçamento um pouco diferente. |
+| `box-border-styles-3d` | EQUAL | 0,8954 | 0 | Recurso equivalente | Igual. |
+| `box-border-styles-rounded` | EQUAL | 0,9227 | 0 | Recurso equivalente | Igual; tracejado e pontilhado com fase um pouco diferente nas curvas. |
+| `box-logical-borders` | EQUAL | 0,8234 | 0 | Recurso equivalente | Igual. |
+| `box-logical-sizes` | EQUAL | 0,8602 | 0 | Recurso equivalente | Igual. |
+| `box-radius` | EQUAL | 0,9006 | 0 | Recurso equivalente | Igual. |
+| `box-radius-elliptical` | EQUAL | 0,9226 | 0 | Recurso equivalente | Igual. |
+| `box-sizing` | EQUAL | 0,8662 | 0 | Recurso equivalente | Igual; a tbox desenha a barra fina na caixa com max-height, o Firefox headless não mostra barra. |
+| `box-sizing-keywords` | DIFFERENT | 0,8029 | 2 | Fonte e métricas | Larguras min-content, max-content e fit-content comparáveis; linhas mais baixas na tbox reduzem a altura das caixas e deslocam os exemplos seguintes. |
+
+### Texto e fontes
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `text-alignment` | EQUAL | 0,8186 | 0 | Fonte e métricas | Os modos de alinhamento são iguais; o texto de 15px é um pouco mais estreito na tbox, e os parágrafos justificados quebram em outra palavra. |
+| `text-bidi` | DIFFERENT | 0,9586 | 1 | Recurso equivalente | Ordem visual, espelhamento e casos de bdo/bdi/isolate/plaintext comparáveis neste conjunto; pequenas diferenças de rasterização. |
+| `text-decoration` | DIFFERENT | 0,8178 | 2 | Fonte e métricas | Linhas, cores, estilos e posições iguais; espessura e fase de dotted/dashed/wavy com pequenas diferenças. |
+| `text-direction` | DIFFERENT | 0,8449 | 3 | Recurso equivalente | Direção, lados lógicos e ordem flex equivalentes no recorte. Persistem diferenças comuns de texto e canvas. |
+| `text-emphasis` | EQUAL | 0,8213 | 0 | Fonte e métricas | Posições e herança iguais. O Firefox desenha sesame com o glifo da fonte de fallback (quadrados), a tbox com o glifo certo; marcas abertas um pouco maiores na tbox. |
+| `text-font-face-and-opentype` | EQUAL | 0,8875 | 0 | Recurso equivalente | Igual. |
+| `text-font-size` | DIFFERENT | 0,7977 | 5 | Defeito observado | Palavras-chave e atalho font próximos. O ajuste de x-height com font-size-adjust difere entre as famílias, sobretudo sans e serif; causa ainda não isolada. |
+| `text-font-variants` | DIFFERENT | 0,7565 | 10 | Fonte e métricas | small-caps sintetizado, font-variant-position e font-synthesis iguais; o texto em versalete é mais estreito na tbox, e uma linha deixa de quebrar. |
+| `text-font-weight-and-stretch` | EQUAL | 0,8555 | 0 | Fonte e métricas | Pesos, estilos e stretch iguais; linhas 1px mais baixas. |
+| `text-hyphens-and-balance` | DIFFERENT | 0,7866 | 1 | Fonte e métricas | &shy;, hyphens, hyphenate-character e balance iguais; com o texto um pouco mais estreito, a tbox hifeniza "extra-" no fim da linha onde o Firefox passa a palavra inteira. |
+| `text-indent` | DIFFERENT | 0,8342 | 2 | Fonte e métricas | Recuos iguais; uma quebra muda na última caixa. |
+| `text-initial-letter` | DIFFERENT | 0,8140 | 1 | Referência e ambiente | first-letter flutuante comparável. initial-letter e hanging-punctuation têm resultados diferentes nos painéis; a referência desta execução não demonstra equivalência desses recursos. |
+| `text-overflow` | DIFFERENT | 0,6627 | 2 | Referência e ambiente | Reticências/strings comparáveis, com pequeno espaçamento diferente. O clamp de duas linhas com padding deixa texto adicional visível no Firefox; o caso de uma linha omite box-orient e diverge. O painel de três linhas já cabe no limite e não comprova suporte ao line-clamp sem prefixo. |
+| `text-ruby` | DIFFERENT | 0,8906 | 18 | Escolha documentada | Ruby igual; tudo 20px mais baixo (margem do h1 com a do body). |
+| `text-shaping-latin` | EQUAL | 0,8800 | 0 | Recurso equivalente | Igual. |
+| `text-shaping-scripts` | EQUAL | 0,8875 | 0 | Tema dos controles | Formas árabes, ZWNJ e marcas hebraicas comparáveis. Campos com tema próprio; posicionamento/edição do cursor dentro de ligaduras não foi exercitado. |
+| `text-spacing` | DIFFERENT | 0,8812 | 1 | Defeito observado | line-height, letter-spacing e word-spacing comparáveis. Os deslocamentos +6px e -0.4em não expandem a caixa de linha como no Firefox, aproximando as duas últimas linhas. |
+| `text-stroke` | EQUAL | 0,9737 | 0 | Recurso equivalente | Igual. |
+| `text-transform-and-shadow` | DIFFERENT | 0,8852 | 1 | Recurso equivalente | Igual; as sombras com blur saem um pouco mais densas. |
+| `text-vertical-writing` | EQUAL | 0,9458 | 0 | Recurso equivalente | Igual. |
+| `text-white-space` | DIFFERENT | 0,6155 | 2 | Fonte e métricas | Todos os modos de espaço e tab-size iguais. O título negrito cabe numa linha a menos na tbox, e o texto monoespaçado é um pouco mais largo, quebrando uma palavra antes. |
+| `text-wrapping` | DIFFERENT | 0,6339 | 4 | Fonte e métricas | overflow-wrap, word-break e line-break iguais; algumas quebras dentro de palavra caem um caractere antes ou depois. |
+
+### Listas e conteúdo gerado
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `generated-content` | EQUAL | 0,8836 | 0 | Recurso equivalente | Igual. |
+| `generated-counters` | EQUAL | 0,9098 | 0 | Recurso equivalente | Igual. |
+| `lists-markers` | DIFFERENT | 0,7892 | 12 | Defeito observado | Marcadores de imagem, ::marker colorido e content iguais. Defeito: um ::marker maior (o 1. serifado de 24px, o bullet ampliado) não aumenta a altura da linha na tbox, e as linhas ficam apertadas. O marcador com content: "→ " sai com mais espaço antes do texto. |
+| `lists-position-and-list-item` | DIFFERENT | 0,7336 | 1 | Fonte e métricas | Posições de marcador iguais; o quadrado de square é maior na tbox e as linhas de 14px têm 1px a menos. |
+| `lists-style-type` | EQUAL | 0,8111 | 0 | Fonte e métricas | Todos os tipos iguais; quadrado maior na tbox e linhas 1px mais baixas, que somam 20px na lista de dez itens. |
+
+### Seletores
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `selectors-attributes-and-lang` | DIFFERENT | 0,7997 | 1 | Recurso equivalente | As mesmas bordas e cores selecionam os casos de atributos, modificadores i/s e idioma. Persistem as diferenças comuns de texto e canvas. |
+| `selectors-combinators-and-not` | DIFFERENT | 0,8104 | 1 | Recurso equivalente | As mesmas linhas recebem os estilos de ~ e :not(). Persistem as diferenças comuns de texto e canvas. |
+| `selectors-states` | DIFFERENT | 0,6969 | 1 | Tema dos controles | required/optional, enabled/disabled e link/any-link exibem os mesmos estados iniciais. Campos mais altos na tbox; hover e focus-within não foram acionados. |
+| `selectors-structural` | EQUAL | 0,7568 | 0 | Recurso equivalente | Igual. |
+| `selectors-type-and-only` | DIFFERENT | 0,8620 | 1 | Recurso equivalente | Os casos de root, posições por tipo, only-child e empty recebem os mesmos estilos; há pequenas diferenças de dimensões e no preenchimento do canvas. |
+
+### Cascata e at-rules
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `cascade-container-queries` | EQUAL | 0,9986 | 0 | Recurso equivalente | Igual. |
+| `cascade-custom-properties` | EQUAL | 0,8463 | 0 | Fonte e métricas | Cascata igual; alturas de linha um pouco menores na tbox deslocam o resto em até 5px. |
+| `cascade-keywords` | DIFFERENT | 0,5903 | 1 | Fonte e métricas | Os quatro valores e all resolvem igual; alturas de linha menores deslocam o fim em 7px. |
+| `cascade-layers` | DIFFERENT | 0,7490 | 1 | Recurso equivalente | Igual. |
+| `cascade-link-and-import` | DIFFERENT | 0,7877 | 3 | Referência e ambiente | CSS externo, imports aninhados e media por largura funcionam no recorte. hover + pointer: fine e scripting: none ficam verdes na tbox e vermelhos no Firefox headless. |
+| `cascade-scope-and-namespace` | EQUAL | 0,9568 | 0 | Recurso equivalente | Igual. |
+| `cascade-supports` | DIFFERENT | 0,7338 | 2 | Referência e ambiente | As condições comuns exibem os mesmos resultados. preserve-3d e orphans produzem respostas diferentes em @supports; aceitar sintaxe não demonstra efeito visual. |
+
+### Unidades e funções
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `units-calc-min-max-clamp` | DIFFERENT | 0,6724 | 14 | Recurso equivalente | Todos os valores iguais; textos de 12px com linhas menores sobem a página alguns px. |
+| `units-lengths` | EQUAL | 0,8516 | 0 | Recurso equivalente | Igual. |
+| `units-math-functions` | DIFFERENT | 0,6522 | 17 | Referência e ambiente | Barras e pares numéricos comparáveis. opacity: calc(50% + .25) fica opaca no Firefox e em 75% na tbox: divergência de aceitação da expressão, sem conclusão de conformidade por esta captura. |
+| `units-math-trig` | DIFFERENT | 0,7221 | 14 | Recurso equivalente | Igual; linhas de 12px um pouco menores. |
+
+### Fundos
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `backgrounds-blend-mode` | EQUAL | 0,8950 | 0 | Recurso equivalente | Os 16 modos coincidem. |
+| `backgrounds-border-image` | EQUAL | 0,9775 | 0 | Recurso equivalente | Igual, inclusive slice, round, space e outset. |
+| `backgrounds-clip-and-origin` | DIFFERENT | 0,7921 | 2 | Recurso equivalente | Recortes e origens de fundo equivalentes no recurso mostrado; há diferenças de rasterização, altura de texto e fundo do canvas. O veredito não isola uma causa única. |
+| `backgrounds-gradients` | EQUAL | 0,8449 | 0 | Recurso equivalente | Igual. |
+| `backgrounds-gradients-conic` | DIFFERENT | 0,7173 | 6 | Escolha documentada | Gradientes idênticos; tudo 9px mais baixo porque a margem do h1 não colapsa com a do body. |
+| `backgrounds-image` | DIFFERENT | 0,6908 | 1 | Débito conhecido | Imagens, cover/contain e repetição comparáveis. No painel de attachment: fixed, diferem a quebra do texto, a barra de rolagem e a fase vertical do padrão. |
+| `backgrounds-layers` | EQUAL | 0,8518 | 0 | Recurso equivalente | Igual. |
+
+### Layout
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `layout-alignment` | EQUAL | 0,9106 | 0 | Recurso equivalente | Igual. |
+| `layout-block-in-inline` | DIFFERENT | 0,8723 | 3 | Defeito observado | Os blocos em p, h3 e li aparecem nas mesmas posições relativas. Na tabela, a coluna é mais larga e a célula vizinha alinha no topo em vez do meio. |
+| `layout-flexbox` | DIFFERENT | 0,7227 | 1 | Escolha documentada | Distribuição, wrap, baseline, reversão e layout de aplicação comparáveis. O conjunto começa cerca de 7px abaixo, pela margem inicial. |
+| `layout-floats` | DIFFERENT | 0,7520 | 29 | Defeito observado | Nas duas primeiras células de grid, floats descem e o texto se espreme ou se sobrepõe ao painel seguinte. clear, flow-root e a forma circular ficam próximos da referência. |
+| `layout-grid-areas-and-alignment` | EQUAL | 0,8207 | 0 | Recurso equivalente | Igual. |
+| `layout-grid-tracks` | EQUAL | 0,8436 | 0 | Recurso equivalente | Igual. |
+| `layout-inline-block` | DIFFERENT | 0,7414 | 1 | Escolha documentada | Igual; deslocamento de 6px no topo (margem do h2 com a do body). |
+| `layout-multicol` | EQUAL | 0,9549 | 0 | Defeito observado | Contagem/largura de colunas, regras e span comparáveis. O bloco fragmentado ganha bordas indevidas em torno de cada linha. O comparador retorna EQUAL apesar desse defeito. |
+| `layout-overflow` | EQUAL | 0,8934 | 0 | Escolha documentada | Recortes iguais. Na caixa com overflow-y: scroll, o Firefox reserva a calha da barra e a tbox desenha a barra fina por cima do conteúdo, por isso o texto quebra em outro ponto. |
+| `layout-positioning` | DIFFERENT | 0,8751 | 1 | Fonte e métricas | Posições iniciais de sticky, absolute e relative comparáveis; uma legenda quebra a mais na tbox. A captura não verifica sticky durante a rolagem. |
+| `layout-scroll-snap` | EQUAL | 0,9144 | 0 | Escolha documentada | Os painéis começam nas mesmas posições, com barras sobrepostas na tbox e calha no Firefox. Não houve gesto de rolagem para verificar snap ou stop. |
+| `layout-scrollbars` | DIFFERENT | 0,8631 | 1 | Referência e ambiente | As propriedades padrão alteram os exemplos; o desenho e a calha diferem. O Firefox não reproduz as partes específicas ::-tbox-scrollbar-*. |
+| `layout-scrolling` | DIFFERENT | 0,8445 | 8 | Tema dos controles | Mesmos painéis iniciais, com botões, fontes e barras diferentes. overscroll, margem/padding de rolagem e smooth não foram exercitados por entrada. |
+| `layout-z-index` | EQUAL | 0,8763 | 0 | Recurso equivalente | Igual. |
+
+### Efeitos
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `effects-box-shadow` | EQUAL | 0,8794 | 0 | Débito conhecido | Offsets, cores e spread comparáveis; o blur da tbox é mais largo, escuro e apresenta faixas. O EQUAL não elimina essa diferença. |
+| `effects-clip-path-polygon` | DIFFERENT | 0,7991 | 5 | Escolha documentada | Recortes idênticos; tudo 9px mais baixo pela margem do h1 que não colapsa com a do body. |
+| `effects-clip-path-shapes` | DIFFERENT | 0,7523 | 5 | Recurso equivalente | Formas e clip iguais; textos pequenos com altura de linha menor sobem a grade alguns px. |
+| `effects-compositing` | DIFFERENT | 0,5803 | 30 | Fonte e métricas | Opacidade de grupo, visibility, blend e isolation iguais; o título negrito de 26px é um pouco mais estreito na tbox e cabe numa linha, e o resto sobe 30px. |
+| `effects-drop-shadow-and-backdrop` | DIFFERENT | 0,7072 | 8 | Referência e ambiente | drop-shadow comparável. Nesta execução headless os painéis do Firefox mantêm o fundo sem backdrop-filter, enquanto a tbox aplica cor e blur. |
+| `effects-filter` | DIFFERENT | 0,7302 | 4 | Recurso equivalente | Igual. |
+| `effects-masks-and-reflection` | DIFFERENT | 0,9334 | 4 | Defeito observado | Composição das máscaras de gradiente comparável. A estrela de máscara url() não aparece no Firefox via file://, e a reflexão só aparece na tbox. No inline partido, fundo e borda usam indevidamente a altura da linha inteira. |
+| `effects-motion-path` | EQUAL | 0,9833 | 0 | Recurso equivalente | Igual. |
+| `effects-transform-functions` | EQUAL | 0,9863 | 0 | Recurso equivalente | Igual. |
+| `effects-transform-translate` | EQUAL | 0,9221 | 0 | Recurso equivalente | Igual. |
+
+### Animação
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `animation-keyframes` | DIFFERENT | 0,8635 | 1 | Tempo ou interação | Pulso/barra e geometria inicial próximos; entrada, cursor piscante e opacidade da mensagem estão em instantes diferentes. Não mede a evolução da animação. |
+| `animation-transitions` | DIFFERENT | 0,8613 | 3 | Tempo ou interação | Exemplos em repouso semelhantes; o cartão de @starting-style fica invisível no Firefox e visível na tbox. Hover e curvas de transição não foram exercitados. |
+
+### Interação
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `interaction-cursor-and-pointer` | DIFFERENT | 0,8273 | 3 | Defeito observado | Caixas e sobreposição aparecem, mas o texto do botão de tamanho fixo fica no canto superior esquerdo na tbox. Cursores, seleção, cliques e active não foram acionados. |
+| `interaction-zoom-and-resize` | EQUAL | 0,9741 | 0 | Recurso equivalente | Escalas de zoom e dimensões iniciais comparáveis; alças de resize com desenho diferente. Não houve arrasto para testar redimensionamento. |
+
+### Formulários
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `forms-accent-and-caret` | DIFFERENT | 0,7474 | 20 | Tema dos controles | As cores de accent-color chegam a range/progress/checkbox/radio, e meter mantém as cores semânticas. Barras e controles têm tema próprio; caret-color não foi verificado com foco. |
+| `forms-checkbox-radio-and-focus` | DIFFERENT | 0,7729 | 1 | Tema dos controles | Estados marcados/desmarcados e caixas com outline aparecem. Tema, fonte, dimensões e cantos diferem; não houve navegação de foco por teclado. |
+| `forms-control-parts` | DIFFERENT | 0,7405 | 13 | Tema dos controles | A tbox mostra partes estilizadas e o Firefox seu desenho de controles. O fixture mistura partes padrão e específicas; fontes e dimensões também diferem. Não testa os popups abertos. |
+| `forms-grouping` | DIFFERENT | 0,7929 | 9 | Tema dos controles | Legenda atravessando a borda, details aberto/fechado e selects aparecem com estrutura comparável; campos mais altos e tema próprio. Abrir details e grupos do popup não foi testado. |
+| `forms-progress-and-output` | DIFFERENT | 0,8057 | 10 | Tema dos controles | Valores e proporções de preenchimento comparáveis. A tbox usa barras retangulares mais grossas; a aparência indeterminada é apenas um frame. |
+| `forms-select` | DIFFERENT | 0,8452 | 5 | Tema dos controles | Seleções iniciais iguais, com fonte, seta e dimensões diferentes. Listas fechadas: esta captura não avalia o tema de picker nem a navegação nas opções. |
+| `forms-textarea-wrapping` | DIFFERENT | 0,8586 | 4 | Débito conhecido | Preserva espaços e quebras explícitas, mas a URL longa é cortada em caracteres diferentes: falta aproveitar oportunidades como /. O desvio persiste em prova complementar com fonte e caixa igualadas; também difere a fonte padrão. |
+
+### Imagens
+
+| Fixture | tbox_cmp | SSIM | Falhas locais | Categoria | Observação |
+|---|---|---:|---:|---|---|
+| `images-object-fit` | DIFFERENT | 0,6871 | 1 | Recurso equivalente | Recortes e proporções de fill/contain/cover/none/scale-down comparáveis; o bloco grande começa alguns pixels acima na tbox. |
+| `images-object-position` | DIFFERENT | 0,6644 | 3 | Recurso equivalente | Enquadramentos comparáveis nos exemplos de posições e offsets; deslocamentos verticais de alguns pixels por métricas de linha. |
+| `images-rendering` | DIFFERENT | 0,8874 | 6 | Recurso equivalente | O padrão ampliado distingue auto suave de pixelated/crisp-edges nos dois. Há pequenas diferenças de rasterização e as diferenças comuns de texto e canvas. |

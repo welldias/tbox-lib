@@ -54,7 +54,7 @@ if(TBOX_OPENCV_FOUND AND TBOX_FONTCONFIG_FOUND)
     endif()
 
     target_link_libraries(tbox_cmp PRIVATE
-        freetype
+        Freetype::Freetype
         ${WAYLAND_CLIENT_LIBRARIES}
         ${XKBCOMMON_LIBRARIES}
         ${FONTCONFIG_LIBRARIES}

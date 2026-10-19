@@ -83,7 +83,8 @@ adicionada. Tabelas `static const` (dados imutáveis) não entram nessa regra.
 
 ## Dependências
 
-- FreeType é obrigatório e baixado pelo CMake (`FetchContent`).
+- FreeType é obrigatório no sistema, incluindo headers de desenvolvimento;
+  o CMake usa `find_package(Freetype REQUIRED)` e `Freetype::Freetype`.
 - Toda outra dependência de sistema é **opcional, com graceful-skip**:
   Fontconfig, Wayland (+ `xkbcommon`, `wayland-cursor`), OpenCV. Se ausente, o
   configure avisa e exclui **o arquivo inteiro** que depende dela — o
@@ -108,4 +109,3 @@ adicionada. Tabelas `static const` (dados imutáveis) não entram nessa regra.
      um novo na categoria (veja `docs/referencia/fixtures.md`); ele precisa
      caber em 800x600.
 - Testes: `ctest --test-dir build --output-on-failure` precisa passar.
-- Depois de mudar código, rode `graphify update .` se `graphify-out/` existir.

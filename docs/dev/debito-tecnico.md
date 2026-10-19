@@ -420,7 +420,10 @@ tabela sobreposta copia os estilos da subárvore a cada frame.
 
 - **O que é:** o `<textarea>` quebra uma palavra longa em qualquer
   caractere. Não usa as oportunidades depois de `-` e de `/` que o texto
-  comum ganhou.
+  comum ganhou. Confirmado na revalidação de paridade de 2026-10-19:
+  mesmo igualando fonte, line-height, padding, borda e largura numa cópia
+  temporária de `forms-textarea-wrapping`, a URL quebra em posições
+  diferentes. O comparador deu EQUAL nessa prova, apesar do desvio visual.
 - **Toca:** `src/layout/tbox_layout_textarea.c`,
   `src/context/tbox_context_textarea.c`.
 
@@ -489,6 +492,38 @@ tabela sobreposta copia os estilos da subárvore a cada frame.
 - **Quando revisitar:** quando um caso real pedir máscaras compostas, ou
   sombras mais fiéis.
 - **Toca:** `tbox_style_resolve_mask`, `tbox_render_push_box_shadow`.
+
+### Defeitos da medição de paridade de 2026-10-19
+
+Achados ao comparar os fixtures com o Firefox
+([paridade](../referencia/paridade-firefox.md#defeitos-encontrados)).
+Reconfirmados na revalidação dos 114 fixtures em build Debug, com Firefox
+158.0 e HarfBuzz. As causas internas ainda não foram isoladas; a comparação
+visual não determina quando cada defeito foi introduzido.
+
+- **Floats dentro de item de grid:** nas duas primeiras células de
+  `layout-floats`, o float desce e o texto se espreme; em `inline-block`
+  as mesmas células saem certas. Suspeita: estado de floats de uma passada
+  de medida do grid. Toca `tbox_layout_grid.c`, `tbox_layout_float.c`.
+- **Borda por linha no bloco partido entre colunas:** em `layout-multicol`,
+  o bloco com fundo e borda dividido entre colunas ganha uma borda em volta
+  de cada linha. O `tbox_cmp` retorna EQUAL apesar do defeito visual.
+  Toca `tbox_layout_multicol.c`.
+- **Fundo de inline com `line-height` grande:** fundo e borda de um `span`
+  partido ocupam a altura da linha, não a área de conteúdo da fonte
+  (`effects-masks-and-reflection`). Toca `tbox_layout_inline.c`.
+- **`vertical-align: middle` em `td`/`th`:** falta na folha UA; o layout de
+  tabela já centraliza (`html-tables-layout`). Toca
+  `src/context/tbox_ua_style.c`.
+- **Conteúdo do `<button>` de tamanho fixo:** fica no canto superior
+  esquerdo; o Firefox centraliza nos dois eixos
+  (`interaction-cursor-and-pointer`).
+- **Altura da linha com `::marker` maior ou `vertical-align` deslocado:**
+  a caixa de linha não cresce para conter o marcador ampliado
+  (`lists-markers`) nem o inline deslocado por `+6px`/`-0.4em`
+  (`text-spacing`). Toca `tbox_layout_list.c`, `tbox_layout_inline.c`.
+- **`font-size-adjust`:** a sans quase não cresce e a serif cresce demais
+  em relação ao Firefox (`text-font-size`). Toca `tbox_layout_common.c`.
 
 ## HTML Parser
 

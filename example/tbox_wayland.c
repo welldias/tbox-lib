@@ -565,8 +565,7 @@ int main(void) {
         .height = TBOX_WAYLAND_HEIGHT,
     };
 
-    /* Smoke-tests linking against the static FreeType built by this
-     * example's CMakeLists.txt -- no font is loaded yet. */
+    /* Smoke-tests linking against the system FreeType; no font is loaded yet. */
     if (FT_Init_FreeType(&app.ft_library) != 0) {
         fprintf(stderr, "failed to initialize FreeType\n");
         return 1;

@@ -2,11 +2,9 @@
  * ligatures, contextual forms, positioned marks, OpenType kerning.
  * Compiled only when HarfBuzz is found and TBOX_ENABLE_HARFBUZZ is ON.
  *
- * The font is read from the bytes the face already owns, not through hb-ft:
- * the process holds two FreeType builds (the static one of this project and
- * the system one HarfBuzz links against) and hb-ft would call the wrong one.
- * Advances still come from this project's FreeType (hinted, the same ones
- * the raster's bitmaps use), through a sub-font that overrides only them. */
+ * The font is read from the bytes the face already owns, without hb-ft.
+ * A sub-font overrides advances with FreeType's hinted values, matching
+ * the raster's bitmaps, while inheriting HarfBuzz's OpenType functions. */
 #include "tbox_font_face_internal.h"
 
 #include <hb.h>

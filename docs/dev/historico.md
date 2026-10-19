@@ -18,6 +18,15 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — FreeType obrigatório do sistema
+
+FreeType passa a ser localizado por `find_package(Freetype REQUIRED)`;
+bibliotecas, exemplos e ferramentas usam `Freetype::Freetype`. Removidos
+o download via `FetchContent`, a compilação da cópia estática e a imposição
+global de `BUILD_SHARED_LIBS=OFF`. A instalação de desenvolvimento do
+FreeType é obrigatória antes do configure. Métricas, rasterização,
+contornos e a integração de shaping permanecem com as mesmas funções.
+
 ## Após v20 — Shaping com HarfBuzz
 
 HarfBuzz entra como shaper opcional (`TBOX_ENABLE_HARFBUZZ`, padrão `ON`):
@@ -1112,3 +1121,31 @@ Defeitos apontados pela comparação de todos os fixtures com o Firefox
 - Classes e variáveis em português dentro dos fixtures passaram para o
   inglês, e `lang="pt-BR"` virou `lang="en"` (menos em
   `selectors-attributes-and-lang`, que testa `:lang()`).
+
+## 2026-10-19 — Nova medição de paridade com o Firefox
+
+- **Medição:** os 114 fixtures reorganizados foram capturados no Firefox
+  158 e comparados com a tbox. O `tbox_cmp` deu 46 EQUAL e 68 DIFFERENT; a
+  revisão lado a lado deu nota média 9,2. O resultado, por fixture e por
+  causa, está em [paridade](../referencia/paridade-firefox.md).
+- **Defeitos novos** registrados em [débito técnico](debito-tecnico.md):
+  floats em item de grid, borda por linha no bloco partido entre colunas,
+  fundo de inline com `line-height` grande, `vertical-align: middle` em
+  células, conteúdo do `<button>` de tamanho fixo, altura de linha com
+  marcador ampliado ou `vertical-align` deslocado, e `font-size-adjust`.
+- **Fixtures:** `layout-floats` e `layout-multicol` passaram a usar grid,
+  porque o espaço entre `inline-block` empilhava as células no Firefox;
+  `layout-flexbox` foi ajustado para caber em 800×600.
+
+## 2026-10-19 — Revalidação da paridade após reorganização
+
+- **Execução atual:** os 114 HTML foram novamente capturados no Firefox
+  158.0 e renderizados pelo build Debug com HarfBuzz em 800×600: 46 EQUAL,
+  68 DIFFERENT e nenhuma falha operacional. Os 25 grupos do CTest passaram.
+- **Relatório:** [paridade](../referencia/paridade-firefox.md) reescrita com
+  ambiente, métricas por fixture, falhas locais, revisão dos 114 pares e
+  limites da captura estática. EQUAL não implica ausência de defeitos,
+  como mostram as bordas da multicoluna; SSIM não decide o veredito.
+- **Textarea:** prova temporária com fonte e caixa igualadas confirmou a
+  diferença de quebra de URL, já registrada como débito. Os fixtures e o
+  código de renderização/comparação não foram alterados nesta revalidação.

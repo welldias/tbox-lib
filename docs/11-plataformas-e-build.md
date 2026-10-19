@@ -17,7 +17,7 @@
 
 | Dependência | Obrigatória? | Para quê | Sem ela |
 |---|---|---|---|
-| FreeType | sim (baixada pelo CMake) | métricas e rasterização de glifos | — |
+| FreeType | sim (instalada no sistema, incluindo headers de desenvolvimento) | métricas e rasterização de glifos | configure falha |
 | Fontconfig | não | achar fontes do sistema; `tbox_app`; screenshots | `tbox_app_*` continua linkável mas retorna falha; use `tbox_context` com fonte própria |
 | HarfBuzz | não | shaping: ligaduras, formas contextuais, marcas, kerning OpenType ([Texto e fontes](09-texto-e-fontes.md#shaping-do-texto-aos-glifos)) | um glifo por codepoint (`tbox_font_shaper_simple.c`) |
 | wayland-client, wayland-protocols, wayland-scanner, xkbcommon | não | janela interativa | sem janela (`tbox_app_backend_available()` = `false`) |
@@ -27,6 +27,17 @@
 
 Toda dependência opcional é detectada no configure; se faltar, o CMake
 avisa e segue, removendo do build os arquivos que dependem dela.
+
+FreeType é localizada com `find_package(Freetype REQUIRED)` e compartilhada
+pelos alvos via `Freetype::Freetype`. O build não baixa nem compila uma cópia
+própria. Instale antes de configurar:
+
+```sh
+# Arch Linux
+sudo pacman -S freetype2
+# Debian/Ubuntu
+sudo apt install libfreetype-dev
+```
 
 ## Opções do CMake
 
@@ -53,11 +64,13 @@ quando o tbox é o projeto raiz). Hoje:
 3. Linke:
    - **compartilhada** (mais simples):
      `-L tbox-lib/build/src -ltbox -Wl,-rpath,<caminho>`;
-   - **estática**: `tbox-lib/build/src/libtbox.a`, o FreeType do build
-     (`build/_deps/freetype-build/libfreetype*.a`) e as bibliotecas de sistema
-     que ele e os backends usam. Num Arch Linux típico:
-     `$(pkg-config --libs fontconfig wayland-client wayland-cursor xkbcommon) -lz -lbz2 -lpng -lbrotlidec -lharfbuzz -lm`
-     (a lista exata depende de como o FreeType foi configurado na sua máquina).
+   - **estática**: `tbox-lib/build/src/libtbox.a` e as bibliotecas de sistema
+     usadas pelo build. Com todos os backends e HarfBuzz habilitados:
+     `$(pkg-config --libs freetype2 fontconfig harfbuzz wayland-client wayland-cursor xkbcommon) -lm -pthread`.
+     Para um build só com fontes fornecidas pela aplicação e shaper simples:
+     `$(pkg-config --libs freetype2) -lm -pthread`.
+     Se as dependências também forem linkadas estaticamente, use
+     `pkg-config --static --libs` para incluir as dependências transitivas.
 
 Empacotamento (instalar a lib e a fonte embutida no sistema) faz parte do
 [roadmap](14-limitacoes-e-roadmap.md).

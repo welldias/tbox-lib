@@ -37,7 +37,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-FreeType is fetched by CMake. Fontconfig and Wayland are optional; without
+FreeType development headers and libraries must be installed on the system
+(`freetype2` on Arch Linux, `libfreetype-dev` on Debian/Ubuntu).
+Fontconfig and Wayland are optional; without
 them the library still builds (headless). Try `build/example/tbox_app_demo`
 or `build/example/tbox_keyboard_demo`.
 
