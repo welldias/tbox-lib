@@ -53,6 +53,9 @@ typedef struct tbox_html_node {
              * reads it); the `selected` attribute is just the initial choice,
              * which a form reset restores. */
             bool selectedness;
+            /* Runtime :focus-visible state, maintained by tbox_context.
+             * Not an HTML attribute; false on newly parsed/created nodes. */
+            bool focus_visible;
         } element;
         /* Valid when type is TEXT, COMMENT or DOCTYPE. For DOCTYPE this
          * holds only the doctype name (e.g. "html"). */

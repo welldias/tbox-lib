@@ -48,6 +48,8 @@
     .forms input:optional, .forms textarea:optional { border-color: #16a34a; background: #dcfce7; }
     .focus:focus-within { border-color: #2563eb; background: #dbeafe; }
     .focus { border-width: 2px; }
+    .focus input:focus, .focus button:focus { outline: none; }
+    .focus input:focus-visible, .focus button:focus-visible { outline: 3px solid #7c3aed; }
     .enabled input { padding: 4px; margin-right: 6px; width: 120px; }
     .enabled input:enabled { border: 2px solid #2563eb; background: #eff6ff; }
     .enabled input:disabled { border: 2px solid #94a3b8; background: #e2e8f0; color: #64748b; }
@@ -73,6 +75,7 @@
       <div class="card focus">
         <h2>:focus-within (click the field)</h2>
         <input value="Ada">
+        <button>Tab: purple ring; click: no ring</button>
       </div>
       <div class="card enabled" style="margin-top: 10px">
         <h2>:enabled and :disabled</h2>

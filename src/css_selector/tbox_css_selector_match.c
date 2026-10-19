@@ -346,6 +346,10 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
         if (tbox_string_view_equal_ascii_ci(item->name, tbox_string_view_make("focus", 5))) {
             return node == tbox_css_selector_focused_node;
         }
+        if (tbox_string_view_equal_cstr(item->name, "focus-visible")) {
+            return node == tbox_css_selector_focused_node &&
+                   node->type == TBOX_HTML_NODE_ELEMENT && node->element.focus_visible;
+        }
         if (tbox_string_view_equal_cstr(item->name, "focus-within")) {
             if (node->type != TBOX_HTML_NODE_ELEMENT) return false;
             for (const tbox_html_node *ancestor = tbox_css_selector_focused_node; ancestor != NULL; ancestor = ancestor->parent)

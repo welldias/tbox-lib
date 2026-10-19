@@ -57,6 +57,7 @@ bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, d
 
 bool tbox_context_set_active_at(tbox_context *ctx, bool pressed, double x, double y) {
     if (ctx == NULL) return false;
+    bool visibility_changed = pressed && tbox_context_focus_visibility(ctx, false);
     const tbox_html_node *node = NULL;
     if (pressed) {
         const tbox_layout_box *box = tbox_context_hit_test(ctx, x, y);
@@ -64,7 +65,7 @@ bool tbox_context_set_active_at(tbox_context *ctx, bool pressed, double x, doubl
         if (box != NULL && box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT)
             node = box->node;
     }
-    if (ctx->active_node == node) return false;
+    if (ctx->active_node == node) return visibility_changed;
     ctx->active_node = node;
     return true;
 }
@@ -125,11 +126,25 @@ bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node)
     return true;
 }
 
+bool tbox_context_focus_visibility(tbox_context *ctx, bool keyboard) {
+    if (ctx == NULL) return false;
+    ctx->focus_keyboard = keyboard;
+    if (ctx->focused_node == NULL) return false;
+    tbox_html_node *node = (tbox_html_node *)ctx->focused_node;
+    bool visible = keyboard || tbox_context_is_text_control(node);
+    bool changed = node->element.focus_visible != visible;
+    node->element.focus_visible = visible;
+    return changed;
+}
+
 bool tbox_context_set_focus(tbox_context *ctx, const tbox_html_node *node) {
     if (ctx->focused_node == node) {
-        return false;
+        return tbox_context_focus_visibility(ctx, ctx->focus_keyboard);
     }
+    if (ctx->focused_node != NULL)
+        ((tbox_html_node *)ctx->focused_node)->element.focus_visible = false;
     ctx->focused_node = node;
+    tbox_context_focus_visibility(ctx, ctx->focus_keyboard);
     if (ctx->open_select != node) {
         ctx->open_select = NULL;
         ctx->popup_highlight = NULL;

@@ -93,6 +93,15 @@ select), restaura formulários (`reset`), envia (`submit`). Controles
 
 O foco pertence ao `tbox_context`.
 
+`:focus-visible` combina o foco atual com a modalidade de entrada guardada
+no contexto. Tab e teclas sem Control ativam o destaque; pressionar o
+ponteiro ou clicar o desativa para botões e outros controles. Campos que
+aceitam texto continuam correspondendo ao seletor mesmo quando focados
+pelo ponteiro. Soltar teclas, mover o ponteiro e atalhos com Control não
+trocam a modalidade. O nó focado guarda apenas o resultado booleano dessa
+decisão; não há novo estado global. `:focus` e `:focus-within` mantêm seu
+comportamento independente da modalidade.
+
 - **Tab / Shift+Tab** percorrem botões, inputs (inclusive `type=button`,
   checkbox, cor, data, arquivo, imagem), campos de texto e selects visíveis e
   habilitados. O próximo frame rola os ancestrais para mostrar o elemento

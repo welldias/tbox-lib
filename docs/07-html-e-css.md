@@ -282,7 +282,7 @@ no parser de supports e continua falsa. Fixtures: `tests/assets/cascade-scope-an
   `:empty`, `:first-of-type`, `:last-of-type`, `:only-of-type`,
   `:nth-child()`, `:nth-of-type()`, `:nth-last-child()`,
   `:nth-last-of-type()` (com `an+b`, `odd`, `even`).
-- Estado: `:hover`, `:active`, `:focus`, `:focus-within`, `:checked`,
+- Estado: `:hover`, `:active`, `:focus`, `:focus-visible`, `:focus-within`, `:checked`,
   `:disabled`, `:enabled`, `:required`, `:optional`, `:link`/`:any-link`
   (todo link é não visitado), `:lang()`. Em `<option>`, `:checked` é a
   opção escolhida agora no select (não o atributo `selected`) e `:disabled`
@@ -296,6 +296,10 @@ no parser de supports e continua falsa. Fixtures: `tests/assets/cascade-scope-an
   rolagem (`::-tbox-scrollbar-thumb`, único pseudo-elemento seguido de
   `:hover`/`:active`), em
   [Eventos e interatividade](06-eventos-e-interatividade.md#partes-da-barra).
+
+`::placeholder` estiliza o texto auxiliar de inputs de texto e textarea:
+cor, opacidade e estilos de texto, sem alterar o valor ou dimensionar o
+controle. Veja [Texto auxiliar dos campos](10-formularios-e-controles.md#texto-auxiliar-dos-campos).
 
 ### Conteúdo gerado (`::before`/`::after`)
 
@@ -321,9 +325,7 @@ no parser de supports e continua falsa. Fixtures: `tests/assets/cascade-scope-an
   `select`, `textarea`, `br`, `hr`, `progress`, `meter`…).
 - **Interação**: um clique ou hover sobre o conteúdo gerado conta como sobre
   o elemento (`tbox_context_hit_test` devolve a caixa do elemento).
-- **Limitações**: pseudos não têm `transition`, `animation` nem `@starting-style`; um
-  pseudo `position: absolute` dentro de `<p>`/`<li>`/`<button>` (contexto
-  inline) não aparece, como qualquer filho absoluto nesses elementos;
+- **Limitações**: pseudos não têm `transition`, `animation` nem `@starting-style`;
   `::first-line` é reconhecido mas não estiliza nada.
 - Um seletor não suportado invalida só a própria regra, como no CSS.
 

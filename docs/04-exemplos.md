@@ -336,3 +336,14 @@ para soltar a closure que entregou ao C.
 | `tbox_assets_showrun` | Navega pelos fixtures de `tests/assets` com as setas. |
 | `tbox_worker_post_demo` | Uma thread de trabalho atualiza uma barra de progresso via `tbox_app_post`; o loop dorme entre as tarefas. |
 | `html_parser`, `html_xpath`, `css_parser`, `css_selector`, `css_cascade`, `css_cascade_origins`, `css_style_by_node` | Uso isolado de cada camada, sem janela. |
+
+## Template do explorador de arquivos
+
+`example/file-explorer/index.html` e `styles.css` são a base visual de um
+exemplo ainda em preparação, sem programa C associado. O
+[catálogo de compatibilidade](referencia/file-explorer-compatibilidade.md)
+lista os elementos, propriedades, seletores e comportamentos usados que
+a tbox ainda não implementa e registra as implementações de placeholder,
+`:focus-visible` e a correção de `.visually-hidden`. SVG fica para a última
+etapa; extensões WebKit e semântica ficam fora desta etapa. Os arquivos do
+template foram preservados.

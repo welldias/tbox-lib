@@ -191,6 +191,7 @@ struct tbox_context {
     const tbox_html_node *hovered_node;       /* the node currently under the pointer, or NULL -- a plain struct field with its own lifetime, deliberately NOT part of frame_arena (must survive every tbox_context_run_frame's arena reset so tbox_context_update_hover can compare across frames; see <tbox/context.h>) */
     const tbox_html_node *active_node;        /* pointer-pressed node, retained until release for :active */
     const tbox_html_node *focused_node;
+    bool focus_keyboard;
     tbox_text_field *text_fields;
     tbox_file_field *file_fields;
     tbox_select_field *select_fields;
@@ -404,6 +405,7 @@ size_t tbox_context_cursor_at_x(const tbox_text_field *field, const tbox_layout_
 size_t tbox_context_cursor_at_point(const tbox_text_field *field, const tbox_layout_box *box, const tbox_font_face *face, double x, double y);
 bool tbox_context_focusable(const tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_set_focus(tbox_context *ctx, const tbox_html_node *node);
+bool tbox_context_focus_visibility(tbox_context *ctx, bool keyboard);
 bool tbox_context_move_focus(tbox_context *ctx, bool reverse);
 bool tbox_context_dispatch_select_key(tbox_context *ctx, tbox_key key);
 

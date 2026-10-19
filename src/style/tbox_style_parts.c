@@ -113,6 +113,23 @@ static void tbox_style_part_copy(const tbox_style *from, tbox_style_part_style *
 
 void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena) {
     unsigned parts = tbox_style_parts_of(node, style);
+    const tbox_html_attribute *placeholder = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("placeholder"));
+    if ((parts & TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SELECTION)) != 0 && placeholder != NULL && placeholder->value.size > 0) {
+        tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node,
+            "placeholder", 0, viewport_width, viewport_height, reduced_motion,
+            &(tbox_css_query_context){ style->query_container, style->custom_properties });
+        tbox_style *text = tbox_arena_alloc(arena, sizeof(*text));
+        if (text != NULL) {
+            *text = tbox_style_resolve_in_viewport(NULL, style, &computed, viewport_width, viewport_height);
+            if (tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("color")) == NULL)
+                text->color = (tbox_css_rgba){117, 117, 117, 255};
+            /* This is text ink, not an opacity group around the control. */
+            text->color.a = text->visibility_hidden ? 0 : (uint8_t)(text->color.a * text->opacity + 0.5);
+            text->opacity = 1.0;
+            style->placeholder_style = text;
+        }
+        tbox_css_computed_style_destroy(&computed);
+    }
     for (size_t part = 0; part < TBOX_STYLE_PART_COUNT; part++) {
         if ((parts & TBOX_STYLE_PART_BIT(part)) == 0)
             continue;

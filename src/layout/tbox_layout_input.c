@@ -118,10 +118,23 @@ void tbox_layout_input_push_value_word(tbox_arena *arena, const tbox_html_node *
             tbox_string_view_make("Reset", 5) :
         type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("submit", 6)) ?
             tbox_string_view_make("Submit", 6) : tbox_string_view_make(NULL, 0);
+    bool placeholder = label.size == 0 && style->placeholder_style != NULL;
+    if (placeholder) {
+        const tbox_html_attribute *hint = tbox_html_node_get_attribute(node, tbox_string_view_make("placeholder", 11));
+        label = hint->value;
+        /* A single-line input strips CR/LF from its placeholder. */
+        char *text = tbox_arena_alloc(arena, label.size);
+        size_t length = 0;
+        if (text == NULL) return;
+        for (size_t i = 0; i < label.size; i++)
+            if (label.data[i] != '\r' && label.data[i] != '\n') text[length++] = label.data[i];
+        label = tbox_string_view_make(text, length);
+        style = style->placeholder_style;
+    }
     const tbox_font_face *face = tbox_layout_style_face(fonts, style);
     if (label.size > 0 && face != NULL) {
         tbox_string_view display = label;
-        if (tbox_layout_is_password_input(node))
+        if (!placeholder && tbox_layout_is_password_input(node))
             display = tbox_layout_password_mask(arena, face, label);
         tbox_layout_word *word = tbox_layout_new_word(words);
         word->text = display;

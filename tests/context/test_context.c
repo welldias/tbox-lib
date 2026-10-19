@@ -432,6 +432,10 @@ static bool resolve_first_child_style(const char *html, tbox_style *out_style) {
     return resolve_first_child_style_with_config(html, tbox_ua_style_config_default(), out_style);
 }
 
+int tbox_test_placeholder_run(tbox_font_face_cache *fonts);
+int tbox_test_inline_positioned_run(tbox_font_face_cache *fonts);
+int tbox_test_focus_visible_run(tbox_font_face_cache *fonts);
+
 int tbox_test_context_run(void) {
     int failures = 0;
 
@@ -452,6 +456,10 @@ int tbox_test_context_run(void) {
         free(font_data);
         return failures + 1;
     }
+
+    failures += tbox_test_placeholder_run(fonts);
+    failures += tbox_test_inline_positioned_run(fonts);
+    failures += tbox_test_focus_visible_run(fonts);
 
     /* 1: a <div> styled with background-color, run end to end, produces a
      * display list with the expected FILL_RECT (rect == border_box,
@@ -1791,7 +1799,8 @@ int tbox_test_context_run(void) {
             double two_x, two_y;
             bool clicked_two = hit_point_for(ctx, two, 320.0, 200.0, &two_x, &two_y);
             if (clicked_two) {
-                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, two_x, two_y));
+                /* Removing keyboard focus visibility also requires a frame. */
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, two_x, two_y));
                 TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == two);
             }
             TBOX_TEST_ASSERT_MSG(clicked_two, "pointer click must focus a rendered button without a handler");
@@ -2311,7 +2320,7 @@ int tbox_test_context_run(void) {
                 const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
                 TBOX_TEST_ASSERT(disabled_box != NULL);
                 if (disabled_box != NULL)
-                    TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, disabled_box->border_box.x + 2.0, disabled_box->border_box.y + 2.0));
+                    TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, disabled_box->border_box.x + 2.0, disabled_box->border_box.y + 2.0));
                 TBOX_TEST_ASSERT(capture.call_count == 3);
                 tbox_context_close(ctx);
             }
@@ -2446,7 +2455,7 @@ int tbox_test_context_run(void) {
             const tbox_layout_box *disabled_box = find_context_box(ctx, disabled);
             TBOX_TEST_ASSERT(disabled_box != NULL);
             if (disabled_box != NULL)
-                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, disabled_box->border_box.x + 5.0, disabled_box->border_box.y + 5.0));
             TBOX_TEST_ASSERT(tbox_html_node_get_attribute(b, tbox_string_view_make("checked", 7)) != NULL);
             tbox_context_close(ctx);
         }
@@ -2841,7 +2850,7 @@ int tbox_test_context_run(void) {
             double dx, dy;
             bool clicked_disabled = hit_point_for(ctx, disabled, 240.0, 220.0, &dx, &dy);
             if (clicked_disabled)
-                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, dx, dy));
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, dx, dy));
             TBOX_TEST_ASSERT(clicked_disabled && tbox_context_focused_node(ctx) == NULL);
             tbox_context_close(ctx);
         }

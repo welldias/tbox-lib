@@ -331,12 +331,12 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding);
  * picker adjust a channel. Date, datetime-local, and month inputs open a picker;
  * choosing a day or month, or confirming date and time, updates the value.
  * A reset input restores the initial values of controls in its form.
- * Returns true if a handler fired, a checkbox changed,
+ * Returns true if :focus-visible changed, a handler fired, a checkbox changed,
  * or a picker handled the click (the caller --
  * Application today, a script engine's event loop tomorrow -- should treat
  * that the same as a resize: a reason to redo the compute pipeline).
- * No-op (returns false) if ctx == NULL, if there is no layout yet, or if
- * nothing is under the point -- same guard as tbox_context_hit_test. */
+ * Returns false for NULL ctx. With no target, handlers do not fire, but
+ * clearing :focus-visible can still require a frame. */
 bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y);
 
 /* Adjusts an open input type=color RGB slider during a pointer drag.

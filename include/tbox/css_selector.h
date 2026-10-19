@@ -26,7 +26,8 @@ extern "C" {
  * "disabled"/"enabled" and "required"/"optional" match eligible form
  * controls by their own attributes. "hover" matches the context's hovered
  * node and its ancestors; "active" matches the pressed node and its ancestors;
- * "focus" matches the focused node; "focus-within" also
+ * "focus" matches the focused node; "focus-visible" additionally requires
+ * element.focus_visible (maintained by tbox_context); "focus-within" also
  * matches ancestors of the focused node. "link" and "any-link" match
  * a/area/link elements with href (no visited history). "checked" matches a
  * checked input type=checkbox. "lang" uses the nearest ancestor's `lang`

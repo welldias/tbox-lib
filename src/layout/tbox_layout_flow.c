@@ -108,8 +108,8 @@ static tbox_layout_box *tbox_layout_build_beside_floats(tbox_arena *arena, const
  * (tbox_layout_is_inline_run_trigger: non-whitespace TEXT, or an in-flow
  * ELEMENT with display:inline -- see docs/dev/historico.md's v14 "Algoritmo").
  * When it does, tbox_layout_inline_run_end finds the end of that sequence
- * (the first in-flow non-inline ELEMENT, the first out-of-flow ELEMENT, or
- * NULL), tbox_layout_build_anonymous_box builds ONE box for the whole
+ * (the first in-flow non-inline ELEMENT or NULL),
+ * tbox_layout_build_anonymous_box builds ONE box for the whole
  * [run_start, run_end) range, and the outer loop resumes at `run_end` --
  * never `child->next_sibling` -- so the entire sequence is consumed in one
  * step. The anonymous box is linked into `parent_box->first_child`/
@@ -488,7 +488,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
 /* scans forward from `run_start` (itself already known to be an
  * inline-run trigger, see tbox_layout_is_inline_run_trigger above) for the
  * first sibling that must NOT be consumed by the sequence -- the first
- * in-flow ELEMENT with display != inline, the first out-of-flow ELEMENT, or
+ * in-flow ELEMENT with display != inline, or
  * the end of the sibling list (NULL, meaning the sequence runs to the last
  * child). TEXT of ANY content (including whitespace-only -- preserves
  * spacing between words/inline elements), ELEMENT display:none, and
@@ -529,7 +529,7 @@ const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start
 
         bool is_out_of_flow = (node_style->position == TBOX_STYLE_POSITION_ABSOLUTE || node_style->position == TBOX_STYLE_POSITION_FIXED);
         if (is_out_of_flow) {
-            break; /* terminates, NOT consumed -- built via the out-of-flow path instead */
+            continue; /* built separately inside the anonymous inline box */
         }
 
         if (node_style->display == TBOX_STYLE_DISPLAY_INLINE || node_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || node_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX || node_style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) {

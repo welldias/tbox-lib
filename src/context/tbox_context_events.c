@@ -121,7 +121,7 @@ void tbox_context_emit_submit(tbox_context *ctx, const tbox_html_node *form, con
     tbox_release_leave(&ctx->releases);
 }
 
-bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
+static bool tbox_context_dispatch_click_impl(tbox_context *ctx, double x, double y) {
     if (ctx == NULL) {
         return false;
     }
@@ -246,8 +246,18 @@ bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
 
 static bool tbox_context_dispatch_key_event(tbox_context *ctx, tbox_key_event event);
 
+bool tbox_context_dispatch_click(tbox_context *ctx, double x, double y) {
+    bool changed = tbox_context_focus_visibility(ctx, false);
+    bool handled = tbox_context_dispatch_click_impl(ctx, x, y);
+    return changed || handled;
+}
+
 bool tbox_context_dispatch_key(tbox_context *ctx, const tbox_key_event *event) {
-    return event != NULL && tbox_context_dispatch_key_event(ctx, *event);
+    if (event == NULL) return false;
+    bool changed = event->pressed && !event->control && event->key != TBOX_KEY_UNKNOWN &&
+        tbox_context_focus_visibility(ctx, true);
+    bool handled = tbox_context_dispatch_key_event(ctx, *event);
+    return changed || handled;
 }
 
 static bool tbox_context_dispatch_key_event(tbox_context *ctx, tbox_key_event event) {

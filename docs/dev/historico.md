@@ -18,6 +18,21 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Pendências visuais do explorador de arquivos
+
+Implementados sequencialmente `placeholder`/`::placeholder`, caixas próprias
+para elementos inline `absolute`/`fixed` e `:focus-visible` por modalidade.
+A busca vazia passa a mostrar o texto auxiliar; o span “Opções” recebe o
+recorte de `.visually-hidden`; as regras de foco por teclado passam a casar.
+Placeholder preserva valor, seleção e altura do input; textarea mantém suas
+linhas editáveis independentes. Nenhum novo estado global mutável.
+
+Incluídos testes de interação, geometria e pixels, fixture `forms-placeholder`
+e casos em `selectors-states` e `layout-block-in-inline`. Atualizados os mapas
+e o catálogo do explorador; resolvido o débito de inline posicionado oculto.
+SVG fica para a última etapa; extensões WebKit são ignoradas; semântica
+permanece adiada. O template do explorador foi preservado.
+
 ## Após v20 — FreeType obrigatório do sistema
 
 FreeType passa a ser localizado por `find_package(Freetype REQUIRED)`;
@@ -1149,3 +1164,18 @@ Defeitos apontados pela comparação de todos os fixtures com o Firefox
 - **Textarea:** prova temporária com fonte e caixa igualadas confirmou a
   diferença de quebra de URL, já registrada como débito. Os fixtures e o
   código de renderização/comparação não foram alterados nesta revalidação.
+
+## 2026-10-19 — Catálogo do template file-explorer
+
+- **Análise:** `example/file-explorer/index.html` e `styles.css`
+  inventariados sem alterar o template: 39 nomes de elementos, 62
+  propriedades CSS, 14 custom properties e 100 seletores distintos.
+  As lacunas de SVG, metadados, 7 propriedades CSS, foco, placeholder e
+  atributos semânticos estão no
+  [catálogo](../referencia/file-explorer-compatibilidade.md).
+- **Verificação:** consultas à biblioteca compilada, prova de Tab e
+  renderização headless em 1440×900 confirmaram as lacunas principais.
+  O texto `.visually-hidden` visível no cabeçalho foi registrado no
+  débito técnico; uma folha adicional temporária com `display: block`
+  suprimiu esse texto. Nenhum suporte novo ou lógica do explorador foi
+  implementado nesta etapa.

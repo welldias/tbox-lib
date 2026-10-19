@@ -1,10 +1,14 @@
 # Referência — paridade visual com o Firefox
 
-> - **Escopo:** comparação visual atual dos 114 fixtures de `tests/assets/`, com métricas por arquivo, diferenças observadas e limites da medição.
+> - **Escopo:** comparação visual dos 114 fixtures medidos de `tests/assets/`, com métricas por arquivo, diferenças observadas e limites da medição.
 > - **Código relacionado:** `tests/assets/`, `tests/tbox_cmp.cpp`
 > - **Veja também:** [Fixtures](fixtures.md), [Ferramentas e testes](../12-ferramentas-e-testes.md), [Débito técnico](../dev/debito-tecnico.md)
 
 ## Medição e ambiente
+
+Esta é a medição anterior às implementações de placeholder, `:focus-visible`
+e posicionados inline e à inclusão de `forms-placeholder`. As métricas
+abaixo permanecem um retrato daquela árvore, sem extrapolação às mudanças.
 
 Revalidação de **2026-10-19**, com os **114 HTML reorganizados por
 categoria** existentes em `tests/assets/`. Todos foram novamente capturados

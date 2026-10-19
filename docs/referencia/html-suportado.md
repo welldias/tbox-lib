@@ -70,7 +70,7 @@ IMPORTANTE: Implementar apenas elementos HTML que sejam suportado pelo HTML5. Em
 | X | `<i>` | Defines a part of text in an alternate voice or mood |
 |  | `<iframe>` | Defines an inline frame |
 | X | `<img>` | Defines an image |
-| X | `<input>` | Defines an input control |
+| X | `<input>` | Defines an input control; text-like types support placeholder and ::placeholder |
 | X | `<ins>` | Defines a text that has been inserted into a document |
 | X | `<kbd>` | Defines keyboard input |
 | X* | `<label>` | Defines a label for an `<input>` element |
@@ -120,7 +120,7 @@ IMPORTANTE: Implementar apenas elementos HTML que sejam suportado pelo HTML5. Em
 | X | `<tbody>` | Groups the body content in a table |
 | X | `<td>` | Defines a cell in a table |
 | X | `<template>` | Defines a container for content that should be hidden when the page loads |
-| X | `<textarea>` | Defines a multiline input control (text area) |
+| X | `<textarea>` | Defines a multiline input control (text area), including multiline placeholder |
 | X | `<tfoot>` | Groups the footer content in a table |
 | X | `<th>` | Defines a header cell in a table |
 | X | `<thead>` | Groups the header content in a table |

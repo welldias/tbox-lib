@@ -508,6 +508,7 @@ static const char *const tbox_css_supported_pseudos[] = {
     "hover",
     "active",
     "focus",
+    "focus-visible",
     "focus-within",
     "link",
     "any-link",
@@ -517,6 +518,7 @@ static const char *const tbox_css_supported_pseudos[] = {
     "::marker",
     "::first-line",
     "::first-letter",
+    "::placeholder",
 };
 
 static bool tbox_css_supports_selector(tbox_string_view text) {

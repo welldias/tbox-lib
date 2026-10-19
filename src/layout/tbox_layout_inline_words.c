@@ -530,6 +530,10 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
                 state->trailing_space = true;
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
+            /* Positioned descendants have their own boxes, built after
+             * the in-flow line runs; their text never belongs to this line. */
+            if (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED)
+                continue;
             if (tbox_layout_is_float(child, child_style)) {
                 /* A float: a zero-width word carrying its box, placed when
                  * the line reaches it (tbox_layout_break_lines). Measured,

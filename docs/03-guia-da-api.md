@@ -55,6 +55,13 @@ leia com `tbox_style_part_find`. `color_declared`/`background_declared`
 dizem se a folha declarou a cor (senão vale a cor embutida do controle). O
 campo altera o tamanho de `tbox_style`: recompile consumidores.
 
+`tbox_html_node.element.focus_visible` é estado de execução mantido pelo
+contexto, não um atributo HTML; seletores o consultam junto do nó focado.
+
+`tbox_style.placeholder_style` é um ponteiro emprestado para o estilo de
+texto de `::placeholder`, na arena do frame, ou NULL quando não há texto
+auxiliar aplicável. Sua adição altera `tbox_style`: recompile consumidores.
+
 `tbox_css_cascade_resolve_pseudo_element_in_viewport` recebe `state`
 (`tbox_css_part_state`: `HOVER`, `ACTIVE`), para seletores como
 `::-tbox-scrollbar-thumb:hover`; passe `0` para um pseudo-elemento sem

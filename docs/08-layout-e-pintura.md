@@ -64,6 +64,12 @@ Regras que explicam a maior parte do comportamento:
   acima e centralizado no texto-base correspondente; sua altura aumenta a
   linha ao redor. Os caracteres de `<rp>` não são desenhados.
 
+**Inline fora do fluxo:** `absolute`/`fixed` dentro de um contexto de
+texto ganham caixas próprias e não contribuem palavras, largura ou altura
+à linha. A caixa usa o contexto posicionado do bloco e os mesmos recortes
+dos demais elementos. Isso inclui spans aninhados e texto auxiliar
+`.visually-hidden` em células, sem exigir `display: block` no autor.
+
 ## O que está implementado
 
 | Área | Situação |

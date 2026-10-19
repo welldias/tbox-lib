@@ -10,13 +10,22 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
         if (tbox_context_is_textarea(box->node) && box->style != NULL) {
             tbox_text_field *field = tbox_context_text_field(ctx, box->node);
             const tbox_style *style = box->style;
-            const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
-            if (field != NULL && face != NULL && field->length < SIZE_MAX / sizeof(tbox_text_line) - 1) {
-                size_t maximum = field->length + 1;
+            const tbox_style *text_style = style;
+            tbox_string_view content = field != NULL ? tbox_string_view_make(field->value, field->length) : tbox_string_view_make(NULL, 0);
+            bool placeholder = field != NULL && field->length == 0 && style->placeholder_style != NULL;
+            if (placeholder) {
+                const tbox_html_attribute *hint = tbox_html_node_get_attribute(box->node, tbox_string_view_make("placeholder", 11));
+                content = hint->value;
+                text_style = style->placeholder_style;
+            }
+            const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, text_style);
+            if (field != NULL && face != NULL && content.size < SIZE_MAX / sizeof(tbox_layout_text_run) - 1 &&
+                content.size < SIZE_MAX / sizeof(tbox_text_line) - 1) {
+                size_t maximum = content.size + 1;
                 tbox_text_line *lines = tbox_arena_alloc(&ctx->frame_arena, maximum * sizeof(*lines));
                 tbox_layout_text_run *runs = tbox_arena_alloc(&ctx->frame_arena, maximum * sizeof(*runs));
                 if (lines != NULL && runs != NULL) {
-                    double line_height = tbox_context_style_line_height(style, face);
+                    double line_height = tbox_context_style_line_height(text_style, face);
                     /* Each paragraph (up to a '\n') is shaped from the start
                      * of the current line. Like a browser's soft wrap, a
                      * line that overflows breaks after its last space (the
@@ -27,12 +36,12 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
                     size_t count = 0, start = 0;
                     for (;;) {
                         size_t end = start;
-                        while (end < field->length && field->value[end] != '\n') end++;
+                        while (end < content.size && content.data[end] != '\n') end++;
                         size_t line_start = start;
                         size_t space_end = 0; /* past the line's last space run; 0 = none */
                         double space_end_width = 0.0;
                         tbox_text_measurer line;
-                        tbox_text_measurer_init(&line, face, style->letter_spacing, field->value + line_start, end - line_start);
+                        tbox_text_measurer_init(&line, face, text_style->letter_spacing, content.data + line_start, end - line_start);
                         while (line.at < line.length) {
                             size_t before       = line.at;
                             double before_width = line.width;
@@ -49,20 +58,27 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
                                 line_start += at;
                                 space_end = 0;
                                 tbox_text_measurer_finish(&line);
-                                tbox_text_measurer_init(&line, face, style->letter_spacing, field->value + line_start, end - line_start);
+                                tbox_text_measurer_init(&line, face, text_style->letter_spacing, content.data + line_start, end - line_start);
                             }
                         }
                         lines[count++] = (tbox_text_line){line_start, end, line.width};
                         tbox_text_measurer_finish(&line);
-                        if (end >= field->length) break;
+                        if (end >= content.size) break;
                         start = end + 1;
                     }
-                    field->lines = lines;
-                    field->line_count = count;
-                    double max_scroll = count * line_height - box->content_box.height;
+                    if (placeholder) {
+                        /* Painting the hint must not create editable lines or scrolling. */
+                        field->lines = tbox_arena_alloc_zero(&ctx->frame_arena, sizeof(*field->lines));
+                        field->line_count = field->lines != NULL ? 1 : 0;
+                        field->scroll_y = 0.0;
+                    } else {
+                        field->lines = lines;
+                        field->line_count = count;
+                    }
+                    double max_scroll = placeholder ? 0.0 : count * line_height - box->content_box.height;
                     if (max_scroll < 0) max_scroll = 0;
                     if (field->scroll_y > max_scroll) field->scroll_y = max_scroll;
-                    if (field->reveal && ctx->focused_node == box->node) {
+                    if (!placeholder && field->reveal && ctx->focused_node == box->node) {
                         size_t row = 0;
                         for (size_t i = 0; i < count; i++) {
                             if (field->cursor >= lines[i].start && field->cursor <= lines[i].end) row = i;
@@ -80,15 +96,15 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box) {
                         runs[run_count++] = (tbox_layout_text_run){
                             .rect = {box->content_box.x, box->content_box.y + i * line_height - field->scroll_y,
                                      lines[i].width, line_height},
-                            .text = tbox_string_view_make(field->value + lines[i].start, lines[i].end - lines[i].start),
-                            .font = face, .style = style,
+                            .text = tbox_string_view_make(content.data + lines[i].start, lines[i].end - lines[i].start),
+                            .font = face, .style = text_style,
                         };
-                        tbox_font_shape_into(&ctx->frame_arena, face, runs[run_count - 1].text, style->letter_spacing,
+                        tbox_font_shape_into(&ctx->frame_arena, face, runs[run_count - 1].text, text_style->letter_spacing,
                                              &runs[run_count - 1].glyphs, &runs[run_count - 1].glyph_count);
                     }
                     box->text_runs = runs;
                     box->text_run_count = run_count;
-                    box->scroll_content_height = count * line_height;
+                    box->scroll_content_height = placeholder ? 0.0 : count * line_height;
                 }
             }
         }

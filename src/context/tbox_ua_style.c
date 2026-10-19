@@ -728,6 +728,8 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         UA_RULE_6("abbr", "acronym", "bdi", "bdo", "data", "time", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE)),
         UA_RULE_4("font", "label", "q", "wbr", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE)),
         UA_RULE_SELECTORS(2, ((const tbox_ua_selector[]){ UA_SEL_ATTR("abbr", "title"), UA_SEL_ATTR("acronym", "title") }), UA_KW(TBOX_UA_PROP_TEXT_DECORATION, TBOX_UA_KW_UNDERLINE_DOTTED)),
+        UA_RULE_TAG_PART("input", "placeholder", UA_COLOR(TBOX_UA_PROP_COLOR, 117, 117, 117)),
+        UA_RULE_TAG_PART("textarea", "placeholder", UA_COLOR(TBOX_UA_PROP_COLOR, 117, 117, 117)),
         UA_RULE_TAG_PART("q", "before", UA_KW(TBOX_UA_PROP_CONTENT, TBOX_UA_KW_OPEN_QUOTE)),
         UA_RULE_TAG_PART("q", "after", UA_KW(TBOX_UA_PROP_CONTENT, TBOX_UA_KW_CLOSE_QUOTE)),
         UA_RULE_1("output", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE)),

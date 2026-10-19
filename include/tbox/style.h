@@ -1014,6 +1014,9 @@ typedef struct tbox_style {
     /* Form-control parts, only through tbox_style_resolve_tree and only
      * for the elements that have each part; NULL otherwise. */
     const tbox_style_part_style *parts[TBOX_STYLE_PART_COUNT];
+    /* ::placeholder text style, borrowed from the frame arena; NULL when
+     * the control has no nonempty placeholder. Does not size the control. */
+    const struct tbox_style *placeholder_style;
     tbox_style_user_select user_select;           /* not inheritable (CSS computes from the parent for auto) */
     tbox_style_cursor cursor;                     /* inheritable */
     double aspect_ratio;                          /* width / height; 0 is `auto` */

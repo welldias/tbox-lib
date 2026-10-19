@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Placeholder text</title>
+  <style>
+    body { margin: 20px; font: 14px/20px sans-serif; color: #263548; background: white; }
+    h1 { font-size: 22px; margin: 0 0 12px; }
+    p { margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: 350px 350px; gap: 18px; }
+    label { display: block; margin-bottom: 5px; }
+    input, textarea { display: block; width: 310px; padding: 8px; border: 1px solid #94a3b8; font: 14px/20px sans-serif; }
+    textarea { height: 76px; resize: none; }
+    .colored::placeholder { color: #6675ff; opacity: 1; }
+    .faded::placeholder { color: #dc2626; opacity: .5; }
+    .large::placeholder { font-size: 20px; font-style: italic; }
+  </style>
+</head>
+<body>
+  <h1>Placeholder text and ::placeholder</h1>
+  <p>Hints disappear when typing and return when the value is cleared. They are never field values.</p>
+  <div class="grid">
+    <div><label>Default hint</label><input placeholder="Type a name"></div>
+    <div><label>Search with a colored hint</label><input class="colored" type="search" placeholder="Search files..."></div>
+    <div><label>Half-opacity hint</label><input class="faded" placeholder="Faded red hint"></div>
+    <div><label>A value takes precedence</label><input class="colored" value="Actual value" placeholder="This must not appear"></div>
+    <div><label>Password hint is not masked</label><input type="password" placeholder="Password"></div>
+    <div><label>Hint font does not resize the field</label><input class="large" placeholder="Larger italic hint"></div>
+    <div><label>Multiline textarea hint</label><textarea class="colored" placeholder="First line&#10;Second line"></textarea></div>
+    <div><label>Textarea value takes precedence</label><textarea placeholder="This must not appear">Actual textarea value</textarea></div>
+  </div>
+</body>
+</html>

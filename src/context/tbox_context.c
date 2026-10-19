@@ -408,6 +408,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->hovered_node    = NULL;
     ctx->active_node     = NULL;
     ctx->focused_node    = NULL;
+    ctx->focus_keyboard  = true;
     ctx->text_fields     = NULL;
     ctx->file_fields     = NULL;
     ctx->select_fields   = NULL;
@@ -585,7 +586,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     ctx->styles = (tbox_style_table){ 0 };
 
     if (ctx->focused_node != NULL && !tbox_context_node_attached(ctx, ctx->focused_node)) {
-        ctx->focused_node = NULL;
+        tbox_context_set_focus(ctx, NULL);
     }
     if (ctx->active_node != NULL && !tbox_context_node_attached(ctx, ctx->active_node))
         ctx->active_node = NULL;

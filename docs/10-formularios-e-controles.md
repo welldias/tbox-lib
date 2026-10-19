@@ -88,6 +88,21 @@ Com `auto`, checkbox e radio usam `color`; range e progress mantêm o azul
 embutido. O trilho e as cores do `<meter>` não mudam. Veja
 `tests/assets/forms-accent-and-caret.html`.
 
+## Texto auxiliar dos campos
+
+`placeholder` fornece texto auxiliar para inputs de texto (incluindo search,
+email, url, tel, password e number) e textarea enquanto o valor estiver vazio,
+inclusive com foco. O texto não entra em `value`, seleção, clipboard, envio
+ou cálculo do cursor. Inputs removem quebras de linha do texto auxiliar;
+textarea preserva quebras e permite ajuste à largura do campo.
+
+`::placeholder` resolve cor, opacidade e estilos de texto como filho do
+controle; o padrão é cinza `#757575`, opacidade 1. Seu estilo completo fica
+emprestado da arena do frame em `tbox_style.placeholder_style`, separado do
+estilo e das métricas que dimensionam o controle. Alterar o atributo ou o
+valor atualiza sua presença no próximo frame. A opacidade do pseudo é
+aplicada à tinta do texto, sem desbotar o campo.
+
 ## Partes dos controles
 
 As partes internas dos controles são estilizadas no CSS do documento por

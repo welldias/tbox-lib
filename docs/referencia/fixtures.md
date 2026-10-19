@@ -112,7 +112,7 @@ mostra para onde foi cada um.
 | `selectors-type-and-only` | `:root`, `:first-of-type`/`:last-of-type`/`:only-of-type`, `:only-child`, `:empty` |
 | `selectors-combinators-and-not` | combinador `~`, `:not()` |
 | `selectors-attributes-and-lang` | `^=`, `$=`, `*=`, modificadores `i` e `s`, `:lang()` |
-| `selectors-states` | `:required`/`:optional`, `:focus-within`, `:enabled`/`:disabled`, `:link`/`:any-link`, `:hover` em ancestrais |
+| `selectors-states` | `:required`/`:optional`, `:focus-within`/`:focus-visible`, `:enabled`/`:disabled`, `:link`/`:any-link`, `:hover` em ancestrais |
 
 ## Cascata e at-rules
 
@@ -152,7 +152,7 @@ mostra para onde foi cada um.
 | Fixture | Recurso |
 |---|---|
 | `layout-inline-block` | `inline-block`, `vertical-align`, shrink-to-fit |
-| `layout-block-in-inline` | bloco dentro de `<p>`, `<h3>`, `<li>`, `<td>` |
+| `layout-block-in-inline` | bloco dentro de `<p>`, `<h3>`, `<li>`, `<td>`; span absoluto com `.visually-hidden` em célula |
 | `layout-flexbox` | flexbox: `grow`, `justify-content`, `align-items`, margem `auto`, `wrap`, `baseline`, `row-reverse`; layout de aplicação |
 | `layout-alignment` | `place-content`, `place-items`, `place-self` |
 | `layout-grid-tracks` | grid: trilhas fixas + `fr`, `repeat()`, `minmax()`, `auto-fill`, spans, linhas negativas e nomeadas |
@@ -205,6 +205,7 @@ mostra para onde foi cada um.
 | `forms-control-parts` | partes dos controles (`::slider-*`, `::picker-icon`, `::checkmark`, `::file-selector-button`, `::step-*`, `::clear-icon`, `::color-swatch`, `::selection`) |
 | `forms-checkbox-radio-and-focus` | checkbox e radio alinhados, campos vazios e preenchidos alinhados, `outline` como anel de foco |
 | `forms-select` | lista do `<select>`: `::picker(select)`, `option`/`optgroup`, `:hover`, `:checked`, `:disabled`, tema por `var()`. O Firefox mostra a lista nativa |
+| `forms-placeholder` | `placeholder`/`::placeholder`: padrão, cor/opacidade, fonte, password, valor preenchido e textarea multilinha |
 | `forms-textarea-wrapping` | quebra de linha do `<textarea>` |
 
 ## Imagens

@@ -9,6 +9,25 @@ Cada item: **decisão** — motivo (versão em que foi tomada). Itens marcados
 formato atual do código. O texto integral original de cada versão está em
 `git show fe51140:ARCHITECTURE.md`.
 
+## Placeholder, modalidade de foco e posicionados inline
+
+`placeholder` tem estilo de texto próprio, emprestado da arena de frame
+por `tbox_style.placeholder_style`. Resolver um estilo completo reaproveita
+herança, fontes e cascata sem ampliar todas as partes de controles com
+campos tipográficos. O texto é apenas uma representação do campo vazio;
+não entra em `value`, seleção, submissão ou linhas editáveis de textarea.
+
+`:focus-visible` usa modalidade no contexto e um booleano no nó focado,
+lido junto do contexto de foco já existente do seletor. Isso evita novo
+estado global e mantém o estado de cada documento independente. Teclas
+sem Control ativam a modalidade de teclado; cliques e pressão do ponteiro
+ativam a de ponteiro. Controles de texto sempre exibem foco visível.
+
+Elementos `absolute`/`fixed` no conteúdo inline são retirados da coleta de
+palavras e construídos como caixas próprias no mesmo contexto posicionado.
+Não interrompem a linha entre seus irmãos. Essa solução aplica tamanho e
+recorte ao `.visually-hidden` sem adaptar o HTML/CSS do explorador.
+
 ## FreeType obrigatório do sistema
 
 O build usa `find_package(Freetype REQUIRED)` e o alvo importado

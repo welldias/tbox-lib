@@ -2995,47 +2995,25 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
-    /* 59:  -- <div>antes <span style="position:absolute;">flutuante
-     * </span> depois</div>: an out-of-flow (position:absolute) inline
-     * element sitting in the MIDDLE of loose inline content TERMINATES the
-     * sequence before it (per docs/dev/historico.md's "Fora de escopo") -- three
-     * child boxes result, in document order: an anonymous box for "antes",
-     * the <span> itself (built via the ordinary out-of-flow path, own box,
-     * own node), and a SECOND, separate anonymous box for "depois". */
+    /* An out-of-flow sibling does not split the surrounding line, and
+     * its own text lives in an independently positioned child box. */
     {
-        tbox_html_document *doc    = parse_html_cstr("<div>antes <span style=\"position:absolute;\">flutuante</span> depois</div>");
+        tbox_html_document *doc = parse_html_cstr("<div>antes <span style=\"position:absolute;\">flutuante</span> depois</div>");
         const tbox_html_node *root = tbox_html_document_root(doc);
         tbox_css_stylesheet *sheet = parse_css_cstr("");
-
-        tbox_arena arena               = tbox_arena_create(0);
+        tbox_arena arena = tbox_arena_create(0);
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
-        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
-
+        tbox_style_table table = tbox_style_resolve_tree(&arena, root, &source, 1);
         const tbox_layout_box *div_box = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
-        TBOX_TEST_ASSERT(div_box != NULL);
-        if (div_box != NULL) {
-            const tbox_layout_box *first = div_box->first_child;
-            TBOX_TEST_ASSERT_MSG(first != NULL, "the div must have a first child box");
-            if (first != NULL) {
-                TBOX_TEST_ASSERT_MSG(first->node == NULL, "the FIRST child box must be anonymous (the text before the positioned <span>)");
-                TBOX_TEST_ASSERT_MSG(first->text_run_count == 1 && string_view_equal_cstr(first->text_runs[0].text, "antes"), "the first anonymous box's text must be exactly \"antes\" -- the positioned <span> must NOT be absorbed into it");
-
-                const tbox_layout_box *second = first->next_sibling;
-                TBOX_TEST_ASSERT_MSG(second != NULL, "the div must have a second child box");
-                if (second != NULL) {
-                    TBOX_TEST_ASSERT_MSG(second->node != NULL && string_view_equal_cstr(second->node->element.tag_name, "span"), "the SECOND child box must be the <span> itself, built via the ordinary out-of-flow path -- not folded into any anonymous box");
-
-                    const tbox_layout_box *third = second->next_sibling;
-                    TBOX_TEST_ASSERT_MSG(third != NULL, "the div must have a third child box");
-                    if (third != NULL) {
-                        TBOX_TEST_ASSERT_MSG(third->node == NULL, "the THIRD child box must be a SEPARATE anonymous box (the text after the positioned <span>)");
-                        TBOX_TEST_ASSERT_MSG(third->text_run_count == 1 && string_view_equal_cstr(third->text_runs[0].text, "depois"), "the second anonymous box's text must be exactly \"depois\"");
-                        TBOX_TEST_ASSERT_MSG(third->next_sibling == NULL, "the div must have EXACTLY three child boxes -- anonymous, <span>, anonymous, in document order");
-                    }
-                }
-            }
-        }
-
+        TBOX_TEST_REQUIRE(div_box != NULL && div_box->first_child != NULL);
+        const tbox_layout_box *line = div_box->first_child;
+        TBOX_TEST_REQUIRE(line->text_run_count == 1);
+        TBOX_TEST_ASSERT(string_view_equal_cstr(line->text_runs[0].text, "antes depois"));
+        const tbox_html_node *span = root->first_child->first_child->next_sibling;
+        const tbox_layout_box *positioned = find_box_for_node(div_box, span);
+        TBOX_TEST_REQUIRE(positioned != NULL);
+        TBOX_TEST_ASSERT(positioned->style->position == TBOX_STYLE_POSITION_ABSOLUTE);
+        TBOX_TEST_ASSERT(line->next_sibling == NULL);
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);

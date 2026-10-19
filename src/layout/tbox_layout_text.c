@@ -130,6 +130,37 @@ void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_n
     }
 }
 
+/* Positioned descendants do not become words. Walk the same inline
+ * subtree after line layout, preserving independent clipping and hit tests.
+ * Atomic inline boxes and floats already lay out their own descendants. */
+static void tbox_layout_inline_positioned(tbox_arena *arena, const tbox_html_node *first,
+    const tbox_html_node *end, const tbox_style_table *styles, tbox_font_face_cache *fonts,
+    tbox_image_cache *images, tbox_layout_box *parent, const tbox_layout_positioned_context *context,
+    bool inside_inline) {
+    if (context == NULL) return;
+    for (const tbox_html_node *node = first; node != end && node != NULL; node = node->next_sibling) {
+        if (node->type != TBOX_HTML_NODE_ELEMENT || tbox_layout_is_hidden_input(node)) continue;
+        const tbox_style *style = tbox_layout_style_or_default(styles, node);
+        if (style->display == TBOX_STYLE_DISPLAY_NONE) continue;
+        if (style->position == TBOX_STYLE_POSITION_ABSOLUTE || style->position == TBOX_STYLE_POSITION_FIXED) {
+            tbox_rect basis = style->position == TBOX_STYLE_POSITION_FIXED ? context->viewport : context->nearest_ancestor;
+            tbox_layout_containing_block container = { basis.x, basis.y, basis.width, basis.height, true };
+            tbox_layout_box *child = tbox_layout_build_element(arena, node, styles, fonts, images, container, basis.y, *context, NULL, 0);
+            if (child == NULL) continue;
+            child->parent = parent;
+            if (parent->last_child == NULL) parent->first_child = child;
+            else parent->last_child->next_sibling = child;
+            parent->last_child = child;
+        } else if (!tbox_layout_is_float(node, style) &&
+                   style->display != TBOX_STYLE_DISPLAY_INLINE_BLOCK &&
+                   style->display != TBOX_STYLE_DISPLAY_INLINE_FLEX &&
+                   style->display != TBOX_STYLE_DISPLAY_INLINE_GRID &&
+                   (style->display == TBOX_STYLE_DISPLAY_INLINE || inside_inline)) {
+            tbox_layout_inline_positioned(arena, node->first_child, NULL, styles, fonts, images, parent, context, true);
+        }
+    }
+}
+
 /* Builds `box`'s text_runs/text_run_count (a leaf box, one of the fixed
  * text tags) and returns its content-box height: the sum of every line's
  * height (replaces v0/v1's single fixed line height), or, for a
@@ -203,6 +234,8 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         box->text_runs      = marker_runs.length > 0 ? (tbox_layout_text_run *)marker_runs.data : NULL;
         box->text_run_count = marker_runs.length;
 
+        if (!is_input && !is_select && !is_preformatted)
+            tbox_layout_inline_positioned(arena, first_sibling, end_exclusive, styles, fonts, images, box, context, false);
         const tbox_font_face *own_face = tbox_layout_style_face(fonts, style);
         return own_face != NULL ? tbox_layout_style_line_height(style, own_face) : 0.0;
     }
@@ -416,6 +449,15 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         else
             box->last_child->next_sibling = atomic;
         box->last_child = atomic;
+    }
+    if (!is_input && !is_select && !is_preformatted)
+        tbox_layout_inline_positioned(arena, first_sibling, end_exclusive, styles, fonts, images, box, context, false);
+    if (is_input && style->placeholder_style != NULL) {
+        const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+        if (value == NULL || value->value.size == 0) {
+            const tbox_font_face *face = tbox_layout_style_face(fonts, style);
+            return face != NULL ? tbox_layout_style_line_height(style, face) : 0.0;
+        }
     }
     return total_height;
 }
