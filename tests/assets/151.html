@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Grid: trilhas e spans</title>
+  <style>
+    body {
+      margin: 16px;
+      background: white;
+      color: #152438;
+      font: 14px sans-serif;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin: 0 0 14px;
+    }
+
+    h2 {
+      font-size: 14px;
+      margin: 0 0 8px;
+    }
+
+    .panels {
+      display: grid;
+      grid-template-columns: 368px 368px;
+      gap: 18px;
+    }
+
+    .panel {
+      height: 148px;
+    }
+
+    .grid {
+      display: grid;
+      width: 368px;
+      background: #e3e9ef;
+      gap: 8px;
+    }
+
+    .grid>div {
+      height: 36px;
+      background: #1766ad;
+      color: white;
+      padding-left: 6px;
+    }
+
+    .grid>.green {
+      background: #25845f;
+    }
+
+    .grid>.orange {
+      background: #b74d16;
+    }
+
+    .fixed {
+      grid-template-columns: 96px 1fr 2fr;
+    }
+
+    .repeat {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .minmax {
+      grid-template-columns: minmax(100px, 1fr) 2fr;
+    }
+
+    .fill {
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    }
+
+    .span {
+      grid-template-columns: repeat(3, 1fr);
+      grid-auto-rows: 36px;
+    }
+
+    .span>div {
+      height: auto;
+    }
+
+    .wide {
+      grid-column: 1 / span 2;
+    }
+
+    .tall {
+      grid-column: 3;
+      grid-row: 1 / span 2;
+    }
+
+    .negative {
+      grid-template-columns: [start] 96px 1fr 1fr [end];
+      grid-auto-rows: 36px;
+    }
+
+    .negative .last {
+      grid-column: -2 / -1;
+      grid-row: 1;
+    }
+
+    .negative .all {
+      grid-column: start / end;
+      grid-row: 2;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Grid: trilhas e posicionamento</h1>
+  <div class="panels">
+    <div class="panel">
+      <h2>96px + 1fr + 2fr / gap 8px</h2>
+      <div class="grid fixed">
+        <div>96</div>
+        <div class="green">1fr</div>
+        <div class="orange">2fr</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>repeat(3, 1fr)</h2>
+      <div class="grid repeat">
+        <div>A</div>
+        <div class="green">B</div>
+        <div class="orange">C</div>
+        <div>D</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>minmax(100px, 1fr) + 2fr</h2>
+      <div class="grid minmax">
+        <div>min 100</div>
+        <div class="green">2fr</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>auto-fill / minmax(100px, 1fr)</h2>
+      <div class="grid fill">
+        <div>A</div>
+        <div class="green">B</div>
+        <div class="orange">C</div>
+        <div>D</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>span: duas colunas / duas linhas</h2>
+      <div class="grid span">
+        <div class="wide">2 col</div>
+        <div class="tall orange">2 lin</div>
+        <div class="green">A</div>
+        <div>B</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Linhas negativas e nomes de linha</h2>
+      <div class="grid negative">
+        <div>A</div>
+        <div class="last orange">-2 / -1</div>
+        <div class="all green">start / end</div>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

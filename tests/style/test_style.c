@@ -7,6 +7,7 @@
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
 #include "test_support.h"
+#include "style/tbox_style_internal.h"
 
 static tbox_html_document *parse_html_cstr(const char *html) {
     return tbox_html_parse(html, strlen(html));
@@ -29,8 +30,23 @@ static bool rgba_eq(tbox_css_rgba a, tbox_css_rgba b) {
     return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
 
+/* A fake tbox_style_font_metrics: "mono" has ex 0.5 / ch 0.6, every other
+ * family ex 0.4 / ch 0.55. Counts its calls in *userdata. */
+static bool fake_font_metrics(void *userdata, const char *font_family, double *out_ex, double *out_ch) {
+    (*(int *)userdata)++;
+    bool mono = strcmp(font_family, "mono") == 0;
+    *out_ex   = mono ? 0.5 : 0.4;
+    *out_ch   = mono ? 0.6 : 0.55;
+    return true;
+}
+
+int tbox_test_style_at_rules_run(void);
+int tbox_test_grid_style_run(void);
+int tbox_test_text_paint_run(void);
+int tbox_test_motion_run(void);
+
 int tbox_test_style_run(void) {
-    int failures = 0;
+    int failures = tbox_test_style_at_rules_run();
 
     /* 1: an explicit property beats the initial value. */
     {
@@ -62,6 +78,61 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT_MSG(rgba_eq(child_style.color, (tbox_css_rgba){ 255, 0, 0, 255 }), "color should inherit");
         TBOX_TEST_ASSERT_MSG(rgba_eq(child_style.background_color, (tbox_css_rgba){ 0, 0, 0, 0 }), "background-color must not inherit");
 
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* zoom: the effective factor is the product down the tree; absolute
+     * lengths, font sizes (named ones too), border keywords and img size
+     * attributes scale by it, em follows the zoomed font size, % stays,
+     * and inherited lengths scale by the child's own factor only. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p><span>x</span></p><img width='10'><b>y</b><i>z</i></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        const tbox_html_node *span = p->first_child;
+        const tbox_html_node *img  = p->next_sibling;
+        const tbox_html_node *b    = img->next_sibling;
+        const tbox_html_node *i    = b->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { zoom: 2; width: 100px; font-size: 10px; letter-spacing: 1px; border: thin solid; padding: 5%; }"
+            "p { zoom: 50%; width: 10em; height: 1in; margin: 2px; font-size: medium; line-height: 20px; }"
+            "span { zoom: 3; } b { zoom: normal; } i { zoom: -1; }");
+        tbox_style d = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(d.zoom == 2.0 && d.width.value == 200.0 && d.font_size == 20.0 && d.letter_spacing == 2.0);
+        TBOX_TEST_ASSERT(d.border_widths[0] == 2.0);
+        TBOX_TEST_ASSERT(d.padding[0].kind == TBOX_STYLE_LENGTH_PERCENT && d.padding[0].value == 5.0);
+        tbox_style ps = resolve_node(sheet, p, &d);
+        TBOX_TEST_ASSERT(ps.zoom == 1.0 && ps.font_size == 16.0 && ps.width.value == 160.0 && ps.height.value == 96.0 && ps.margin[0].value == 2.0);
+        TBOX_TEST_ASSERT(ps.letter_spacing == 1.0);
+        tbox_style sp = resolve_node(sheet, span, &ps);
+        TBOX_TEST_ASSERT(sp.zoom == 3.0 && sp.font_size == 48.0 && sp.line_height_value == 60.0 && sp.letter_spacing == 3.0);
+        tbox_style im = resolve_node(sheet, img, &d);
+        TBOX_TEST_ASSERT(im.width.kind == TBOX_STYLE_LENGTH_PX && im.width.value == 20.0);
+        tbox_style bs = resolve_node(sheet, b, &d), is = resolve_node(sheet, i, &d);
+        TBOX_TEST_ASSERT(bs.zoom == 2.0 && is.zoom == 2.0 && bs.font_size == 20.0);
+        TBOX_TEST_ASSERT(tbox_style_zoom(NULL) == 1.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* resize: the keywords (block/inline as vertical/horizontal), not
+     * inherited, effective only where overflow clips or on a textarea. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p>x</p><b>y</b><i>z</i><u>w</u></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { resize: both; overflow: hidden; } p { resize: inline; overflow: auto; }"
+                                                    "b { resize: block; } i { resize: diagonal; } u { resize: vertical; overflow-x: auto; }");
+        tbox_style d  = resolve_node(sheet, div, NULL);
+        tbox_style ps = resolve_node(sheet, p, &d);
+        tbox_style bs = resolve_node(sheet, p->next_sibling, &d);
+        tbox_style is = resolve_node(sheet, p->next_sibling->next_sibling, &d);
+        tbox_style us = resolve_node(sheet, p->next_sibling->next_sibling->next_sibling, &d);
+        TBOX_TEST_ASSERT(d.resize == TBOX_STYLE_RESIZE_BOTH && tbox_style_resize_allowed(&d, false) == TBOX_STYLE_RESIZE_BOTH);
+        TBOX_TEST_ASSERT(ps.resize == TBOX_STYLE_RESIZE_HORIZONTAL && bs.resize == TBOX_STYLE_RESIZE_VERTICAL && is.resize == TBOX_STYLE_RESIZE_NONE);
+        TBOX_TEST_ASSERT(tbox_style_resize_allowed(&bs, false) == TBOX_STYLE_RESIZE_NONE && tbox_style_resize_allowed(&bs, true) == TBOX_STYLE_RESIZE_VERTICAL);
+        TBOX_TEST_ASSERT(tbox_style_resize_allowed(&us, false) == TBOX_STYLE_RESIZE_VERTICAL);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -706,31 +777,29 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
-    /* 34:  -- font-family: "Courier New", monospace; resolves to
-     * "Courier New" -- quotes stripped, and the comma INSIDE the quotes
-     * must not be mistaken for the list separator. */
+    /* 34:  -- font-family: "Courier New", monospace; keeps the list
+     * "Courier New,monospace" -- quotes stripped, names joined by ",". */
     {
         tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
         const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
         tbox_css_stylesheet *sheet = parse_css_cstr("div { font-family: \"Courier New\", monospace; }");
 
         tbox_style style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "Courier New") == 0, "quoted font-family should have quotes stripped and not split on the comma inside the quotes");
+        TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "Courier New,monospace") == 0, "quoted font-family should have quotes stripped and the list kept");
 
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
 
     /* 35:  -- font-family: Verdana, Arial, sans-serif; (unquoted,
-     * multiple names) resolves only the FIRST name, "Verdana" -- no
-     * fallback list is kept. */
+     * multiple names) keeps the whole fallback list for the font cache. */
     {
         tbox_html_document *doc    = parse_html_cstr("<div>x</div>");
         const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
         tbox_css_stylesheet *sheet = parse_css_cstr("div { font-family: Verdana, Arial, sans-serif; }");
 
         tbox_style style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "Verdana") == 0, "only the first name of a comma-separated font-family list should be used");
+        TBOX_TEST_ASSERT_MSG(strcmp(style.font_family, "Verdana,Arial,sans-serif") == 0, "the whole font-family list should be kept");
 
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
@@ -1461,7 +1530,7 @@ int tbox_test_style_run(void) {
         child = resolve_node(sheet, li, &parent);
         TBOX_TEST_ASSERT(child.list_style_type == TBOX_STYLE_LIST_STYLE_CIRCLE);
         tbox_css_stylesheet_destroy(sheet);
-        sheet = parse_css_cstr("li { list-style-type: bogus; }");
+        sheet = parse_css_cstr("li { list-style-type: bogus(); }");
         child = resolve_node(sheet, li, &parent);
         TBOX_TEST_ASSERT(child.list_style_type == TBOX_STYLE_LIST_STYLE_UPPER_ALPHA);
         tbox_style root = resolve_node(sheet, ol, NULL);
@@ -1654,7 +1723,7 @@ int tbox_test_style_run(void) {
         tbox_style child           = resolve_node(sheet, p, &parent);
         TBOX_TEST_ASSERT(parent.font_italic && parent.font_weight_bold && parent.font_size == 20.0);
         TBOX_TEST_ASSERT(parent.line_height_kind == TBOX_STYLE_LINE_HEIGHT_NUMBER && parent.line_height_value == 1.5);
-        TBOX_TEST_ASSERT(strcmp(parent.font_family, "Courier New") == 0);
+        TBOX_TEST_ASSERT(strcmp(parent.font_family, "Courier New,monospace") == 0);
         TBOX_TEST_ASSERT(!child.font_italic && !child.font_weight_bold && child.font_size == 10.0);
         TBOX_TEST_ASSERT(child.line_height_kind == TBOX_STYLE_LINE_HEIGHT_NORMAL);
         TBOX_TEST_ASSERT(strcmp(child.font_family, "sans-serif") == 0);
@@ -2299,13 +2368,85 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(parent.text_shadow_count == 2 && child.text_shadow_count == 2 && child.text_shadows[1].blur == 2.0);
         TBOX_TEST_ASSERT(parent.border_radius_corners[0] == 10.0 && parent.border_radius_corners[1] == 20.0 && parent.border_radius_vertical[1] == 5.0);
         TBOX_TEST_ASSERT(child.border_radius_corners[0] == 8.0 && child.border_radius_vertical[0] == 4.0);
-        TBOX_TEST_ASSERT(parent.translate_x.kind == TBOX_STYLE_LENGTH_PX && parent.translate_x.value == 15.0);
-        TBOX_TEST_ASSERT(parent.translate_y.kind == TBOX_STYLE_LENGTH_PERCENT && parent.translate_y.value == 50.0);
+        /* transform functions keep their own slots (translateX is a translate) */
+        const tbox_style_transform_function *t = parent.transforms;
+        TBOX_TEST_ASSERT(t[0].kind == TBOX_STYLE_TRANSFORM_TRANSLATE && t[0].v[0] == 0.0 && t[0].v[1] == 10.0 && t[0].v[2] == 50.0 && t[0].v[3] == 0.0);
+        TBOX_TEST_ASSERT(t[1].kind == TBOX_STYLE_TRANSFORM_TRANSLATE && t[1].v[1] == 5.0 && t[2].kind == TBOX_STYLE_TRANSFORM_NONE);
+        TBOX_TEST_ASSERT(parent.translate_x.value == 0.0 && child.transforms[0].kind == TBOX_STYLE_TRANSFORM_NONE);
         TBOX_TEST_ASSERT(child.translate_x.value == 3.0 && child.translate_y.value == 0.0);
+        double m[6];
+        TBOX_TEST_ASSERT(tbox_style_transform_matrix(&parent, 0.0, 0.0, 100.0, 40.0, NULL, m) && m[0] == 1.0 && m[3] == 1.0 && m[4] == 15.0 && m[5] == 20.0);
         tbox_css_stylesheet_destroy(sheet);
-        sheet  = parse_css_cstr("div { transform: rotate(10deg); }");
-        parent = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(parent.translate_x.value == 0.0 && parent.translate_y.value == 0.0);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* transform: 2D functions, flattened 3D ones, the individual
+     * properties in CSS order, transform-origin, invalid values. */
+    {
+        tbox_html_document *doc   = parse_html_cstr("<div>x</div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        struct {
+            const char *css;
+            double m[6];
+        } cases[] = {
+            { "div { transform: rotate(90deg); transform-origin: 0 0; }", { 0, 1, -1, 0, 0, 0 } },
+            { "div { transform: rotate(90deg); }", { 0, 1, -1, 0, 70, -30 } }, /* around the center (50, 20) */
+            { "div { transform: scale(2, .5); transform-origin: left top; }", { 2, 0, 0, 0.5, 0, 0 } },
+            { "div { transform: scaleY(50%); transform-origin: 0 0 4px; }", { 1, 0, 0, 0.5, 0, 0 } },
+            { "div { transform: skewX(45deg); transform-origin: 0 0; }", { 1, 0, 1, 1, 0, 0 } },
+            { "div { transform: matrix(1, 2, 3, 4, 5, 6); transform-origin: 0 0; }", { 1, 2, 3, 4, 5, 6 } },
+            { "div { transform: translate(10px) rotate(90deg); transform-origin: 0 0; }", { 0, 1, -1, 0, 10, 0 } },
+            { "div { transform: rotateZ(90deg) translateX(10px); transform-origin: 0 0; }", { 0, 1, -1, 0, 0, 10 } },
+            /* rotateX(60deg): y shrinks by cos 60 */
+            { "div { transform: rotateX(60deg); transform-origin: 0 0; }", { 1, 0, 0, 0.5, 0, 0 } },
+            { "div { transform: rotate3d(0, 0, 1, 90deg) perspective(100px) translateZ(9px); transform-origin: 0 0; }", { 0, 1, -1, 0, 0, 0 } },
+            { "div { transform: matrix3d(2,0,0,0, 0,3,0,0, 0,0,1,0, 4,5,0,1); transform-origin: 0 0; }", { 2, 0, 0, 3, 4, 5 } },
+            /* translate, rotate, scale, then transform */
+            { "div { transform: translateX(1px); scale: 2; rotate: 90deg; translate: 10px 20px; transform-origin: 0 0; }", { 0, 2, -2, 0, 10, 22 } },
+            { "div { rotate: z 90deg; transform-origin: 100% 0; }", { 0, 1, -1, 0, 100, -100 } },
+            { "div { rotate: 1 0 0 60deg; transform-origin: 0 0; }", { 1, 0, 0, 0.5, 0, 0 } },
+            { "div { transform: rotate(90deg) bogus(1); transform-origin: 0 0; }", { 1, 0, 0, 1, 0, 0 } },
+            { "div { transform: scale(); }", { 1, 0, 0, 1, 0, 0 } },
+        };
+        for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+            tbox_css_stylesheet *sheet = parse_css_cstr(cases[c].css);
+            tbox_style style = resolve_node(sheet, div, NULL);
+            double m[6];
+            tbox_style_transform_matrix(&style, 0.0, 0.0, 100.0, 40.0, NULL, m);
+            bool same = true;
+            for (int i = 0; i < 6; i++)
+                same = same && fabs(m[i] - cases[c].m[i]) < 1e-9;
+            if (!same)
+                fprintf(stderr, "transform case %zu: %g %g %g %g %g %g\n", c, m[0], m[1], m[2], m[3], m[4], m[5]);
+            TBOX_TEST_ASSERT(same);
+            tbox_css_stylesheet_destroy(sheet);
+        }
+        /* an animatable round trip of one slot and of rotate/scale */
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { transform: skew(10deg, 20deg); rotate: 0 1 0 5deg; scale: 3 4; }");
+        tbox_style style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(tbox_style_has_transform(&style));
+        double v[TBOX_STYLE_ANIM_VALUE_SIZE], none[TBOX_STYLE_ANIM_VALUE_SIZE], mixed[TBOX_STYLE_ANIM_VALUE_SIZE];
+        tbox_style_animatable_read(&style, TBOX_STYLE_ANIM_TRANSFORM_0, v);
+        tbox_style_animatable_read(&style, TBOX_STYLE_ANIM_TRANSFORM_0 + 1, none);
+        TBOX_TEST_ASSERT(v[0] == TBOX_STYLE_TRANSFORM_SKEW && v[1] == 10.0 && v[2] == 20.0 && none[0] == TBOX_STYLE_TRANSFORM_NONE);
+        /* an empty slot blends from the identity of the other side */
+        TBOX_TEST_ASSERT(tbox_style_animatable_interpolable(TBOX_STYLE_ANIM_TRANSFORM_0, none, v));
+        tbox_style_animatable_mix(TBOX_STYLE_ANIM_TRANSFORM_0, none, v, 0.5, mixed);
+        TBOX_TEST_ASSERT(mixed[0] == TBOX_STYLE_TRANSFORM_SKEW && mixed[1] == 5.0 && mixed[2] == 10.0);
+        tbox_style_animatable_read(&style, TBOX_STYLE_ANIM_SCALE, v);
+        TBOX_TEST_ASSERT(v[0] == 3.0 && v[1] == 4.0);
+        tbox_style_animatable_read(&style, TBOX_STYLE_ANIM_ROTATE, v);
+        TBOX_TEST_ASSERT(v[1] == 1.0 && v[3] == 5.0);
+        tbox_style_animatable_read(&style, TBOX_STYLE_ANIM_TRANSFORM_ORIGIN_X, v);
+        TBOX_TEST_ASSERT(v[0] == 50.0 && lround(v[2]) == TBOX_STYLE_LENGTH_PERCENT);
+        tbox_css_stylesheet_destroy(sheet);
+        /* rotate and scale differ: not interpolable across functions */
+        sheet = parse_css_cstr("div { transform: rotate(10deg); }");
+        style = resolve_node(sheet, div, NULL);
+        double r[TBOX_STYLE_ANIM_VALUE_SIZE] = { TBOX_STYLE_TRANSFORM_SCALE, 2, 2, 0, 0, 0, 0, 0 };
+        tbox_style_animatable_read(&style, TBOX_STYLE_ANIM_TRANSFORM_0, v);
+        TBOX_TEST_ASSERT(!tbox_style_animatable_interpolable(TBOX_STYLE_ANIM_TRANSFORM_0, v, r));
+        TBOX_TEST_ASSERT(tbox_style_animatable_mask(tbox_string_view_from_cstr("transform")) == (0xFFull << TBOX_STYLE_ANIM_TRANSFORM_0));
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -2579,7 +2720,7 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(a.transition_count == 3);
         const tbox_style_transition *width = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_WIDTH);
         const tbox_style_transition *border = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_BORDER_LEFT_COLOR);
-        const tbox_style_transition *move = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_TRANSLATE_X);
+        const tbox_style_transition *move = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_TRANSFORM_0);
         TBOX_TEST_ASSERT(width != NULL && width->duration == 0.5 && tbox_style_easing_apply(&width->easing, 0.3) == 0.3);
         TBOX_TEST_ASSERT(border != NULL && border->delay == 0.2 && border->easing.steps && tbox_style_easing_apply(&border->easing, 0.0) == 0.5);
         TBOX_TEST_ASSERT(move != NULL && move->duration == 2.0 && move->easing.x2 == 1.0 && move->easing.y1 == 0.7);
@@ -2628,6 +2769,46 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* border-image: the shorthand's parts in any order (slice / width /
+     * outset), longhands over it by cascade order, `border` resetting it,
+     * invalid longhand values ignored, and the initial values. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div>x</div><p>y</p><i>z</i><b>w</b><s>v</s>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->next_sibling, *i = p->next_sibling, *b = i->next_sibling, *st = b->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { border: 10px solid; border-image: url(f.png) 30 40% fill / 2 10px auto / 5px 1 round space; }"
+            "p { border-image: linear-gradient(red, blue) 10; border-image-repeat: repeat; border-image-width: 20%; }"
+            "i { border-image: url(x.png) 10; border: 2px solid red; }"
+            "b { border-image-source: url(z.png); border-image-slice: -3; border-image-outset: 10%; border-image-repeat: stretch round; }"
+            "s { border-image: url(x.png) 10 / / 3px; }");
+        tbox_style a = resolve_node(sheet, div, NULL);
+        tbox_style c = resolve_node(sheet, p, NULL);
+        tbox_style d = resolve_node(sheet, i, NULL);
+        tbox_style e = resolve_node(sheet, b, NULL);
+        tbox_style f = resolve_node(sheet, st, NULL);
+        const tbox_style_border_image *bi = &a.border_image;
+        TBOX_TEST_ASSERT(a.has_border_image && strcmp(bi->image, "f.png") == 0 && bi->fill);
+        TBOX_TEST_ASSERT(bi->slice[0].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->slice[0].number == 30.0 && bi->slice[2].number == 30.0);
+        TBOX_TEST_ASSERT(bi->slice[1].kind == TBOX_STYLE_BORDER_IMAGE_LENGTH && bi->slice[1].length.kind == TBOX_STYLE_LENGTH_PERCENT && bi->slice[3].length.value == 40.0);
+        TBOX_TEST_ASSERT(bi->width[0].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->width[0].number == 2.0 && bi->width[1].length.kind == TBOX_STYLE_LENGTH_PX && bi->width[1].length.value == 10.0);
+        TBOX_TEST_ASSERT(bi->width[2].kind == TBOX_STYLE_BORDER_IMAGE_AUTO && bi->width[3].length.value == 10.0);
+        TBOX_TEST_ASSERT(bi->outset[0].kind == TBOX_STYLE_BORDER_IMAGE_LENGTH && bi->outset[0].length.value == 5.0 && bi->outset[1].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->outset[3].number == 1.0);
+        TBOX_TEST_ASSERT(bi->repeat[0] == TBOX_STYLE_BORDER_IMAGE_ROUND && bi->repeat[1] == TBOX_STYLE_BORDER_IMAGE_SPACE && a.border_widths[0] == 10.0);
+        bi = &c.border_image;
+        TBOX_TEST_ASSERT(c.has_border_image && bi->image[0] == '\0' && bi->gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && bi->slice[3].number == 10.0 && !bi->fill);
+        TBOX_TEST_ASSERT(bi->repeat[0] == TBOX_STYLE_BORDER_IMAGE_REPEAT && bi->repeat[1] == TBOX_STYLE_BORDER_IMAGE_REPEAT && bi->width[2].length.kind == TBOX_STYLE_LENGTH_PERCENT);
+        TBOX_TEST_ASSERT(!d.has_border_image && d.border_image.slice[0].length.value == 100.0);
+        bi = &e.border_image;
+        TBOX_TEST_ASSERT(e.has_border_image && strcmp(bi->image, "z.png") == 0 && bi->slice[0].kind == TBOX_STYLE_BORDER_IMAGE_LENGTH && bi->slice[0].length.value == 100.0);
+        TBOX_TEST_ASSERT(bi->outset[2].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->outset[2].number == 0.0 && bi->width[1].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->width[1].number == 1.0);
+        TBOX_TEST_ASSERT(bi->repeat[0] == TBOX_STYLE_BORDER_IMAGE_STRETCH && bi->repeat[1] == TBOX_STYLE_BORDER_IMAGE_ROUND);
+        /* `10 / / 3px`: an empty width keeps its initial value */
+        TBOX_TEST_ASSERT(strcmp(f.border_image.image, "x.png") == 0 && f.border_image.outset[1].length.value == 3.0 && f.border_image.width[0].number == 1.0);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* animation: shorthand keywords in any order; longhands pair with
      * animation-name and repeat; `none` entries are dropped. */
     {
@@ -2670,6 +2851,38 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(a.text_align == TBOX_STYLE_TEXT_ALIGN_RIGHT);
         TBOX_TEST_ASSERT(!b.direction_rtl && b.text_align == TBOX_STYLE_TEXT_ALIGN_LEFT);
         TBOX_TEST_ASSERT(c.direction_rtl && c.text_align == TBOX_STYLE_TEXT_ALIGN_LEFT);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* unicode-bidi: every keyword, invalid ignored, not inherited; the
+     * HTML defaults below CSS (bdo overrides, bdi and dir=auto plaintext,
+     * dir isolates); `all` leaves direction and unicode-bidi alone. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><bdo dir='rtl'>a</bdo><bdo>b</bdo><bdi>c</bdi><span dir='auto'>d</span><span dir='rtl'>e</span><em dir='rtl'>f</em><i>g</i><b>h</b><u>i</u><s>j</s></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *n[10];
+        n[0] = div->first_child;
+        for (size_t i = 1; i < 10; i++)
+            n[i] = n[i - 1]->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { unicode-bidi: bidi-override; direction: rtl; } em { unicode-bidi: normal; }"
+            "i { unicode-bidi: embed; } b { unicode-bidi: isolate-override; } u { unicode-bidi: bogus; } s { all: initial; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style st[10];
+        for (size_t i = 0; i < 10; i++)
+            st[i] = resolve_node(sheet, n[i], &parent);
+        TBOX_TEST_ASSERT(parent.unicode_bidi == TBOX_STYLE_UNICODE_BIDI_BIDI_OVERRIDE);
+        TBOX_TEST_ASSERT(st[0].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_ISOLATE_OVERRIDE && st[0].direction_rtl);
+        TBOX_TEST_ASSERT(st[1].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_BIDI_OVERRIDE);
+        TBOX_TEST_ASSERT(st[2].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_PLAINTEXT);
+        TBOX_TEST_ASSERT(st[3].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_PLAINTEXT);
+        TBOX_TEST_ASSERT(st[4].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_ISOLATE);
+        TBOX_TEST_ASSERT(st[5].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_NORMAL); /* CSS beats dir */
+        TBOX_TEST_ASSERT(st[6].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_EMBED);
+        TBOX_TEST_ASSERT(st[7].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_ISOLATE_OVERRIDE);
+        TBOX_TEST_ASSERT(st[8].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_NORMAL); /* invalid, not inherited */
+        TBOX_TEST_ASSERT(st[9].direction_rtl && st[9].unicode_bidi == TBOX_STYLE_UNICODE_BIDI_NORMAL);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -3279,5 +3492,292 @@ int tbox_test_style_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* OpenType selection is inherited; both shorthands reset their fields,
+     * respecting declaration order and !important across longhands. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>x</p></div>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "div { font-variant: no-common-ligatures oldstyle-nums tabular-nums diagonal-fractions ordinal slashed-zero jis90 full-width ruby historical-forms;"
+            "font-feature-settings: 'liga' on, 'smcp', 'ss01' 3, 'liga' 0; font-language-override: 'TRK'; font-palette: --demo; }");
+        tbox_style parent = resolve_node(sheet, div, NULL);
+        tbox_style child = resolve_node(sheet, p, &parent);
+        tbox_font_shaping_options options;
+        tbox_style_shaping_options(&child, &options);
+        TBOX_TEST_ASSERT(child.font_variant_numeric == parent.font_variant_numeric && child.font_variant_numeric != 0);
+        TBOX_TEST_ASSERT(child.font_variant_ligatures == parent.font_variant_ligatures && child.font_variant_east_asian != 0);
+        TBOX_TEST_ASSERT(child.font_variant_alternates && child.font_language_override == 0x54524b20u);
+        TBOX_TEST_ASSERT(strcmp(child.font_palette, "--demo") == 0);
+        TBOX_TEST_ASSERT(child.font_feature_settings.count == 3 && child.font_feature_settings.items[0].value == 0);
+        bool liga = false, hist = false, frac = false;
+        for (size_t i = 0; i < options.count; i++) {
+            if (options.items[i].tag == 0x6c696761u) liga = options.items[i].value == 0;
+            if (options.items[i].tag == 0x68697374u) hist = options.items[i].value == 1;
+            if (options.items[i].tag == 0x66726163u) frac = options.items[i].value == 1;
+        }
+        TBOX_TEST_ASSERT(liga && hist && frac);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { font-variant: normal; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.font_variant_numeric == 0 && child.font_variant_east_asian == 0 && !child.font_variant_alternates);
+        TBOX_TEST_ASSERT(child.font_feature_settings.count == 3 && child.font_language_override == parent.font_language_override);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { font-variant-numeric: tabular-nums; font: 24px sans-serif; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.font_feature_settings.count == 0 && child.font_language_override == 0 && child.font_palette[0] == '\0');
+        TBOX_TEST_ASSERT(child.font_variant_numeric == 0 && child.font_variant_ligatures == 0 && child.font_variant_east_asian == 0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { font-variant-numeric: tabular-nums !important; font: 24px sans-serif; font-variant: none; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.font_variant_numeric != 0 && child.font_variant_ligatures != 0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { font-variant: small-caps oldstyle-nums super; font-variant-caps: normal; }");
+        child = resolve_node(sheet, p, NULL);
+        TBOX_TEST_ASSERT(!child.font_small_caps && child.font_variant_numeric != 0 && child.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUPER);
+        TBOX_TEST_ASSERT(child.font_size < 16.0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { font-feature-settings: initial; font-variant: inherit; font-language-override: unset; font-palette: initial; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.font_feature_settings.count == 0 && child.font_language_override == parent.font_language_override);
+        TBOX_TEST_ASSERT(child.font_variant_numeric == parent.font_variant_numeric && child.font_palette[0] == '\0');
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { all: initial; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.font_feature_settings.count == 0 && child.font_language_override == 0 && child.font_variant_numeric == 0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { font-feature-settings: 'bad' 1; font-variant-numeric: lining-nums oldstyle-nums; font-language-override: 'TOOLONG'; }");
+        child = resolve_node(sheet, p, &parent);
+        TBOX_TEST_ASSERT(child.font_feature_settings.count == parent.font_feature_settings.count && child.font_variant_numeric == parent.font_variant_numeric);
+        TBOX_TEST_ASSERT(child.font_language_override == parent.font_language_override);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { font-feature-settings: 'liga' 0; font-feature-settings: 'bad'; font-variant-numeric: tabular-nums; font-variant-numeric: oldstyle-nums lining-nums; }");
+        child = resolve_node(sheet, p, NULL);
+        TBOX_TEST_ASSERT(child.font_feature_settings.count == 1 && child.font_feature_settings.items[0].value == 0);
+        TBOX_TEST_ASSERT(child.font_variant_numeric != 0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("p { --features: 'smcp'; font-feature-settings: var(--features); }");
+        child = resolve_node(sheet, p, NULL);
+        TBOX_TEST_ASSERT(child.font_feature_settings.count == 1 && child.font_feature_settings.items[0].tag == 0x736d6370u);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* float/clear (logical values through the containing block's
+     * direction), blockification, float dropped for absolute boxes and
+     * flex items, shape-outside/-margin/-image-threshold. */
+    {
+        tbox_html_document *doc     = parse_html_cstr("<div><span>x</span></div>");
+        const tbox_html_node *div   = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *span  = div->first_child;
+        tbox_css_stylesheet *sheet  = parse_css_cstr("span { display: inline-block; float: inline-start; clear: inline-end; shape-outside: circle(40%) border-box; shape-margin: 6px; shape-image-threshold: 2; }");
+        tbox_style parent           = resolve_node(sheet, div, NULL);
+        tbox_style style            = resolve_node(sheet, span, &parent);
+        TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_LEFT && style.clear == TBOX_STYLE_CLEAR_RIGHT);
+        TBOX_TEST_ASSERT(style.display == TBOX_STYLE_DISPLAY_BLOCK); /* blockified */
+        TBOX_TEST_ASSERT(style.shape_outside.kind == TBOX_STYLE_SHAPE_OUTSIDE_SHAPE && style.shape_outside.box == TBOX_STYLE_SHAPE_BOX_BORDER);
+        TBOX_TEST_ASSERT(style.shape_outside.shape.kind == TBOX_STYLE_CLIP_PATH_CIRCLE);
+        TBOX_TEST_ASSERT(style.shape_margin.kind == TBOX_STYLE_LENGTH_PX && style.shape_margin.value == 6.0);
+        TBOX_TEST_ASSERT(style.shape_image_threshold == 1.0);
+        parent.direction_rtl = true;
+        style                = resolve_node(sheet, span, &parent);
+        TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_RIGHT && style.clear == TBOX_STYLE_CLEAR_LEFT);
+        tbox_css_stylesheet_destroy(sheet);
+
+        sheet  = parse_css_cstr("div { display: flex; } span { float: right; }");
+        parent = resolve_node(sheet, div, NULL);
+        style  = resolve_node(sheet, span, &parent);
+        TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_NONE); /* a flex item */
+        tbox_css_stylesheet_destroy(sheet);
+        sheet  = parse_css_cstr("div { display: grid; } span { float: right; }");
+        parent = resolve_node(sheet, div, NULL);
+        style  = resolve_node(sheet, span, &parent);
+        TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_NONE); /* a grid item */
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("span { float: left; position: absolute; } div { display: flow-root; shape-outside: url(a.png); }");
+        style = resolve_node(sheet, span, NULL);
+        TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_NONE);
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.display == TBOX_STYLE_DISPLAY_BLOCK && style.display_flow_root);
+        TBOX_TEST_ASSERT(style.shape_outside.kind == TBOX_STYLE_SHAPE_OUTSIDE_IMAGE && strcmp(style.shape_outside.image, "a.png") == 0);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { shape-outside: content-box; float: bogus; }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.shape_outside.kind == TBOX_STYLE_SHAPE_OUTSIDE_BOX && style.shape_outside.box == TBOX_STYLE_SHAPE_BOX_CONTENT);
+        TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_NONE);
+        tbox_css_stylesheet_destroy(sheet);
+        sheet = parse_css_cstr("div { shape-outside: circle() circle(); }");
+        style = resolve_node(sheet, div, NULL);
+        TBOX_TEST_ASSERT(style.shape_outside.kind == TBOX_STYLE_SHAPE_OUTSIDE_NONE);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Every advertised keyword maps to the expected OpenType tag/value.
+     * Unsupported values and incompatible groups must fail @supports too. */
+    {
+        static const struct { const char *property, *value, *tag; unsigned setting; } cases[] = {
+            {"font-variant-ligatures", "common-ligatures", "liga", 1},
+            {"font-variant-ligatures", "no-common-ligatures", "clig", 0},
+            {"font-variant-ligatures", "discretionary-ligatures", "dlig", 1},
+            {"font-variant-ligatures", "no-discretionary-ligatures", "dlig", 0},
+            {"font-variant-ligatures", "historical-ligatures", "hlig", 1},
+            {"font-variant-ligatures", "no-historical-ligatures", "hlig", 0},
+            {"font-variant-ligatures", "contextual", "calt", 1},
+            {"font-variant-ligatures", "no-contextual", "calt", 0},
+            {"font-variant-numeric", "lining-nums", "lnum", 1},
+            {"font-variant-numeric", "oldstyle-nums", "onum", 1},
+            {"font-variant-numeric", "proportional-nums", "pnum", 1},
+            {"font-variant-numeric", "tabular-nums", "tnum", 1},
+            {"font-variant-numeric", "diagonal-fractions", "frac", 1},
+            {"font-variant-numeric", "stacked-fractions", "afrc", 1},
+            {"font-variant-numeric", "ordinal", "ordn", 1},
+            {"font-variant-numeric", "slashed-zero", "zero", 1},
+            {"font-variant-east-asian", "jis78", "jp78", 1},
+            {"font-variant-east-asian", "jis83", "jp83", 1},
+            {"font-variant-east-asian", "jis90", "jp90", 1},
+            {"font-variant-east-asian", "jis04", "jp04", 1},
+            {"font-variant-east-asian", "simplified", "smpl", 1},
+            {"font-variant-east-asian", "traditional", "trad", 1},
+            {"font-variant-east-asian", "full-width", "fwid", 1},
+            {"font-variant-east-asian", "proportional-width", "pwid", 1},
+            {"font-variant-east-asian", "ruby", "ruby", 1},
+            {"font-variant-alternates", "historical-forms", "hist", 1},
+            {"font-feature-settings", "'ss01' 7", "ss01", 7},
+            {"font-feature-settings", "'liga' off", "liga", 0},
+            {"font-feature-settings", "'\\6c iga'", "liga", 1},
+        };
+        for (size_t k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+            tbox_style style = {0};
+            TBOX_TEST_ASSERT(tbox_style_parse_opentype(cases[k].property, tbox_string_view_from_cstr(cases[k].value), &style));
+            tbox_font_shaping_options options;
+            tbox_style_shaping_options(&style, &options);
+            uint32_t tag = (uint32_t)cases[k].tag[0] << 24 | (uint32_t)cases[k].tag[1] << 16 | (uint32_t)cases[k].tag[2] << 8 | (uint32_t)cases[k].tag[3];
+            bool found = false;
+            for (size_t i = 0; i < options.count; i++)
+                if (options.items[i].tag == tag && options.items[i].value == cases[k].setting) found = true;
+            TBOX_TEST_ASSERT_MSG(found, cases[k].value);
+            char condition[256];
+            snprintf(condition, sizeof(condition), "(%s: %s)", cases[k].property, cases[k].value);
+            TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_from_cstr(condition)));
+        }
+        static const char *const invalid[] = {
+            "(font-feature-settings: 'abc')", "(font-feature-settings: 'liga' -1)",
+            "(font-feature-settings: 'liga' 1.0)", "(font-feature-settings: 'liga' 1e0)",
+            "(font-feature-settings: 'liga' 999999999999999)", "(font-feature-settings: 'liga',)",
+            "(font-variant-ligatures: none contextual)", "(font-variant-ligatures: common-ligatures no-common-ligatures)",
+            "(font-variant-numeric: proportional-nums tabular-nums)",
+            "(font-variant-east-asian: jis78 jis90)", "(font-language-override: 'ABCDE')",
+            "(font-palette: demo)", "(font-variant-alternates: unknown(test))",
+            "(font-variant-alternates: styleset())", "(font-variant-alternates: swash(one,two))"
+        };
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++)
+            TBOX_TEST_ASSERT_MSG(!tbox_css_supports(tbox_string_view_from_cstr(invalid[i])), invalid[i]);
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_from_cstr("(font-variant-alternates: historical-forms styleset(one, two) stylistic(alt) character-variant(one, two) swash(a) ornaments(a) annotation(a))")));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_from_cstr("(font-palette: light) and (font-palette: dark) and (font-palette: --local)")));
+    }
+
+    /* The fixed feature capacity rejects the entire oversized declaration,
+     * while a full list plus all variant groups fits the shaping options. */
+    {
+        char text[2048] = "";
+        size_t used = 0;
+        tbox_style style = {0};
+        for (unsigned i = 0; i <= TBOX_FONT_MAX_FEATURE_SETTINGS; i++) {
+            int written = snprintf(text + used, sizeof(text) - used, "%s'a%03u' 1", i == 0 ? "" : ", ", i);
+            TBOX_TEST_REQUIRE(written > 0 && (size_t)written < sizeof(text) - used);
+            used += (size_t)written;
+            bool valid = tbox_style_parse_opentype("font-feature-settings", tbox_string_view_make(text, used), &style);
+            TBOX_TEST_ASSERT(valid == (i < TBOX_FONT_MAX_FEATURE_SETTINGS));
+        }
+        TBOX_TEST_ASSERT(style.font_feature_settings.count == TBOX_FONT_MAX_FEATURE_SETTINGS);
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-variant", tbox_string_view_from_cstr(
+            "common-ligatures discretionary-ligatures historical-ligatures contextual oldstyle-nums tabular-nums diagonal-fractions ordinal slashed-zero jis90 full-width ruby historical-forms"), &style));
+        tbox_font_shaping_options options;
+        tbox_style_shaping_options(&style, &options);
+        TBOX_TEST_ASSERT(options.count > TBOX_FONT_MAX_FEATURE_SETTINGS && options.count <= TBOX_FONT_MAX_FEATURES);
+    }
+
+    /* ex/ch: measured through tbox_style_font_metrics where the family
+     * changes, inherited otherwise, 0.5em without a provider. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p><code></code></p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        const tbox_html_node *code = p->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { width: 10ch; height: 10ex; } p { width: 10ch; } code { font-family: mono; width: 10ch; font-size: 10px; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        int calls = 0;
+        tbox_style_font_metrics metrics = { fake_font_metrics, &calls };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table = tbox_style_resolve_tree_in_viewport_with_preferences(&arena, tbox_html_document_root(doc), &source, 1, 800, 600, false, NULL, 0, &metrics);
+        const tbox_style *ds = tbox_style_table_find(&table, div), *ps = tbox_style_table_find(&table, p), *cs = tbox_style_table_find(&table, code);
+        TBOX_TEST_REQUIRE(ds != NULL && ps != NULL && cs != NULL);
+        TBOX_TEST_ASSERT(fabs(ds->width.value - 88.0) < 1e-9 && fabs(ds->height.value - 64.0) < 1e-9);
+        TBOX_TEST_ASSERT(fabs(ps->width.value - 88.0) < 1e-9);
+        TBOX_TEST_ASSERT(fabs(cs->width.value - 60.0) < 1e-9 && cs->ch_ratio == 0.6);
+        TBOX_TEST_ASSERT(calls == 2); /* the root's family and code's */
+        table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        ds    = tbox_style_table_find(&table, div);
+        TBOX_TEST_ASSERT(ds != NULL && ds->width.value == 80.0);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* The generic monospace family's 13px medium: keyword-derived sizes
+     * follow it, nested monospace doesn't shrink again, px sizes stay. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><pre><code>a</code></pre><p><code>b</code></p><section><pre>c</pre></section></div>");
+        const tbox_html_node *div     = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *pre     = div->first_child;
+        const tbox_html_node *nested  = pre->first_child;
+        const tbox_html_node *p       = pre->next_sibling;
+        const tbox_html_node *code    = p->first_child;
+        const tbox_html_node *section = p->next_sibling;
+        const tbox_html_node *px_pre  = section->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("pre, code { font-family: monospace; } p { font-size: 2em; } section { font-size: 16px; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const tbox_style *pre_s = tbox_style_table_find(&table, pre), *nested_s = tbox_style_table_find(&table, nested);
+        const tbox_style *code_s = tbox_style_table_find(&table, code), *px_s = tbox_style_table_find(&table, px_pre);
+        TBOX_TEST_REQUIRE(pre_s != NULL && nested_s != NULL && code_s != NULL && px_s != NULL);
+        TBOX_TEST_ASSERT(pre_s->font_size == 13.0 && nested_s->font_size == 13.0);
+        TBOX_TEST_ASSERT(code_s->font_size == 26.0);
+        TBOX_TEST_ASSERT(px_s->font_size == 16.0 && !px_s->font_size_keyword);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* text-decoration propagates to descendants, except into atomic
+     * inlines and floats; the nearest decorating ancestor sets its color. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p><span>a</span><b>b</b><i>c</i></p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        const tbox_html_node *span = p->first_child;
+        const tbox_html_node *b    = span->next_sibling;
+        const tbox_html_node *i    = b->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr("div { text-decoration: underline red; } p { text-decoration: line-through blue; } b { display: inline-block; } i { float: left; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const tbox_style *ps = tbox_style_table_find(&table, p), *ss = tbox_style_table_find(&table, span);
+        const tbox_style *bs = tbox_style_table_find(&table, b), *is = tbox_style_table_find(&table, i);
+        TBOX_TEST_REQUIRE(ps != NULL && ss != NULL && bs != NULL && is != NULL);
+        TBOX_TEST_ASSERT(ps->decoration_propagated.lines == 1u && rgba_eq(ps->decoration_propagated.color, (tbox_css_rgba){ 255, 0, 0, 255 }));
+        TBOX_TEST_ASSERT(ss->decoration_propagated.lines == 3u && rgba_eq(ss->decoration_propagated.color, (tbox_css_rgba){ 0, 0, 255, 255 }));
+        TBOX_TEST_ASSERT(tbox_style_decoration_lines(ss) == 0u);
+        TBOX_TEST_ASSERT(bs->decoration_propagated.lines == 0u && is->decoration_propagated.lines == 0u);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    failures += tbox_test_grid_style_run();
+    failures += tbox_test_text_paint_run();
+    failures += tbox_test_motion_run();
     return failures;
 }

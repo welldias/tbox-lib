@@ -6,13 +6,14 @@
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
+#include "tbox_font_face_internal.h"
 
 /* One already-loaded face, keyed by (family, bold, italic, size_px) -- see
  * tbox_font_face_cache_get in <tbox/font.h>. family[0] == '\0' means the
  * default (empty) family -- the entries populated from regular_data/
  * bold_data, same as before this cache understood any other family. */
 typedef struct tbox_font_face_cache_entry {
-    char family[64];
+    char family[TBOX_FONT_FAMILY_CAPACITY];
     bool kerning;
     int weight;
     double stretch;
@@ -20,6 +21,7 @@ typedef struct tbox_font_face_cache_entry {
     double size_px;
     tbox_font_face *face;
     unsigned generation;
+    bool alias; /* a family list's key for a face another entry owns */
 } tbox_font_face_cache_entry;
 
 /* One family's resolved font bytes, keyed by (family, bold, italic) --
@@ -28,13 +30,14 @@ typedef struct tbox_font_face_cache_entry {
  * tbox_font_face for. `data`/`size` are copied into the cache's arena
  * (tbox_font_face_cache_copy_bytes), same as regular_data/bold_data. */
 typedef struct tbox_font_face_cache_family_blob {
-    char family[64];
+    char family[TBOX_FONT_FAMILY_CAPACITY];
     int weight;
     double stretch;
     bool italic;
     const void *data;
     size_t size;
     bool registered;
+    bool missing; /* the resolver found no such family: data is NULL */
 } tbox_font_face_cache_family_blob;
 
 /* Own lifetime (real _destroy, no caller arena), same as tbox_css_stylesheet
@@ -103,7 +106,7 @@ tbox_font_face_cache *tbox_font_face_cache_create(const void *regular_data, size
 }
 
 bool tbox_font_face_cache_register(tbox_font_face_cache *cache, tbox_string_view family, int weight, bool italic, const void *data, size_t size) {
-    if (cache == NULL || family.size == 0 || family.size >= 64 || data == NULL || size == 0) return false;
+    if (cache == NULL || family.size == 0 || family.size >= TBOX_FONT_FAMILY_CAPACITY || data == NULL || size == 0) return false;
     const void *copy = tbox_font_face_cache_copy_bytes(&cache->arena, data, size);
     if (copy == NULL) return false;
     tbox_font_face_cache_family_blob *blob = tbox_vector_push(&cache->family_blobs);
@@ -130,7 +133,8 @@ void tbox_font_face_cache_destroy(tbox_font_face_cache *cache) {
     size_t count = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < count; i++) {
         tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
-        tbox_font_face_destroy(entry->face);
+        if (!entry->alias)
+            tbox_font_face_destroy(entry->face);
     }
 
     /* Frees the copied regular_data/bold_data buffers and the entries
@@ -148,28 +152,49 @@ const tbox_font_face *tbox_font_face_cache_get_styled(tbox_font_face_cache *cach
 }
 
 const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px, bool kerning) {
-    if (cache == NULL) {
-        return NULL;
-    }
-    if (weight <= 0)
-        weight = 400;
-    if (stretch <= 0.0)
-        stretch = 100.0;
-    bool bold = weight >= 600;
+    return tbox_font_face_cache_get_shaped(cache, family, weight, stretch, italic, size_px, kerning, NULL);
+}
 
-    /* Truncate-not-reject, same posture as
-     * tbox_font_source_fontconfig_family_cstr (src/font/tbox_font_source_fontconfig.c)
-     * -- always NUL-terminated. */
-    char family_buf[64];
-    tbox_utf8_copy_truncated(family_buf, sizeof(family_buf), family);
+static bool tbox_font_options_equal(const tbox_font_shaping_options *a, const tbox_font_shaping_options *b) {
+    if (a->language != b->language || a->count != b->count) return false;
+    if (a->vertical_frame != b->vertical_frame || a->vertical_orientation != b->vertical_orientation) return false;
+    for (size_t i = 0; i < a->count; i++)
+        if (a->items[i].tag != b->items[i].tag || a->items[i].value != b->items[i].value) return false;
+    return true;
+}
 
+static tbox_font_face_cache_entry *tbox_font_face_cache_find(tbox_font_face_cache *cache, const char *family, int weight, double stretch, bool italic, double size_px, bool kerning, const tbox_font_shaping_options *options) {
     size_t entry_count = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < entry_count; i++) {
-        const tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
-        if (entry->generation == cache->generation && entry->weight == weight && entry->stretch == stretch && entry->italic == italic && entry->kerning == kerning && entry->size_px == size_px && strcmp(entry->family, family_buf) == 0) {
-            return entry->face;
+        tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
+        if (entry->generation == cache->generation && entry->weight == weight && entry->stretch == stretch && entry->italic == italic && entry->kerning == kerning && tbox_font_options_equal(&entry->face->options, options) && entry->size_px == size_px && strcmp(entry->family, family) == 0) {
+            return entry;
         }
     }
+    return NULL;
+}
+
+static void tbox_font_face_cache_add(tbox_font_face_cache *cache, const char *family, int weight, double stretch, bool italic, double size_px, bool kerning, tbox_font_face *face, bool alias) {
+    tbox_font_face_cache_entry *entry = tbox_vector_push(&cache->entries);
+    entry->kerning                    = kerning;
+    tbox_utf8_copy_truncated(entry->family, sizeof(entry->family), tbox_string_view_from_cstr(family));
+    entry->weight     = weight;
+    entry->stretch    = stretch;
+    entry->italic     = italic;
+    entry->size_px    = size_px;
+    entry->face       = face;
+    entry->generation = cache->generation;
+    entry->alias      = alias;
+}
+
+/* One family name (or "" for the default family); NULL when the resolver
+ * has no such family. */
+static const tbox_font_face *tbox_font_face_cache_get_one(tbox_font_face_cache *cache, const char *family_buf, int weight, double stretch, bool italic, double size_px, bool kerning, const tbox_font_shaping_options *options) {
+    bool bold                         = weight >= 600;
+    tbox_string_view family           = tbox_string_view_from_cstr(family_buf);
+    const tbox_font_face_cache_entry *found = tbox_font_face_cache_find(cache, family_buf, weight, stretch, italic, size_px, kerning, options);
+    if (found != NULL)
+        return found->face;
 
     const void *data = NULL;
     size_t size      = 0;
@@ -224,8 +249,17 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
             const void *resolved_data = NULL;
             size_t resolved_size      = 0;
             if (cache->resolver == NULL || !cache->resolver(cache->resolver_userdata, &query, &resolved_data, &resolved_size)) {
-                if (!default_upright)
+                if (!default_upright) {
+                    /* Remembered, so the resolver isn't asked again. */
+                    tbox_font_face_cache_family_blob *missing = tbox_vector_push(&cache->family_blobs);
+                    memset(missing, 0, sizeof(*missing));
+                    tbox_utf8_copy_truncated(missing->family, sizeof(missing->family), family);
+                    missing->weight  = weight;
+                    missing->stretch = stretch;
+                    missing->italic  = italic;
+                    missing->missing = true;
                     return NULL;
+                }
                 resolved_data = bold ? cache->bold_data : cache->regular_data;
                 resolved_size = bold ? cache->bold_size : cache->regular_size;
             }
@@ -236,7 +270,8 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
             }
 
             tbox_font_face_cache_family_blob *new_blob = tbox_vector_push(&cache->family_blobs);
-            memcpy(new_blob->family, family_buf, sizeof(family_buf));
+            memset(new_blob, 0, sizeof(*new_blob));
+            tbox_utf8_copy_truncated(new_blob->family, sizeof(new_blob->family), family);
             new_blob->weight  = weight;
             new_blob->stretch = stretch;
             new_blob->italic  = italic;
@@ -246,6 +281,8 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
             blob             = new_blob;
         }
 
+        if (blob->missing)
+            return NULL;
         data = blob->data;
         size = blob->size;
     }
@@ -257,15 +294,53 @@ const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cach
         return NULL;
     }
 
+    face->options = *options;
     tbox_font_face_set_kerning(face, kerning);
-    tbox_font_face_cache_entry *entry = tbox_vector_push(&cache->entries);
-    entry->kerning                    = kerning;
-    memcpy(entry->family, family_buf, sizeof(family_buf));
-    entry->weight  = weight;
-    entry->stretch = stretch;
-    entry->italic  = italic;
-    entry->size_px = size_px;
-    entry->face    = face;
-    entry->generation = cache->generation;
+    tbox_font_face_cache_add(cache, family_buf, weight, stretch, italic, size_px, kerning, face, false);
+    return face;
+}
+
+const tbox_font_face *tbox_font_face_cache_get_shaped(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px, bool kerning, const tbox_font_shaping_options *options) {
+    const tbox_font_shaping_options defaults = {0};
+    if (options == NULL) options = &defaults;
+    if (options->count > TBOX_FONT_MAX_FEATURES) return NULL;
+    if (cache == NULL) {
+        return NULL;
+    }
+    if (weight <= 0)
+        weight = 400;
+    if (stretch <= 0.0)
+        stretch = 100.0;
+
+    /* Truncate-not-reject, same posture as
+     * tbox_font_source_fontconfig_family_cstr (src/font/tbox_font_source_fontconfig.c)
+     * -- always NUL-terminated. */
+    char list[TBOX_FONT_FAMILY_CAPACITY];
+    tbox_utf8_copy_truncated(list, sizeof(list), family);
+    const tbox_font_face_cache_entry *found = tbox_font_face_cache_find(cache, list, weight, stretch, italic, size_px, kerning, options);
+    if (found != NULL)
+        return found->face;
+
+    /* `family` is a font-family list ("a, 'b c', serif"): the first name
+     * the resolver really has wins, else the default family. */
+    const tbox_font_face *face = NULL;
+    for (tbox_string_view rest = tbox_string_view_from_cstr(list); face == NULL && rest.size > 0;) {
+        size_t comma = 0;
+        while (comma < rest.size && rest.data[comma] != ',')
+            comma++;
+        tbox_string_view name = tbox_string_view_trim_ascii_space(tbox_string_view_make(rest.data, comma));
+        if (name.size >= 2 && (name.data[0] == '"' || name.data[0] == '\'') && name.data[name.size - 1] == name.data[0])
+            name = tbox_string_view_make(name.data + 1, name.size - 2);
+        rest = comma < rest.size ? tbox_string_view_make(rest.data + comma + 1, rest.size - comma - 1) : tbox_string_view_make(rest.data + rest.size, 0);
+        if (name.size == 0)
+            continue;
+        char one[TBOX_FONT_FAMILY_CAPACITY];
+        tbox_utf8_copy_truncated(one, sizeof(one), name);
+        face = tbox_font_face_cache_get_one(cache, one, weight, stretch, italic, size_px, kerning, options);
+    }
+    if (face == NULL)
+        face = tbox_font_face_cache_get_one(cache, "", weight, stretch, italic, size_px, kerning, options);
+    if (face != NULL && tbox_font_face_cache_find(cache, list, weight, stretch, italic, size_px, kerning, options) == NULL)
+        tbox_font_face_cache_add(cache, list, weight, stretch, italic, size_px, kerning, (tbox_font_face *)face, true);
     return face;
 }

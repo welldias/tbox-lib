@@ -1,20 +1,71 @@
 #include "tbox_layout_internal.h"
+#include <string.h>
+
+#include "style/tbox_style_internal.h"
 
 tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, const double *row_column_widths, size_t row_column_count) {
     tbox_layout_classification kind = { 0 };
-    kind.text                       = tbox_layout_is_inline_box(node, style, styles);
+    kind.text                       = tbox_layout_is_inline_box(node, style, styles) && !tbox_layout_is_multicol(style);
     kind.image     = tbox_layout_is_replaced_image(node);
     kind.table     = node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "table");
     kind.table_row = row_column_widths != NULL && row_column_count > 0 && tbox_layout_tag(node, "tr");
     kind.flex      = (style->display == TBOX_STYLE_DISPLAY_FLEX || style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) && !kind.image && !kind.table && !kind.table_row && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node);
+    kind.grid = (style->display == TBOX_STYLE_DISPLAY_GRID || style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) && !kind.image && !kind.table && !kind.table_row && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node);
     return kind;
 }
 
-/* After the whole tree is laid out: decode background images, and apply
- * `transform: translate()`/`translate` -- a purely visual shift of the
- * box and everything in it, like position: relative's, with percentages
- * of the box's own border box. */
-static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images) {
+/* Motion paths refer to the box establishing the containing block,
+ * before transforms. Ancestor translations have already moved both this
+ * box and its reference box by the same amount. */
+static tbox_rect tbox_layout_motion_reference(const tbox_layout_box *box, tbox_rect viewport, tbox_style_clip_path *outline) {
+    const tbox_style *style = box->style;
+    const tbox_layout_box *parent = box->parent;
+    bool positioned = style->position == TBOX_STYLE_POSITION_ABSOLUTE || style->position == TBOX_STYLE_POSITION_FIXED;
+    while (parent != NULL) {
+        const tbox_style *p = parent->style;
+        if (p == NULL && parent->has_transform)
+            break; /* a writing-mode frame: its box, in the frame's coordinates (tbox_layout_writing.c) */
+        if (p != NULL && ((!positioned && p->display != TBOX_STYLE_DISPLAY_INLINE) ||
+            (positioned && (tbox_style_has_transform(p) || (style->position != TBOX_STYLE_POSITION_FIXED && p->position != TBOX_STYLE_POSITION_STATIC)))))
+            break;
+        parent = parent->parent;
+    }
+    if (parent == NULL) return viewport;
+    tbox_rect reference = parent->border_box;
+    switch (style->offset_path.coord_box) {
+    case TBOX_STYLE_COORD_PADDING_BOX: reference = parent->padding_box; break;
+    case TBOX_STYLE_COORD_CONTENT_BOX: reference = parent->content_box; break;
+    case TBOX_STYLE_COORD_MARGIN_BOX: reference = parent->margin_box; break;
+    default: break;
+    }
+    if (style->offset_path.kind == TBOX_STYLE_OFFSET_PATH_BOX && parent->style != NULL) {
+        const tbox_style *p = parent->style;
+        const double edges[4] = {
+            reference.y - parent->border_box.y,
+            parent->border_box.x + parent->border_box.width - reference.x - reference.width,
+            parent->border_box.y + parent->border_box.height - reference.y - reference.height,
+            reference.x - parent->border_box.x,
+        };
+        /* Inner/outer parallel curves use the selected box's edge
+         * offsets, with percent radii resolved against the border box. */
+        const size_t horizontal[4] = { 3, 1, 1, 3 }, vertical[4] = { 0, 0, 2, 2 };
+        for (size_t i = 0; i < 4; i++) {
+            double rx = p->border_radius_corners[i] + parent->border_box.width * p->border_radius_percent[i] / 100.0;
+            double ry = p->border_radius_vertical[i] + parent->border_box.height * p->border_radius_vertical_percent[i] / 100.0;
+            outline->round_h[i] = rx > edges[horizontal[i]] ? rx - edges[horizontal[i]] : 0.0;
+            outline->round_v[i] = ry > edges[vertical[i]] ? ry - edges[vertical[i]] : 0.0;
+            if (rx == 0.0 || ry == 0.0) outline->round_h[i] = outline->round_v[i] = 0.0;
+        }
+    }
+    return reference;
+}
+
+/* After the whole tree is laid out: decode background, mask and border
+ * images, and apply transforms. A pure translation is a visual shift of
+ * the box and everything in it, like position: relative's; any other
+ * transform stays a matrix on the box (has_transform), relative to its
+ * border box as the parent's own shift left it. */
+static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images, tbox_arena *arena, tbox_rect viewport) {
     for (; box != NULL; box = box->next_sibling) {
         const tbox_style *style = box->style;
         if (style != NULL) {
@@ -25,12 +76,50 @@ static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images) {
                     box->background_layer_images[l - 1] = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->background_layers[l - 1].image));
             if (style->has_mask && style->mask.image[0] != '\0' && images != NULL)
                 box->mask_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->mask.image));
-            double dx = tbox_style_length_resolve(style->translate_x, box->border_box.width);
-            double dy = tbox_style_length_resolve(style->translate_y, box->border_box.height);
-            if (dx != 0.0 || dy != 0.0)
-                tbox_layout_translate(box, dx, dy);
+            for (size_t l = 0; l < style->mask_layer_count && images != NULL; l++)
+                if (style->mask_layers[l].source.image[0] != '\0')
+                    box->mask_layer_images[l] = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->mask_layers[l].source.image));
+            if (style->has_border_image && style->border_image.image[0] != '\0' && images != NULL)
+                box->border_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->border_image.image));
+            if (style->box_reflect.image[0] != '\0' && images != NULL)
+                box->reflection_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->box_reflect.image));
+            for (size_t r = 0; r < box->text_run_count; r++) {
+                tbox_layout_text_run *run = &box->text_runs[r];
+                memset(run->decoration_images, 0, sizeof(run->decoration_images));
+                run->decoration_border_image = NULL;
+                if (images == NULL || run->style == NULL || run->style == style || run->image != NULL) continue;
+                for (size_t l = 0; l < TBOX_STYLE_MAX_BACKGROUND_LAYERS; l++) {
+                    const char *image = l == 0 ? run->style->background_image : run->style->background_layers[l - 1].image;
+                    if (image[0] != '\0') run->decoration_images[l] = tbox_image_cache_get(images, tbox_string_view_from_cstr(image));
+                }
+                if (run->style->has_border_image && run->style->border_image.image[0] != '\0')
+                    run->decoration_border_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(run->style->border_image.image));
+            }
+            box->has_transform = false;
+            double m[6], offset[6];
+            const double *motion = NULL;
+            if (style->offset_path.kind != TBOX_STYLE_OFFSET_PATH_NONE) {
+                tbox_style_clip_path outline = { .kind = TBOX_STYLE_CLIP_PATH_INSET };
+                tbox_rect reference = tbox_layout_motion_reference(box, viewport, &outline);
+                tbox_rect motion_box = box->border_box;
+                if (style->layout_frame != TBOX_STYLE_FRAME_NONE) { /* sampled upright, like the transform */
+                    motion_box = tbox_layout_frame_upright(style, box->border_box, box->border_box);
+                    reference  = tbox_layout_frame_upright(style, box->border_box, reference);
+                }
+                if (tbox_style_motion_matrix(style, motion_box, reference, &outline, arena, offset)) motion = offset;
+            }
+            bool transformed = style->layout_frame != TBOX_STYLE_FRAME_NONE ? tbox_layout_frame_transform(style, box->border_box, motion, m) :
+                tbox_style_transform_matrix(style, box->border_box.x, box->border_box.y, box->border_box.width, box->border_box.height, motion, m);
+            if (transformed) {
+                if (m[0] == 1.0 && m[1] == 0.0 && m[2] == 0.0 && m[3] == 1.0) {
+                    tbox_layout_translate(box, m[4], m[5]);
+                } else {
+                    box->has_transform = true;
+                    memcpy(box->transform, m, sizeof(m));
+                }
+            }
         }
-        tbox_layout_finish(box->first_child, images);
+        tbox_layout_finish(box->first_child, images, arena, viewport);
     }
 }
 
@@ -148,6 +237,6 @@ static tbox_layout_box *tbox_layout_build_tree(tbox_arena *arena, const tbox_htm
         .viewport         = viewport_rect,
     };
     tbox_layout_box *box = tbox_layout_build_element(arena, element, styles, fonts, images, viewport, 0.0, root_positioned_context, NULL, 0);
-    tbox_layout_finish(box, images);
+    tbox_layout_finish(box, images, arena, viewport_rect);
     return box;
 }

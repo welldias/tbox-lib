@@ -139,6 +139,10 @@ double tbox_font_face_ascent(const tbox_font_face *face);
  * neither is available (or `face` is NULL). Used by font-size-adjust. */
 double tbox_font_face_x_height(const tbox_font_face *face);
 
+/* Cap-height at the loaded pixel size, from OS/2 or the H glyph.
+ * Returns 0 for NULL or an unavailable metric. */
+double tbox_font_face_cap_height(const tbox_font_face *face);
+
 /* True when the face contains a drawable glyph for `codepoint` (not the
  * font's missing-glyph replacement). Useful before selecting a font for
  * symbols such as U+2713 CHECK MARK. */
@@ -179,15 +183,75 @@ tbox_font_glyph_bitmap tbox_font_rasterize_glyph(tbox_font_face *face, uint32_t 
  * a codepoint; tbox_font_rasterize_glyph is this after FT_Get_Char_Index. */
 tbox_font_glyph_bitmap tbox_font_rasterize_glyph_id(tbox_font_face *face, uint32_t glyph_id);
 
+/* Rasterizes only the centered outline stroke of a glyph index, at CSS
+ * width in px (radius = width/2), without changing its advance. No bitmap
+ * for nonpositive/nonfinite widths or fonts without vector outlines.
+ * alpha is borrowed until the next stroke call or face destruction. */
+tbox_font_glyph_bitmap tbox_font_rasterize_glyph_stroke(tbox_font_face *face, uint32_t glyph_id, double width);
+
 /* One positioned glyph of a shaped text run (docs/09-texto-e-fontes.md,
  * "Do texto aos glifos"). Produced by Layout, carried by a TEXT_RUN paint
  * op, painted by Output as is. */
+/* How a glyph's bitmap is turned before it is drawn at (x, y), for
+ * vertical text laid out in a rotated or transposed frame
+ * (docs/09-texto-e-fontes.md, "Escrita vertical"): a bitmap pixel at
+ * (bx, by) from the pen lands at (x, y) + O(scale * bx, by). */
+typedef enum tbox_glyph_orient {
+    TBOX_GLYPH_ORIENT_NONE,       /* (bx, by) */
+    TBOX_GLYPH_ORIENT_ROTATE_CCW, /* (by, -bx) */
+    TBOX_GLYPH_ORIENT_TRANSPOSE,  /* (by, bx) */
+    TBOX_GLYPH_ORIENT_FLIP,       /* (bx, -by) */
+} tbox_glyph_orient;
+
 typedef struct tbox_glyph {
     uint32_t id;      /* glyph index in the run's face */
     uint32_t cluster; /* byte offset, in the run's text, of the source character */
     double x, y;      /* pen position relative to the run's origin and baseline */
     double advance;   /* advance including letter-spacing */
+    unsigned char orient; /* tbox_glyph_orient; NONE for horizontal text */
+    float scale;          /* horizontal squeeze before orienting (text-combine-upright); 0 is 1 */
 } tbox_glyph;
+
+/* Backend-independent OpenType tags (four ASCII bytes, big endian). */
+typedef struct tbox_font_feature {
+    uint32_t tag, value;
+} tbox_font_feature;
+
+#define TBOX_FONT_MAX_FEATURE_SETTINGS 64
+#define TBOX_FONT_MAX_FEATURES 96
+
+/* Longest font-family list (or single name) the font cache and tbox_style
+ * keep, NUL included; longer ones are truncated. */
+#define TBOX_FONT_FAMILY_CAPACITY 192
+
+typedef struct tbox_font_feature_settings {
+    size_t count;
+    tbox_font_feature items[TBOX_FONT_MAX_FEATURE_SETTINGS];
+} tbox_font_feature_settings;
+
+typedef struct tbox_font_shaping_options {
+    size_t count;
+    tbox_font_feature items[TBOX_FONT_MAX_FEATURES];
+    uint32_t language; /* OpenType language tag, 0 = automatic */
+    /* Vertical text (docs/09-texto-e-fontes.md, "Escrita vertical"): the
+     * frame the line is laid out in and the text-orientation. Shaping then
+     * gives upright glyphs a vertical advance and an orientation. */
+    unsigned char vertical_frame;       /* tbox_font_vertical_frame */
+    unsigned char vertical_orientation; /* tbox_font_vertical_orientation */
+} tbox_font_shaping_options;
+
+typedef enum tbox_font_vertical_frame {
+    TBOX_FONT_VERTICAL_NONE,       /* horizontal, or a frame where every glyph stays sideways as shaped */
+    TBOX_FONT_VERTICAL_ROTATED,    /* laid out turned 90 degrees clockwise (vertical-rl) */
+    TBOX_FONT_VERTICAL_TRANSPOSED, /* laid out with x and y swapped (vertical-lr) */
+} tbox_font_vertical_frame;
+
+typedef enum tbox_font_vertical_orientation {
+    TBOX_FONT_VERTICAL_MIXED,    /* CJK and similar upright, the rest sideways */
+    TBOX_FONT_VERTICAL_UPRIGHT,  /* every glyph upright */
+    TBOX_FONT_VERTICAL_SIDEWAYS, /* every glyph sideways */
+    TBOX_FONT_VERTICAL_COMBINE,  /* text-combine-upright: the text squeezed into one upright 1em */
+} tbox_font_vertical_orientation;
 
 /* Opaque: owns two copies of font bytes (regular and bold -- see "why two
  * font sources" below, in tbox_font_face_cache_create's doc comment) plus a
@@ -309,6 +373,11 @@ const tbox_font_face *tbox_font_face_cache_get_styled(tbox_font_face_cache *cach
  * per setting); get_styled and get are this with kerning on, CSS's
  * default (`font-kerning: auto`). */
 const tbox_font_face *tbox_font_face_cache_get_kerned(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px, bool kerning);
+
+/* Immutable shaping options are copied into a separate cached face. NULL
+ * options selects the default. Counts must not exceed TBOX_FONT_MAX_FEATURES.
+ * Simple shaping retains the cache distinction but ignores these options. */
+const tbox_font_face *tbox_font_face_cache_get_shaped(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px, bool kerning, const tbox_font_shaping_options *options);
 
 #ifdef __cplusplus
 }

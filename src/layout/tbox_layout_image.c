@@ -108,15 +108,31 @@ void tbox_layout_push_image_word(tbox_arena *arena, const tbox_html_node *img_no
         return;
     }
 
-    double width  = img_style->width.kind == TBOX_STYLE_LENGTH_PX ? img_style->width.value : (double)image->width;
-    double height = img_style->height.kind == TBOX_STYLE_LENGTH_PX ? img_style->height.value : (double)image->height;
-    width = tbox_layout_constrain_width(img_style, width, containing_width, 0.0);
+    /* zoom scales the natural size like any other length. */
+    double zoom   = tbox_style_zoom(img_style);
+    double width  = img_style->width.kind == TBOX_STYLE_LENGTH_PX ? img_style->width.value : (double)image->width * zoom;
+    double height = img_style->height.kind == TBOX_STYLE_LENGTH_PX ? img_style->height.value : (double)image->height * zoom;
+    /* The word is the image's margin box: its padding, border and margin
+     * take room in the line like an inline-block's (painted by Render). */
+    double edges[4], margins[4];
+    for (size_t side = 0; side < 4; side++) {
+        edges[side]   = tbox_layout_resolve_edge(img_style->padding[side], containing_width) + tbox_style_border_side_width(img_style, side);
+        margins[side] = tbox_layout_resolve_edge(img_style->margin[side], containing_width);
+    }
+    if (img_style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX) {
+        if (img_style->width.kind == TBOX_STYLE_LENGTH_PX)
+            width = width > edges[1] + edges[3] ? width - edges[1] - edges[3] : 0.0;
+        if (img_style->height.kind == TBOX_STYLE_LENGTH_PX)
+            height = height > edges[0] + edges[2] ? height - edges[0] - edges[2] : 0.0;
+    }
+    width = tbox_layout_constrain_width(img_style, width, containing_width, edges[1] + edges[3]);
 
     tbox_layout_word *entry = tbox_layout_new_word(words);
     entry->text             = tbox_string_view_make(NULL, 0);
     entry->face             = context_face;
     entry->style             = img_style;
-    entry->width             = width;
+    entry->width             = width + edges[1] + edges[3] + margins[1] + margins[3];
+    height                  += edges[0] + edges[2] + margins[0] + margins[2];
     entry->space_width       = context_face != NULL ? tbox_font_measure_text_spaced(context_face, tbox_string_view_make(" ", 1), img_style->letter_spacing) + img_style->word_spacing : 0.0;
     entry->image              = image;
     entry->image_height       = height;
@@ -141,7 +157,7 @@ tbox_layout_replaced_image tbox_layout_image_prepare(tbox_arena *arena,
 double tbox_layout_image_auto_width(const tbox_layout_replaced_image *content,
     const tbox_style *style, tbox_layout_containing_block container, double vertical_edges) {
     const tbox_image *image = content->image;
-    double width = image != NULL ? (double)image->width :
+    double width = image != NULL ? (double)image->width * tbox_style_zoom(style) :
         content->fallback_face != NULL ?
             tbox_font_measure_text(content->fallback_face, content->fallback_text) : 16.0;
     if (image != NULL && image->height > 0) {
@@ -161,7 +177,7 @@ double tbox_layout_image_height(const tbox_layout_replaced_image *content,
     const tbox_style *style, tbox_layout_containing_block container,
     double content_width, double vertical_edges) {
     const tbox_image *image = content->image;
-    double height = image != NULL ? (double)image->height :
+    double height = image != NULL ? (double)image->height * tbox_style_zoom(style) :
         content->fallback_face != NULL ? tbox_font_face_line_height(content->fallback_face) : 16.0;
     if (style->height.kind == TBOX_STYLE_LENGTH_PX) height = style->height.value;
     else if (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)

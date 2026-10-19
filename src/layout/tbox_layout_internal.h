@@ -6,6 +6,7 @@
 #include "base/tbox_vector.h"
 #include "font/tbox_font_measure.h"
 #include "html_parser/tbox_html_entities.h"
+#include "layout/tbox_layout_bidi.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <tbox/image.h>
@@ -19,9 +20,17 @@ typedef struct tbox_layout_containing_block {
     bool height_definite;
 } tbox_layout_containing_block;
 
+/* The floats of one block formatting context (tbox_layout_float.c). */
+typedef struct tbox_layout_floats tbox_layout_floats;
+
+/* What a box hands down to its descendants besides its content box: the
+ * containing blocks of absolute/fixed descendants and the floats of the
+ * block formatting context they lay out in (NULL until the root creates
+ * one; a box that establishes a new context replaces it). */
 typedef struct tbox_layout_positioned_context {
     tbox_rect nearest_ancestor;
     tbox_rect viewport;
+    tbox_layout_floats *floats;
 } tbox_layout_positioned_context;
 
 typedef struct tbox_layout_forced_size {
@@ -34,6 +43,8 @@ typedef struct tbox_layout_forced_size {
  * tbox_layout_collect_words) -- `width`/`space_width` are pre-measured
  * (via tbox_font_measure_text, against `face`) so the greedy wrap pass
  * below never re-measures the same word twice. */
+
+#define TBOX_LAYOUT_BIDI_MARKS 6
 
 typedef struct tbox_layout_word {
     tbox_string_view text;
@@ -96,7 +107,32 @@ typedef struct tbox_layout_word {
     /* The word ended at a soft hyphen (U+00AD) and continues in the next
      * word: when a line breaks right after it, a hyphen is shown. */
     bool soft_hyphen_after;
+    /* Glued to the previous word (no_space_before) yet a line may break
+     * before it: a piece after a soft hyphen, a hyphen or a slash. Lets
+     * min-content split there too. */
+    bool break_before;
+    /* A float met inside the inline content: its box, already built,
+     * placed by tbox_layout_break_lines when the line reaches it. Takes
+     * no room on the line (width 0). NULL for every other word. */
+    struct tbox_layout_box *floating;
+    /* The bidi formatting characters `unicode-bidi` puts around inline
+     * elements (docs/09-texto-e-fontes.md, "Texto bidirecional"):
+     * bidi_open before this word, outermost first, and bidi_close after
+     * it, innermost first. See tbox_layout_mark_bidi. */
+    uint32_t bidi_open[TBOX_LAYOUT_BIDI_MARKS];
+    uint32_t bidi_close[TBOX_LAYOUT_BIDI_MARKS];
+    uint8_t bidi_open_count, bidi_close_count;
+    const tbox_style *initial_style; /* enclosing explicit initial-letter element */
+    const tbox_html_node *initial_node;
 } tbox_layout_word;
+
+/* The resolved bidi levels of one word (tbox_layout_resolve_bidi). */
+typedef struct tbox_layout_word_bidi {
+    const uint8_t *levels;   /* one per byte of `text`; NULL when every byte has `level` */
+    uint8_t level;           /* of the whole word (an image or inline-block: of its U+FFFC) */
+    uint8_t gap_level;       /* of the space before it */
+    uint8_t paragraph_level;
+} tbox_layout_word_bidi;
 
 /* A half-open range [start, end) into a tbox_layout_word array, one greedy
  * line's worth of words, plus that line's own height (max line-height among
@@ -117,7 +153,25 @@ typedef struct tbox_layout_line {
      * Layout Tree" section for why this is needed now (the first time this
      * project has more than one font size on the same line). */
     double ascent;
+    /* Room left by floats: the line starts `left` px into the text area,
+     * has `width` px for its words and sits `y_offset` px below the end of
+     * the previous line (moved down past floats it did not fit beside).
+     * 0, the whole width and 0 without floats. */
+    double left, width, y_offset;
+    double hang_left, hang_right; /* advances painted outside the measured line */
 } tbox_layout_line;
+
+/* Where tbox_layout_break_lines lays lines out when floats are around:
+ * the text area (`x`, `width`) from the first line's top `y`, each line
+ * taken as `line_height` tall while it is filled. Floats among the words
+ * are placed in `float_x`/`float_width` (their containing block). */
+typedef struct tbox_layout_line_space {
+    tbox_layout_floats *floats;
+    double x, width, y, line_height;
+    double float_x, float_width;
+    tbox_image_cache *images;
+    tbox_arena *arena;
+} tbox_layout_line_space;
 
 typedef struct tbox_layout_inline_state {
     bool has_content;    /* a word was pushed since the start or the last hard break */
@@ -129,7 +183,7 @@ typedef struct tbox_layout_intrinsic {
 } tbox_layout_intrinsic;
 
 typedef struct tbox_layout_classification {
-    bool text, image, table, table_row, flex;
+    bool text, image, table, table_row, flex, grid;
 } tbox_layout_classification;
 
 typedef struct tbox_layout_replaced_image {
@@ -155,7 +209,26 @@ tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, cons
 
 extern const tbox_style tbox_layout_default_style;
 
-void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, double first_line_indent, bool no_wrap, bool indent_each_line, const tbox_font_face *block_face, tbox_vector *lines);
+double tbox_layout_inline_edge(const tbox_layout_word *word, bool left, bool element_end, double width);
+/* Element ends and fragment edges ignore floating words. */
+bool tbox_layout_inline_first(const tbox_layout_word *words, size_t index);
+bool tbox_layout_inline_last(const tbox_layout_word *words, size_t count, size_t index);
+void tbox_layout_inline_edges(const tbox_layout_word *words, size_t count, size_t index, size_t start, size_t end, double width, double edges[2]);
+void tbox_layout_break_lines(const tbox_layout_word *words, size_t word_count, double available_width, double first_line_indent, bool no_wrap, bool indent_each_line, const tbox_font_face *block_face, const tbox_layout_line_space *space, tbox_vector *lines);
+
+/* Floats (tbox_layout_float.c). */
+tbox_layout_floats *tbox_layout_floats_create(tbox_arena *arena);
+bool tbox_layout_floats_empty(const tbox_layout_floats *floats);
+double tbox_layout_floats_clear_y(const tbox_layout_floats *floats, tbox_style_clear clear);
+double tbox_layout_floats_bottom(const tbox_layout_floats *floats);
+void tbox_layout_floats_band(const tbox_layout_floats *floats, double y0, double y1, double x0, double x1, bool shapes, double *out_left, double *out_right);
+double tbox_layout_floats_next_y(const tbox_layout_floats *floats, double y0, double y1, double x0, double x1, bool shapes);
+void tbox_layout_floats_position(const tbox_layout_floats *floats, const tbox_style *style, double width, double height, double cb_x, double cb_width, double y_min, double *out_x, double *out_y);
+void tbox_layout_floats_add(tbox_layout_floats *floats, const struct tbox_layout_box *box, tbox_image_cache *images, double cb_width, tbox_arena *arena);
+void tbox_layout_floats_place(tbox_layout_floats *floats, struct tbox_layout_box *box, double cb_x, double cb_width, double y_min, tbox_image_cache *images, tbox_arena *arena);
+struct tbox_layout_box *tbox_layout_build_float_box(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double y, tbox_layout_positioned_context context);
+bool tbox_layout_is_float(const tbox_html_node *node, const tbox_style *style);
+bool tbox_layout_establishes_bfc(const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles);
 tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double cursor_y, double available_width, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node);
 /* `<input type=checkbox>`, checked or not. */
 bool tbox_layout_is_checkbox(const tbox_html_node *node);
@@ -163,8 +236,23 @@ void tbox_layout_build_checkbox_checkmark(tbox_arena *arena, const tbox_html_nod
 double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block children_container, double start_y, tbox_layout_box *parent_box, tbox_layout_positioned_context positioned_context, const tbox_style *container_style);
 tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count);
 tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count, const tbox_layout_forced_size *forced);
+bool tbox_layout_is_multicol(const tbox_style *style);
+double tbox_layout_build_multicol(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, tbox_layout_box *box, tbox_layout_positioned_context context);
 double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double content_width, double content_height, bool height_definite, double min_height, double max_height, tbox_layout_box *box, tbox_layout_positioned_context context);
-double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs);
+double tbox_layout_build_grid(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double content_width, double content_height, bool height_definite, double min_height, double max_height, tbox_layout_box *box, tbox_layout_positioned_context context);
+double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_word_bidi *bidi, const tbox_layout_line *line, double line_y, double content_x, double available_width, size_t word_count, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs);
+/* Bidi (src/layout/tbox_layout_bidi.c, docs/09-texto-e-fontes.md "Texto
+ * bidirecional"). mark_bidi wraps the words pushed since `first` (one
+ * inline element's) in its `unicode-bidi` formatting characters. */
+void tbox_layout_mark_bidi(tbox_vector *words, size_t first, const tbox_style *style);
+/* One tbox_layout_word_bidi per word, or NULL when the whole text is
+ * left-to-right at level 0 (no bidi work at all). */
+tbox_layout_word_bidi *tbox_layout_resolve_bidi(tbox_arena *arena, const tbox_layout_word *words, size_t count, const tbox_style *container);
+bool tbox_layout_line_is_bidi(const tbox_layout_word *words, const tbox_layout_word_bidi *bidi, const tbox_layout_line *line);
+double tbox_layout_build_bidi_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_word_bidi *bidi, const tbox_layout_line *line, double line_y, double content_x, double available_width, size_t word_count, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs);
+void tbox_layout_push_run(tbox_vector *runs, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double start_x, double end_x, const tbox_font_face *face, const tbox_style *style, const tbox_image *image, double image_height, tbox_string_view text, const tbox_vector *glyphs);
+double tbox_layout_append_glyphs(tbox_arena *arena, tbox_vector *glyphs, const tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, double x, size_t cluster_base);
+double tbox_layout_atomic_top(const tbox_style *style, const tbox_font_face *face, double ascent, double height, const tbox_layout_line *line, double line_y, const tbox_font_face *block_face);
 double tbox_layout_build_table_children(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double *content_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context);
 double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node *table, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double x, double y, double *table_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context);
 double tbox_layout_build_table_row_children(tbox_arena *arena, const tbox_html_node *row_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, const double *column_widths, size_t column_count, tbox_layout_box *row_box, tbox_layout_positioned_context positioned_context);
@@ -179,6 +267,7 @@ bool tbox_layout_has_escaping_positioned(const tbox_html_node *node, const tbox_
 const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start, const tbox_style_table *styles);
 bool tbox_layout_input_is_text_tag(const tbox_html_node *node);
 void tbox_layout_input_push_value_word(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words);
+tbox_layout_intrinsic tbox_layout_grid_intrinsic(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images);
 tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images);
 tbox_layout_intrinsic tbox_layout_intrinsic_outer(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images);
 bool tbox_layout_is_hidden_input(const tbox_html_node *node);
@@ -202,6 +291,9 @@ double tbox_layout_resolve_absolute_edge(tbox_style_length primary, tbox_style_l
 double tbox_layout_resolve_edge(tbox_style_length length, double percent_base);
 double tbox_layout_resolve_offset(tbox_style_length primary, tbox_style_length opposite, double percent_base, bool percent_base_definite);
 void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, double available_width, double first_indent);
+void tbox_layout_prepare_initial(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, double width, tbox_vector *words);
+double tbox_layout_hang_first(const tbox_layout_word *word);
+double tbox_layout_hang_end(const tbox_layout_word *word, bool last, bool overflow);
 double tbox_layout_style_line_height(const tbox_style *style, const tbox_font_face *face);
 const tbox_style *tbox_layout_style_or_default(const tbox_style_table *styles, const tbox_html_node *node);
 bool tbox_layout_table_cell_node(const tbox_html_node *node);
@@ -213,6 +305,13 @@ unsigned tbox_layout_textarea_size(const tbox_html_node *node, const char *name,
 tbox_string_view tbox_layout_expand_tabs(tbox_arena *arena, tbox_string_view text, const tbox_style *style, const tbox_font_face *face);
 tbox_string_view tbox_layout_transform_text(tbox_arena *arena, tbox_string_view text, tbox_style_text_transform transform);
 void tbox_layout_translate(tbox_layout_box *box, double dx, double dy);
+/* Vertical writing modes (tbox_layout_writing.c). */
+bool tbox_layout_frame_change(const tbox_style *style);
+/* `physical` (in screen terms) turned into `frame`'s coordinates. */
+void tbox_layout_frame_remap(tbox_style *out, const tbox_style *physical, tbox_style_frame frame);
+tbox_layout_box *tbox_layout_build_orthogonal(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const tbox_layout_forced_size *forced);
+bool tbox_layout_frame_transform(const tbox_style *style, tbox_rect border_box, const double offset[6], double out[6]);
+tbox_rect tbox_layout_frame_upright(const tbox_style *style, tbox_rect border_box, tbox_rect rect);
 bool tbox_layout_white_space_nowrap(const tbox_style *style);
 
 #endif /* TBOX_LAYOUT_INTERNAL_H */

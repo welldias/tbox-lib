@@ -18,7 +18,7 @@ extern "C" {
  * deliberately simplified CSS2.1 block formatting context with inline text,
  * images, positioned boxes and a table grid,  inline-blocks and NOVO
  * v16 a flex formatting context (see docs/dev/historico.md's v15/v16 sections).
- * Grid and floats remain unsupported. */
+ * CSS Grid Level 1 has a separate formatting context; floats remain unsupported. */
 
 typedef struct tbox_rect {
     double x, y, width, height;
@@ -29,6 +29,9 @@ typedef struct tbox_rect {
  * inline formatting context real") for the full algorithm that produces
  * these (greedy word-wrap, run merging by face, per-line height). */
 typedef struct tbox_layout_text_run {
+    /* Flow line geometry is independent of baseline/vertical-align offsets.
+     * A zero line_height means a synthetic run without a line box. */
+    double line_y, line_height;
     tbox_rect rect;             /* this run's absolute position/size, already placed on the right line */
     tbox_string_view text;      /* the longest contiguous sequence of words sharing the same resolved face AND style AND fitting on the same line */
     const tbox_font_face *font; /* tbox_font_face_cache_get(fonts, ..., ...) for the element that originated this run */
@@ -61,6 +64,9 @@ typedef struct tbox_layout_text_run {
     /* `text-emphasis-style: "<string>"`: `font` at half the size, for the
      * marks; NULL otherwise (the other marks are drawn as shapes). */
     const tbox_font_face *emphasis_font;
+    /* Decoded inline-fragment background/border sources, borrowed from the image cache. */
+    const tbox_image *decoration_images[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
+    const tbox_image *decoration_border_image;
 
     /* The shaped glyphs of `text` (docs/08-layout-e-pintura.md, "Texto
      * como glifos posicionados"), x relative to rect.x, in the frame
@@ -75,17 +81,31 @@ typedef struct tbox_layout_box {
     const tbox_style *style;
 
     tbox_rect margin_box, border_box, padding_box, content_box;
+    /* Optional ink-based text exclusion for a floating ::first-letter.
+     * 0 uses the margin box; otherwise the height includes vertical edges
+     * and margins, measured from margin_box.y. Float placement still uses
+     * the complete margin box. */
+    double float_ink_height;
     double scroll_content_height; /* laid-out children extent before viewport clipping */
     double scrollbar_gutter; /* reserved inline-end width, zero without stable gutter */
     /* style->background_image decoded through the image cache, NULL when
      * there is none or it failed to load. */
     const tbox_image *background_image;
     const tbox_image *background_layer_images[3]; /* style->background_layers' images, same convention */
+    const tbox_image *mask_layer_images[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
+    const tbox_image *reflection_image;
     const tbox_image *mask_image;                 /* style->mask's image, same convention */
+    const tbox_image *border_image;               /* style->border_image's url() image, same convention */
     bool table_suppress_border;   /* collapsed tables paint shared edges once */
     bool empty_cell_hidden;       /* `empty-cells: hide` on an empty cell: no background or border */
     struct tbox_table_edge *table_edges;
     size_t table_edge_count;
+    /* Multicol fragments are ordinary boxes sharing their source DOM node.
+     * Rules belong to the container, in viewport coordinates, in the frame arena. */
+    tbox_rect *column_rules;
+    size_t column_rule_count;
+    int column_count; /* used count, 0 outside multicol */
+    double column_width, column_gap;
 
     /* Text runs, for the Render Pipeline's TEXT_RUN paint ops (see
      * docs/dev/historico.md's "Render Pipeline" section). Populated for text-bearing
@@ -97,6 +117,14 @@ typedef struct tbox_layout_box {
      * on its lines between its runs. */
     tbox_layout_text_run *text_runs;
     size_t text_run_count;
+
+    /* A transform other than a translation (tbox_style_transform_matrix):
+     * the box and its subtree keep their untransformed geometry, and
+     * `transform` maps it to the parent's coordinates (Render paints them
+     * on a transformed layer, hit testing maps the pointer back). A pure
+     * translation just moves the boxes and leaves this false. */
+    bool has_transform;
+    double transform[6]; /* a b c d e f, as CSS matrix() */
 
     struct tbox_layout_box *parent, *first_child, *last_child, *next_sibling;
 } tbox_layout_box;

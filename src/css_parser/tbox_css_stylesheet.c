@@ -19,10 +19,14 @@ tbox_css_stylesheet *tbox_css_stylesheet_create_empty(void) {
     }
     stylesheet->rulesets      = NULL;
     stylesheet->ruleset_count = 0;
+    stylesheet->font_palettes = NULL;
+    stylesheet->font_palette_count = 0;
     stylesheet->font_faces = NULL;
     stylesheet->font_face_count = 0;
     stylesheet->keyframes       = NULL;
     stylesheet->keyframes_count = 0;
+    stylesheet->properties = NULL;
+    stylesheet->counter_styles = NULL;
 
     return stylesheet;
 }
@@ -39,6 +43,10 @@ tbox_css_stylesheet *tbox_css_parse(const char *input, size_t length) {
     tbox_css_parser parser;
     tbox_css_parser_init(&parser, source.data, source.size, &stylesheet->arena);
     tbox_css_parser_run(&parser, &stylesheet->rulesets, &stylesheet->ruleset_count, &stylesheet->font_faces, &stylesheet->font_face_count);
+    stylesheet->font_palettes = parser.palettes_out;
+    stylesheet->font_palette_count = parser.palettes_out_count;
+    stylesheet->properties = parser.properties;
+    stylesheet->counter_styles = parser.counter_styles;
     stylesheet->keyframes       = parser.keyframes_out;
     stylesheet->keyframes_count = parser.keyframes_out_count;
 
@@ -75,4 +83,12 @@ void tbox_css_stylesheet_destroy(tbox_css_stylesheet *stylesheet) {
     }
     tbox_arena_destroy(&stylesheet->arena);
     free(stylesheet);
+}
+
+size_t tbox_css_stylesheet_font_palette_count(const tbox_css_stylesheet *stylesheet) {
+    return stylesheet != NULL ? stylesheet->font_palette_count : 0;
+}
+
+const tbox_css_font_palette_rule *tbox_css_stylesheet_font_palettes(const tbox_css_stylesheet *stylesheet) {
+    return stylesheet != NULL ? stylesheet->font_palettes : NULL;
 }

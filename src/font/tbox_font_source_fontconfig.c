@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 /* Owns the bytes of whatever file the most recent resolve() call matched;
  * a fresh resolve() call replaces it (freeing the previous buffer) rather
@@ -62,7 +63,8 @@ static bool tbox_font_source_fontconfig_read_file(const char *path, unsigned cha
  * default, so truncation degrades gracefully instead of failing outright. */
 static const char *tbox_font_source_fontconfig_family_cstr(tbox_string_view family, char *buffer, size_t buffer_size) {
     if (family.size == 0) {
-        return "sans-serif";
+        /* The default family, as tbox_app's preloaded faces. */
+        return "serif";
     }
 
     size_t n = family.size < buffer_size - 1 ? family.size : buffer_size - 1;
@@ -94,12 +96,37 @@ static bool tbox_font_source_fontconfig_resolve(void *self, tbox_font_query quer
     FcPatternAddInteger(pattern, FC_SLANT, query.italic ? FC_SLANT_ITALIC : FC_SLANT_ROMAN);
 
     FcConfigSubstitute(NULL, pattern, FcMatchPattern);
+    /* A named family only matches itself or a strong or same-binding alias
+     * from the configuration (Arial -> Liberation Sans); a weak fallback
+     * (an unknown name -> DejaVu Sans) is not that family, so the caller
+     * goes on to the next one in its font-family list. Generic names take
+     * whatever the configuration picks. */
+    static const char *const generics[] = { "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "emoji", "math", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded" };
+    bool generic = false;
+    for (size_t i = 0; i < sizeof(generics) / sizeof(generics[0]); i++)
+        generic = generic || strcasecmp(family, generics[i]) == 0;
+    const char *accepted[16];
+    size_t accepted_count = 0;
+    FcValue value;
+    FcValueBinding binding;
+    for (int id = 0; !generic && accepted_count < sizeof(accepted) / sizeof(accepted[0]) && FcPatternGetWithBinding(pattern, FC_FAMILY, id, &value, &binding) == FcResultMatch; id++)
+        if (value.type == FcTypeString && binding != FcValueBindingWeak)
+            accepted[accepted_count++] = (const char *)value.u.s;
     FcDefaultSubstitute(pattern);
 
     FcResult result;
     FcPattern *matched = FcFontMatch(NULL, pattern, &result);
+    bool family_ok     = generic;
+    FcChar8 *matched_family = NULL;
+    for (int id = 0; matched != NULL && !family_ok && FcPatternGetString(matched, FC_FAMILY, id, &matched_family) == FcResultMatch; id++)
+        for (size_t i = 0; i < accepted_count && !family_ok; i++)
+            family_ok = strcasecmp((const char *)matched_family, accepted[i]) == 0;
     FcPatternDestroy(pattern);
     if (matched == NULL) {
+        return false;
+    }
+    if (!family_ok) {
+        FcPatternDestroy(matched);
         return false;
     }
 

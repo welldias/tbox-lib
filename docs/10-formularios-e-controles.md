@@ -39,9 +39,12 @@ ignoradas pela navegação e por `_select_set_value`. Feche explicitamente
 `<optgroup>` e `<option>`: o parser ainda não faz o fechamento implícito.
 Veja `tests/assets/107.html`.
 
-`<fieldset>` recebe borda e espaçamento padrão. Quando `<legend>` é o
-primeiro elemento filho, seu texto fica sobre a borda superior, que é
-interrompida atrás dele. A interrupção acompanha bordas retas; bordas
+`<fieldset>` recebe borda e espaçamento padrão dos navegadores: padding de
+6px 12px 10px, margem lateral de 2px e `padding-inline: 2px` na legenda.
+Quando `<legend>` é o primeiro elemento filho, ela começa no topo do
+`fieldset`, e a borda superior (com o fundo) passa pelo meio dela,
+interrompida exatamente na largura da legenda. O conteúdo segue logo abaixo
+da legenda mais o padding. A interrupção acompanha bordas retas; bordas
 arredondadas e estilos de borda complexos não têm tratamento especial.
 Veja `tests/assets/109.html`.
 
@@ -179,6 +182,7 @@ implementação de compatibilidade (ver
 | select `::picker-icon` | — | `::picker-icon` (Chrome, com `appearance: base-select`) |
 | `::picker(select)`, `option:hover`/`:checked` na lista | — (lista nativa) | iguais (Chrome 135+, com `appearance: base-select`) |
 | `::-tbox-scrollbar-track` / `-thumb` (ver [Rolagem](06-eventos-e-interatividade.md#partes-da-barra)) | — (só `scrollbar-width`/`-color`) | `::-webkit-scrollbar` (largura), `::-webkit-scrollbar-track`, `::-webkit-scrollbar-thumb` (com `:hover`/`:active`) |
+| `::-tbox-resizer` (ver [Redimensionar](06-eventos-e-interatividade.md#redimensionar-resize)) | — | `::-webkit-resizer` |
 | checkbox/radio `::checkmark` | — | — (o Chrome tem `::checkmark` só em `<option>`) |
 | `::file-selector-button` | igual | igual (antigo: `::-webkit-file-upload-button`) |
 | search `::clear-icon` | — | `::-webkit-search-cancel-button` |

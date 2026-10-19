@@ -151,8 +151,18 @@ static void tbox_context_scroll_step(tbox_context *ctx, tbox_scroll_state *state
     tbox_context_wake_at(ctx, -INFINITY);
 }
 
+/* A transformed box's matrix moves with it: conjugated by the shift, so
+ * it still turns around the same point of the box. */
+static void tbox_context_shift_transform(tbox_layout_box *box, double dy) {
+    if (box->has_transform) {
+        box->transform[4] -= box->transform[2] * dy;
+        box->transform[5] += dy - box->transform[3] * dy;
+    }
+}
+
 static void tbox_context_shift_subtree(tbox_layout_box *box, double dy) {
     for (; box != NULL; box = box->next_sibling) {
+        tbox_context_shift_transform(box, dy);
         box->margin_box.y += dy;
         box->border_box.y += dy;
         box->padding_box.y += dy;
@@ -225,6 +235,7 @@ static void tbox_context_stick(tbox_layout_box *box, tbox_rect scrollport) {
                 }
             }
             if (dy != 0.0) {
+                tbox_context_shift_transform(box, dy);
                 box->margin_box.y += dy;
                 box->border_box.y += dy;
                 box->padding_box.y += dy;
@@ -300,6 +311,12 @@ static bool tbox_context_scrollbar_geometry(const tbox_layout_box *box, double o
     double width = box->padding_box.width < bar ? box->padding_box.width : bar;
     tbox_rect track = {box->padding_box.x + box->padding_box.width - width,
                        box->padding_box.y, width, box->padding_box.height};
+    /* A `resize` handle in the same corner takes the track's bottom. */
+    tbox_rect handle;
+    if (tbox_context_resizer_rect(box, &handle) && handle.x + handle.width > track.x && handle.y < track.y + track.height) {
+        track.height = handle.y - track.y;
+        if (track.height <= 0.0) return false;
+    }
     /* ::-tbox-scrollbar-thumb: `margin` insets it in the track (a % of the
      * track's width), `min-height` is its shortest length. */
     const tbox_style_part_style *thumb = tbox_context_part(box->style, TBOX_STYLE_PART_SCROLLBAR_THUMB);
@@ -395,6 +412,7 @@ void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list) 
         *(tbox_paint_op *)tbox_vector_push(&items) = list->items[i];
     size_t before = items.length;
     tbox_context_paint_scrollbars(ctx, ctx->root, &items);
+    tbox_context_paint_resizers(ctx, ctx->root, &items);
     if (items.length == before) return;
     list->items = (tbox_paint_op *)items.data;
     list->count = items.length;
@@ -483,6 +501,10 @@ bool tbox_context_scrollbar_press(tbox_context *ctx, double x, double y) {
         tbox_context_select_popup_contains(ctx, x, y)) return false;
     ctx->scroll_drag_node = NULL;
     ctx->scroll_pointer_consumed = false;
+    if (tbox_context_resize_press(ctx, x, y)) {
+        ctx->scroll_pointer_consumed = true;
+        return true;
+    }
     const tbox_layout_box *box = tbox_context_scrollbar_at(ctx->root, x, y, false, (tbox_rect){0});
     if (box == NULL) return false;
     ctx->scroll_pointer_consumed = true;
@@ -512,6 +534,7 @@ bool tbox_context_scrollbar_press(tbox_context *ctx, double x, double y) {
 bool tbox_context_scrollbar_drag(tbox_context *ctx, double x, double y) {
     (void)x;
     if (ctx == NULL || !ctx->scroll_pointer_consumed) return false;
+    if (ctx->resize_drag_node != NULL) return tbox_context_resize_drag(ctx, x, y);
     if (ctx->scroll_drag_node == NULL) return true;
     const tbox_layout_box *box = tbox_context_find_box(ctx->root, ctx->scroll_drag_node);
     tbox_scroll_state *state = tbox_context_existing_scroll_state(ctx, ctx->scroll_drag_node);
@@ -541,6 +564,7 @@ void tbox_context_scrollbar_release(tbox_context *ctx) {
             }
         }
         ctx->scroll_drag_node = NULL;
+        ctx->resize_drag_node = NULL;
         ctx->scroll_pointer_consumed = false;
     }
 }

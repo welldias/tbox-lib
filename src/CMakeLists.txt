@@ -81,6 +81,8 @@ else()
     endif()
 endif()
 
+set(TBOX_HARFBUZZ_FOUND ${TBOX_HARFBUZZ_FOUND} PARENT_SCOPE)
+
 if(NOT TBOX_FONTCONFIG_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_source_fontconfig.c)
     if(TBOX_ENABLE_FONTCONFIG)

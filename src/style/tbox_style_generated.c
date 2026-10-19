@@ -36,6 +36,7 @@ struct tbox_style_generated {
     tbox_vector counters; /* tbox_style_counter, innermost last */
     const tbox_style_quotes *quotes;
     int quote_depth;
+    const tbox_style_counter_styles *counter_styles;
 };
 
 /* `auto`: English curly quotes, double then single. */
@@ -52,7 +53,7 @@ static bool tbox_style_generated_ends_in(const tbox_css_selector *selector, cons
     return last->kind == TBOX_CSS_SIMPLE_SELECTOR_PSEUDO && tbox_string_view_equal_cstr(last->name, pseudo);
 }
 
-tbox_style_generated *tbox_style_generated_create(tbox_arena *arena, const tbox_css_cascade_source *sources, size_t source_count) {
+tbox_style_generated *tbox_style_generated_create(tbox_arena *arena, const tbox_css_cascade_source *sources, size_t source_count, const tbox_style_counter_styles *counter_styles) {
     bool wants[2] = { false, false };
     for (size_t s = 0; s < source_count; s++) {
         const tbox_css_stylesheet *sheet = sources[s].stylesheet;
@@ -69,10 +70,11 @@ tbox_style_generated *tbox_style_generated_create(tbox_arena *arena, const tbox_
     tbox_style_generated *generated = (tbox_style_generated *)tbox_arena_alloc_zero(arena, sizeof(tbox_style_generated));
     if (generated == NULL)
         return NULL;
-    generated->arena    = arena;
-    generated->wants[0] = wants[0];
-    generated->wants[1] = wants[1];
-    generated->quotes   = &tbox_style_default_quotes;
+    generated->counter_styles = counter_styles;
+    generated->arena          = arena;
+    generated->wants[0]       = wants[0];
+    generated->wants[1]       = wants[1];
+    generated->quotes         = &tbox_style_default_quotes;
     tbox_vector_init(&generated->counters, arena, sizeof(tbox_style_counter), 0);
     return generated;
 }
@@ -120,7 +122,7 @@ static void tbox_style_generated_append_codepoint(tbox_string_builder *builder, 
 /* A quoted string at the start of `*text` (consumed), its CSS escapes
  * decoded (`\201C ` -> U+201C, `\"` -> `"`, an escaped newline vanishes)
  * into `builder`. False when `*text` doesn't start with a string. */
-static bool tbox_style_generated_string(tbox_string_view *text, tbox_string_builder *builder) {
+bool tbox_style_parse_content_string(tbox_string_view *text, tbox_string_builder *builder) {
     if (text->size == 0 || (text->data[0] != '"' && text->data[0] != '\''))
         return false;
     char quote = text->data[0];
@@ -292,7 +294,7 @@ void tbox_style_generated_leave(tbox_style_generated *generated, const tbox_html
 }
 
 /* `value` in counter style `style` (a list-style-type keyword). */
-static void tbox_style_generated_format(tbox_string_builder *builder, long value, tbox_string_view style) {
+void tbox_style_counter_builtin(tbox_string_builder *builder, long value, tbox_string_view style) {
     char buffer[64];
     if (style.size == 0 || tbox_string_view_equal_ascii_ci(style, tbox_string_view_from_cstr("decimal"))) {
         snprintf(buffer, sizeof(buffer), "%ld", value);
@@ -364,6 +366,10 @@ static void tbox_style_generated_format(tbox_string_builder *builder, long value
     tbox_string_builder_append_view(builder, tbox_string_view_from_cstr(buffer));
 }
 
+static void tbox_style_generated_format(tbox_style_generated *generated, tbox_string_builder *builder, long value, tbox_string_view name) {
+    tbox_string_builder_append_view(builder, tbox_style_counter_format(generated->arena, generated->counter_styles, name, value, false));
+}
+
 /* ---- quotes ---- */
 
 const void *tbox_style_generated_quotes(tbox_style_generated *generated, const tbox_css_computed_style *computed) {
@@ -387,7 +393,7 @@ const void *tbox_style_generated_quotes(tbox_style_generated *generated, const t
     while (value.size > 0 && count < 16) {
         tbox_string_builder builder;
         tbox_string_builder_init(&builder, generated->arena, 8);
-        if (!tbox_style_generated_string(&value, &builder))
+        if (!tbox_style_parse_content_string(&value, &builder))
             return previous; /* invalid: keep the inherited list */
         strings[count++] = tbox_string_builder_finish(&builder);
         value            = tbox_style_generated_skip_space(value);
@@ -421,7 +427,7 @@ bool tbox_style_generated_content(tbox_style_generated *generated, const tbox_ht
         value = tbox_style_generated_skip_space(value);
         if (value.size == 0 || value.data[0] == '/')
             break; /* "/ alt text" is for accessibility only */
-        if (tbox_style_generated_string(&value, &builder)) {
+        if (tbox_style_parse_content_string(&value, &builder)) {
             any = true;
             continue;
         }
@@ -462,15 +468,15 @@ bool tbox_style_generated_content(tbox_style_generated *generated, const tbox_ht
             if (attribute != NULL)
                 tbox_string_builder_append_view(&builder, attribute->value);
             else if (count >= 2)
-                tbox_style_generated_string(&args[1], &builder);
+                tbox_style_parse_content_string(&args[1], &builder);
         } else if (tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("counter")) && count >= 1) {
             /* A counter never instantiated reads as 0, as in browsers. */
             const tbox_style_counter *counter = tbox_style_generated_find(generated, args[0]);
-            tbox_style_generated_format(&builder, counter != NULL ? counter->value : 0, count >= 2 ? args[1] : tbox_string_view_make(NULL, 0));
+            tbox_style_generated_format(generated, &builder, counter != NULL ? counter->value : 0, count >= 2 ? args[1] : tbox_string_view_make(NULL, 0));
         } else if (tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("counters")) && count >= 2) {
             tbox_string_builder separator;
             tbox_string_builder_init(&separator, generated->arena, 4);
-            tbox_style_generated_string(&args[1], &separator);
+            tbox_style_parse_content_string(&args[1], &separator);
             tbox_string_view joiner = tbox_string_builder_finish(&separator);
             bool first              = true;
             for (size_t i = 0; i < generated->counters.length; i++) {
@@ -479,11 +485,11 @@ bool tbox_style_generated_content(tbox_style_generated *generated, const tbox_ht
                     continue;
                 if (!first)
                     tbox_string_builder_append_view(&builder, joiner);
-                tbox_style_generated_format(&builder, counter->value, count >= 3 ? args[2] : tbox_string_view_make(NULL, 0));
+                tbox_style_generated_format(generated, &builder, counter->value, count >= 3 ? args[2] : tbox_string_view_make(NULL, 0));
                 first = false;
             }
             if (first)
-                tbox_style_generated_format(&builder, 0, count >= 3 ? args[2] : tbox_string_view_make(NULL, 0));
+                tbox_style_generated_format(generated, &builder, 0, count >= 3 ? args[2] : tbox_string_view_make(NULL, 0));
         } else if (!tbox_string_view_equal_ascii_ci(word, tbox_string_view_from_cstr("url"))) {
             return false; /* an image function or something unknown */
         } else {

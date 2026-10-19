@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "base/tbox_arena.h"
+#include "render/tbox_render_internal.h"
 #include "test_support.h"
 
 /* <tbox/string_view.h> (pulled in by <tbox/render.h>) only exposes
@@ -92,6 +93,8 @@ static bool string_view_equal_cstr(tbox_string_view view, const char *cstr) {
 static bool rect_equal(tbox_rect a, tbox_rect b) {
     return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
 }
+
+int tbox_test_composition_run(const void *font_data, size_t font_size);
 
 int tbox_test_render_run(void) {
     int failures = 0;
@@ -655,11 +658,10 @@ int tbox_test_render_run(void) {
     }
 
     /* 18: NOVO (image support) -- a run whose `image` is non-NULL produces
-     * exactly one IMAGE op (never TEXT_RUN), carrying the run's own rect and
-     * image pointer, with no extra FILL_RECT even though the run's own
-     * style has a non-transparent background_color (an image run skips the
-     * mark-highlight/decoration extras entirely -- see tbox_render_walk's
-     * `continue` right after pushing the IMAGE op). */
+     * an IMAGE op (never TEXT_RUN) with the run's rect and image pointer,
+     * over its own background like a browser's <img>, and no text
+     * decoration line (see tbox_render_walk's `continue` right after
+     * pushing the IMAGE op). */
     {
         tbox_image fake_image = { 42, 24, (const unsigned char *)"fake pixel data" };
 
@@ -671,7 +673,7 @@ int tbox_test_render_run(void) {
         tbox_layout_box box  = tbox_test_render_default_box(&box_style);
 
         tbox_style run_style       = tbox_test_render_default_style();
-        run_style.background_color = (tbox_css_rgba){ 1, 2, 3, 255 };      /* must be IGNORED for an image run */
+        run_style.background_color = (tbox_css_rgba){ 1, 2, 3, 255 };      /* painted under the image */
         run_style.text_decoration  = TBOX_STYLE_TEXT_DECORATION_UNDERLINE; /* must also be IGNORED */
         run_style.image_rendering_pixelated = true;
 
@@ -685,12 +687,13 @@ int tbox_test_render_run(void) {
 
         tbox_arena arena       = tbox_arena_create(0);
         tbox_display_list list = tbox_render_build_display_list(&arena, &box);
-        TBOX_TEST_ASSERT_MSG(list.count == 1, "an image run must produce exactly one op, no mark-background FILL_RECT or decoration line");
-        if (list.count == 1) {
-            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_IMAGE);
-            TBOX_TEST_ASSERT(list.items[0].image == &fake_image);
-            TBOX_TEST_ASSERT(list.items[0].image_pixelated);
-            TBOX_TEST_ASSERT_MSG(list.items[0].rect.x == 5.0 && list.items[0].rect.y == 6.0 && list.items[0].rect.width == 42.0 && list.items[0].rect.height == 24.0, "IMAGE op's rect must be the run's own rect");
+        TBOX_TEST_ASSERT_MSG(list.count == 2, "an image run paints its background, then the image, and no decoration line");
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_FILL_RECT && list.items[0].color.r == 1);
+            TBOX_TEST_ASSERT(list.items[1].kind == TBOX_PAINT_IMAGE);
+            TBOX_TEST_ASSERT(list.items[1].image == &fake_image);
+            TBOX_TEST_ASSERT(list.items[1].image_pixelated);
+            TBOX_TEST_ASSERT_MSG(list.items[1].rect.x == 5.0 && list.items[1].rect.y == 6.0 && list.items[1].rect.width == 42.0 && list.items[1].rect.height == 24.0, "IMAGE op's rect must be the run's own rect");
         }
         tbox_arena_destroy(&arena);
     }
@@ -1141,9 +1144,10 @@ int tbox_test_render_run(void) {
         tbox_layout_box parent        = tbox_test_render_default_box(&parent_style);
         tbox_layout_box child         = tbox_test_render_default_box(&child_style);
         tbox_image fake_image         = { 0 };
+        tbox_style image_style        = tbox_test_render_default_style();
         tbox_layout_text_run run      = { 0 };
         run.rect                      = (tbox_rect){ 0.0, 0.0, 4.0, 4.0 };
-        run.style                     = &child_style;
+        run.style                     = &image_style;
         run.image                     = &fake_image;
         child.text_runs               = &run;
         child.text_run_count          = 1;
@@ -1192,8 +1196,33 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* A box dashed on all sides, 10px: the top strip (222px, corners
+     * included) is a corner square plus half a dash at each end and 8 equal
+     * segments of 202/8 between them, as Firefox draws it. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.border_per_side = true;
+        for (size_t i = 0; i < 4; i++) {
+            style.border_widths[i] = 10.0;
+            style.border_styles[i] = TBOX_STYLE_BORDER_STYLE_DASHED;
+            style.border_colors[i] = (tbox_css_rgba){ 9, 9, 9, 255 };
+        }
+        tbox_layout_box box    = tbox_test_render_default_box(&style);
+        box.border_box         = (tbox_rect){ 0.0, 0.0, 222.0, 152.0 };
+        box.padding_box        = (tbox_rect){ 10.0, 10.0, 202.0, 132.0 };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_REQUIRE(list.count >= 5);
+        double segment = 202.0 / 8.0;
+        TBOX_TEST_ASSERT(list.items[0].rect.x == 0.0 && fabs(list.items[0].rect.width - (10.0 + segment / 2.0)) < 1e-9);
+        TBOX_TEST_ASSERT(fabs(list.items[1].rect.x - (10.0 + 1.5 * segment)) < 1e-9 && fabs(list.items[1].rect.width - segment) < 1e-9);
+        TBOX_TEST_ASSERT(fabs(list.items[4].rect.x + list.items[4].rect.width - 222.0) < 1e-9);
+        tbox_arena_destroy(&arena);
+    }
+
     /* A 40px-long top border: double (3px) = two 1px bands at the strip's
-     * edges, dashed (2px) = 6px dashes spread to cover both ends, dotted
+     * edges, dashed (2px) = 7 equal segments of 40/7 (4 dashes, one at
+     * each end), dotted
      * (2px) = round 2px dots. Only the top side is painted. */
     {
         const tbox_style_border_style styles[3] = { TBOX_STYLE_BORDER_STYLE_DOUBLE, TBOX_STYLE_BORDER_STYLE_DASHED, TBOX_STYLE_BORDER_STYLE_DOTTED };
@@ -1216,13 +1245,13 @@ int tbox_test_render_run(void) {
                     TBOX_TEST_ASSERT(list.items[1].rect.y == 2.0 && list.items[1].rect.width == 40.0);
                 }
             } else {
-                size_t expected = k == 1 ? 5 : 10; /* (40 + gap) / (mark + gap) */
+                size_t expected = k == 1 ? 4 : 10;
                 TBOX_TEST_ASSERT(list.count == expected);
                 if (list.count == expected) {
                     const tbox_paint_op *last = &list.items[list.count - 1];
                     TBOX_TEST_ASSERT(list.items[0].rect.x == 0.0);
                     TBOX_TEST_ASSERT(fabs(last->rect.x + last->rect.width - 40.0) < 1e-9);
-                    TBOX_TEST_ASSERT(list.items[0].rect.width == (k == 1 ? 6.0 : 2.0));
+                    TBOX_TEST_ASSERT(fabs(list.items[0].rect.width - (k == 1 ? 40.0 / 7.0 : 2.0)) < 1e-9);
                     TBOX_TEST_ASSERT(k == 1 ? list.items[0].corner_radii[0] == 0.0 : list.items[0].corner_radii[0] == 1.0);
                 }
             }
@@ -1400,6 +1429,84 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* border-image: nine slices instead of the border fills -- corners
+     * stretched, `repeat` edges centered tiles clipped to the edge, `fill`
+     * the middle first; outset grows the area; a gradient source is laid
+     * out at the area size; a missing image falls back to the border. */
+    {
+        unsigned char pixels[30 * 30 * 4] = { 0 };
+        tbox_image image = { 30, 30, pixels };
+        tbox_style style = tbox_test_render_default_style();
+        style.border_width = 10.0;
+        style.border_style = TBOX_STYLE_BORDER_STYLE_SOLID;
+        style.border_color = (tbox_css_rgba){ 255, 0, 0, 255 };
+        style.has_border_image = true;
+        strcpy(style.border_image.image, "b.png");
+        for (size_t i = 0; i < 4; i++) {
+            style.border_image.slice[i]  = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 10.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+            style.border_image.width[i]  = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 1.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+            style.border_image.outset[i] = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 0.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+        }
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.border_box  = box.margin_box = (tbox_rect){ 0, 0, 100, 60 };
+        box.padding_box = box.content_box = (tbox_rect){ 10, 10, 80, 40 };
+        box.border_image = &image;
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 8);
+        for (size_t i = 0; i < list.count; i++)
+            TBOX_TEST_ASSERT(list.items[i].kind == TBOX_PAINT_IMAGE && list.items[i].image == &image && list.items[i].has_source_rect);
+        if (list.count == 8) {
+            TBOX_TEST_ASSERT(rect_equal(list.items[0].rect, (tbox_rect){ 0, 0, 10, 10 }) && rect_equal(list.items[0].source_rect, (tbox_rect){ 0, 0, 10, 10 }));
+            TBOX_TEST_ASSERT(rect_equal(list.items[3].rect, (tbox_rect){ 90, 50, 10, 10 }) && rect_equal(list.items[3].source_rect, (tbox_rect){ 20, 20, 10, 10 }));
+            TBOX_TEST_ASSERT(rect_equal(list.items[4].rect, (tbox_rect){ 10, 0, 80, 10 }) && rect_equal(list.items[4].source_rect, (tbox_rect){ 10, 0, 10, 10 }));
+            TBOX_TEST_ASSERT(rect_equal(list.items[6].rect, (tbox_rect){ 0, 10, 10, 40 }) && rect_equal(list.items[6].source_rect, (tbox_rect){ 0, 10, 10, 10 }));
+        }
+        tbox_arena_destroy(&arena);
+
+        /* horizontal repeat: 10px tiles centered on the 80px top/bottom
+         * edges (and the `fill` middle, stretched vertically) start at
+         * x 5, so 9 tiles each, the first clipped to x 10. */
+        style.border_image.repeat[0] = TBOX_STYLE_BORDER_IMAGE_REPEAT;
+        style.border_image.fill      = true;
+        arena = tbox_arena_create(0);
+        list  = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 9 + 4 + 9 + 9 + 2);
+        if (list.count == 33) {
+            TBOX_TEST_ASSERT(rect_equal(list.items[0].rect, (tbox_rect){ 5, 10, 10, 40 }) && rect_equal(list.items[0].source_rect, (tbox_rect){ 10, 10, 10, 10 }));
+            TBOX_TEST_ASSERT(list.items[13].rect.x == 5.0 && list.items[13].rect.y == 0.0 && list.items[13].clip.x == 10.0 && list.items[13].clip.width == 5.0);
+            TBOX_TEST_ASSERT(list.items[21].rect.x == 85.0 && list.items[21].clip.width == 5.0);
+        }
+        tbox_arena_destroy(&arena);
+
+        /* outset 1 (x border width) and a gradient: corners move out by
+         * 10px, the gradient box is the 120x80 area */
+        style.border_image.repeat[0] = TBOX_STYLE_BORDER_IMAGE_STRETCH;
+        style.border_image.fill      = false;
+        style.border_image.image[0]  = '\0';
+        style.border_image.gradient.kind       = TBOX_STYLE_GRADIENT_LINEAR;
+        style.border_image.gradient.stop_count = 2;
+        for (size_t i = 0; i < 4; i++)
+            style.border_image.outset[i].number = 1.0;
+        arena = tbox_arena_create(0);
+        list  = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 8);
+        if (list.count == 8) {
+            TBOX_TEST_ASSERT(list.items[0].kind == TBOX_PAINT_GRADIENT && list.items[0].has_source_rect && list.items[0].source_rect.width == 120.0 && list.items[0].source_rect.height == 80.0);
+            TBOX_TEST_ASSERT(rect_equal(list.items[0].clip, (tbox_rect){ -10, -10, 10, 10 }));
+        }
+        tbox_arena_destroy(&arena);
+
+        /* an image that failed to load: the ordinary border paints */
+        style.border_image.gradient.kind = TBOX_STYLE_GRADIENT_NONE;
+        strcpy(style.border_image.image, "b.png");
+        box.border_image = NULL;
+        arena = tbox_arena_create(0);
+        list  = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 4 && list.items[0].kind == TBOX_PAINT_FILL_RECT && list.items[0].color.r == 255);
+        tbox_arena_destroy(&arena);
+    }
+
     /* Multiple shadows paint last-first under the background; an inset
      * one paints after the background as a ring clipped to the padding
      * box; a gradient background emits a GRADIENT op over the padding box;
@@ -1531,10 +1638,13 @@ int tbox_test_render_run(void) {
         box.padding_box = (tbox_rect){ 4, 4, 32, 12 };
         tbox_arena arena       = tbox_arena_create(0);
         tbox_display_list list = tbox_render_build_display_list(&arena, &box);
-        TBOX_TEST_ASSERT(list.count == 4);
-        if (list.count == 4) {
+        /* Each side in 1px bands mitered at the corners: 4 per side. */
+        TBOX_TEST_ASSERT(list.count == 16);
+        if (list.count == 16) {
             TBOX_TEST_ASSERT(list.items[0].color.r == 100); /* top: darker */
-            TBOX_TEST_ASSERT(list.items[1].color.r == 185); /* bottom: lighter */
+            TBOX_TEST_ASSERT(list.items[0].rect.x == 0.0 && list.items[0].rect.width == 40.0);
+            TBOX_TEST_ASSERT(list.items[3].rect.x == 3.0 && list.items[3].rect.width == 34.0);
+            TBOX_TEST_ASSERT(list.items[4].color.r == 150); /* bottom: the color itself */
         }
         tbox_arena_destroy(&arena);
 
@@ -1684,8 +1794,124 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
     }
 
+    /* A float paints after the in-flow block that follows it (whose
+     * background passes under the float), before positioned boxes, and
+     * hit testing follows the same order. */
+    {
+        tbox_html_node node;
+        memset(&node, 0, sizeof(node));
+        tbox_style root_style  = tbox_test_render_default_style();
+        tbox_style float_style = tbox_test_render_default_style();
+        tbox_style block_style = tbox_test_render_default_style();
+        tbox_style pos_style   = tbox_test_render_default_style();
+        float_style.float_side       = TBOX_STYLE_FLOAT_LEFT;
+        float_style.background_color = (tbox_css_rgba){ 255, 0, 0, 255 };
+        block_style.background_color = (tbox_css_rgba){ 0, 0, 255, 255 };
+        pos_style.position           = TBOX_STYLE_POSITION_RELATIVE;
+        pos_style.z_index_auto       = true;
+        pos_style.background_color   = (tbox_css_rgba){ 0, 255, 0, 255 };
+        tbox_layout_box root = tbox_test_render_default_box(&root_style), positioned = tbox_test_render_default_box(&pos_style);
+        tbox_layout_box floating = tbox_test_render_default_box(&float_style), block = tbox_test_render_default_box(&block_style);
+        root.border_box = root.padding_box = root.content_box = (tbox_rect){ 0, 0, 200, 100 };
+        positioned.border_box = positioned.padding_box = positioned.content_box = (tbox_rect){ 0, 0, 30, 30 };
+        floating.border_box = floating.padding_box = floating.content_box = (tbox_rect){ 0, 0, 50, 50 };
+        block.border_box = block.padding_box = block.content_box = (tbox_rect){ 0, 0, 200, 80 };
+        positioned.node = floating.node = block.node = &node;
+        root.first_child = &positioned;
+        positioned.next_sibling = &floating;
+        floating.next_sibling = &block;
+        root.last_child = &block;
+        positioned.parent = floating.parent = block.parent = &root;
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &root);
+        TBOX_TEST_ASSERT(list.count == 3);
+        if (list.count == 3) {
+            TBOX_TEST_ASSERT(list.items[0].color.b == 255); /* the block */
+            TBOX_TEST_ASSERT(list.items[1].color.r == 255); /* the float */
+            TBOX_TEST_ASSERT(list.items[2].color.g == 255); /* the positioned box */
+        }
+        size_t count                   = 0;
+        tbox_render_painted_box *order = tbox_render_paint_order(&root, &count);
+        TBOX_TEST_ASSERT(count == 4 && order != NULL);
+        if (count == 4 && order != NULL)
+            TBOX_TEST_ASSERT(order[1].box == &block && order[2].box == &floating && order[3].box == &positioned);
+        free(order);
+        tbox_arena_destroy(&arena);
+    }
+
+    /* Stroke color/order come from the run, including transparent fill and
+     * currentColor. The shadow uses its own color for both text passes. */
+    {
+        tbox_style style = tbox_test_render_default_style();
+        style.color = (tbox_css_rgba){ 255, 255, 0, 0 };
+        style.text_stroke_width = 3;
+        style.text_stroke_color = (tbox_css_rgba){ 204, 0, 0, 255 };
+        style.paint_order[0] = TBOX_STYLE_PAINT_MARKERS;
+        style.paint_order[1] = TBOX_STYLE_PAINT_STROKE;
+        style.paint_order[2] = TBOX_STYLE_PAINT_FILL;
+        style.text_shadow_color = (tbox_css_rgba){ 0, 0, 255, 255 };
+        style.text_shadow_offset_x = 6;
+        tbox_layout_text_run run = {0};
+        run.rect = (tbox_rect){ 10, 10, 60, 20 };
+        run.text = tbox_test_render_view_from_cstr("Hi");
+        run.font = font;
+        run.style = &style;
+        tbox_layout_box box = tbox_test_render_default_box(&style);
+        box.text_runs = &run;
+        box.text_run_count = 1;
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_display_list list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 2);
+        if (list.count == 2) {
+            TBOX_TEST_ASSERT(list.items[0].text_stroke_color.b == 255 && list.items[0].color.b == 255);
+            TBOX_TEST_ASSERT(list.items[1].color.a == 0 && list.items[1].text_stroke_color.r == 204 && list.items[1].text_stroke_color.a == 255);
+            TBOX_TEST_ASSERT(list.items[1].text_stroke_width == 3 && list.items[1].text_stroke_first);
+        }
+        style.text_stroke_current_color = true;
+        style.color.a = 255;
+        list = tbox_render_build_display_list(&arena, &box);
+        TBOX_TEST_ASSERT(list.count == 2 && list.items[1].text_stroke_color.g == 255);
+        tbox_arena_destroy(&arena);
+    }
+
+    /* Real block text goes through an anonymous layout box. It and an
+     * inline child must preserve the same inherited text painting. */
+    {
+        const char *html = "<div>direct<span>inline</span><div class='hollow'>hollow</div></div>";
+        const char *css = "div { font-size: 48px; color: yellow; -webkit-text-stroke: 3px #c00; paint-order: stroke; } span { display: inline; } .hollow { color: transparent; -webkit-text-stroke-width: 1px; }";
+        tbox_html_document *doc = tbox_html_parse(html, strlen(html));
+        tbox_css_stylesheet *sheet = tbox_css_parse(css, strlen(css));
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_font_face_cache *fonts = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL, NULL);
+        TBOX_TEST_ASSERT(fonts != NULL);
+        if (fonts != NULL) {
+            tbox_arena arena = tbox_arena_create(0);
+            const tbox_html_node *root = tbox_html_document_root(doc)->first_child;
+            tbox_style_table styles = tbox_style_resolve_tree(&arena, root, &source, 1);
+            const tbox_layout_box *box = tbox_layout_build(&arena, root, &styles, fonts, NULL, 800, 600);
+            tbox_display_list list = tbox_render_build_display_list(&arena, box);
+            size_t text_count = 0, hollow_count = 0;
+            for (size_t i = 0; i < list.count; i++) {
+                const tbox_paint_op *op = &list.items[i];
+                if (op->kind != TBOX_PAINT_TEXT_RUN) continue;
+                text_count++;
+                TBOX_TEST_ASSERT(op->text_stroke_color.r == 204 && op->text_stroke_first);
+                if (op->color.a == 0) {
+                    hollow_count++;
+                    TBOX_TEST_ASSERT(op->text_stroke_width == 1);
+                } else TBOX_TEST_ASSERT(op->text_stroke_width == 3);
+            }
+            TBOX_TEST_ASSERT(text_count == 3 && hollow_count == 1);
+            tbox_arena_destroy(&arena);
+            tbox_font_face_cache_destroy(fonts);
+        }
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     tbox_font_face_destroy(bold_font);
     tbox_font_face_destroy(font);
+    failures += tbox_test_composition_run(font_data, font_size);
     free(font_data);
 
     return failures;

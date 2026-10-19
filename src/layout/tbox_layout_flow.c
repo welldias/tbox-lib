@@ -2,6 +2,45 @@
 #include <stdio.h>
 #include <string.h>
 
+/* An in-flow block that establishes its own block formatting context
+ * (overflow, flow-root, flex, a table...) next to floats: its margin box
+ * may not overlap theirs (CSS 2.1 section 9.5), so it is laid out in the
+ * room they leave beside it, narrowing an auto width, and moved down past
+ * them when it does not fit. `*cursor_y` is where its margin box starts. */
+static tbox_layout_box *tbox_layout_build_beside_floats(tbox_arena *arena, const tbox_html_node *child, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double *cursor_y, tbox_layout_positioned_context context) {
+    const tbox_layout_floats *floats = context.floats;
+    double x0 = container.x, x1 = container.x + container.width;
+    double y = *cursor_y, height = 1.0;
+    tbox_layout_box *box = NULL;
+    for (int guard = 0; guard < 64; guard++) {
+        double left, right;
+        tbox_layout_floats_band(floats, y, y + height, x0, x1, false, &left, &right);
+        bool narrowed                         = left > x0 || right < x1;
+        tbox_layout_containing_block beside   = container;
+        beside.x                              = left;
+        beside.width                          = right > left ? right - left : 0.0;
+        box                                   = tbox_layout_build_element(arena, child, styles, fonts, images, beside, y, context, NULL, 0);
+        if (!narrowed)
+            break;
+        /* Over its whole height, does it still clear the floats? */
+        double h = box->margin_box.height, left2, right2;
+        tbox_layout_floats_band(floats, y, y + h, x0, x1, false, &left2, &right2);
+        if (box->margin_box.x >= left2 - 0.01 && box->margin_box.x + box->margin_box.width <= right2 + 0.01)
+            break;
+        if (h > height && (left2 > left || right2 < right)) {
+            height = h; /* narrower further down: lay it out in that room */
+            continue;
+        }
+        double next = tbox_layout_floats_next_y(floats, y, y + (h > height ? h : height), x0, x1, false);
+        if (next <= y)
+            break;
+        y      = next;
+        height = 1.0;
+    }
+    *cursor_y = y;
+    return box;
+}
+
 /* Walks `node`'s children (TEXT children are no longer always
  * ignored, see below), skipping any ELEMENT whose resolved style->display
  * == TBOX_STYLE_DISPLAY_NONE entirely -- no box, no recursion into its
@@ -188,6 +227,38 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
             continue;
         }
 
+        /* A float leaves the flow: placed (CSS 2.1 section 9.5.1) from where
+         * the next in-flow box would start, its margins never collapsing.
+         * It does not move border_bottom/pending_margin_bottom. */
+        if (tbox_layout_is_float(child, child_style) && positioned_context.floats != NULL) {
+            double y                   = border_bottom + pending_margin_bottom;
+            tbox_layout_box *child_box = tbox_layout_build_float_box(arena, child, child_style, styles, fonts, images, children_container, y, positioned_context);
+            double x, float_y;
+            tbox_layout_floats_position(positioned_context.floats, child_style, child_box->margin_box.width, child_box->margin_box.height, children_container.x, children_container.width, y, &x, &float_y);
+            double dx = x - child_box->margin_box.x, dy = float_y - child_box->margin_box.y;
+            if (tbox_layout_has_escaping_positioned(child, styles, child_style->position != TBOX_STYLE_POSITION_STATIC)) {
+                /* Moving it would misplace absolute descendants that
+                 * resolve against a box outside it: built again in place. */
+                tbox_layout_containing_block placed = children_container;
+                placed.x += dx;
+                tbox_layout_forced_size forced = { true, false, child_box->border_box.width, 0.0 };
+                child_box                      = tbox_layout_build_element_sized(arena, child, styles, fonts, images, placed, float_y, positioned_context, NULL, 0, &forced);
+            } else {
+                tbox_layout_translate(child_box, dx, dy);
+            }
+            tbox_layout_floats_add(positioned_context.floats, child_box, images, children_container.width, arena);
+            child_box->parent = parent_box;
+            if (previous == NULL) {
+                parent_box->first_child = child_box;
+            } else {
+                previous->next_sibling = child_box;
+            }
+            parent_box->last_child = child_box;
+            previous               = child_box;
+            child                  = child->next_sibling;
+            continue;
+        }
+
         double child_margin_top = tbox_layout_resolve_edge(child_style->margin[0], children_container.width);
 
         double cursor_y;
@@ -197,8 +268,17 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
         } else {
             cursor_y = border_bottom + pending_margin_bottom;
         }
+        /* `clear`: clearance puts the border edge just below the floats
+         * of the cleared sides (CSS 2.1 section 9.5.2). */
+        double clear_y = tbox_layout_floats_clear_y(positioned_context.floats, child_style->clear);
+        if (cursor_y + child_margin_top < clear_y)
+            cursor_y = clear_y - child_margin_top;
 
-        tbox_layout_box *child_box = tbox_layout_build_element(arena, child, styles, fonts, images, children_container, cursor_y, positioned_context, NULL, 0);
+        tbox_layout_box *child_box;
+        if (!tbox_layout_floats_empty(positioned_context.floats) && tbox_layout_establishes_bfc(child, child_style, styles))
+            child_box = tbox_layout_build_beside_floats(arena, child, styles, fonts, images, children_container, &cursor_y, positioned_context);
+        else
+            child_box = tbox_layout_build_element(arena, child, styles, fonts, images, children_container, cursor_y, positioned_context, NULL, 0);
         in_flow_seen               = true;
         child_box->parent          = parent_box;
         if (previous == NULL) {
@@ -255,6 +335,8 @@ double tbox_layout_build_children(tbox_arena *arena, const tbox_html_node *node,
 tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_html_node *run_start, const tbox_html_node *run_end, const tbox_style *container_style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double cursor_y, double available_width, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node) {
     tbox_style anon = tbox_layout_default_style;
     anon.color      = container_style->color;
+    /* the container's own text-decoration covers its anonymous text */
+    tbox_style_propagate_decoration(&anon, container_style);
     memcpy(anon.font_family, container_style->font_family, sizeof(anon.font_family));
     anon.font_weight_bold         = container_style->font_weight_bold;
     anon.font_italic              = container_style->font_italic;
@@ -269,6 +351,8 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.line_break_anywhere      = container_style->line_break_anywhere;
     anon.text_transform           = container_style->text_transform;
     anon.list_style_type          = container_style->list_style_type;
+    memcpy(anon.list_style_custom, container_style->list_style_custom, sizeof(anon.list_style_custom));
+    anon.counter_styles = container_style->counter_styles;
     anon.word_spacing             = container_style->word_spacing;
     anon.letter_spacing           = container_style->letter_spacing;
     anon.line_height_kind         = container_style->line_height_kind;
@@ -278,6 +362,11 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.text_shadow_offset_y     = container_style->text_shadow_offset_y;
     anon.text_shadow_blur         = container_style->text_shadow_blur;
     anon.text_shadow_color        = container_style->text_shadow_color;
+    anon.text_stroke_width        = container_style->text_stroke_width;
+    anon.text_stroke_color        = container_style->text_stroke_color;
+    anon.text_stroke_current_color = container_style->text_stroke_current_color;
+    memcpy(anon.paint_order, container_style->paint_order, sizeof(anon.paint_order));
+    memcpy(anon.marker_urls, container_style->marker_urls, sizeof(anon.marker_urls));
     anon.caption_side             = container_style->caption_side;
     anon.border_collapse          = container_style->border_collapse;
     anon.border_spacing_x         = container_style->border_spacing_x;
@@ -285,6 +374,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.accent_color             = container_style->accent_color;
     anon.caret_color              = container_style->caret_color;
     anon.root_font_size           = container_style->root_font_size;
+    anon.zoom                     = container_style->zoom;
     anon.custom_properties        = container_style->custom_properties;
     anon.font_weight              = container_style->font_weight;
     anon.font_stretch             = container_style->font_stretch;
@@ -294,6 +384,13 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.font_synthesis_no_position   = container_style->font_synthesis_no_position;
     if (anon.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL && !anon.font_synthesis_no_position) /* synthesized, see tbox_style */
         anon.vertical_align = anon.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUB ? TBOX_STYLE_VERTICAL_ALIGN_SUB : TBOX_STYLE_VERTICAL_ALIGN_SUPER;
+    anon.font_feature_settings = container_style->font_feature_settings;
+    anon.font_variant_ligatures = container_style->font_variant_ligatures;
+    anon.font_variant_numeric = container_style->font_variant_numeric;
+    anon.font_variant_east_asian = container_style->font_variant_east_asian;
+    anon.font_variant_alternates = container_style->font_variant_alternates;
+    anon.font_language_override = container_style->font_language_override;
+    memcpy(anon.font_palette, container_style->font_palette, sizeof(anon.font_palette));
     anon.font_kerning_none        = container_style->font_kerning_none;
     anon.font_size_adjust         = container_style->font_size_adjust;
     anon.word_break_keep_all      = container_style->word_break_keep_all;
@@ -309,6 +406,11 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.empty_cells_hide         = container_style->empty_cells_hide;
     anon.image_rendering_pixelated     = container_style->image_rendering_pixelated;
     anon.text_underline_position_under = container_style->text_underline_position_under;
+    anon.text_emphasis_mark       = container_style->text_emphasis_mark;
+    anon.text_emphasis_open       = container_style->text_emphasis_open;
+    memcpy(anon.text_emphasis_string, container_style->text_emphasis_string, sizeof(anon.text_emphasis_string));
+    anon.text_emphasis_color      = container_style->text_emphasis_color;
+    anon.text_emphasis_under      = container_style->text_emphasis_under;
     memcpy(anon.text_shadows, container_style->text_shadows, sizeof(anon.text_shadows));
     anon.text_shadow_count = container_style->text_shadow_count;
     /* Not inherited, but they act on the block container's lines, which
@@ -317,8 +419,33 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.text_overflow = container_style->text_overflow;
     memcpy(anon.text_overflow_string, container_style->text_overflow_string, sizeof(anon.text_overflow_string));
     anon.text_wrap_balance     = container_style->text_wrap_balance;
+    /* the bidi paragraph: base direction, and a block's plaintext or
+     * override (docs/09-texto-e-fontes.md, "Texto bidirecional") */
+    anon.direction_rtl = container_style->direction_rtl;
+    /* writing mode, and the layout frame the container was remapped into */
+    anon.writing_mode     = container_style->writing_mode;
+    anon.text_orientation = container_style->text_orientation;
+    anon.layout_frame     = container_style->layout_frame;
+    anon.unicode_bidi  = container_style->unicode_bidi;
     anon.text_indent_hanging   = container_style->text_indent_hanging;
     anon.text_indent_each_line = container_style->text_indent_each_line;
+    anon.hanging_punctuation = container_style->hanging_punctuation;
+    /* Only the first inline sequence in this block can supply its initial. */
+    bool first_inline = true;
+    for (const tbox_html_node *previous = run_start->parent != NULL ? run_start->parent->first_child : NULL; previous != NULL && previous != run_start; previous = previous->next_sibling) {
+        if (previous->type == TBOX_HTML_NODE_TEXT && tbox_string_view_trim_ascii_space(previous->text.text).size > 0)
+            first_inline = false;
+        if (previous->type == TBOX_HTML_NODE_ELEMENT) {
+            const tbox_style *previous_style = tbox_layout_style_or_default(styles, previous);
+            if (previous_style->display != TBOX_STYLE_DISPLAY_NONE && previous_style->position != TBOX_STYLE_POSITION_ABSOLUTE && previous_style->position != TBOX_STYLE_POSITION_FIXED && previous_style->float_side == TBOX_STYLE_FLOAT_NONE)
+                first_inline = false;
+        }
+    }
+    if (first_inline) {
+        anon.first_letter = container_style->first_letter;
+        anon.initial_letter_size = container_style->initial_letter_size;
+        anon.initial_letter_sink = container_style->initial_letter_sink;
+    }
     if (container_style->overflow_x != TBOX_STYLE_OVERFLOW_Y_VISIBLE && container_style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS)
         anon.overflow_x = TBOX_STYLE_OVERFLOW_Y_HIDDEN;
 
@@ -379,7 +506,7 @@ bool tbox_layout_is_inline_run_trigger(tbox_arena *arena, const tbox_html_node *
             return false;
         const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
         bool is_out_of_flow           = (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED);
-        return (child_style->display == TBOX_STYLE_DISPLAY_INLINE || child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) && !is_out_of_flow;
+        return (child_style->display == TBOX_STYLE_DISPLAY_INLINE || child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX || child_style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) && !is_out_of_flow;
     }
 
     return false;
@@ -405,8 +532,11 @@ const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start
             break; /* terminates, NOT consumed -- built via the out-of-flow path instead */
         }
 
-        if (node_style->display == TBOX_STYLE_DISPLAY_INLINE || node_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || node_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) {
+        if (node_style->display == TBOX_STYLE_DISPLAY_INLINE || node_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || node_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX || node_style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) {
             continue; /* in-flow inline or inline-block: extends the sequence */
+        }
+        if (tbox_layout_is_float(node, node_style)) {
+            continue; /* a float among inline content: placed by its line */
         }
 
         break; /* in-flow block terminates, NOT consumed */

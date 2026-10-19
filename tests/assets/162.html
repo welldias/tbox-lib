@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8">
+    <title>162 — Capitulares e pontuação</title>
+    <style>
+        html {
+            background: #fff;
+        }
+
+        body {
+            margin: 16px;
+            width: 720px;
+            background: #fff;
+            color: #172333;
+            font-family: sans-serif;
+            font-size: 15px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 20px;
+            line-height: 26px;
+        }
+
+        .examples {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 16px;
+            width: 716px;
+        }
+
+        .card {
+            box-sizing: border-box;
+            width: 350px;
+            height: 148px;
+            padding: 8px;
+            border: 2px solid #315578;
+            background: #e9f2ff;
+        }
+
+        h2 {
+            margin: 0 0 22px;
+            font-size: 14px;
+            line-height: 18px;
+            color: #183d66;
+        }
+
+        p {
+            margin: 0;
+            font-family: sans-serif;
+            font-size: 15px;
+            line-height: 20px;
+        }
+
+        .classic::first-letter {
+            font-size: 48px;
+            float: left;
+            color: #b03;
+            line-height: 1;
+            margin-right: 4px;
+        }
+
+        .drop::first-letter {
+            initial-letter: 3;
+            color: #b03;
+            margin-right: 4px;
+        }
+
+        .sunken::first-letter {
+            initial-letter: 3 2;
+            color: #b03;
+            margin-right: 4px;
+        }
+
+        .hang {
+            background: #fff4cf;
+        }
+
+        .hang p {
+            border-left: 2px solid #b03;
+            padding-left: 12px;
+            hanging-punctuation: first;
+        }
+
+        .end {
+            background: #dcf5e5;
+        }
+
+        .end p {
+            border-right: 2px solid #b03;
+            text-align: justify;
+            hanging-punctuation: allow-end;
+        }
+
+        .note {
+            margin-top: 10px;
+            font-size: 12px;
+            line-height: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Capitulares e pontuação pendurada</h1>
+    <div class="examples">
+        <section class="card">
+            <h2>(a) ::first-letter + float</h2>
+            <p class="classic">A leitura segue ao lado da letra maior. Palavras comuns mostram o espaço reservado e o
+                retorno das linhas à margem esquerda do parágrafo.</p>
+        </section>
+        <section class="card">
+            <h2>(b) initial-letter: 3 — Firefox N/A</h2>
+            <p class="drop">A leitura segue ao lado da letra maior. Palavras comuns mostram o espaço reservado e o
+                retorno das linhas à margem esquerda do parágrafo.</p>
+        </section>
+        <section class="card">
+            <h2>(c) initial-letter: 3 2 — Firefox N/A</h2>
+            <p class="sunken">A leitura segue ao lado da letra maior. Palavras comuns mostram o espaço reservado e o
+                retorno das linhas à margem esquerda do parágrafo.</p>
+        </section>
+        <section class="card hang">
+            <h2>(d) hanging: first — Firefox N/A</h2>
+            <p>“Uma frase começa com aspas no espaço antes do texto. As linhas seguintes voltam à margem, deixando a
+                borda vermelha livre.”</p>
+        </section>
+        <section class="card end">
+            <h2>(e) allow-end + justify — Firefox N/A</h2>
+            <p>As linhas mostram pontos e outras pausas, a pontuação sai para o lado desta margem. As linhas mostram
+                pontos e outras pausas. O texto segue.</p>
+        </section>
+    </div>
+    <p class="note">Vermelho: letra ou borda de referência. Fundo branco na página; cinco variantes em caixas de tamanho
+        fixo.</p>
+</body>
+
+</html>

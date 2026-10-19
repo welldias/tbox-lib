@@ -456,7 +456,12 @@ static void tbox_raster_gradient(uint32_t *pixels, int32_t width, int32_t height
     if (gradient == NULL || gradient->stop_count < 2 || rect.width <= 0.0 || rect.height <= 0.0 || op->color.a == 0) return;
     int32_t x0, y0, x1, y1;
     if (!tbox_raster_op_bounds(op, rect, width, height, &x0, &y0, &x1, &y1)) return;
+    /* With a source rect the gradient is laid out at that size and then
+     * stretched onto `rect` (a border-image slice). */
     double w = rect.width, h = rect.height, opacity = op->color.a / 255.0;
+    if (op->has_source_rect && op->source_rect.width > 0.0 && op->source_rect.height > 0.0)
+        w = op->source_rect.width, h = op->source_rect.height;
+    double scale_x = w / rect.width, scale_y = h / rect.height;
 
     double dx = 0.0, dy = 0.0, length = 0.0, cx = 0.0, cy = 0.0, rx = 1.0, ry = 1.0;
     if (gradient->kind == TBOX_STYLE_GRADIENT_LINEAR) {
@@ -504,10 +509,10 @@ static void tbox_raster_gradient(uint32_t *pixels, int32_t width, int32_t height
     size_t count = tbox_raster_resolve_stops(gradient, length, stops);
     for (int32_t y = y0; y < y1; y++) {
         uint32_t *row = pixels + (size_t)y * (size_t)width;
-        double py     = (double)y + 0.5 - rect.y;
+        double py     = ((double)y + 0.5 - rect.y) * scale_y;
         for (int32_t x = x0; x < x1; x++) {
-            double px = (double)x + 0.5 - rect.x;
-            if (!tbox_raster_in_shape_clip(op, px + rect.x, py + rect.y)) continue;
+            double px = ((double)x + 0.5 - rect.x) * scale_x;
+            if (!tbox_raster_in_shape_clip(op, (double)x + 0.5, (double)y + 0.5)) continue;
             double t;
             if (gradient->kind == TBOX_STYLE_GRADIENT_LINEAR) {
                 t = length > 0.0 ? ((px - w / 2.0) * dx + (py - h / 2.0) * dy) / length + 0.5 : 0.0;
@@ -566,10 +571,69 @@ typedef struct tbox_raster_text_target {
     const tbox_paint_op *rounded;
     tbox_css_rgba color;
     double color_alpha;
+    double stroke_width;
 } tbox_raster_text_target;
 
+/* Composites a glyph turned by `orient` (and squeezed by `scale`) for
+ * vertical text (docs/09-texto-e-fontes.md, "Escrita vertical"): each
+ * destination pixel samples the bitmap through the inverse mapping,
+ * bilinearly, so quarter turns at whole pixels stay exact. */
+static void tbox_raster_oriented_glyph(const tbox_raster_text_target *target, const tbox_font_glyph_bitmap *glyph, unsigned char orient, double scale, double pen_x, double baseline_y) {
+    /* bitmap offset (u, v) from the pen -> screen offset (a u + c v, b u + d v) */
+    double a = 1.0, b = 0.0, c = 0.0, d = 1.0;
+    if (orient == TBOX_GLYPH_ORIENT_ROTATE_CCW) a = 0.0, b = -1.0, c = 1.0, d = 0.0;
+    else if (orient == TBOX_GLYPH_ORIENT_TRANSPOSE) a = 0.0, b = 1.0, c = 1.0, d = 0.0;
+    else if (orient == TBOX_GLYPH_ORIENT_FLIP) d = -1.0;
+    a *= scale;
+    b *= scale;
+    double det = a * d - b * c;
+    if (!(det > 1e-9 || det < -1e-9))
+        return;
+    double u0 = glyph->bearing_x, v0 = -glyph->bearing_y, u1 = u0 + glyph->width, v1 = v0 + glyph->height;
+    const double xs[4] = { a * u0 + c * v0, a * u1 + c * v0, a * u0 + c * v1, a * u1 + c * v1 };
+    const double ys[4] = { b * u0 + d * v0, b * u1 + d * v0, b * u0 + d * v1, b * u1 + d * v1 };
+    double min_x = xs[0], max_x = xs[0], min_y = ys[0], max_y = ys[0];
+    for (int i = 1; i < 4; i++) {
+        if (xs[i] < min_x) min_x = xs[i];
+        if (xs[i] > max_x) max_x = xs[i];
+        if (ys[i] < min_y) min_y = ys[i];
+        if (ys[i] > max_y) max_y = ys[i];
+    }
+    double ox = floor(pen_x + 0.5), oy = floor(baseline_y + 0.5);
+    int32_t x0 = (int32_t)floor(ox + min_x), x1 = (int32_t)ceil(ox + max_x);
+    int32_t y0 = (int32_t)floor(oy + min_y), y1 = (int32_t)ceil(oy + max_y);
+    if (x0 < target->clip_x0) x0 = target->clip_x0;
+    if (y0 < target->clip_y0) y0 = target->clip_y0;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > target->clip_x1) x1 = target->clip_x1;
+    if (y1 > target->clip_y1) y1 = target->clip_y1;
+    if (x1 > target->buffer_width) x1 = target->buffer_width;
+    if (y1 > target->buffer_height) y1 = target->buffer_height;
+    for (int32_t py = y0; py < y1; py++) {
+        uint32_t *pixel_row = target->pixels + (size_t)py * (size_t)target->buffer_width;
+        for (int32_t px = x0; px < x1; px++) {
+            double dx = px + 0.5 - ox, dy = py + 0.5 - oy;
+            /* back to bitmap coordinates, in pixel-center units */
+            double u  = (d * dx - c * dy) / det - u0 - 0.5;
+            double v  = (a * dy - b * dx) / det - v0 - 0.5;
+            int iu = (int)floor(u), iv = (int)floor(v);
+            double fu = u - iu, fv = v - iv, coverage = 0.0;
+            for (int k = 0; k < 4; k++) {
+                int su = iu + (k & 1), sv = iv + (k >> 1);
+                if (su < 0 || sv < 0 || su >= glyph->width || sv >= glyph->height) continue;
+                double w = ((k & 1) ? fu : 1.0 - fu) * ((k >> 1) ? fv : 1.0 - fv);
+                coverage += w * glyph->alpha[(size_t)sv * (size_t)glyph->width + (size_t)su] / 255.0;
+            }
+            if (coverage <= 0.0 || (target->rounded != NULL && !tbox_raster_in_shape_clip(target->rounded, (double)px + 0.5, (double)py + 0.5)))
+                continue;
+            pixel_row[px] = tbox_raster_blend_pixel(pixel_row[px], target->color, coverage * target->color_alpha);
+        }
+    }
+}
+
 /* Composites one glyph with its pen at (pen_x, baseline_y). */
-static void tbox_raster_glyph(const tbox_raster_text_target *target, tbox_font_face *face, uint32_t glyph_id, double pen_x, double baseline_y) {
+static void tbox_raster_glyph(const tbox_raster_text_target *target, tbox_font_face *face, uint32_t glyph_id, double pen_x, double baseline_y, unsigned char orient, double scale) {
     uint32_t *pixels             = target->pixels;
     int32_t buffer_width         = target->buffer_width;
     int32_t buffer_height        = target->buffer_height;
@@ -578,7 +642,13 @@ static void tbox_raster_glyph(const tbox_raster_text_target *target, tbox_font_f
     const tbox_paint_op *rounded = target->rounded;
     tbox_css_rgba color          = target->color;
     double color_alpha           = target->color_alpha;
-    tbox_font_glyph_bitmap glyph = tbox_font_rasterize_glyph_id(face, glyph_id);
+    tbox_font_glyph_bitmap glyph = target->stroke_width > 0.0 ?
+        tbox_font_rasterize_glyph_stroke(face, glyph_id, target->stroke_width) : tbox_font_rasterize_glyph_id(face, glyph_id);
+    if (orient != TBOX_GLYPH_ORIENT_NONE || (scale > 0.0 && scale != 1.0)) {
+        if (glyph.width > 0 && glyph.height > 0 && glyph.alpha != NULL)
+            tbox_raster_oriented_glyph(target, &glyph, orient, scale > 0.0 ? scale : 1.0, pen_x, baseline_y);
+        return;
+    }
     if (glyph.width > 0 && glyph.height > 0 && glyph.alpha != NULL) {
         int32_t glyph_x0 = (int32_t)floor(pen_x + glyph.bearing_x);
         int32_t glyph_y0 = (int32_t)floor(baseline_y - glyph.bearing_y);
@@ -614,7 +684,7 @@ static void tbox_raster_glyph(const tbox_raster_text_target *target, tbox_font_f
  * posicionados") as they are: no UTF-8 decoding, no kerning here. Without
  * glyphs (an op built by hand), `text` is shaped on the fly by the same
  * shaper Layout uses, in a scratch arena. */
-static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_glyph *glyphs, size_t glyph_count, const tbox_font_face *face, tbox_css_rgba color, double letter_spacing, bool has_clip, tbox_rect clip, const tbox_paint_op *rounded) {
+static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_glyph *glyphs, size_t glyph_count, const tbox_font_face *face, tbox_css_rgba color, double letter_spacing, bool has_clip, tbox_rect clip, const tbox_paint_op *rounded, double stroke_width) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || face == NULL || (text.size == 0 && glyph_count == 0) || color.a == 0) {
         return;
     }
@@ -626,6 +696,7 @@ static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width,
         .clip_x1 = has_clip ? (int32_t)floor(clip.x + clip.width) : buffer_width,
         .clip_y1 = has_clip ? (int32_t)floor(clip.y + clip.height) : buffer_height,
         .rounded = rounded, .color = color, .color_alpha = color.a / 255.0,
+        .stroke_width = stroke_width,
     };
 
     /* tbox_font_rasterize_glyph_id mutates the FT_Face's internal glyph
@@ -637,20 +708,20 @@ static void tbox_raster_text_run_clipped(uint32_t *pixels, int32_t buffer_width,
 
     if (glyph_count > 0) {
         for (size_t i = 0; i < glyph_count; i++)
-            tbox_raster_glyph(&target, mutable_face, glyphs[i].id, origin.x + glyphs[i].x, baseline_y + glyphs[i].y);
+            tbox_raster_glyph(&target, mutable_face, glyphs[i].id, origin.x + glyphs[i].x, baseline_y + glyphs[i].y, glyphs[i].orient, glyphs[i].scale);
         return;
     }
     tbox_arena scratch = tbox_arena_create(0);
     tbox_glyph *shaped;
     size_t shaped_count;
-    if (tbox_font_shape(&scratch, face, text, letter_spacing, 0.0, 0, &shaped, &shaped_count, NULL))
+    if (tbox_font_shape(&scratch, face, text, letter_spacing, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &shaped, &shaped_count, NULL))
         for (size_t i = 0; i < shaped_count; i++)
-            tbox_raster_glyph(&target, mutable_face, shaped[i].id, origin.x + shaped[i].x, baseline_y + shaped[i].y);
+            tbox_raster_glyph(&target, mutable_face, shaped[i].id, origin.x + shaped[i].x, baseline_y + shaped[i].y, shaped[i].orient, shaped[i].scale);
     tbox_arena_destroy(&scratch);
 }
 
 void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect origin, tbox_string_view text, const tbox_font_face *face, tbox_css_rgba color) {
-    tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, origin, text, NULL, 0, face, color, 0.0, false, (tbox_rect){0}, NULL);
+    tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, origin, text, NULL, 0, face, color, 0.0, false, (tbox_rect){0}, NULL, 0.0);
 }
 
 /* Composites `image`'s decoded RGBA8 pixels into `dest_rect`. When
@@ -658,7 +729,7 @@ void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer
  * intrinsic dimensions -- e.g. a `style="width:...;height:..."` different
  * from the source file's own dimensions -- the source is first resampled to
  * that exact size via stb_image_resize2's "easy API"
- * (stbir_resize_uint8_srgb: Mitchell filter downsampling / cubic upsampling,
+ * (stbir_resize: Mitchell filter downsampling / triangle (bilinear) upsampling,
  * sRGB-aware so scaling happens in linear light -- real quality resampling,
  * not nearest-neighbor), into a temporary heap buffer freed before this
  * function returns; when the sizes already match, `image->pixels` is
@@ -675,7 +746,9 @@ void tbox_raster_text_run(uint32_t *pixels, int32_t buffer_width, int32_t buffer
  * non-positive buffer_width/buffer_height, a non-positive
  * dest_rect.width/height, or a resize failure (allocation failure, treated
  * as a no-op rather than a crash), skips painting entirely. */
-static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image, double opacity, bool has_clip, tbox_rect clip, bool pixelated, const tbox_paint_op *rounded, const double *filter, tbox_style_blend_mode blend_mode) {
+/* `source` (NULL for the whole image) is the part of the image, in image
+ * pixels rounded to whole ones, scaled into dest_rect. */
+static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image, const tbox_rect *source, double opacity, bool has_clip, tbox_rect clip, bool pixelated, const tbox_paint_op *rounded, const double *filter, tbox_style_blend_mode blend_mode) {
     if (pixels == NULL || buffer_width <= 0 || buffer_height <= 0 || image == NULL || image->pixels == NULL || dest_rect.width <= 0.0 || dest_rect.height <= 0.0) {
         return;
     }
@@ -686,18 +759,32 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
         return;
     }
 
-    const unsigned char *sample_pixels = image->pixels;
-    int32_t sample_width               = image->width;
+    int32_t crop_x = 0, crop_y = 0, crop_width = image->width, crop_height = image->height;
+    if (source != NULL) {
+        double sx0 = fmax(0.0, floor(source->x + 0.5)), sy0 = fmax(0.0, floor(source->y + 0.5));
+        double sx1 = fmin((double)image->width, floor(source->x + source->width + 0.5));
+        double sy1 = fmin((double)image->height, floor(source->y + source->height + 0.5));
+        if (sx1 <= sx0 || sy1 <= sy0)
+            return;
+        crop_x = (int32_t)sx0, crop_y = (int32_t)sy0;
+        crop_width = (int32_t)(sx1 - sx0), crop_height = (int32_t)(sy1 - sy0);
+    }
+    const unsigned char *crop_pixels   = image->pixels + ((size_t)crop_y * (size_t)image->width + (size_t)crop_x) * 4;
+    const unsigned char *sample_pixels = crop_pixels;
+    int32_t sample_width               = image->width; /* row stride, in pixels */
     unsigned char *resized             = NULL;
-    bool nearest = pixelated && (dest_width > image->width || dest_height > image->height);
+    bool nearest = pixelated && (dest_width > crop_width || dest_height > crop_height);
 
-    if (!nearest && (dest_width != image->width || dest_height != image->height)) {
+    if (!nearest && (dest_width != crop_width || dest_height != crop_height)) {
         resized = (unsigned char *)malloc((size_t)dest_width * (size_t)dest_height * 4);
         if (resized == NULL) {
             return;
         }
 
-        if (stbir_resize_uint8_srgb(image->pixels, image->width, image->height, 0, resized, dest_width, dest_height, 0, STBIR_RGBA) == NULL) {
+        /* Enlarging uses a triangle (bilinear) filter, as browsers do: the
+         * default cubic one overshoots around hard edges of small images. */
+        stbir_filter resample = dest_width >= crop_width && dest_height >= crop_height ? STBIR_FILTER_TRIANGLE : STBIR_FILTER_DEFAULT;
+        if (stbir_resize(crop_pixels, crop_width, crop_height, image->width * 4, resized, dest_width, dest_height, 0, STBIR_RGBA, STBIR_TYPE_UINT8_SRGB, STBIR_EDGE_CLAMP, resample) == NULL) {
             free(resized);
             return;
         }
@@ -736,12 +823,12 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
     }
 
     for (int32_t y = y0; y < y1; y++) {
-        int32_t source_y = nearest ? (int32_t)((int64_t)(y - origin_y) * image->height / dest_height) : y - origin_y;
+        int32_t source_y = nearest ? (int32_t)((int64_t)(y - origin_y) * crop_height / dest_height) : y - origin_y;
         const unsigned char *source_row = sample_pixels + (size_t)source_y * (size_t)sample_width * 4;
         uint32_t *dest_row              = pixels + (size_t)y * (size_t)buffer_width;
 
         for (int32_t x = x0; x < x1; x++) {
-            int32_t source_x = nearest ? (int32_t)((int64_t)(x - origin_x) * image->width / dest_width) : x - origin_x;
+            int32_t source_x = nearest ? (int32_t)((int64_t)(x - origin_x) * crop_width / dest_width) : x - origin_x;
             const unsigned char *source_pixel = source_row + (size_t)source_x * 4;
             unsigned char source_alpha        = source_pixel[3];
             if (source_alpha == 0 || (rounded != NULL && !tbox_raster_in_shape_clip(rounded, (double)x + 0.5, (double)y + 0.5))) {
@@ -759,7 +846,7 @@ static void tbox_raster_image_clipped(uint32_t *pixels, int32_t buffer_width, in
 }
 
 void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, tbox_rect dest_rect, const tbox_image *image) {
-    tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, 1.0, false, (tbox_rect){0}, false, NULL, NULL, TBOX_STYLE_BLEND_NORMAL);
+    tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, NULL, 1.0, false, (tbox_rect){0}, false, NULL, NULL, TBOX_STYLE_BLEND_NORMAL);
 }
 
 /* Rasterizes one op -- the dispatch tbox_raster_display_list and
@@ -793,7 +880,13 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
         }
         break;
     case TBOX_PAINT_TEXT_RUN:
-        tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->glyphs, op->glyph_count, op->face, op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0}, (op->has_rounded_clip || op->polygon_clip != NULL) ? op : NULL);
+        for (int pass = 0; pass < 2; pass++) {
+            bool stroke = (pass == 0) == op->text_stroke_first;
+            if (stroke && op->text_stroke_width <= 0.0) continue;
+            tbox_raster_text_run_clipped(pixels, buffer_width, buffer_height, op->rect, op->text, op->glyphs, op->glyph_count, op->face,
+                stroke ? op->text_stroke_color : op->color, op->letter_spacing, op->has_clip, op->has_clip ? op->clip : (tbox_rect){0},
+                (op->has_rounded_clip || op->polygon_clip != NULL) ? op : NULL, stroke ? op->text_stroke_width : 0.0);
+        }
         break;
     case TBOX_PAINT_IMAGE:
         if (op->has_rounded_clip) {
@@ -803,9 +896,9 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
                 double cx1 = fmin(clip.x + clip.width, op->clip.x + op->clip.width), cy1 = fmin(clip.y + clip.height, op->clip.y + op->clip.height);
                 clip       = (tbox_rect){ cx0, cy0, cx1 > cx0 ? cx1 - cx0 : 0.0, cy1 > cy0 ? cy1 - cy0 : 0.0 };
             }
-            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, true, clip, op->image_pixelated, op, op->color_filter, op->blend_mode);
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->has_source_rect ? &op->source_rect : NULL, op->color.a / 255.0, true, clip, op->image_pixelated, op, op->color_filter, op->blend_mode);
         } else {
-            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated, op->polygon_clip != NULL ? op : NULL, op->color_filter, op->blend_mode);
+            tbox_raster_image_clipped(pixels, buffer_width, buffer_height, op->rect, op->image, op->has_source_rect ? &op->source_rect : NULL, op->color.a / 255.0, op->has_clip, op->clip, op->image_pixelated, op->polygon_clip != NULL ? op : NULL, op->color_filter, op->blend_mode);
         }
         break;
     case TBOX_PAINT_FILL_RING:
@@ -1018,7 +1111,7 @@ static void tbox_raster_apply_filters(uint32_t *pixels, int32_t width, int32_t h
     }
 }
 
-static size_t tbox_raster_paint_range(const tbox_raster_target *t, const tbox_display_list *list, size_t from, size_t to, tbox_rect region, int32_t screen_width, int32_t screen_height);
+static size_t tbox_raster_paint_range(const tbox_raster_target *t, const tbox_display_list *list, size_t from, size_t to, tbox_rect region, tbox_rect space);
 
 /* BACKDROP_FILTER: the filters run over a copy of what `t` already holds
  * around the op (blur reads past its edges), and the result replaces the
@@ -1065,19 +1158,107 @@ static void tbox_raster_backdrop(const tbox_raster_target *t, const tbox_paint_o
     free(copy);
 }
 
-/* LAYER_BEGIN at `begin`: paints the layer and composites it onto `t`
- * within `region`. Returns the index of its LAYER_END. */
-static size_t tbox_raster_paint_layer(const tbox_raster_target *t, const tbox_display_list *list, size_t begin, tbox_rect region, int32_t screen_width, int32_t screen_height) {
+/* A premultiplied pixel of `layer` at screen point (x, y), bilinear
+ * between the four nearest pixel centers; transparent outside. */
+static uint32_t tbox_raster_sample(const tbox_raster_target *layer, double x, double y) {
+    double fx = x - 0.5 - (double)layer->x, fy = y - 0.5 - (double)layer->y;
+    double x0f = floor(fx), y0f = floor(fy);
+    if (x0f < -1.0 || y0f < -1.0 || x0f >= (double)layer->width || y0f >= (double)layer->height)
+        return 0;
+    int32_t x0 = (int32_t)x0f, y0 = (int32_t)y0f;
+    double tx = fx - x0f, ty = fy - y0f;
+    double sum[4] = { 0.0, 0.0, 0.0, 0.0 };
+    for (int j = 0; j < 2; j++) {
+        int32_t py = y0 + j;
+        if (py < 0 || py >= layer->height)
+            continue;
+        for (int i = 0; i < 2; i++) {
+            int32_t px = x0 + i;
+            if (px < 0 || px >= layer->width)
+                continue;
+            double w = (i ? tx : 1.0 - tx) * (j ? ty : 1.0 - ty);
+            uint32_t p = layer->pixels[(size_t)py * (size_t)layer->width + (size_t)px];
+            for (int c = 0; c < 4; c++)
+                sum[c] += w * (double)((p >> (8 * c)) & 0xFFu);
+        }
+    }
+    uint32_t out = 0;
+    for (int c = 0; c < 4; c++) {
+        double v = sum[c] + 0.5;
+        out |= (uint32_t)(v >= 255.0 ? 255.0 : v) << (8 * c);
+    }
+    /* premultiplied: no channel above alpha */
+    uint32_t a = out >> 24, result = a << 24;
+    for (int c = 0; c < 3; c++) {
+        uint32_t v = (out >> (8 * c)) & 0xFFu;
+        result |= (v > a ? a : v) << (8 * c);
+    }
+    return result;
+}
+
+/* A transformed LAYER_BEGIN at `begin`: its ops paint untransformed into a
+ * buffer covering what `region` (around the layer) needs of them, which
+ * composites onto `t` through the matrix, sampling bilinearly. Returns
+ * the index of its LAYER_END. */
+static size_t tbox_raster_paint_transformed(const tbox_raster_target *t, const tbox_display_list *list, size_t begin, tbox_rect region, tbox_rect space) {
     const tbox_paint_op *op = &list->items[begin];
+    size_t end = tbox_raster_layer_end(list, begin, NULL);
+    const double *m = op->transform;
+    double det = m[0] * m[3] - m[1] * m[2];
+    tbox_rect content;
+    if (!(fabs(det) > 1e-9) || !tbox_raster_layer_content_bounds(list, begin, space, &content))
+        return end; /* a singular matrix flattens the layer to nothing */
+    /* a pixel more around the content: the edges blend into transparent */
+    content = tbox_raster_rect_grow(content, 1.0);
+    tbox_rect out = tbox_raster_rect_intersect(tbox_raster_rect_grow(tbox_raster_transform_bounds(m, content), 0.0), region);
+    if (op->has_clip) out = tbox_raster_rect_intersect(out, op->clip);
+    if (op->has_rounded_clip) out = tbox_raster_rect_intersect(out, op->rounded_clip);
+    out = tbox_raster_rect_intersect(tbox_raster_rect_grow(out, 0.0), tbox_raster_target_rect(t));
+    if (tbox_raster_rect_empty(out))
+        return end;
+    /* the inverse maps screen points back into the layer */
+    const double inv[6] = { m[3] / det, -m[1] / det, -m[2] / det, m[0] / det, (m[2] * m[5] - m[3] * m[4]) / det, (m[1] * m[4] - m[0] * m[5]) / det };
+    tbox_rect needed = tbox_raster_rect_intersect(tbox_raster_rect_grow(tbox_raster_transform_bounds(inv, out), 1.0), content);
+    /* a huge enlargement of a tiny source, or the reverse, stays bounded */
+    if (tbox_raster_rect_empty(needed) || needed.width * needed.height > 64.0 * 1024.0 * 1024.0)
+        return end;
+    tbox_raster_target layer = { NULL, (int32_t)needed.width, (int32_t)needed.height, (int32_t)needed.x, (int32_t)needed.y };
+    layer.pixels = calloc((size_t)layer.width * (size_t)layer.height, sizeof(uint32_t));
+    if (layer.pixels == NULL)
+        return end;
+    tbox_raster_paint_range(&layer, list, begin + 1, end, needed, TBOX_RASTER_UNBOUNDED);
+    double opacity = op->color.a / 255.0;
+    for (int32_t y = (int32_t)out.y; y < (int32_t)(out.y + out.height); y++) {
+        uint32_t *row = t->pixels + (size_t)(y - t->y) * (size_t)t->width;
+        for (int32_t x = (int32_t)out.x; x < (int32_t)(out.x + out.width); x++) {
+            double sx = (double)x + 0.5, sy = (double)y + 0.5;
+            uint32_t p = tbox_raster_sample(&layer, inv[0] * sx + inv[2] * sy + inv[4], inv[1] * sx + inv[3] * sy + inv[5]);
+            if ((p >> 24) == 0 || !tbox_raster_in_shape_clip(op, sx, sy))
+                continue;
+            tbox_css_rgba color = tbox_raster_unpack(p);
+            row[x - t->x] = tbox_raster_blend_mode_pixel(row[x - t->x], color, color.a / 255.0 * opacity, op->blend_mode);
+        }
+    }
+    free(layer.pixels);
+    return end;
+}
+
+/* LAYER_BEGIN at `begin`: paints the layer and composites it onto `t`
+ * within `region`. `space` bounds the coordinates around the layer: the
+ * screen, or unbounded inside a transformed layer. Returns the index of
+ * its LAYER_END. */
+static size_t tbox_raster_paint_layer(const tbox_raster_target *t, const tbox_display_list *list, size_t begin, tbox_rect region, tbox_rect space) {
+    const tbox_paint_op *op = &list->items[begin];
+    if (op->has_transform)
+        return tbox_raster_paint_transformed(t, list, begin, region, space);
     size_t mask_index;
     size_t end = tbox_raster_layer_end(list, begin, &mask_index);
     tbox_rect content;
-    if (!tbox_raster_layer_content_bounds(list, begin, screen_width, screen_height, &content))
+    if (!tbox_raster_layer_content_bounds(list, begin, space, &content))
         return end;
     double extent = tbox_style_filter_extent(op->filters);
-    tbox_rect screen = { 0.0, 0.0, (double)screen_width, (double)screen_height };
     /* pixels of `region` depend on content up to `extent` away */
-    tbox_rect inner = tbox_raster_rect_intersect(tbox_raster_rect_grow(region, extent), screen);
+    tbox_rect inner = tbox_raster_rect_intersect(tbox_raster_rect_grow(region, extent), space);
     tbox_rect area  = tbox_raster_rect_intersect(tbox_raster_rect_grow(content, extent), inner);
     tbox_rect out   = tbox_raster_rect_intersect(area, region);
     if (op->has_clip) out = tbox_raster_rect_intersect(out, op->clip);
@@ -1090,25 +1271,46 @@ static size_t tbox_raster_paint_layer(const tbox_raster_target *t, const tbox_di
     layer.pixels = calloc(count, sizeof(uint32_t));
     if (layer.pixels == NULL)
         return end;
-    tbox_raster_paint_range(&layer, list, begin + 1, mask_index, area, screen_width, screen_height);
+    tbox_raster_paint_range(&layer, list, begin + 1, mask_index, area, space);
     tbox_raster_apply_filters(layer.pixels, layer.width, layer.height, op->filters);
     if (mask_index < end) {
         tbox_raster_target mask = layer;
         mask.pixels = calloc(count, sizeof(uint32_t));
-        if (mask.pixels != NULL) {
-            tbox_raster_paint_range(&mask, list, mask_index + 1, end, area, screen_width, screen_height);
-            bool luminance = list->items[mask_index].mask_luminance;
+        double *coverage = calloc(count, sizeof(double));
+        if (mask.pixels != NULL && coverage != NULL) {
+            bool first = true;
+            for (size_t m = mask_index; m < end;) {
+                size_t next = m + 1;
+                while (next < end && list->items[next].kind != TBOX_PAINT_LAYER_MASK) next++;
+                memset(mask.pixels, 0, count * sizeof(uint32_t));
+                tbox_raster_paint_range(&mask, list, m + 1, next, area, space);
+                for (size_t i = 0; i < count; i++) {
+                    uint32_t pixel = mask.pixels[i];
+                    /* Premultiplied luminance already includes alpha. */
+                    double source = list->items[m].mask_luminance ?
+                        (0.2125 * ((pixel >> 16) & 0xFFu) + 0.7154 * ((pixel >> 8) & 0xFFu) + 0.0721 * (pixel & 0xFFu)) / 255.0 : (pixel >> 24) / 255.0;
+                    double dest = coverage[i];
+                    if (first) coverage[i] = source; /* bottom layer has no destination */
+                    else switch (list->items[m].mask_composite) {
+                    case TBOX_STYLE_MASK_ADD: coverage[i] = source + dest * (1.0 - source); break;
+                    case TBOX_STYLE_MASK_SUBTRACT: coverage[i] = source * (1.0 - dest); break;
+                    case TBOX_STYLE_MASK_INTERSECT: coverage[i] = source * dest; break;
+                    case TBOX_STYLE_MASK_EXCLUDE: coverage[i] = source * (1.0 - dest) + dest * (1.0 - source); break;
+                    }
+                }
+                first = false;
+                m = next;
+            }
             for (size_t i = 0; i < count; i++) {
-                uint32_t m = mask.pixels[i];
-                /* premultiplied, so luminance already carries the alpha */
-                double factor = luminance ? (0.2125 * ((m >> 16) & 0xFFu) + 0.7154 * ((m >> 8) & 0xFFu) + 0.0721 * (m & 0xFFu)) / 255.0 : (m >> 24) / 255.0;
-                uint32_t p = layer.pixels[i], scaled = 0;
-                for (int c = 0; c < 4; c++) scaled |= (uint32_t)(((p >> (8 * c)) & 0xFFu) * factor + 0.5) << (8 * c);
+                uint32_t pixel = layer.pixels[i], scaled = 0;
+                for (int c = 0; c < 4; c++) scaled |= (uint32_t)(((pixel >> (8 * c)) & 0xFFu) * coverage[i] + 0.5) << (8 * c);
                 layer.pixels[i] = scaled;
             }
-            free(mask.pixels);
         }
+        free(coverage);
+        free(mask.pixels);
     }
+
     double opacity = op->color.a / 255.0;
     for (int32_t y = (int32_t)out.y; y < (int32_t)(out.y + out.height); y++) {
         const uint32_t *source = layer.pixels + (size_t)(y - layer.y) * (size_t)layer.width;
@@ -1125,13 +1327,13 @@ static size_t tbox_raster_paint_layer(const tbox_raster_target *t, const tbox_di
     return end;
 }
 
-/* Paints items [from, to) into `t`, within `region` (screen coordinates,
- * whole pixels). Returns `to`. */
-static size_t tbox_raster_paint_range(const tbox_raster_target *t, const tbox_display_list *list, size_t from, size_t to, tbox_rect region, int32_t screen_width, int32_t screen_height) {
+/* Paints items [from, to) into `t`, within `region` (whole pixels, in the
+ * coordinates `space` bounds). Returns `to`. */
+static size_t tbox_raster_paint_range(const tbox_raster_target *t, const tbox_display_list *list, size_t from, size_t to, tbox_rect region, tbox_rect space) {
     for (size_t i = from; i < to; i++) {
         const tbox_paint_op *op = &list->items[i];
         if (op->kind == TBOX_PAINT_LAYER_BEGIN) {
-            i = tbox_raster_paint_layer(t, list, i, region, screen_width, screen_height);
+            i = tbox_raster_paint_layer(t, list, i, region, space);
             continue;
         }
         if (op->kind == TBOX_PAINT_LAYER_MASK || op->kind == TBOX_PAINT_LAYER_END)
@@ -1141,7 +1343,7 @@ static size_t tbox_raster_paint_range(const tbox_raster_target *t, const tbox_di
             continue;
         }
         tbox_rect bounds;
-        if (!tbox_raster_op_paint_bounds(op, screen_width, screen_height, &bounds) || tbox_raster_rect_empty(tbox_raster_rect_intersect(bounds, region)))
+        if (!tbox_raster_op_bounds_in(op, space, &bounds) || tbox_raster_rect_empty(tbox_raster_rect_intersect(bounds, region)))
             continue;
         tbox_raster_paint_into(t, op, region);
     }
@@ -1153,7 +1355,7 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
         return;
     }
     tbox_raster_target screen = { pixels, buffer_width, buffer_height, 0, 0 };
-    tbox_raster_paint_range(&screen, list, 0, list->count, tbox_raster_target_rect(&screen), buffer_width, buffer_height);
+    tbox_raster_paint_range(&screen, list, 0, list->count, tbox_raster_target_rect(&screen), tbox_raster_target_rect(&screen));
 }
 
 void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list, const tbox_damage *damage) {
@@ -1184,7 +1386,7 @@ void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, in
         }
         region = (tbox_rect){ (double)x0, (double)y0, (double)(x1 - x0), (double)(y1 - y0) };
         if (list != NULL)
-            tbox_raster_paint_range(&screen, list, 0, list->count, region, buffer_width, buffer_height);
+            tbox_raster_paint_range(&screen, list, 0, list->count, region, tbox_raster_target_rect(&screen));
     }
 }
 

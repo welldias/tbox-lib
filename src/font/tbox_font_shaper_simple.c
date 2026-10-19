@@ -4,6 +4,7 @@
  * is OFF. */
 #include "tbox_font_face_internal.h"
 
+#include "base/tbox_bidi.h"
 #include "base/tbox_string.h"
 
 bool tbox_font_shaper_attach(tbox_font_face *face) {
@@ -15,14 +16,26 @@ void tbox_font_shaper_detach(tbox_font_face *face) {
     (void)face;
 }
 
-size_t tbox_font_shaper_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_glyph *out, size_t capacity, double *out_width) {
+/* RTL (from the bidi levels): the codepoints are laid out last to first,
+ * each replaced by its mirror (L4), so the glyphs come out in visual
+ * order with descending clusters. AUTO and LTR go first to last. */
+size_t tbox_font_shaper_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, tbox_glyph *out, size_t capacity, double *out_width) {
+    bool rtl          = direction == TBOX_FONT_DIRECTION_RTL;
     double pen        = 0.0;
     uint32_t previous = 0;
     size_t count      = 0;
-    for (size_t at = 0; at < text.size;) {
-        size_t start = at;
+    for (size_t step = 0; step < text.size;) {
+        size_t start;
         uint32_t codepoint;
-        at = tbox_utf8_decode(text.data, text.size, at, &codepoint);
+        if (rtl) {
+            start = tbox_utf8_previous(text.data, text.size - step);
+            tbox_utf8_decode(text.data, text.size, start, &codepoint);
+            step      = text.size - start;
+            codepoint = tbox_bidi_mirror(codepoint);
+        } else {
+            start = step;
+            step  = tbox_utf8_decode(text.data, text.size, step, &codepoint);
+        }
         pen += tbox_font_face_kerning(face, previous, codepoint);
         previous   = codepoint;
         FT_UInt id = FT_Get_Char_Index(face->ft_face, (FT_ULong)codepoint);

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* zoom e resize (docs/08-layout-e-pintura.md, "zoom";
+     * docs/06-eventos-e-interatividade.md, "Redimensionar"). Linha 1: a
+     * mesma caixa 100x60, borda 2px, texto 16px, com zoom 1, 1.5 e 50%, e
+     * um pai com zoom 2 cujo filho tem zoom .5 (tamanho normal). Linha 2:
+     * caixas com overflow: auto e resize: both / horizontal (alça no canto
+     * inferior direito) e um <textarea> padrão (no tbox, resize: none por
+     * padrão, como num app nativo; o Firefox desenha a alça) e um com
+     * resize: vertical. A alça do Firefox é diferente da do tbox. */
+    body {
+      margin: 20px;
+      background: white;
+      color: black;
+      font-family: sans-serif;
+      font-size: 16px;
+    }
+
+    .linha {
+      display: flex;
+      align-items: flex-start;
+      height: 150px;
+      margin-bottom: 30px;
+    }
+
+    .celula {
+      margin-right: 30px;
+    }
+
+    .rotulo {
+      font-size: 12px;
+      height: 20px;
+      color: #333;
+    }
+
+    .caixa {
+      width: 100px;
+      height: 60px;
+      border: 2px solid #1d4ed8;
+      background: #bfdbfe;
+      font-size: 16px;
+    }
+
+    .z1 {
+      zoom: 1;
+    }
+
+    .z15 {
+      zoom: 1.5;
+    }
+
+    .z50 {
+      zoom: 50%;
+    }
+
+    .z2 {
+      zoom: 2;
+    }
+
+    .z05 {
+      zoom: .5;
+    }
+
+    .redim {
+      width: 140px;
+      height: 90px;
+      overflow: auto;
+      border: 2px solid #15803d;
+      background: #dcfce7;
+    }
+
+    .ambos {
+      resize: both;
+    }
+
+    .horiz {
+      resize: horizontal;
+    }
+
+    .vert {
+      resize: vertical;
+    }
+
+    textarea {
+      width: 140px;
+      height: 80px;
+      font-family: sans-serif;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="linha">
+    <div class="celula">
+      <div class="rotulo">zoom: 1</div>
+      <div class="caixa z1">Ab</div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">zoom: 1.5</div>
+      <div class="caixa z15">Ab</div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">zoom: 50%</div>
+      <div class="caixa z50">Ab</div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">pai 2, filho .5</div>
+      <div class="z2">
+        <div class="caixa z05">Ab</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="linha">
+    <div class="celula">
+      <div class="rotulo">resize: both</div>
+      <div class="redim ambos">Ab</div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">resize: horizontal</div>
+      <div class="redim horiz">Ab</div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">textarea padrão</div>
+      <textarea>Ab</textarea>
+    </div>
+    <div class="celula">
+      <div class="rotulo">textarea vertical</div>
+      <textarea class="vert">Ab</textarea>
+    </div>
+  </div>
+</body>
+
+</html>

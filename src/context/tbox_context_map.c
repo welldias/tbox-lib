@@ -54,7 +54,7 @@ static bool tbox_context_area_contains(const tbox_html_node *area, double x, dou
 }
 
 const tbox_html_node *tbox_context_image_area_at(const tbox_context *ctx, const tbox_layout_box *box, double x, double y) {
-    if (ctx == NULL || box == NULL) return NULL;
+    if (ctx == NULL || box == NULL || !tbox_context_box_point(box, &x, &y)) return NULL;
     for (size_t i = 0; i < box->text_run_count; i++) {
         const tbox_layout_text_run *run = &box->text_runs[i];
         if (run->image == NULL || run->image->width <= 0 || run->image->height <= 0 ||

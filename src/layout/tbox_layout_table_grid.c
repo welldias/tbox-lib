@@ -19,7 +19,9 @@ typedef struct tbox_table_cell {
 
 typedef struct tbox_table_column {
     const tbox_html_node *node, *group;
-    double min_width, width, x;
+    /* min/max-content (outer, px), a declared px width (`fixed`) or
+     * percentage of the table (`percent`, 0..100), and the final width */
+    double min_width, max_width, fixed, percent, width, x;
 } tbox_table_column;
 
 bool tbox_layout_tag(const tbox_html_node *node, const char *name) {
@@ -135,9 +137,10 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
     bool collapse = table_style->border_collapse;
     double sx = collapse ? 0.0 : table_style->border_spacing_x;
     double sy = collapse ? 0.0 : table_style->border_spacing_y;
-    tbox_vector rows, cells;
+    tbox_vector rows, cells, collapsed;
     tbox_vector_init(&rows, arena, sizeof(tbox_table_row), 0);
     tbox_vector_init(&cells, arena, sizeof(tbox_table_cell), 0);
+    tbox_vector_init(&collapsed, arena, sizeof(const tbox_html_node *), 0);
     tbox_table_column *columns = tbox_arena_alloc_zero(arena,
         sizeof(*columns) * TBOX_TABLE_MAX_COLUMNS);
     if (columns == NULL) return 0.0;
@@ -167,19 +170,23 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
                     columns[declared++] = (tbox_table_column){.group = child};
             }
         } else if (tbox_layout_tag(child, "tr")) {
-            /* visibility: collapse removes the row from the grid (CSS still
-             * lets it size columns; here it simply takes no part). */
+            /* visibility: collapse removes the row from the grid; its
+             * cells still size the columns. */
             if (!tbox_layout_style_or_default(styles, child)->visibility_collapse)
                 *(tbox_table_row *)tbox_vector_push(&rows) =
                     (tbox_table_row){.node = child, .group_id = group_id};
+            else
+                *(const tbox_html_node **)tbox_vector_push(&collapsed) = child;
         } else if (tbox_layout_table_section(child)) {
             group_id++;
             for (const tbox_html_node *row = child->first_child; row != NULL; row = row->next_sibling) {
-                if (tbox_layout_tag(row, "tr") &&
-                    tbox_layout_style_or_default(styles, row)->display != TBOX_STYLE_DISPLAY_NONE &&
-                    !tbox_layout_style_or_default(styles, row)->visibility_collapse)
+                if (!tbox_layout_tag(row, "tr") ||
+                    tbox_layout_style_or_default(styles, row)->display == TBOX_STYLE_DISPLAY_NONE) continue;
+                if (!tbox_layout_style_or_default(styles, row)->visibility_collapse)
                     *(tbox_table_row *)tbox_vector_push(&rows) =
                         (tbox_table_row){.node = row, .group = child, .group_id = group_id};
+                else
+                    *(const tbox_html_node **)tbox_vector_push(&collapsed) = row;
             }
             group_id++;
         }
@@ -220,57 +227,162 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
             cursor += span;
         }
     }
+    /* Column widths, after CSS 2.1's automatic table layout as browsers do
+     * it: every column has a min- and max-content width from its cells,
+     * and maybe a declared px width or a percentage of the table. */
     for (size_t c = 0; c < column_count; c++) {
         tbox_table_column *col = &columns[c];
-        if (col->group != NULL)
-            col->min_width = tbox_layout_table_css_width(tbox_layout_style_or_default(styles, col->group), *table_width);
-        if (col->node != NULL) {
-            double width = tbox_layout_table_css_width(tbox_layout_style_or_default(styles, col->node), *table_width);
-            if (width > 0.0) col->min_width = width;
+        const tbox_style *declared_style[2] = { col->group != NULL ? tbox_layout_style_or_default(styles, col->group) : NULL,
+                                                col->node != NULL ? tbox_layout_style_or_default(styles, col->node) : NULL };
+        for (size_t d = 0; d < 2; d++) {
+            const tbox_style *style = declared_style[d];
+            if (style == NULL)
+                continue;
+            double width = tbox_layout_table_css_width(style, *table_width); /* min/max-width applied */
+            if (style->width.kind == TBOX_STYLE_LENGTH_PERCENT && style->width.value > 0.0)
+                col->percent = style->width.value;
+            else if (width > 0.0)
+                col->fixed = col->min_width = col->max_width = width;
         }
     }
     /* table-layout: fixed sizes columns from the <col>s and the first row's
      * declared widths alone, never from content; the rest of the width is
      * shared by the columns left without one. */
     bool fixed = table_style->table_layout_fixed && table_style->width.kind != TBOX_STYLE_LENGTH_AUTO;
-    for (size_t i = 0; i < cells.length; i++) {
-        const tbox_table_cell *cell = tbox_vector_at(&cells, i);
-        const tbox_style *style = tbox_layout_style_or_default(styles, cell->node);
-        if (fixed && (cell->row != 0 || style->width.kind == TBOX_STYLE_LENGTH_AUTO)) continue;
-        double css_width = tbox_layout_table_css_width(style, *table_width);
-        double edges = tbox_layout_resolve_edge(style->padding[1], *table_width) +
-            tbox_layout_resolve_edge(style->padding[3], *table_width) +
-            tbox_style_border_side_width(style, 1) + tbox_style_border_side_width(style, 3);
-        double minimum = 0.0;
-        const tbox_font_face *face = tbox_layout_style_face(fonts, style);
-        if (face != NULL && !fixed) {
-            double natural = tbox_layout_table_longest_word(face,
-                tbox_html_node_text_content(arena, cell->node), style->letter_spacing);
-            minimum = natural;
-        }
-        minimum += edges;
-        double css_outer = css_width +
-            (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? 0.0 : edges);
-        if (css_outer > minimum) minimum = css_outer;
-        double current = sx * (cell->columns - 1);
-        for (size_t c = cell->column; c < cell->column + cell->columns; c++) current += columns[c].min_width;
-        if (minimum > current) {
-            double each = (minimum - current) / cell->columns;
-            for (size_t c = cell->column; c < cell->column + cell->columns; c++) columns[c].min_width += each;
+    /* The cells that size the columns: the grid's, plus those of collapsed
+     * rows, placed left to right (row SIZE_MAX). */
+    tbox_vector measured;
+    tbox_vector_init(&measured, arena, sizeof(tbox_table_cell), cells.length);
+    for (size_t i = 0; i < cells.length; i++)
+        *(tbox_table_cell *)tbox_vector_push(&measured) = *(const tbox_table_cell *)tbox_vector_at(&cells, i);
+    for (size_t r = 0; r < collapsed.length; r++) {
+        size_t cursor = 0;
+        for (const tbox_html_node *cell = (*(const tbox_html_node **)tbox_vector_at(&collapsed, r))->first_child; cell != NULL; cell = cell->next_sibling) {
+            if (!tbox_layout_table_cell_node(cell) || tbox_layout_style_or_default(styles, cell)->display == TBOX_STYLE_DISPLAY_NONE) continue;
+            size_t span = tbox_layout_table_span(cell, "colspan", false);
+            if (cursor + span > column_count) break;
+            *(tbox_table_cell *)tbox_vector_push(&measured) = (tbox_table_cell){.node = cell, .row = SIZE_MAX, .column = cursor, .rows = 1, .columns = span};
+            cursor += span;
         }
     }
-    double minimum_total = sx * (column_count + 1);
-    for (size_t c = 0; c < column_count; c++) minimum_total += columns[c].min_width;
-    if (minimum_total > *table_width) *table_width = minimum_total;
-    double extra = *table_width - minimum_total;
-    size_t auto_columns = 0;
-    for (size_t c = 0; c < column_count; c++)
-        if (columns[c].min_width <= 0.0) auto_columns++;
+    /* Single-column cells first, so a spanning cell only adds what its
+     * columns lack. */
+    for (int pass = 0; pass < 2; pass++) {
+        for (size_t i = 0; i < measured.length; i++) {
+            const tbox_table_cell *cell = tbox_vector_at(&measured, i);
+            if ((cell->columns == 1) != (pass == 0))
+                continue;
+            const tbox_style *style = tbox_layout_style_or_default(styles, cell->node);
+            if (fixed && (cell->row != 0 || style->width.kind == TBOX_STYLE_LENGTH_AUTO)) continue;
+            double edges = tbox_layout_resolve_edge(style->padding[1], *table_width) +
+                tbox_layout_resolve_edge(style->padding[3], *table_width) +
+                tbox_style_border_side_width(style, 1) + tbox_style_border_side_width(style, 3);
+            tbox_layout_intrinsic content = { 0.0, 0.0 };
+            if (!fixed)
+                content = tbox_layout_intrinsic_content(arena, cell->node, styles, fonts, images);
+            double minimum = content.min + edges, maximum = content.max + edges;
+            double css_width = style->width.kind == TBOX_STYLE_LENGTH_PERCENT ? 0.0 : tbox_layout_table_css_width(style, *table_width);
+            double css_outer = css_width > 0.0 ? css_width + (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? 0.0 : edges) : 0.0;
+            if (css_outer > minimum) minimum = css_outer;
+            if (style->width.kind == TBOX_STYLE_LENGTH_PX) {
+                maximum = minimum;
+                if (cell->columns == 1 && css_outer > columns[cell->column].fixed)
+                    columns[cell->column].fixed = css_outer;
+            } else if (style->width.kind == TBOX_STYLE_LENGTH_PERCENT && cell->columns == 1 &&
+                       style->width.value > columns[cell->column].percent) {
+                columns[cell->column].percent = style->width.value;
+            }
+            if (maximum < minimum) maximum = minimum;
+            double current_min = sx * (cell->columns - 1), current_max = current_min;
+            for (size_t c = cell->column; c < cell->column + cell->columns; c++) {
+                current_min += columns[c].min_width;
+                current_max += columns[c].max_width;
+            }
+            for (size_t c = cell->column; c < cell->column + cell->columns; c++) {
+                if (minimum > current_min) columns[c].min_width += (minimum - current_min) / cell->columns;
+                if (maximum > current_max) columns[c].max_width += (maximum - current_max) / cell->columns;
+            }
+        }
+    }
+    double minimum_total = sx * (column_count + 1), maximum_total = minimum_total, percent_total = 0.0;
     for (size_t c = 0; c < column_count; c++) {
-        if (fixed && auto_columns > 0)
-            columns[c].width = columns[c].min_width + (columns[c].min_width <= 0.0 ? extra / auto_columns : 0.0);
-        else
-            columns[c].width = columns[c].min_width + (column_count > 0 ? extra / column_count : 0.0);
+        tbox_table_column *col = &columns[c];
+        if (col->fixed > col->min_width) col->min_width = col->fixed;
+        if (col->max_width < col->min_width) col->max_width = col->min_width;
+        if (col->fixed > 0.0) col->max_width = col->min_width;
+        minimum_total += col->min_width;
+        maximum_total += col->max_width;
+        percent_total += col->percent;
+    }
+    if (percent_total > 100.0) percent_total = 100.0;
+    if (table_style->width.kind == TBOX_STYLE_LENGTH_AUTO) {
+        /* An auto-width table is shrink-to-fit: as wide as its columns'
+         * max-content (grown so the percentages can hold), at most the
+         * available width. */
+        double wanted = maximum_total;
+        if (percent_total > 0.0) {
+            double other = 0.0;
+            for (size_t c = 0; c < column_count; c++) {
+                if (columns[c].percent > 0.0) {
+                    double need = columns[c].max_width * 100.0 / columns[c].percent + sx * (column_count + 1);
+                    if (need > wanted) wanted = need;
+                } else {
+                    other += columns[c].max_width;
+                }
+            }
+            if (percent_total < 100.0 && other > 0.0 && other * 100.0 / (100.0 - percent_total) + sx * (column_count + 1) > wanted)
+                wanted = other * 100.0 / (100.0 - percent_total) + sx * (column_count + 1);
+        }
+        if (wanted < *table_width) *table_width = wanted;
+    }
+    if (minimum_total > *table_width) *table_width = minimum_total;
+    double grid_width = *table_width - sx * (column_count + 1);
+    double extra = *table_width - minimum_total;
+    for (size_t c = 0; c < column_count; c++) columns[c].width = columns[c].min_width;
+    /* The room beyond the minimums goes first to the percentage columns,
+     * then to the fixed ones, then to the auto ones up to max-content,
+     * and what is left over to the auto columns in proportion to it. */
+    for (int stage = 0; stage < 3 && extra > 0.0; stage++) {
+        double want = 0.0;
+        for (size_t c = 0; c < column_count; c++) {
+            tbox_table_column *col = &columns[c];
+            double target = stage == 0 ? (col->percent > 0.0 ? grid_width * col->percent / 100.0 : 0.0) :
+                            stage == 1 ? (col->percent <= 0.0 && col->fixed > 0.0 ? col->fixed : 0.0) :
+                                         (col->percent <= 0.0 && col->fixed <= 0.0 ? col->max_width : 0.0);
+            if (target > col->width) want += target - col->width;
+        }
+        if (want <= 0.0) continue;
+        double share = extra < want ? extra / want : 1.0;
+        for (size_t c = 0; c < column_count; c++) {
+            tbox_table_column *col = &columns[c];
+            double target = stage == 0 ? (col->percent > 0.0 ? grid_width * col->percent / 100.0 : 0.0) :
+                            stage == 1 ? (col->percent <= 0.0 && col->fixed > 0.0 ? col->fixed : 0.0) :
+                                         (col->percent <= 0.0 && col->fixed <= 0.0 ? col->max_width : 0.0);
+            if (target > col->width) col->width += (target - col->width) * share;
+        }
+        extra -= want * share;
+    }
+    if (extra > 1e-9 && column_count > 0) {
+        /* Left over: auto columns by their max-content, else any column
+         * without a percentage, else all of them. */
+        for (int pool = 0; pool < 3 && extra > 1e-9; pool++) {
+            double weight = 0.0;
+            size_t members = 0;
+            for (size_t c = 0; c < column_count; c++) {
+                bool member = pool == 0 ? columns[c].percent <= 0.0 && columns[c].fixed <= 0.0 :
+                              pool == 1 ? columns[c].percent <= 0.0 : true;
+                if (member) { weight += columns[c].max_width; members++; }
+            }
+            if (members == 0) continue;
+            for (size_t c = 0; c < column_count; c++) {
+                bool member = pool == 0 ? columns[c].percent <= 0.0 && columns[c].fixed <= 0.0 :
+                              pool == 1 ? columns[c].percent <= 0.0 : true;
+                if (member) columns[c].width += weight > 0.0 ? extra * columns[c].max_width / weight : extra / members;
+            }
+            extra = 0.0;
+        }
+    }
+    for (size_t c = 0; c < column_count; c++) {
         columns[c].x = x + sx;
         if (c > 0) columns[c].x = columns[c - 1].x + columns[c - 1].width + sx;
     }

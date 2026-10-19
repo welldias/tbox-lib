@@ -3,6 +3,10 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_TRUETYPE_TABLES_H
+#include FT_STROKER_H
+
+#include <limits.h>
+#include <math.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -63,7 +67,9 @@ tbox_font_face *tbox_font_face_load(const void *font_data, size_t size, double s
         return NULL;
     }
 
+    face->options           = (tbox_font_shaping_options){0};
     face->ft_face           = ft_face;
+    face->stroke_glyph      = NULL;
     face->font_data_copy    = font_data_copy;
     face->font_data_size    = size;
     face->kerning           = false;
@@ -103,6 +109,7 @@ void tbox_font_face_destroy(tbox_font_face *face) {
     /* The shaper and FT_Done_Face must run first: they stop reading
      * font_data_copy only once they return. */
     tbox_font_shaper_detach(face);
+    if (face->stroke_glyph != NULL) FT_Done_Glyph(face->stroke_glyph);
     FT_Done_Face(face->ft_face);
     free(face->font_data_copy);
     free(face);
@@ -142,14 +149,135 @@ double tbox_font_face_x_height(const tbox_font_face *face) {
     return face->ft_face->glyph->metrics.horiBearingY / 64.0;
 }
 
+double tbox_font_face_cap_height(const tbox_font_face *face) {
+    if (face == NULL)
+        return 0.0;
+    const TT_OS2 *os2 = (const TT_OS2 *)FT_Get_Sfnt_Table(face->ft_face, FT_SFNT_OS2);
+    if (os2 != NULL && os2->version >= 2 && os2->sCapHeight > 0)
+        return FT_MulFix(os2->sCapHeight, face->ft_face->size->metrics.y_scale) / 64.0;
+    if (FT_Load_Char(face->ft_face, 'H', FT_LOAD_DEFAULT) != 0)
+        return 0.0;
+    return face->ft_face->glyph->metrics.horiBearingY / 64.0;
+}
+
 bool tbox_font_face_has_glyph(const tbox_font_face *face, uint32_t codepoint) {
     return face != NULL && FT_Get_Char_Index(face->ft_face, (FT_ULong)codepoint) != 0;
+}
+
+/* Vertical_Orientation U (UAX #50), coarsely: the CJK, Hangul, Yi,
+ * kana, fullwidth and symbol blocks whose characters stand upright in
+ * vertical text with text-orientation: mixed. */
+static bool tbox_font_upright_codepoint(uint32_t c) {
+    static const uint32_t ranges[][2] = {
+        { 0x1100, 0x11FF },   { 0x2E80, 0x2FFF },   { 0x3000, 0x303F },   { 0x3040, 0x31FF },
+        { 0x3200, 0x4DBF },   { 0x4E00, 0x9FFF },   { 0xA000, 0xA4CF },   { 0xA960, 0xA97F },
+        { 0xAC00, 0xD7FF },   { 0xF900, 0xFAFF },   { 0xFE10, 0xFE1F },   { 0xFE30, 0xFE4F },
+        { 0xFF01, 0xFF60 },   { 0xFFE0, 0xFFE6 },   { 0x1F000, 0x1FAFF }, { 0x20000, 0x3FFFD },
+    };
+    for (size_t i = 0; i < sizeof(ranges) / sizeof(ranges[0]); i++)
+        if (c >= ranges[i][0] && c <= ranges[i][1])
+            return true;
+    return false;
+}
+
+/* Turns horizontally shaped glyphs into the face's vertical layout
+ * (docs/09-texto-e-fontes.md, "Escrita vertical"). The line is laid out in
+ * its frame as if it were horizontal; upright glyphs advance by 1em,
+ * centered on the central baseline, and are drawn turned back so
+ * they stand upright on the screen. text-combine-upright squeezes the
+ * whole text into one upright 1em square. In a transposed frame sideways
+ * glyphs are mirrored about the central baseline, so the transposition
+ * shows them turned clockwise like in vertical-rl. */
+static void tbox_font_orient(const tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_glyph *glyphs, size_t count, double *width) {
+    unsigned char frame = face->options.vertical_frame, orientation = face->options.vertical_orientation;
+    if (frame == TBOX_FONT_VERTICAL_NONE || count == 0 || (frame == TBOX_FONT_VERTICAL_ROTATED && orientation == TBOX_FONT_VERTICAL_SIDEWAYS))
+        return;
+    bool rotated   = frame == TBOX_FONT_VERTICAL_ROTATED;
+    double ascent  = face->ft_face->size->metrics.ascender / 64.0;
+    double descent = -face->ft_face->size->metrics.descender / 64.0;
+    double central = -(ascent - descent) / 2.0; /* from the alphabetic baseline */
+    unsigned char upright_orient = rotated ? TBOX_GLYPH_ORIENT_ROTATE_CCW : TBOX_GLYPH_ORIENT_TRANSPOSE;
+    /* Upright glyphs advance by 1em, with the alphabetic baseline at the
+     * ascent's share of it (what Firefox synthesizes without vmtx). */
+    double em       = (double)face->ft_face->size->metrics.y_ppem;
+    double em_top   = ascent + descent > 0.0 ? em * ascent / (ascent + descent) : ascent;
+    bool blank      = true; /* a space between combined words stays a space */
+    for (size_t i = 0; i < text.size && blank; i++)
+        blank = text.data[i] == ' ' || text.data[i] == '\t' || text.data[i] == '\n';
+    if (orientation == TBOX_FONT_VERTICAL_COMBINE && blank) {
+        if (rotated)
+            return;
+        orientation = TBOX_FONT_VERTICAL_SIDEWAYS;
+    }
+    if (orientation == TBOX_FONT_VERTICAL_COMBINE) {
+        double total = *width;
+        float scale  = total > em && total > 0.0 ? (float)(em / total) : 1.0f;
+        double top   = em_top;
+        for (size_t i = 0; i < count; i++) {
+            double offset    = (glyphs[i].x - total / 2.0) * scale;
+            glyphs[i].x      = top;
+            glyphs[i].y      = rotated ? central - offset : central + offset;
+            glyphs[i].advance = i == 0 ? em + letter_spacing : 0.0;
+            glyphs[i].orient = upright_orient;
+            glyphs[i].scale  = scale;
+        }
+        *width = em + letter_spacing;
+        return;
+    }
+    double pen = 0.0, shaped_pen = 0.0;
+    for (size_t i = 0; i < count; i++) {
+        tbox_glyph *glyph = &glyphs[i];
+        uint32_t codepoint = 0;
+        if (glyph->cluster < text.size)
+            tbox_utf8_decode(text.data, text.size, glyph->cluster, &codepoint);
+        bool upright = orientation == TBOX_FONT_VERTICAL_UPRIGHT || (orientation == TBOX_FONT_VERTICAL_MIXED && tbox_font_upright_codepoint(codepoint));
+        double advance = glyph->advance;
+        if (upright) {
+            bool cluster_end = i + 1 == count || glyphs[i + 1].cluster != glyph->cluster;
+            double spacing   = cluster_end ? letter_spacing : 0.0;
+            double h_advance = advance - spacing;
+            glyph->x       = pen + em_top;
+            glyph->y       = rotated ? central + h_advance / 2.0 : central - h_advance / 2.0;
+            glyph->advance = em + spacing;
+            glyph->orient  = upright_orient;
+        } else {
+            glyph->x = pen + (glyph->x - shaped_pen);
+            if (!rotated) {
+                glyph->y      = 2.0 * central - glyph->y;
+                glyph->orient = TBOX_GLYPH_ORIENT_FLIP;
+            }
+        }
+        shaped_pen += advance;
+        pen += glyph->advance;
+    }
+    *width = pen;
+}
+
+/* tbox_font_shaper_run plus the vertical orientation: a vertical face
+ * needs every glyph, even when the caller only wants the width. */
+static size_t tbox_font_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, tbox_glyph *out, size_t capacity, double *out_width) {
+    if (face->options.vertical_frame == TBOX_FONT_VERTICAL_NONE)
+        return tbox_font_shaper_run(face, text, letter_spacing, direction, out, capacity, out_width);
+    size_t count = tbox_font_shaper_run(face, text, letter_spacing, direction, out, capacity, out_width);
+    if (count <= capacity) {
+        tbox_font_orient(face, text, letter_spacing, out, count, out_width);
+        return count;
+    }
+    tbox_glyph *all = malloc(count * sizeof(*all));
+    if (all == NULL)
+        return count;
+    tbox_font_shaper_run(face, text, letter_spacing, direction, all, count, out_width);
+    tbox_font_orient(face, text, letter_spacing, all, count, out_width);
+    if (capacity > 0)
+        memcpy(out, all, capacity * sizeof(*all));
+    free(all);
+    return count;
 }
 
 /* Shapes `text` into a malloc'd array, growing it once if the shaper
  * reports more glyphs than the first guess. NULL (and *out_count 0) for
  * empty text, a NULL face or an allocation failure. */
-static tbox_glyph *tbox_font_shape_malloc(const tbox_font_face *face, tbox_string_view text, double letter_spacing, size_t *out_count, double *out_width) {
+static tbox_glyph *tbox_font_shape_malloc(const tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, size_t *out_count, double *out_width) {
     *out_count = 0;
     *out_width = 0.0;
     if (face == NULL || text.size == 0)
@@ -159,7 +287,7 @@ static tbox_glyph *tbox_font_shape_malloc(const tbox_font_face *face, tbox_strin
     tbox_glyph *glyphs           = malloc(capacity * sizeof(*glyphs));
     if (glyphs == NULL)
         return NULL;
-    size_t count = tbox_font_shaper_run(mutable_face, text, letter_spacing, glyphs, capacity, out_width);
+    size_t count = tbox_font_run(mutable_face, text, letter_spacing, direction, glyphs, capacity, out_width);
     if (count > capacity) {
         tbox_glyph *grown = realloc(glyphs, count * sizeof(*glyphs));
         if (grown == NULL) {
@@ -167,7 +295,7 @@ static tbox_glyph *tbox_font_shape_malloc(const tbox_font_face *face, tbox_strin
             return NULL;
         }
         glyphs = grown;
-        tbox_font_shaper_run(mutable_face, text, letter_spacing, glyphs, count, out_width);
+        tbox_font_run(mutable_face, text, letter_spacing, direction, glyphs, count, out_width);
     }
     *out_count = count;
     return glyphs;
@@ -179,7 +307,7 @@ static tbox_glyph *tbox_font_shape_malloc(const tbox_font_face *face, tbox_strin
 static void tbox_text_measurer_fill(tbox_text_measurer *measurer, const tbox_font_face *face, double letter_spacing, tbox_string_view text) {
     size_t glyph_count;
     double total;
-    tbox_glyph *glyphs = tbox_font_shape_malloc(face, text, letter_spacing, &glyph_count, &total);
+    tbox_glyph *glyphs = tbox_font_shape_malloc(face, text, letter_spacing, TBOX_FONT_DIRECTION_AUTO, &glyph_count, &total);
     double *cluster_width = text.size > 0 ? calloc(text.size, sizeof(*cluster_width)) : NULL;
     bool *cluster_start   = text.size > 0 ? calloc(text.size, sizeof(*cluster_start)) : NULL;
     measurer->prefix      = malloc((measurer->count + 1) * sizeof(*measurer->prefix));
@@ -271,7 +399,7 @@ double tbox_text_prefix_width(const tbox_font_face *face, double letter_spacing,
     return width;
 }
 
-bool tbox_font_shape(tbox_arena *arena, const tbox_font_face *face, tbox_string_view text, double letter_spacing,
+bool tbox_font_shape(tbox_arena *arena, const tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction,
                      double origin_x, uint32_t cluster_base, tbox_glyph **out_glyphs, size_t *out_count, double *out_width) {
     *out_glyphs = NULL;
     *out_count  = 0;
@@ -285,12 +413,12 @@ bool tbox_font_shape(tbox_arena *arena, const tbox_font_face *face, tbox_string_
     if (glyphs == NULL)
         return false;
     double width;
-    size_t count = tbox_font_shaper_run(mutable_face, text, letter_spacing, glyphs, capacity, &width);
+    size_t count = tbox_font_run(mutable_face, text, letter_spacing, direction, glyphs, capacity, &width);
     if (count > capacity) {
         glyphs = tbox_arena_alloc(arena, count * sizeof(*glyphs));
         if (glyphs == NULL)
             return false;
-        tbox_font_shaper_run(mutable_face, text, letter_spacing, glyphs, count, &width);
+        tbox_font_run(mutable_face, text, letter_spacing, direction, glyphs, count, &width);
     }
     for (size_t i = 0; i < count; i++) {
         glyphs[i].x += origin_x;
@@ -307,7 +435,7 @@ void tbox_font_shape_into(tbox_arena *arena, const tbox_font_face *face, tbox_st
                           const tbox_glyph **out_glyphs, size_t *out_count) {
     tbox_glyph *glyphs;
     size_t count;
-    if (!tbox_font_shape(arena, face, text, letter_spacing, 0.0, 0, &glyphs, &count, NULL)) {
+    if (!tbox_font_shape(arena, face, text, letter_spacing, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &glyphs, &count, NULL)) {
         glyphs = NULL;
         count  = 0;
     }
@@ -320,7 +448,7 @@ double tbox_font_measure_text_spaced(const tbox_font_face *face, tbox_string_vie
         return 0.0;
     }
     double width;
-    tbox_font_shaper_run((tbox_font_face *)face, text, letter_spacing, NULL, 0, &width);
+    tbox_font_run((tbox_font_face *)face, text, letter_spacing, TBOX_FONT_DIRECTION_AUTO, NULL, 0, &width);
     return width;
 }
 
@@ -333,6 +461,25 @@ tbox_font_glyph_bitmap tbox_font_rasterize_glyph(tbox_font_face *face, uint32_t 
         return (tbox_font_glyph_bitmap){ 0 };
     }
     return tbox_font_rasterize_glyph_id(face, FT_Get_Char_Index(face->ft_face, (FT_ULong)codepoint));
+}
+
+bool tbox_font_run_ink_bounds(const tbox_font_face *face, const tbox_glyph *glyphs, size_t count, double *top, double *bottom) {
+    bool found = false;
+    for (size_t i = 0; face != NULL && glyphs != NULL && i < count; i++) {
+        if (FT_Load_Glyph(face->ft_face, (FT_UInt)glyphs[i].id, FT_LOAD_DEFAULT) != 0)
+            continue;
+        const FT_Glyph_Metrics *metrics = &face->ft_face->glyph->metrics;
+        if (metrics->height <= 0 || metrics->width <= 0)
+            continue;
+        double y0 = glyphs[i].y - metrics->horiBearingY / 64.0;
+        double y1 = y0 + metrics->height / 64.0;
+        if (!found || y0 < *top)
+            *top = y0;
+        if (!found || y1 > *bottom)
+            *bottom = y1;
+        found = true;
+    }
+    return found;
 }
 
 tbox_font_glyph_bitmap tbox_font_rasterize_glyph_id(tbox_font_face *face, uint32_t glyph_id) {
@@ -356,5 +503,41 @@ tbox_font_glyph_bitmap tbox_font_rasterize_glyph_id(tbox_font_face *face, uint32
     bitmap.bearing_y = slot->bitmap_top;
     bitmap.advance   = slot->advance.x / 64.0;
     bitmap.alpha     = (bitmap.width > 0 && bitmap.height > 0) ? slot->bitmap.buffer : NULL;
+    return bitmap;
+}
+
+/* Stroke only: FreeType builds both borders of the glyph outline, leaving
+ * the interior unpainted. The radius is half the CSS stroke width. */
+tbox_font_glyph_bitmap tbox_font_rasterize_glyph_stroke(tbox_font_face *face, uint32_t glyph_id, double width) {
+    tbox_font_glyph_bitmap bitmap = {0};
+    if (face == NULL) return bitmap;
+    if (face->stroke_glyph != NULL) {
+        FT_Done_Glyph(face->stroke_glyph);
+        face->stroke_glyph = NULL;
+    }
+    if (!isfinite(width) || width <= 0.0 || width >= (double)LONG_MAX / 64.0) return bitmap;
+    if (FT_Load_Glyph(face->ft_face, (FT_UInt)glyph_id, FT_LOAD_DEFAULT | FT_LOAD_NO_BITMAP) != 0 ||
+        face->ft_face->glyph->format != FT_GLYPH_FORMAT_OUTLINE) return bitmap;
+    double advance = face->ft_face->glyph->advance.x / 64.0;
+    FT_Stroker stroker;
+    if (FT_Stroker_New(face->ft_face->glyph->library, &stroker) != 0) return bitmap;
+    FT_Fixed radius = (FT_Fixed)fmax(1.0, round(width * 32.0));
+    FT_Stroker_Set(stroker, radius, FT_STROKER_LINECAP_ROUND, FT_STROKER_LINEJOIN_ROUND, 0);
+    bool ok = FT_Get_Glyph(face->ft_face->glyph, &face->stroke_glyph) == 0 &&
+        FT_Glyph_Stroke(&face->stroke_glyph, stroker, true) == 0 &&
+        FT_Glyph_To_Bitmap(&face->stroke_glyph, FT_RENDER_MODE_NORMAL, NULL, true) == 0;
+    FT_Stroker_Done(stroker);
+    if (!ok) {
+        if (face->stroke_glyph != NULL) FT_Done_Glyph(face->stroke_glyph);
+        face->stroke_glyph = NULL;
+        return bitmap;
+    }
+    FT_BitmapGlyph glyph = (FT_BitmapGlyph)face->stroke_glyph;
+    bitmap.width = (int)glyph->bitmap.width;
+    bitmap.height = (int)glyph->bitmap.rows;
+    bitmap.bearing_x = glyph->left;
+    bitmap.bearing_y = glyph->top;
+    bitmap.advance = advance;
+    bitmap.alpha = bitmap.width > 0 && bitmap.height > 0 ? glyph->bitmap.buffer : NULL;
     return bitmap;
 }

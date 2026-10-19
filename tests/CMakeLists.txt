@@ -26,6 +26,7 @@ target_compile_definitions(tbox_tests PRIVATE
 # uses) rather than a synthetic image, so it needs an absolute base_dir to
 # join against regardless of ctest's own working directory.
 target_compile_definitions(tbox_tests PRIVATE
+    TBOX_TEST_COMPLEX_SHAPING=$<BOOL:${TBOX_HARFBUZZ_FOUND}>
     TBOX_TEST_ASSETS_DIR="${CMAKE_SOURCE_DIR}/tests/assets")
 
 if(TBOX_BUILD_STATIC)
@@ -34,7 +35,7 @@ else()
     target_link_libraries(tbox_tests PRIVATE tbox tbox_warnings tbox_sanitizers)
 endif()
 
-foreach(tbox_test_group arena list vector string number debug html_parser_tokenizer html_parser_tree html_xpath css_parser_tokenizer css_parser_parser css_selector css_cascade css_cascade_named_color css_cascade_color_convert css_cascade_color_parse style font image layout render output_raster context)
+foreach(tbox_test_group arena list vector string number bidi debug html_parser_tokenizer html_parser_tree html_xpath css_parser_tokenizer css_parser_parser css_selector css_cascade css_cascade_named_color css_cascade_color_convert css_cascade_color_parse style font image layout render output_raster context container_queries)
     add_test(NAME ${tbox_test_group} COMMAND tbox_tests ${tbox_test_group})
 endforeach()
 

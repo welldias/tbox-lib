@@ -547,6 +547,86 @@ static void tbox_test_raster_display_list_matches_direct_calls(int *failures_ptr
     *failures_ptr = failures;
 }
 
+/* Stroke order, hollow interiors, shaping equivalence and clipping. */
+static void tbox_test_raster_text_stroke(int *failures_ptr, const void *font_data, size_t font_size) {
+    int failures = *failures_ptr;
+    tbox_font_face *face = tbox_font_face_load(font_data, font_size, 48.0);
+    TBOX_TEST_ASSERT(face != NULL);
+    if (face == NULL) { *failures_ptr = failures; return; }
+    enum { WIDTH = 180, HEIGHT = 100, PIXELS = WIDTH * HEIGHT };
+    uint32_t normal[PIXELS], first[PIXELS], hollow[PIXELS], fill[PIXELS];
+    for (size_t i = 0; i < PIXELS; i++) normal[i] = first[i] = hollow[i] = fill[i] = 0xFFFFFFFFu;
+    tbox_paint_op op = {0};
+    op.kind = TBOX_PAINT_TEXT_RUN;
+    op.rect = (tbox_rect){ 25, 10, 95, 60 };
+    op.face = face;
+    op.text = tbox_test_raster_view_from_cstr("HO");
+    op.color = (tbox_css_rgba){ 255, 255, 0, 255 };
+    op.text_stroke_color = (tbox_css_rgba){ 204, 0, 0, 255 };
+    op.text_stroke_width = 3.0;
+    tbox_display_list list = { &op, 1 };
+    tbox_raster_display_list(normal, WIDTH, HEIGHT, &list);
+    op.text_stroke_first = true;
+    tbox_raster_display_list(first, WIDTH, HEIGHT, &list);
+    TBOX_TEST_ASSERT(memcmp(normal, first, sizeof(first)) != 0);
+    size_t normal_yellow = 0, first_yellow = 0;
+    for (size_t i = 0; i < PIXELS; i++) {
+        normal_yellow += normal[i] == 0xFFFFFF00u;
+        first_yellow += first[i] == 0xFFFFFF00u;
+    }
+    TBOX_TEST_ASSERT(first_yellow > normal_yellow && normal_yellow > 0);
+
+    op.text_stroke_width = 1.0;
+    op.color.a = 0;
+    tbox_raster_display_list(hollow, WIDTH, HEIGHT, &list);
+    op.color = (tbox_css_rgba){ 204, 0, 0, 255 };
+    op.text_stroke_width = 0;
+    tbox_raster_display_list(fill, WIDTH, HEIGHT, &list);
+    size_t hollow_pixels = 0, fill_pixels = 0, hollow_interiors = 0, outside = 0;
+    for (size_t i = 0; i < PIXELS; i++) {
+        hollow_pixels += hollow[i] != 0xFFFFFFFFu;
+        fill_pixels += fill[i] != 0xFFFFFFFFu;
+        hollow_interiors += fill[i] == 0xFFCC0000u && hollow[i] == 0xFFFFFFFFu;
+        outside += fill[i] == 0xFFFFFFFFu && hollow[i] != 0xFFFFFFFFu;
+    }
+    TBOX_TEST_ASSERT(hollow_pixels > 0 && hollow_pixels < fill_pixels && hollow_interiors > 0 && outside > 0);
+
+    /* The positioned glyph path and on-demand shaping paint the same ring. */
+    tbox_arena arena = tbox_arena_create(0);
+    tbox_glyph *glyphs = NULL;
+    size_t count = 0;
+    TBOX_TEST_ASSERT(tbox_font_shape(&arena, face, op.text, 0, TBOX_FONT_DIRECTION_AUTO, 0, 0, &glyphs, &count, NULL));
+    op.glyphs = glyphs; op.glyph_count = count;
+    op.color.a = 0; op.text_stroke_width = 1.0;
+    for (size_t i = 0; i < PIXELS; i++) first[i] = 0xFFFFFFFFu;
+    tbox_raster_display_list(first, WIDTH, HEIGHT, &list);
+    TBOX_TEST_ASSERT(memcmp(first, hollow, sizeof(first)) == 0);
+    if (count > 0) {
+        tbox_font_glyph_bitmap plain = tbox_font_rasterize_glyph_id(face, glyphs[0].id);
+        double advance = plain.advance;
+        tbox_font_glyph_bitmap stroke = tbox_font_rasterize_glyph_stroke(face, glyphs[0].id, 3.0);
+        TBOX_TEST_ASSERT(stroke.alpha != NULL && stroke.advance == advance && stroke.width > plain.width);
+        TBOX_TEST_ASSERT(tbox_font_rasterize_glyph_stroke(face, glyphs[0].id, 0).alpha == NULL);
+        TBOX_TEST_ASSERT(tbox_font_rasterize_glyph_stroke(face, glyphs[0].id, NAN).alpha == NULL);
+    }
+
+    op.text_stroke_width = 8.0;
+    op.has_clip = true; op.clip = (tbox_rect){ 35, 15, 25, 35 };
+    for (size_t i = 0; i < PIXELS; i++) first[i] = 0xFFFFFFFFu;
+    tbox_raster_display_list(first, WIDTH, HEIGHT, &list);
+    size_t clipped_pixels = 0, leaked_pixels = 0;
+    for (int y = 0; y < HEIGHT; y++) for (int x = 0; x < WIDTH; x++) {
+        if (first[y * WIDTH + x] != 0xFFFFFFFFu) {
+            clipped_pixels++;
+            if (x < 35 || x >= 60 || y < 15 || y >= 50) leaked_pixels++;
+        }
+    }
+    TBOX_TEST_ASSERT(clipped_pixels > 0 && leaked_pixels == 0);
+    tbox_arena_destroy(&arena);
+    tbox_font_face_destroy(face);
+    *failures_ptr = failures;
+}
+
 /* A TEXT_RUN paints its glyphs as given (docs/08-layout-e-pintura.md,
  * "Texto como glifos posicionados"): shaped glyphs paint exactly like the
  * text-only fallback, moving a glyph moves its pixels, the op's text is
@@ -564,7 +644,7 @@ static void tbox_test_raster_glyph_runs(int *failures_ptr, const void *font_data
         tbox_glyph *glyphs;
         size_t count;
         double shaped_width;
-        TBOX_TEST_ASSERT(tbox_font_shape(&arena, face, text, 0.5, 0.0, 0, &glyphs, &count, &shaped_width));
+        TBOX_TEST_ASSERT(tbox_font_shape(&arena, face, text, 0.5, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &glyphs, &count, &shaped_width));
         TBOX_TEST_ASSERT(count == 3 && glyphs[0].cluster == 0 && glyphs[1].cluster == 1 && glyphs[2].cluster == 2);
         TBOX_TEST_ASSERT(shaped_width == tbox_font_measure_text_spaced(face, text, 0.5));
         TBOX_TEST_ASSERT(count == 3 && glyphs[2].x + glyphs[2].advance == shaped_width);
@@ -733,6 +813,36 @@ static void tbox_test_raster_image_pixelated(int *failures_ptr) {
     memset(pixels, 0, sizeof(pixels));
     tbox_raster_display_list(pixels, 4, 4, &list);
     TBOX_TEST_ASSERT(pixels[0] == 0 && pixels[2] == tbox_test_raster_xrgb(0, 255, 0));
+    *failures_ptr = failures;
+}
+
+/* A source rect paints only that part of the image (a border-image
+ * slice), scaled into the destination. */
+static void tbox_test_raster_image_source_rect(int *failures_ptr) {
+    int failures = *failures_ptr;
+    unsigned char source_pixels[4 * 1 * 4] = {
+        255, 0, 0, 255,   0, 255, 0, 255,   0, 0, 255, 255,   255, 255, 0, 255,
+    };
+    tbox_image source = { 4, 1, source_pixels };
+    tbox_paint_op op = { 0 };
+    op.kind = TBOX_PAINT_IMAGE;
+    op.rect = (tbox_rect){ 0, 0, 4, 1 };
+    op.image = &source;
+    op.image_pixelated = true;
+    op.has_source_rect = true;
+    op.source_rect = (tbox_rect){ 1, 0, 2, 1 };
+    op.color.a = 255;
+    tbox_display_list list = { &op, 1 };
+    uint32_t pixels[4] = { 0 };
+    tbox_raster_display_list(pixels, 4, 1, &list);
+    TBOX_TEST_ASSERT(pixels[0] == tbox_test_raster_xrgb(0, 255, 0) && pixels[1] == tbox_test_raster_xrgb(0, 255, 0));
+    TBOX_TEST_ASSERT(pixels[2] == tbox_test_raster_xrgb(0, 0, 255) && pixels[3] == tbox_test_raster_xrgb(0, 0, 255));
+    /* same size: copied as is */
+    op.rect = (tbox_rect){ 1, 0, 2, 1 };
+    op.image_pixelated = false;
+    memset(pixels, 0, sizeof(pixels));
+    tbox_raster_display_list(pixels, 4, 1, &list);
+    TBOX_TEST_ASSERT(pixels[0] == 0 && pixels[1] == tbox_test_raster_xrgb(0, 255, 0) && pixels[2] == tbox_test_raster_xrgb(0, 0, 255) && pixels[3] == 0);
     *failures_ptr = failures;
 }
 
@@ -1330,6 +1440,24 @@ static void tbox_test_raster_damage_pixel_equivalence(int *failures_ptr, const v
         b[4].rect.width = tbox_font_measure_text(face, b[4].text);
         tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "changed text run");
 
+        /* Stroke changes must invalidate even when fill and text stay the
+         * same; wide outlines extend beyond the old text damage bounds. */
+        a[4].text_stroke_width = 3.0;
+        a[4].text_stroke_color = red;
+        memcpy(b, a, sizeof(a));
+        b[4].text_stroke_color = blue;
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "stroke recolor");
+        memcpy(b, a, sizeof(a));
+        b[4].text_stroke_first = true;
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "stroke paint order");
+        memcpy(b, a, sizeof(a));
+        b[4].text_stroke_width = 50;
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "wide stroke growth");
+        memcpy(b, a, sizeof(a));
+        b[4].text_stroke_width = 0;
+        tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "stroke removal");
+        a[4].text_stroke_width = 0;
+
         memcpy(b, a, sizeof(a));
         b[5].rect = (tbox_rect){ 60.2, 100.8, 18.0, 24.0 };
         tbox_test_damage_expect_equivalent(&failures, &list_a, &list_b, width, height, "moved and resized image");
@@ -1569,6 +1697,78 @@ static void tbox_test_raster_layer_damage(int *failures_ptr) {
     tbox_test_damage_expect_equivalent(failures_ptr, &le, &lf, w, h, "content moving under a blurred backdrop");
 }
 
+/* Transformed layers: the content paints untransformed and composites
+ * through the matrix -- a quarter turn moves a bar from horizontal to
+ * vertical, content outside the screen in its own coordinates can turn
+ * into view, the layer's clip is in screen coordinates, and partial
+ * repaints of a changing rotation match full ones. */
+static void tbox_test_raster_transformed_layers(int *failures_ptr) {
+    int failures = *failures_ptr;
+    const int32_t w = 40, h = 40;
+    tbox_css_rgba red = { 220, 30, 30, 255 };
+    uint32_t *pixels = tbox_test_raster_make_buffer(w, h, 0xFFFFFFFFu);
+    TBOX_TEST_ASSERT(pixels != NULL);
+    if (pixels == NULL) return;
+    /* a 20x4 bar at (10, 18), turned 90deg around (20, 20): x 18..22, y 10..30 */
+    tbox_paint_op turned[3] = { tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN), tbox_test_fill_op((tbox_rect){ 10, 18, 20, 4 }, red), tbox_test_layer_op(TBOX_PAINT_LAYER_END) };
+    turned[0].has_transform = true;
+    const double quarter[6] = { 0, 1, -1, 0, 40, 0 };
+    memcpy(turned[0].transform, quarter, sizeof(quarter));
+    tbox_display_list list = { turned, 3 };
+    tbox_raster_display_list(pixels, w, h, &list);
+    TBOX_TEST_ASSERT(pixels[12 * w + 20] == 0xFFDC1E1Eu && pixels[28 * w + 19] == 0xFFDC1E1Eu);
+    TBOX_TEST_ASSERT(pixels[20 * w + 12] == 0xFFFFFFFFu && pixels[20 * w + 28] == 0xFFFFFFFFu);
+    /* off screen in its own coordinates (y -30), on screen once moved */
+    for (int32_t i = 0; i < w * h; i++) pixels[i] = 0xFFFFFFFFu;
+    turned[1].rect = (tbox_rect){ 5, -30, 10, 10 };
+    const double down[6] = { 1, 0, 0, 1, 0, 40 };
+    memcpy(turned[0].transform, down, sizeof(down));
+    tbox_raster_display_list(pixels, w, h, &list);
+    TBOX_TEST_ASSERT(pixels[15 * w + 10] == 0xFFDC1E1Eu && pixels[25 * w + 10] == 0xFFFFFFFFu);
+    /* the layer clip (screen coordinates) cuts the turned bar at y 20 */
+    for (int32_t i = 0; i < w * h; i++) pixels[i] = 0xFFFFFFFFu;
+    turned[1].rect = (tbox_rect){ 10, 18, 20, 4 };
+    memcpy(turned[0].transform, quarter, sizeof(quarter));
+    turned[0].has_clip = true;
+    // list.items points at turned, so the raster call below reads it.
+    // cppcheck-suppress unreadVariable
+    turned[0].clip = (tbox_rect){ 0, 0, 40, 20 };
+    tbox_raster_display_list(pixels, w, h, &list);
+    TBOX_TEST_ASSERT(pixels[12 * w + 20] == 0xFFDC1E1Eu && pixels[25 * w + 20] == 0xFFFFFFFFu);
+    /* a singular matrix paints nothing */
+    for (int32_t i = 0; i < w * h; i++) pixels[i] = 0xFFFFFFFFu;
+    // list.items points at turned, so the raster call below reads it.
+    // cppcheck-suppress unreadVariable
+    turned[0].has_clip = false;
+    const double flat[6] = { 1, 0, 0, 0, 0, 0 };
+    memcpy(turned[0].transform, flat, sizeof(flat));
+    tbox_raster_display_list(pixels, w, h, &list);
+    bool untouched = true;
+    for (int32_t i = 0; i < w * h; i++) untouched = untouched && pixels[i] == 0xFFFFFFFFu;
+    TBOX_TEST_ASSERT(untouched);
+    free(pixels);
+    *failures_ptr = failures;
+
+    /* damage: the rotation changing, and a square moving inside a turned
+     * layer nested in another one */
+    tbox_css_rgba gray = { 120, 120, 120, 255 }, blue = { 30, 30, 220, 255 };
+    tbox_paint_op a[7] = { tbox_test_fill_op((tbox_rect){ 0, 0, 240, 20 }, gray), tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN),
+                           tbox_test_fill_op((tbox_rect){ 60, 50, 80, 30 }, red), tbox_test_layer_op(TBOX_PAINT_LAYER_BEGIN),
+                           tbox_test_fill_op((tbox_rect){ 70, 55, 10, 10 }, blue), tbox_test_layer_op(TBOX_PAINT_LAYER_END), tbox_test_layer_op(TBOX_PAINT_LAYER_END) };
+    const double turn30[6] = { 0.866, 0.5, -0.5, 0.866, 45.4, -38.3 };
+    a[1].has_transform = true;
+    memcpy(a[1].transform, turn30, sizeof(turn30));
+    a[3].color.a = 160;
+    tbox_paint_op b[7];
+    memcpy(b, a, sizeof(a));
+    b[1].transform[0] = b[1].transform[3] = 0.5;
+    tbox_display_list la = { a, 7 }, lb = { b, 7 };
+    tbox_test_damage_expect_equivalent(failures_ptr, &la, &lb, 240, 160, "rotation changing");
+    memcpy(b, a, sizeof(a));
+    b[4].rect.x = 110;
+    tbox_test_damage_expect_equivalent(failures_ptr, &la, &lb, 240, 160, "square moving in a turned layer");
+}
+
 /* Explicit radii change pixels and must invalidate even when no other
  * field of the gradient/display op changes. */
 static void tbox_test_raster_explicit_radial(int *failures_ptr) {
@@ -1735,6 +1935,7 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_backdrop_filter(&failures);
     tbox_test_raster_blend_modes(&failures);
     tbox_test_raster_layers(&failures);
+    tbox_test_raster_transformed_layers(&failures);
     tbox_test_raster_fill_rect_out_of_bounds(&failures);
     tbox_test_raster_fill_rect_paint_order(&failures);
     tbox_test_raster_fill_rect_alpha_blend(&failures);
@@ -1742,6 +1943,7 @@ int tbox_test_output_raster_run(void) {
     tbox_test_raster_image_basic(&failures);
     tbox_test_raster_image_scaling(&failures);
     tbox_test_raster_image_pixelated(&failures);
+    tbox_test_raster_image_source_rect(&failures);
     tbox_test_raster_image_alpha_blend(&failures);
     tbox_test_raster_image_out_of_bounds(&failures);
     tbox_test_raster_image_invalid_args(&failures);
@@ -1768,6 +1970,7 @@ int tbox_test_output_raster_run(void) {
         tbox_test_raster_text_run_basic(&failures, font_data, font_size);
         tbox_test_raster_display_list_matches_direct_calls(&failures, font_data, font_size);
         tbox_test_raster_glyph_runs(&failures, font_data, font_size);
+        tbox_test_raster_text_stroke(&failures, font_data, font_size);
         tbox_test_raster_damage_pixel_equivalence(&failures, font_data, font_size);
         tbox_test_raster_layer_damage(&failures);
         free(font_data);

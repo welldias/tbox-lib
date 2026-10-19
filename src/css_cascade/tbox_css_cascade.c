@@ -10,6 +10,9 @@
 #include "base/tbox_number.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
+#include "style/tbox_style_internal.h"
+#include "css_parser/tbox_css_stylesheet.h"
+#include "css_selector/tbox_css_selector_match.h"
 
 static bool tbox_css_media_equals(tbox_string_view view, const char *text) {
     return tbox_string_view_equal_ascii_ci(view, tbox_string_view_from_cstr(text));
@@ -154,23 +157,27 @@ static bool tbox_css_media_one(tbox_string_view query, double width, double heig
     return saw && (negate ? !result : result);
 }
 
-static bool tbox_css_media_matches(const tbox_css_media_condition *media, double width, double height, bool reduced_motion) {
+static bool tbox_css_media_matches(const tbox_css_media_condition *media, double width, double height, bool reduced_motion, const tbox_css_query_context *query) {
     for (; media != NULL; media = media->parent) {
+        if (media->container) {
+            if (!tbox_css_cascade_container_matches(media->query, query, width, height)) return false;
+            continue;
+        }
         if (width <= 0.0 || height <= 0.0) return false;
         bool matched = false;
-        tbox_string_view query = media->query;
-        while (query.size) {
+        tbox_string_view list = media->query;
+        while (list.size) {
             size_t end = 0;
             int depth = 0;
-            while (end < query.size) {
-                if (query.data[end] == '(') depth++;
-                else if (query.data[end] == ')') depth--;
-                else if (query.data[end] == ',' && depth == 0) break;
+            while (end < list.size) {
+                if (list.data[end] == '(') depth++;
+                else if (list.data[end] == ')') depth--;
+                else if (list.data[end] == ',' && depth == 0) break;
                 end++;
             }
-            matched |= tbox_css_media_one(tbox_string_view_make(query.data, end), width, height, reduced_motion);
-            query.data += end + (end < query.size);
-            query.size -= end + (end < query.size);
+            matched |= tbox_css_media_one(tbox_string_view_make(list.data, end), width, height, reduced_motion);
+            list.data += end + (end < list.size);
+            list.size -= end + (end < list.size);
         }
         if (!matched) return false;
     }
@@ -178,7 +185,7 @@ static bool tbox_css_media_matches(const tbox_css_media_condition *media, double
 }
 
 bool tbox_css_cascade_media_matches(const tbox_css_media_condition *media, double viewport_width, double viewport_height, bool reduced_motion) {
-    return tbox_css_media_matches(media, viewport_width, viewport_height, reduced_motion);
+    return tbox_css_media_matches(media, viewport_width, viewport_height, reduced_motion, NULL);
 }
 
 /* Copies `view`'s bytes into `arena`, returning a NEW tbox_string_view that
@@ -336,6 +343,11 @@ int tbox_css_cascade_priority_compare(const tbox_css_resolved_declaration *a,
     }
     int specificity = tbox_css_cascade_specificity_compare(a->specificity, b->specificity);
     if (specificity != 0) return specificity;
+    if (a->scope_hops != b->scope_hops) {
+        if (a->scope_hops == 0) return -1;
+        if (b->scope_hops == 0) return 1;
+        return a->scope_hops < b->scope_hops ? 1 : -1;
+    }
     return (a->source_order > b->source_order) - (a->source_order < b->source_order);
 }
 
@@ -349,6 +361,11 @@ static bool tbox_css_cascade_wins_or_ties(const tbox_css_resolved_declaration *c
  * one place. `winners` holds tbox_css_resolved_declaration items, one per
  * distinct property seen so far. */
 static void tbox_css_cascade_offer(tbox_vector *winners, const tbox_css_resolved_declaration *candidate) {
+    if (!tbox_style_opentype_declaration_valid(candidate->property, candidate->value) ||
+        !tbox_style_paint_declaration_valid(candidate->property, candidate->value) ||
+        !tbox_style_motion_declaration_valid(candidate->property, candidate->value)) return;
+    if (!tbox_style_composition_declaration_valid(candidate->property, candidate->value)) return;
+    if (!tbox_style_inline_declaration_valid(candidate->property, candidate->value)) return;
     tbox_css_resolved_declaration *existing = NULL;
     size_t winner_count                     = tbox_vector_length(winners);
     for (size_t w = 0; w < winner_count; w++) {
@@ -433,29 +450,29 @@ static bool tbox_css_cascade_targets_pseudo_element(const tbox_css_selector *sel
     return true;
 }
 
-static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting);
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting, const tbox_css_query_context *query);
 
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, 0.0, 0.0, false, false);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, 0.0, 0.0, false, false, NULL);
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, 0, 0.0, 0.0, false, false);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, 0, 0.0, 0.0, false, false, NULL);
 }
 
-tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, false);
+tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, false, query);
 }
 
-tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, state, viewport_width, viewport_height, reduced_motion, false);
+tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, state, viewport_width, viewport_height, reduced_motion, false, query);
 }
 
-tbox_css_computed_style tbox_css_cascade_resolve_starting_style_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, true);
+tbox_css_computed_style tbox_css_cascade_resolve_starting_style_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, true, query);
 }
 
-static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting) {
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting, const tbox_css_query_context *query) {
     tbox_css_computed_style result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (node == NULL) {
         return result;
@@ -479,15 +496,17 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
 
         for (size_t r = 0; r < ruleset_count; r++) {
             const tbox_css_ruleset *ruleset = &rulesets[r];
-            if (ruleset->media != NULL && !tbox_css_media_matches(ruleset->media, viewport_width, viewport_height, reduced_motion)) continue;
+            if (ruleset->media != NULL && !tbox_css_media_matches(ruleset->media, viewport_width, viewport_height, reduced_motion, query)) continue;
             if (ruleset->starting_style && !starting) continue;
 
             const tbox_css_selector *best_selector = NULL;
             tbox_css_specificity best_specificity  = { 0, 0, 0 };
+            size_t best_hops = 0;
             for (size_t s = 0; s < ruleset->selector_count; s++) {
                 const tbox_css_selector *selector = &ruleset->selectors[s];
+                size_t hops = 0;
                 if (pseudo == NULL) {
-                    if (!tbox_css_selector_matches(selector, node))
+                    if (!tbox_css_selector_scope_matches(ruleset->scope, node, selector, &hops))
                         continue;
                 } else {
                     /* The selector before its pseudo-element must match
@@ -496,13 +515,15 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
                     if (!tbox_css_cascade_targets_pseudo_element(selector, pseudo, state, &element_count))
                         continue;
                     tbox_css_selector element = { selector->simple_selectors, element_count };
-                    if (element.simple_selector_count > 0 && !tbox_css_selector_matches(&element, node))
+                    if (!tbox_css_selector_scope_matches(ruleset->scope, node, &element, &hops))
                         continue;
                 }
                 tbox_css_specificity specificity = tbox_css_cascade_specificity(selector);
-                if (best_selector == NULL || tbox_css_cascade_specificity_compare(specificity, best_specificity) > 0) {
+                if (best_selector == NULL || tbox_css_cascade_specificity_compare(specificity, best_specificity) > 0 ||
+                    (tbox_css_cascade_specificity_compare(specificity, best_specificity) == 0 && hops > 0 && (best_hops == 0 || hops < best_hops))) {
                     best_selector    = selector;
                     best_specificity = specificity;
+                    best_hops = hops;
                 }
             }
 
@@ -513,13 +534,14 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
             for (size_t d = 0; d < ruleset->declaration_count; d++) {
                 const tbox_css_declaration *declaration = &ruleset->declarations[d];
 
-                tbox_css_resolved_declaration candidate;
+                tbox_css_resolved_declaration candidate = {0};
                 candidate.ruleset     = ruleset;
                 candidate.selector    = best_selector;
                 candidate.origin      = origin;
                 candidate.property    = declaration->property;
                 candidate.value       = tbox_css_cascade_strip_important(declaration->value, &candidate.important);
                 candidate.specificity = best_specificity;
+                candidate.scope_hops = best_hops;
                 candidate.source_order = source_order++;
 
                 tbox_css_cascade_offer(&winners, &candidate);
@@ -545,9 +567,9 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
                     for (size_t d = 0; d < ruleset->declaration_count; d++) {
                         const tbox_css_declaration *declaration = &ruleset->declarations[d];
 
-                        tbox_css_resolved_declaration candidate;
-                        candidate.ruleset     = ruleset;
-                        candidate.selector    = ruleset->selector_count > 0 ? &ruleset->selectors[0] : NULL;
+                        tbox_css_resolved_declaration candidate = {0};
+                        /* ruleset/selector stay NULL (from the `{0}`): both
+                         * would point into `inline_sheet`, destroyed below. */
                         candidate.origin      = TBOX_CSS_ORIGIN_AUTHOR_INLINE;
                         /* Deep-copied into `scratch` (still alive -- only
                          * destroyed at the very end of this function, after
@@ -572,6 +594,30 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
                 }
             }
             tbox_css_stylesheet_destroy(inline_sheet);
+        }
+    }
+
+    /* Registered defaults must exist even on an element with no matching
+     * rules, so inherits:false can stop the inherited variable chain. */
+    for (size_t src = 0; src < source_count; src++) {
+        const tbox_css_stylesheet *sheet = sources[src].stylesheet;
+        if (sheet == NULL) continue;
+        for (const tbox_css_property_rule *rule = sheet->properties; rule != NULL; rule = rule->next) {
+            if (!tbox_css_media_matches(rule->media, viewport_width, viewport_height, reduced_motion, NULL)) continue;
+            bool later = false;
+            for (const tbox_css_property_rule *r = sheet->properties; r != rule; r = r->next)
+                if (tbox_string_view_equal(r->name, rule->name) && tbox_css_media_matches(r->media, viewport_width, viewport_height, reduced_motion, NULL)) later = true;
+            if (later) continue;
+            tbox_css_resolved_declaration *decl = NULL;
+            for (size_t i = 0; i < winners.length; i++) {
+                tbox_css_resolved_declaration *d = tbox_vector_at(&winners, i);
+                if (tbox_string_view_equal(d->property, rule->name)) { decl = d; break; }
+            }
+            if (decl == NULL) {
+                decl = tbox_vector_push(&winners);
+                *decl = (tbox_css_resolved_declaration){ .property = rule->name, .registered_default = true };
+            }
+            decl->registration = rule;
         }
     }
 

@@ -1,7 +1,7 @@
 # 6. Eventos e interatividade
 
-> - **Escopo:** como cliques, ponteiro, teclado e texto chegam ao documento; hit-test, delegação por seletor, bubbling, foco, pseudo-classes dinâmicas e rolagem.
-> - **Código relacionado:** `include/tbox/context.h`, `include/tbox/input.h`, `src/context/tbox_context_events.c`, `tbox_context_focus.c`, `tbox_context_hit_test.c`, `tbox_context_scroll.c`, `src/app/tbox_app.c`
+> - **Escopo:** como cliques, ponteiro, teclado e texto chegam ao documento; hit-test, delegação por seletor, bubbling, foco, pseudo-classes dinâmicas, rolagem e redimensionamento (`resize`).
+> - **Código relacionado:** `include/tbox/context.h`, `include/tbox/input.h`, `src/context/tbox_context_events.c`, `tbox_context_focus.c`, `tbox_context_hit_test.c`, `tbox_context_scroll.c`, `tbox_context_resize.c`, `src/app/tbox_app.c`
 > - **Veja também:** [Atualização da tela](05-atualizacao-da-tela.md), [Formulários e controles](10-formularios-e-controles.md), [Guia da API](03-guia-da-api.md)
 
 Polígonos de `clip-path` são testados no elemento e em todos os ancestrais,
@@ -224,6 +224,44 @@ ancestral rolável; `overscroll-behavior: contain` ou `none` (ou as formas
 lógicas e os lados de cada uma são aceitos, mas só o eixo vertical tem
 efeito. As formas `-x`/`-inline` de `overscroll-behavior` são aceitas sem
 efeito.
+
+## Redimensionar (`resize`)
+
+`resize: both | horizontal | vertical | block | inline | none` vale em
+caixas cujo `overflow` não é `visible` e no `<textarea>` (`block`/`inline`
+equivalem a `vertical`/`horizontal`, já que só há escrita horizontal). Essas
+caixas ganham uma alça no canto inferior direito da padding box (inferior
+esquerdo com `direction: rtl`): duas linhas diagonais cinza de 12px, por
+cima do conteúdo e das barras (a barra vertical encurta para não passar
+sob ela).
+
+O arrasto passa pelas mesmas funções da barra:
+`tbox_context_scrollbar_press` sobre a alça a captura (e não gera clique),
+`tbox_context_scrollbar_drag` muda o tamanho e
+`tbox_context_scrollbar_release` encerra. O tamanho arrastado fica no
+contexto (`ctx->resize_states`, uma entrada por nó, como os offsets de
+rolagem — nada global) e, a cada frame, substitui `width`/`height` do
+estilo resolvido (na medida do `box-sizing` do elemento) antes do layout.
+Assim ele sobrevive a re-estilizações, e `min-`/`max-width`/`height`
+continuam limitando. Se o elemento deixar de permitir aquele eixo, o
+estilo da folha volta a valer; nó removido do documento descarta a
+entrada.
+
+A alça é a parte `::-tbox-resizer`:
+
+```css
+.painel::-tbox-resizer { width: 16px; height: 16px; color: #2563eb; background-color: #eff6ff; border-radius: 3px; }
+```
+
+| Parte | O que muda | Padrão |
+|---|---|---|
+| `::-tbox-resizer` | `width`/`height` (tamanho da alça, que também é a área de clique), `color` (as linhas), fundo, borda, raio | 12×12, linhas `#808080`, sem fundo |
+
+O `<textarea>` tem `resize: none` por padrão, como os campos de texto de
+aplicativos nativos (os navegadores usam `both`); declare `resize` para
+ativar. Sobre a alça, `tbox_context_cursor_at` devolve `nwse-resize`
+(`nesw-resize` em rtl), `ew-resize` ou `ns-resize` conforme os eixos.
+Veja `tests/assets/158.html`.
 
 ## Cursor
 

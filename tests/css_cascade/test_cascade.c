@@ -26,8 +26,10 @@ static const tbox_css_resolved_declaration *find_cstr(const tbox_css_computed_st
     return tbox_css_computed_style_find(style, view_cstr(property));
 }
 
+int tbox_test_css_scope_run(void);
+
 int tbox_test_css_cascade_run(void) {
-    int failures = 0;
+    int failures = tbox_test_css_scope_run();
 
     /* 1: distinct properties from different rulesets coexist in the result. */
     {
@@ -569,7 +571,7 @@ int tbox_test_css_cascade_run(void) {
             snprintf(css, sizeof(css), "@media %s { p { color: red; } }", cases[i].query);
             tbox_css_stylesheet *sheet     = parse_css_cstr(css);
             tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
-            tbox_css_computed_style style  = tbox_css_cascade_resolve_in_viewport(&source, 1, p, 800.0, 600.0, false);
+            tbox_css_computed_style style  = tbox_css_cascade_resolve_in_viewport(&source, 1, p, 800.0, 600.0, false, NULL);
             TBOX_TEST_ASSERT_MSG((find_cstr(&style, "color") != NULL) == cases[i].expected, cases[i].query);
             tbox_css_computed_style_destroy(&style);
             tbox_css_stylesheet_destroy(sheet);
@@ -605,8 +607,8 @@ int tbox_test_css_cascade_run(void) {
         const tbox_html_node *p        = tbox_html_document_root(doc)->first_child;
         tbox_css_stylesheet *sheet     = parse_css_cstr("p { opacity: 1; } @starting-style { p { opacity: 0; } }");
         tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
-        tbox_css_computed_style normal   = tbox_css_cascade_resolve_in_viewport(&source, 1, p, 800.0, 600.0, false);
-        tbox_css_computed_style starting = tbox_css_cascade_resolve_starting_style_in_viewport(&source, 1, p, 800.0, 600.0, false);
+        tbox_css_computed_style normal   = tbox_css_cascade_resolve_in_viewport(&source, 1, p, 800.0, 600.0, false, NULL);
+        tbox_css_computed_style starting = tbox_css_cascade_resolve_starting_style_in_viewport(&source, 1, p, 800.0, 600.0, false, NULL);
         TBOX_TEST_ASSERT(find_cstr(&normal, "opacity") != NULL && text_eq(find_cstr(&normal, "opacity")->value, "1"));
         TBOX_TEST_ASSERT(find_cstr(&starting, "opacity") != NULL && text_eq(find_cstr(&starting, "opacity")->value, "0"));
         tbox_css_computed_style_destroy(&normal);

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8">
+    <title>157 — composição de máscaras e fragmentos</title>
+    <style>
+        body {
+            margin: 20px;
+            background: white;
+            color: #183040;
+            font-family: sans-serif;
+            font-size: 16px;
+        }
+
+        .row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 22px;
+        }
+
+        .sample {
+            width: 160px;
+        }
+
+        p {
+            margin: 0 0 10px;
+        }
+
+        .mask {
+            width: 140px;
+            height: 100px;
+            background: linear-gradient(135deg, #ed3050, #ffc52e, #007dd0);
+            mask-image: radial-gradient(circle at 40% 50%, black 38px, transparent 39px), linear-gradient(to right, transparent 35%, black 36%);
+            mask-repeat: no-repeat;
+        }
+
+        .add {
+            mask-composite: add;
+        }
+
+        .subtract {
+            mask-composite: subtract;
+        }
+
+        .intersect {
+            mask-composite: intersect;
+        }
+
+        .exclude {
+            mask-composite: exclude;
+        }
+
+        .text-sample {
+            width: 220px;
+        }
+
+        .text {
+            width: 180px;
+            line-height: 36px;
+        }
+
+        span {
+            padding: 4px 8px;
+            border: 2px solid #007b8a;
+            border-radius: 8px;
+            background: #ffe785;
+        }
+
+        .slice {
+            box-decoration-break: slice;
+            -webkit-box-decoration-break: slice;
+        }
+
+        .clone {
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
+        }
+
+        .reflect {
+            width: 140px;
+            height: 60px;
+            background: linear-gradient(to right, #007b8a, #8ed34f);
+            -webkit-box-reflect: below 4px linear-gradient(transparent, rgba(0, 0, 0, .4));
+        }
+
+        .inset {
+            width: 40px;
+            height: 20px;
+            background: #ffca38;
+            margin-left: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="row">
+        <div class="sample">
+            <p>add</p>
+            <div class="mask add"></div>
+        </div>
+        <div class="sample">
+            <p>subtract</p>
+            <div class="mask subtract"></div>
+        </div>
+        <div class="sample">
+            <p>intersect</p>
+            <div class="mask intersect"></div>
+        </div>
+        <div class="sample">
+            <p>exclude</p>
+            <div class="mask exclude"></div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="text-sample">
+            <p>slice</p>
+            <p class="text"><span class="slice">Uma faixa colorida em três linhas de texto.</span></p>
+        </div>
+        <div class="text-sample">
+            <p>clone</p>
+            <p class="text"><span class="clone">Uma faixa colorida em três linhas de texto.</span></p>
+        </div>
+    </div>
+    <p>reflect below</p>
+    <div class="reflect">
+        <div class="inset"></div>
+    </div>
+</body>
+
+</html>

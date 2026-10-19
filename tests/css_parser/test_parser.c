@@ -520,21 +520,31 @@ int tbox_test_css_parser_parser_run(void) {
             "@supports (display: grid) { b { color: red; } }"
             "@supports not (display: grid) { i { color: red; } }"
             "@supports (gap: 1px) and (transform: translateX(1px)) { u { color: red; } }"
-            "@supports (transform: rotate(5deg)) or (float: left) { s { color: red; } }"
+            "@supports (transform: rotateX(5deg)) or (float: left) { s { color: red; } }"
             "@supports selector(:nth-child(2n)) { p { color: red; @media (min-width: 1px) { q { color: red; } } } }"
             "@supports selector(::-webkit-thing) or font-tech(color-COLRv1) { em { color: red; } }"
             "@supports ((--x: 1) and (color: red)) or (bogus: 1) { h1 { color: red; } }"
             "@supports (color: red) and (gap: 1px) or (x: y) { h2 { color: red; } }"
             "span { color: blue; }");
         const tbox_css_ruleset *r = tbox_css_stylesheet_rulesets(ss);
-        const char *expected[] = { "a", "i", "u", "p", "h1", "span" };
-        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 6);
-        for (size_t i = 0; i < 6 && i < tbox_css_stylesheet_ruleset_count(ss); i++)
+        const char *expected[] = { "a", "b", "u", "s", "p", "h1", "span" }; /* `b`: grid; `s`: float */
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 7);
+        for (size_t i = 0; i < 7 && i < tbox_css_stylesheet_ruleset_count(ss); i++)
             TBOX_TEST_ASSERT(text_eq(r[i].selectors[0].simple_selectors[0].name, expected[i]));
         TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(filter: drop-shadow(1px 1px red))", strlen("(filter: drop-shadow(1px 1px red))"))));
         TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(filter: blur(2px))", strlen("(filter: blur(2px))"))));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(zoom: 1.5) and (resize: both)", strlen("(zoom: 1.5) and (resize: both)"))));
+        TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("(zoom: reset)", strlen("(zoom: reset)"))));
         TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(mix-blend-mode: multiply) and (mask-image: none)", strlen("(mix-blend-mode: multiply) and (mask-image: none)"))));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(border-image: none) and (border-image-outset: 0)", strlen("(border-image: none) and (border-image-outset: 0)"))));
         TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("(filter: url(#a))", strlen("(filter: url(#a))"))));
+        /* 2D transforms are supported, 3D functions (only flattened) not */
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(transform: rotate(5deg) scale(2) skewX(3deg))", strlen("(transform: rotate(5deg) scale(2) skewX(3deg))"))));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(rotate: 10deg) and (scale: 2) and (transform-origin: top left)", strlen("(rotate: 10deg) and (scale: 2) and (transform-origin: top left)"))));
+        TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("(transform: rotate3d(1, 0, 0, 5deg))", strlen("(transform: rotate3d(1, 0, 0, 5deg))"))));
+        TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("(transform: perspective(100px))", strlen("(transform: perspective(100px))"))));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(shape-outside: circle()) and (clear: both)", strlen("(shape-outside: circle()) and (clear: both)"))));
+        TBOX_TEST_ASSERT(tbox_css_supports(tbox_string_view_make("(unicode-bidi: isolate)", strlen("(unicode-bidi: isolate)"))));
         TBOX_TEST_ASSERT(!tbox_css_supports(tbox_string_view_make("display: flex", strlen("display: flex"))));
         tbox_css_stylesheet_destroy(ss);
     }
@@ -560,6 +570,43 @@ int tbox_test_css_parser_parser_run(void) {
             TBOX_TEST_ASSERT(text_eq(k[1].name, "quoted") && k[1].frame_count == 1);
             TBOX_TEST_ASSERT(text_eq(k[2].name, "inner") && k[2].media != NULL);
         }
+        tbox_css_stylesheet_destroy(ss);
+    }
+
+    /* Palette descriptors survive parsing; malformed names do not consume
+     * subsequent rules, and conditional rules keep their media condition. */
+    {
+        tbox_css_stylesheet *ss = parse_cstr(
+            "@font-palette-values --demo { font-family: Sans; base-palette: dark; override-colors: 0 red, 1 blue; }"
+            "@font-palette-values invalid { base-palette: 2; }"
+            "@supports (font-palette: --demo) { @font-palette-values --nested { base-palette: 1; } }"
+            "@media (min-width: 1px) { @font-palette-values --media { base-palette: light; } } p { color: red; }");
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_font_palette_count(ss) == 3);
+        const tbox_css_font_palette_rule *palettes = tbox_css_stylesheet_font_palettes(ss);
+        TBOX_TEST_REQUIRE(palettes != NULL);
+        TBOX_TEST_ASSERT(text_eq(palettes[0].name, "--demo") && palettes[0].declaration_count == 3);
+        TBOX_TEST_ASSERT(text_eq(palettes[0].declarations[2].value, "0 red, 1 blue"));
+        TBOX_TEST_ASSERT(text_eq(palettes[1].name, "--nested") && palettes[1].media == NULL);
+        TBOX_TEST_ASSERT(text_eq(palettes[2].name, "--media") && palettes[2].media != NULL);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 1);
+        tbox_css_stylesheet_destroy(ss);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_font_palette_count(NULL) == 0 && tbox_css_stylesheet_font_palettes(NULL) == NULL);
+    }
+
+    /* Page margin boxes, strings and nested rules are discarded as one
+     * balanced block; ordinary rules on both sides survive. */
+    {
+        tbox_css_stylesheet *ss = parse_cstr(
+            "p { color: red; } @page :first { margin: 1in;"
+            " @top-left { content: \"}\"; color: blue; } @bottom-right { content: counter(page); } }"
+            "@media screen { @page named:left { @top-left { content: \"x\"; } } div { width: 40px; } }"
+            "span { color: green; }");
+        TBOX_TEST_REQUIRE(ss != NULL);
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 3);
+        const tbox_css_ruleset *rules = tbox_css_stylesheet_rulesets(ss);
+        TBOX_TEST_ASSERT(text_eq(rules[0].declarations[0].value, "red"));
+        TBOX_TEST_ASSERT(text_eq(rules[1].declarations[0].value, "40px"));
+        TBOX_TEST_ASSERT(text_eq(rules[2].declarations[0].value, "green"));
         tbox_css_stylesheet_destroy(ss);
     }
 

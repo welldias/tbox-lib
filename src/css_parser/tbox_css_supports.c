@@ -2,7 +2,7 @@
  * time: what tbox supports never changes while it runs. A declaration is
  * supported when tbox resolves the property, not when it accepts that
  * exact value -- except for the few values below that would mislead
- * feature detection (`display: grid`, rotation in `transform`...). */
+ * feature detection (3D functions in `transform`...). */
 
 #include <stdbool.h>
 #include <string.h>
@@ -12,14 +12,20 @@
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
 #include "tbox_css_parser.h"
+#include "style/tbox_style_internal.h"
 
 /* Every property tbox resolves (docs/referencia/css-suportado.md), plus
  * the print-only ones (break-*, orphans...), which correctly do nothing
  * on a screen. The 3D ones tbox accepts as no-ops (perspective,
  * transform-style, backface-visibility) stay out: answering true would
- * send pages down their 3D path. Keep in step with that table when a
+ * send pages down their 3D path. SVG-only marker* and mask-type also
+ * stay out, since tbox cannot draw SVG. Keep in step with that table when a
  * property changes status. */
 static const char *const tbox_css_supported_properties[] = {
+    "paint-order",
+    "-webkit-text-stroke",
+    "-webkit-text-stroke-width",
+    "-webkit-text-stroke-color",
     "accent-color",
     "align-content",
     "align-items",
@@ -72,6 +78,12 @@ static const char *const tbox_css_supported_properties[] = {
     "border-color",
     "border-end-end-radius",
     "border-end-start-radius",
+    "border-image",
+    "border-image-outset",
+    "border-image-repeat",
+    "border-image-slice",
+    "border-image-source",
+    "border-image-width",
     "border-inline",
     "border-inline-color",
     "border-inline-end",
@@ -105,6 +117,20 @@ static const char *const tbox_css_supported_properties[] = {
     "border-top-width",
     "border-width",
     "bottom",
+    "box-reflect",
+    "-webkit-box-reflect",
+    "box-decoration-break",
+    "-webkit-box-decoration-break",
+    "mask-composite",
+    "-webkit-mask",
+    "-webkit-mask-image",
+    "-webkit-mask-size",
+    "-webkit-mask-position",
+    "-webkit-mask-repeat",
+    "-webkit-mask-mode",
+    "-webkit-mask-origin",
+    "-webkit-mask-clip",
+    "-webkit-mask-composite",
     "box-shadow",
     "box-sizing",
     "break-after",
@@ -117,7 +143,19 @@ static const char *const tbox_css_supported_properties[] = {
     "clip-path",
     "color",
     "color-scheme",
+    "column-count",
+    "column-fill",
     "column-gap",
+    "column-rule",
+    "column-rule-color",
+    "column-rule-style",
+    "column-rule-width",
+    "column-span",
+    "column-width",
+    "columns",
+    "container",
+    "container-name",
+    "container-type",
     "content",
     "counter-increment",
     "counter-reset",
@@ -134,6 +172,7 @@ static const char *const tbox_css_supported_properties[] = {
     "flex-grow",
     "flex-shrink",
     "flex-wrap",
+    "float",
     "font",
     "font-family",
     "font-kerning",
@@ -142,12 +181,38 @@ static const char *const tbox_css_supported_properties[] = {
     "font-stretch",
     "font-style",
     "font-synthesis",
+    "font-feature-settings",
+    "font-variant-ligatures",
+    "font-variant-numeric",
+    "font-variant-east-asian",
+    "font-variant-alternates",
+    "font-language-override",
+    "font-palette",
     "font-variant",
     "font-variant-caps",
     "font-variant-position",
     "font-weight",
     "gap",
+    "grid",
+    "grid-template",
+    "grid-template-columns",
+    "grid-template-rows",
+    "grid-template-areas",
+    "grid-auto-columns",
+    "grid-auto-rows",
+    "grid-auto-flow",
+    "grid-row",
+    "grid-column",
+    "grid-area",
+    "grid-row-start",
+    "grid-row-end",
+    "grid-column-start",
+    "grid-column-end",
+    "justify-items",
+    "justify-self",
     "height",
+    "hanging-punctuation",
+    "initial-letter",
     "hyphenate-character",
     "hyphens",
     "image-rendering",
@@ -201,6 +266,12 @@ static const char *const tbox_css_supported_properties[] = {
     "mix-blend-mode",
     "object-fit",
     "object-position",
+    "offset",
+    "offset-path",
+    "offset-distance",
+    "offset-position",
+    "offset-anchor",
+    "offset-rotate",
     "opacity",
     "order",
     "orphans",
@@ -239,8 +310,11 @@ static const char *const tbox_css_supported_properties[] = {
     "pointer-events",
     "position",
     "quotes",
+    "resize",
     "right",
+    "rotate",
     "row-gap",
+    "scale",
     "scroll-behavior",
     "scroll-margin",
     "scroll-margin-block",
@@ -270,10 +344,14 @@ static const char *const tbox_css_supported_properties[] = {
     "scrollbar-color",
     "scrollbar-gutter",
     "scrollbar-width",
+    "shape-image-threshold",
+    "shape-margin",
+    "shape-outside",
     "tab-size",
     "table-layout",
     "text-align",
     "text-align-last",
+    "text-combine-upright",
     "text-decoration",
     "text-decoration-color",
     "text-decoration-line",
@@ -285,6 +363,7 @@ static const char *const tbox_css_supported_properties[] = {
     "text-emphasis-style",
     "text-indent",
     "text-justify",
+    "text-orientation",
     "text-overflow",
     "text-shadow",
     "text-transform",
@@ -295,12 +374,14 @@ static const char *const tbox_css_supported_properties[] = {
     "text-wrap-style",
     "top",
     "transform",
+    "transform-origin",
     "transition",
     "transition-delay",
     "transition-duration",
     "transition-property",
     "transition-timing-function",
     "translate",
+    "unicode-bidi",
     "user-select",
     "vertical-align",
     "visibility",
@@ -311,7 +392,9 @@ static const char *const tbox_css_supported_properties[] = {
     "word-break",
     "word-spacing",
     "word-wrap",
+    "writing-mode",
     "z-index",
+    "zoom",
 };
 
 /* Values accepted by tbox's `display`. */
@@ -322,6 +405,8 @@ static const char *const tbox_css_supported_displays[] = {
     "inline-block",
     "flex",
     "inline-flex",
+    "grid",
+    "inline-grid",
     "flow-root",
     "list-item",
     "-webkit-box",
@@ -338,10 +423,17 @@ typedef struct tbox_css_unsupported_function {
 } tbox_css_unsupported_function;
 
 static const tbox_css_unsupported_function tbox_css_unsupported_functions[] = {
-    { "transform",       "rotate"      },
-    { "transform",       "scale"       },
-    { "transform",       "skew"        },
-    { "transform",       "matrix"      },
+    /* 2D transforms are real; the 3D functions are only flattened, so a
+     * page testing for them must take its 2D path. A name matches as a
+     * prefix (`rotateX` also rejects `rotateXyz(`). */
+    { "transform",       "rotateX"     },
+    { "transform",       "rotateY"     },
+    { "transform",       "rotate3d"    },
+    { "transform",       "translateZ"  },
+    { "transform",       "translate3d" },
+    { "transform",       "scaleZ"      },
+    { "transform",       "scale3d"     },
+    { "transform",       "matrix3d"    },
     { "transform",       "perspective" },
     { "filter",          "url"         },
     { "backdrop-filter", "url"         },
@@ -400,6 +492,7 @@ static const char *const tbox_css_supported_pseudos[] = {
     "last-child",
     "only-child",
     "root",
+    "scope",
     "first-of-type",
     "last-of-type",
     "only-of-type",
@@ -477,12 +570,39 @@ static bool tbox_css_supports_declaration(tbox_string_view name, tbox_string_vie
         known = tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr(tbox_css_supported_properties[i]));
     if (!known)
         return false;
+    if (!tbox_style_paint_declaration_valid(name, value)) return false;
+    if (!tbox_style_motion_declaration_valid(name, value))
+        return false;
+    tbox_string_view composition = name;
+    if (tbox_string_view_starts_with_ascii_ci(composition, "-webkit-")) composition.data += 8, composition.size -= 8;
+    if (tbox_string_view_equal_ascii_ci(composition, tbox_string_view_from_cstr("box-reflect")) ||
+        tbox_string_view_equal_ascii_ci(composition, tbox_string_view_from_cstr("box-decoration-break")) ||
+        tbox_string_view_equal_ascii_ci(composition, tbox_string_view_from_cstr("mask")) ||
+        tbox_string_view_starts_with_ascii_ci(composition, "mask-"))
+        return tbox_style_composition_declaration_valid(name, value);
+    if (!tbox_style_inline_declaration_valid(name, value))
+        return false;
+    static const char *const opentype[] = {
+        "font-feature-settings", "font-variant-ligatures", "font-variant-numeric",
+        "font-variant-east-asian", "font-variant-alternates", "font-language-override",
+        "font-palette", "font-variant"
+    };
+    for (size_t i = 0; i < sizeof(opentype) / sizeof(opentype[0]); i++) {
+        if (!tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr(opentype[i]))) continue;
+        return tbox_style_opentype_declaration_valid(name, value);
+    }
     if (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("display"))) {
         for (size_t i = 0; i < sizeof(tbox_css_supported_displays) / sizeof(tbox_css_supported_displays[0]); i++)
             if (tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr(tbox_css_supported_displays[i])))
                 return true;
         return false;
     }
+    /* text-combine-upright: digits <n> is not supported. */
+    if (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("text-combine-upright")) && tbox_string_view_starts_with_ascii_ci(value, "digits"))
+        return false;
+    /* zoom: reset (the old user-zoom keyword) is not supported. */
+    if (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("zoom")) && tbox_string_view_equal_ascii_ci(value, tbox_string_view_from_cstr("reset")))
+        return false;
     for (size_t i = 0; i < sizeof(tbox_css_unsupported_functions) / sizeof(tbox_css_unsupported_functions[0]); i++)
         if (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr(tbox_css_unsupported_functions[i].property)) && tbox_css_supports_uses_function(value, tbox_css_unsupported_functions[i].function))
             return false;

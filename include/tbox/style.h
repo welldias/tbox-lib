@@ -5,6 +5,7 @@
 
 #include <tbox/css_cascade.h>
 #include <tbox/html_parser.h>
+#include <tbox/font.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,7 @@ typedef struct tbox_arena tbox_arena;
 /* Opaque: an element's custom properties (`--name: value`), see
  * tbox_style.custom_properties. */
 typedef struct tbox_style_custom_properties tbox_style_custom_properties;
+typedef struct tbox_style_counter_styles tbox_style_counter_styles;
 
 /* Not thread-safe: like the rest of tbox, there is no internal locking.
  *
@@ -85,9 +87,52 @@ typedef enum tbox_style_display {
     TBOX_STYLE_DISPLAY_INLINE_BLOCK, /* an atomic box inside a line */
     TBOX_STYLE_DISPLAY_FLEX,         /* block-level flex container */
     TBOX_STYLE_DISPLAY_INLINE_FLEX,  /* flex container placed like an inline-block */
+    TBOX_STYLE_DISPLAY_GRID,
+    TBOX_STYLE_DISPLAY_INLINE_GRID,
 } tbox_style_display;
 
 /* flexbox. Every enum's zero value is the CSS initial value. */
+/* `unicode-bidi` (CSS Writing Modes 3, 2.2). */
+typedef enum tbox_style_unicode_bidi {
+    TBOX_STYLE_UNICODE_BIDI_NORMAL,
+    TBOX_STYLE_UNICODE_BIDI_EMBED,
+    TBOX_STYLE_UNICODE_BIDI_ISOLATE,
+    TBOX_STYLE_UNICODE_BIDI_BIDI_OVERRIDE,
+    TBOX_STYLE_UNICODE_BIDI_ISOLATE_OVERRIDE,
+    TBOX_STYLE_UNICODE_BIDI_PLAINTEXT,
+} tbox_style_unicode_bidi;
+
+/* `writing-mode` (CSS Writing Modes 4, 3.1); the legacy `tb`/`tb-rl`
+ * values parse as vertical-rl and `lr`/`lr-tb`/`rl`/`rl-tb` as
+ * horizontal-tb. */
+typedef enum tbox_style_writing_mode {
+    TBOX_STYLE_WRITING_MODE_HORIZONTAL_TB,
+    TBOX_STYLE_WRITING_MODE_VERTICAL_RL,
+    TBOX_STYLE_WRITING_MODE_VERTICAL_LR,
+    TBOX_STYLE_WRITING_MODE_SIDEWAYS_RL,
+    TBOX_STYLE_WRITING_MODE_SIDEWAYS_LR,
+} tbox_style_writing_mode;
+
+/* `text-orientation` (CSS Writing Modes 4, 5.1). */
+typedef enum tbox_style_text_orientation {
+    TBOX_STYLE_TEXT_ORIENTATION_MIXED,
+    TBOX_STYLE_TEXT_ORIENTATION_UPRIGHT,
+    TBOX_STYLE_TEXT_ORIENTATION_SIDEWAYS,
+} tbox_style_text_orientation;
+
+/* The coordinate frame a vertical writing mode lays boxes out in
+ * (docs/08-layout-e-pintura.md, "Escrita vertical"): layout runs as if
+ * the text were horizontal and a frame maps those coordinates to the
+ * screen. NONE is the screen itself; ROTATE_CW turns them 90 degrees
+ * clockwise (vertical-rl, sideways-rl), TRANSPOSE swaps x and y
+ * (vertical-lr) and ROTATE_CCW turns them counterclockwise (sideways-lr). */
+typedef enum tbox_style_frame {
+    TBOX_STYLE_FRAME_NONE,
+    TBOX_STYLE_FRAME_ROTATE_CW,
+    TBOX_STYLE_FRAME_TRANSPOSE,
+    TBOX_STYLE_FRAME_ROTATE_CCW,
+} tbox_style_frame;
+
 typedef enum tbox_style_flex_direction {
     TBOX_STYLE_FLEX_DIRECTION_ROW, /* initial */
     TBOX_STYLE_FLEX_DIRECTION_ROW_REVERSE,
@@ -249,6 +294,7 @@ typedef enum tbox_style_list_style_type {
     TBOX_STYLE_LIST_STYLE_DISCLOSURE_OPEN,
     TBOX_STYLE_LIST_STYLE_DISCLOSURE_CLOSED,
     TBOX_STYLE_LIST_STYLE_NONE,
+    TBOX_STYLE_LIST_STYLE_CUSTOM,
 } tbox_style_list_style_type;
 
 /* `white-space`. AUTO (the zero value, never produced by CSS) acts as
@@ -307,6 +353,8 @@ typedef enum tbox_style_cursor {
     TBOX_STYLE_CURSOR_ROW_RESIZE,
     TBOX_STYLE_CURSOR_EW_RESIZE,
     TBOX_STYLE_CURSOR_NS_RESIZE,
+    TBOX_STYLE_CURSOR_NWSE_RESIZE, /* nwse-resize, nw-resize, se-resize */
+    TBOX_STYLE_CURSOR_NESW_RESIZE, /* nesw-resize, ne-resize, sw-resize */
     TBOX_STYLE_CURSOR_PROGRESS,
     TBOX_STYLE_CURSOR_COPY,
     TBOX_STYLE_CURSOR_ZOOM_IN,
@@ -368,8 +416,16 @@ typedef struct tbox_style_gradient {
     tbox_style_length radius[2]; /* explicit rx/ry; AUTO selects extent */
 } tbox_style_gradient;
 
+/* Painting stages; omitted paint-order stages follow the default order. */
+typedef enum tbox_style_paint_layer {
+    TBOX_STYLE_PAINT_FILL,
+    TBOX_STYLE_PAINT_STROKE,
+    TBOX_STYLE_PAINT_MARKERS
+} tbox_style_paint_layer;
+
 /* Properties `transition` and `animation` can interpolate. Each is one
- * value of up to 4 doubles (tbox_style_animatable_read/_write); shorthands
+ * value of up to TBOX_STYLE_ANIM_VALUE_SIZE doubles
+ * (tbox_style_animatable_read/_write); shorthands
  * such as `border-color` or `padding` stand for several of them. */
 typedef enum tbox_style_animatable {
     TBOX_STYLE_ANIM_COLOR,
@@ -411,8 +467,51 @@ typedef enum tbox_style_animatable {
     TBOX_STYLE_ANIM_OUTLINE_OFFSET,
     TBOX_STYLE_ANIM_LETTER_SPACING,
     TBOX_STYLE_ANIM_WORD_SPACING,
+    TBOX_STYLE_ANIM_ROTATE,             /* the `rotate` property: axis x, y, z, angle */
+    TBOX_STYLE_ANIM_SCALE,              /* the `scale` property: x, y */
+    TBOX_STYLE_ANIM_TRANSFORM_ORIGIN_X,
+    TBOX_STYLE_ANIM_TRANSFORM_ORIGIN_Y,
+    TBOX_STYLE_ANIM_OFFSET_DISTANCE,
+    TBOX_STYLE_ANIM_OFFSET_ROTATE,
+    TBOX_STYLE_ANIM_OFFSET_ANCHOR_X,
+    TBOX_STYLE_ANIM_OFFSET_ANCHOR_Y,
+    TBOX_STYLE_ANIM_OFFSET_POSITION_X,
+    TBOX_STYLE_ANIM_OFFSET_POSITION_Y,
+    TBOX_STYLE_ANIM_TRANSFORM_0,        /* one per `transform` function slot, see tbox_style_transform_function */
+    TBOX_STYLE_ANIM_TRANSFORM_LAST = TBOX_STYLE_ANIM_TRANSFORM_0 + 7,
+    TBOX_STYLE_ANIM_COLUMN_COUNT,
+    TBOX_STYLE_ANIM_COLUMN_WIDTH,
+    TBOX_STYLE_ANIM_COLUMN_GAP,
+    TBOX_STYLE_ANIM_COLUMN_RULE_WIDTH,
+    TBOX_STYLE_ANIM_COLUMN_RULE_COLOR,
+    TBOX_STYLE_ANIM_TEXT_STROKE_WIDTH,
+    TBOX_STYLE_ANIM_TEXT_STROKE_COLOR,
     TBOX_STYLE_ANIM_COUNT
 } tbox_style_animatable;
+
+/* Doubles per animatable value (tbox_style_animatable_read/_write). */
+#define TBOX_STYLE_ANIM_VALUE_SIZE 8
+
+/* `transform` functions. Each CSS function is stored as its primitive
+ * (CSS Transforms 2 §16): translateX/Y become TRANSLATE, scaleX/Y SCALE,
+ * skewX/Y SKEW, rotateZ ROTATE, and every 3D function MATRIX -- the 2D
+ * affine part of its 4x4 matrix (tbox has no 3D: an orthographic
+ * flattening). Unused slots are NONE. */
+#define TBOX_STYLE_MAX_TRANSFORMS 8
+
+typedef enum tbox_style_transform_kind {
+    TBOX_STYLE_TRANSFORM_NONE,
+    TBOX_STYLE_TRANSFORM_TRANSLATE, /* v: x %, x px, y %, y px (% of the border box) */
+    TBOX_STYLE_TRANSFORM_ROTATE,    /* v[0]: degrees, clockwise */
+    TBOX_STYLE_TRANSFORM_SCALE,     /* v[0], v[1]: x, y factors */
+    TBOX_STYLE_TRANSFORM_SKEW,      /* v[0], v[1]: x, y degrees */
+    TBOX_STYLE_TRANSFORM_MATRIX,    /* v: a b c d e f, as CSS matrix() */
+} tbox_style_transform_kind;
+
+typedef struct tbox_style_transform_function {
+    tbox_style_transform_kind kind;
+    double v[6];
+} tbox_style_transform_function;
 
 /* A timing function: cubic-bezier (the keywords are presets of it) or
  * steps(). */
@@ -445,6 +544,16 @@ typedef enum tbox_style_scroll_snap_align {
     TBOX_STYLE_SCROLL_SNAP_ALIGN_CENTER,
     TBOX_STYLE_SCROLL_SNAP_ALIGN_END,
 } tbox_style_scroll_snap_align;
+
+/* `resize`: the axes the user may resize by dragging the corner handle.
+ * `block` and `inline` map to vertical and horizontal (horizontal writing
+ * mode only). */
+typedef enum tbox_style_resize {
+    TBOX_STYLE_RESIZE_NONE, /* initial */
+    TBOX_STYLE_RESIZE_BOTH,
+    TBOX_STYLE_RESIZE_HORIZONTAL,
+    TBOX_STYLE_RESIZE_VERTICAL,
+} tbox_style_resize;
 
 typedef enum tbox_style_emphasis_mark {
     TBOX_STYLE_EMPHASIS_NONE, /* initial */
@@ -564,6 +673,92 @@ typedef struct tbox_style_clip_path {
     bool evenodd; /* polygon fill rule; false = nonzero */
 } tbox_style_clip_path;
 
+/* `float` (CSS 2.1 section 9.5), with the logical inline-start/-end
+ * already mapped through the containing block's `direction`. */
+typedef enum tbox_style_float {
+    TBOX_STYLE_FLOAT_NONE, /* initial */
+    TBOX_STYLE_FLOAT_LEFT,
+    TBOX_STYLE_FLOAT_RIGHT,
+} tbox_style_float;
+
+/* `clear`, logical values mapped like `float`. */
+typedef enum tbox_style_clear {
+    TBOX_STYLE_CLEAR_NONE, /* initial */
+    TBOX_STYLE_CLEAR_LEFT,
+    TBOX_STYLE_CLEAR_RIGHT,
+    TBOX_STYLE_CLEAR_BOTH,
+} tbox_style_clear;
+
+/* The reference box of `shape-outside`. */
+typedef enum tbox_style_shape_box {
+    TBOX_STYLE_SHAPE_BOX_MARGIN, /* initial */
+    TBOX_STYLE_SHAPE_BOX_BORDER,
+    TBOX_STYLE_SHAPE_BOX_PADDING,
+    TBOX_STYLE_SHAPE_BOX_CONTENT,
+} tbox_style_shape_box;
+
+typedef enum tbox_style_shape_outside_kind {
+    TBOX_STYLE_SHAPE_OUTSIDE_NONE,  /* initial: the float's margin box */
+    TBOX_STYLE_SHAPE_OUTSIDE_BOX,   /* a <shape-box> alone (its rounded corners) */
+    TBOX_STYLE_SHAPE_OUTSIDE_SHAPE, /* a basic shape in `box` */
+    TBOX_STYLE_SHAPE_OUTSIDE_IMAGE, /* url(): the alpha of `image` over the content box */
+} tbox_style_shape_outside_kind;
+
+/* `shape-outside` (CSS Shapes 1): the area inline content wraps around a
+ * float. `shape` reuses clip-path's basic shapes (its kind is never NONE
+ * for SHAPE). */
+typedef struct tbox_style_shape_outside {
+    tbox_style_shape_outside_kind kind;
+    tbox_style_shape_box box;
+    tbox_style_clip_path shape;
+    char image[256];
+} tbox_style_shape_outside;
+/* Motion Path 1. Path data is copied, like image URLs and polygon vertices;
+ * oversized/invalid declarations are ignored atomically. */
+#define TBOX_STYLE_MAX_OFFSET_PATH_DATA 4096
+
+typedef enum tbox_style_offset_path_kind {
+    TBOX_STYLE_OFFSET_PATH_NONE,
+    TBOX_STYLE_OFFSET_PATH_SVG,
+    TBOX_STYLE_OFFSET_PATH_SHAPE,
+    TBOX_STYLE_OFFSET_PATH_RAY,
+    TBOX_STYLE_OFFSET_PATH_BOX,
+} tbox_style_offset_path_kind;
+
+typedef enum tbox_style_coord_box {
+    TBOX_STYLE_COORD_BORDER_BOX,
+    TBOX_STYLE_COORD_PADDING_BOX,
+    TBOX_STYLE_COORD_CONTENT_BOX,
+    TBOX_STYLE_COORD_MARGIN_BOX,
+} tbox_style_coord_box;
+
+typedef struct tbox_style_offset_path {
+    tbox_style_offset_path_kind kind;
+    tbox_style_coord_box coord_box;
+    bool has_position;
+    union {
+        char data[TBOX_STYLE_MAX_OFFSET_PATH_DATA];
+        tbox_style_clip_path shape;
+        struct {
+            double angle;
+            unsigned char size; /* closest-side/corner, farthest-side/corner, sides */
+            bool contain;
+            tbox_style_length position[2];
+        } ray;
+    } value;
+} tbox_style_offset_path;
+
+typedef struct tbox_style_offset_position {
+    /* 0 = <position>, 1 = auto, 2 = normal (offset-position only). */
+    unsigned char mode;
+    tbox_style_length position[2];
+} tbox_style_offset_position;
+
+typedef struct tbox_style_offset_rotate {
+    bool auto_rotate;
+    double angle; /* reverse is auto + 180deg */
+} tbox_style_offset_rotate;
+
 typedef enum tbox_style_background_repeat {
     TBOX_STYLE_BACKGROUND_REPEAT_NO_REPEAT,
     TBOX_STYLE_BACKGROUND_REPEAT_REPEAT,
@@ -607,6 +802,76 @@ typedef struct tbox_style_background_layer {
 
 #define TBOX_STYLE_MAX_BACKGROUND_LAYERS 4
 
+/* Mask layers are listed front to back, like background images. */
+typedef enum tbox_style_mask_composite {
+    TBOX_STYLE_MASK_ADD,
+    TBOX_STYLE_MASK_SUBTRACT,
+    TBOX_STYLE_MASK_INTERSECT,
+    TBOX_STYLE_MASK_EXCLUDE,
+} tbox_style_mask_composite;
+
+typedef struct tbox_style_mask_layer {
+    tbox_style_background_layer source;
+    tbox_style_background_origin origin;
+    tbox_style_background_clip clip;
+    tbox_style_mask_composite composite;
+    bool luminance;
+    bool no_clip;
+} tbox_style_mask_layer;
+
+typedef enum tbox_style_reflect_direction {
+    TBOX_STYLE_REFLECT_NONE,
+    TBOX_STYLE_REFLECT_ABOVE,
+    TBOX_STYLE_REFLECT_BELOW,
+    TBOX_STYLE_REFLECT_LEFT,
+    TBOX_STYLE_REFLECT_RIGHT,
+} tbox_style_reflect_direction;
+
+typedef struct tbox_style_reflection {
+    tbox_style_reflect_direction direction;
+    char image[256];
+    tbox_style_length offset;
+    tbox_style_gradient gradient;
+} tbox_style_reflection;
+
+/* One `border-image-slice`/`-width`/`-outset` side. NUMBER: image pixels
+ * (slice) or a multiple of the side's border-width (width, outset);
+ * LENGTH: `length`, a percentage of the image (slice) or of the border
+ * image area (width); AUTO: the sliced image's own size (width only). */
+typedef enum tbox_style_border_image_kind {
+    TBOX_STYLE_BORDER_IMAGE_NUMBER,
+    TBOX_STYLE_BORDER_IMAGE_LENGTH,
+    TBOX_STYLE_BORDER_IMAGE_AUTO,
+} tbox_style_border_image_kind;
+
+typedef struct tbox_style_border_image_value {
+    tbox_style_border_image_kind kind;
+    double number;
+    tbox_style_length length;
+} tbox_style_border_image_value;
+
+typedef enum tbox_style_border_image_repeat {
+    TBOX_STYLE_BORDER_IMAGE_STRETCH, /* initial */
+    TBOX_STYLE_BORDER_IMAGE_REPEAT,
+    TBOX_STYLE_BORDER_IMAGE_ROUND,
+    TBOX_STYLE_BORDER_IMAGE_SPACE,
+} tbox_style_border_image_repeat;
+
+/* `border-image` (Backgrounds 3 section 6): the source (a url() image or a
+ * gradient, sized as the border image area) is cut into nine slices
+ * drawn into the border and, with `fill`, the middle. Sides are top,
+ * right, bottom, left; repeat[0] is horizontal (top/bottom edges),
+ * repeat[1] vertical. */
+typedef struct tbox_style_border_image {
+    char image[256];
+    tbox_style_gradient gradient;
+    tbox_style_border_image_value slice[4];  /* initial 100% */
+    bool fill;
+    tbox_style_border_image_value width[4];  /* initial 1 (the border width) */
+    tbox_style_border_image_value outset[4]; /* initial 0 */
+    tbox_style_border_image_repeat repeat[2];
+} tbox_style_border_image;
+
 /* Internal parts of form controls, styled from the document through
  * pseudo-elements named after the CSS Form Control Styling draft
  * (`input[type=range]::slider-thumb`, `select:focus::picker-icon`). The
@@ -633,6 +898,10 @@ typedef enum tbox_style_part {
     TBOX_STYLE_PART_SCROLLBAR_THUMB,        /* ::-tbox-scrollbar-thumb */
     TBOX_STYLE_PART_SCROLLBAR_THUMB_HOVER,  /* ::-tbox-scrollbar-thumb:hover */
     TBOX_STYLE_PART_SCROLLBAR_THUMB_ACTIVE, /* ::-tbox-scrollbar-thumb:active */
+    /* The `resize` handle in the end-bottom corner of a box the user may
+     * resize: width/height size it, color draws its grip lines,
+     * background/border/radius box it. */
+    TBOX_STYLE_PART_RESIZER,                /* ::-tbox-resizer */
     TBOX_STYLE_PART_COUNT,
 } tbox_style_part;
 
@@ -662,6 +931,40 @@ typedef enum tbox_style_caption_side {
     TBOX_STYLE_CAPTION_BOTTOM,
 } tbox_style_caption_side;
 
+/* Grid declarations own their text, including after standalone resolution.
+ * Empty track/area lists mean none; empty auto-track lists mean auto.
+ * Overlong declarations are ignored rather than truncated. */
+#define TBOX_STYLE_GRID_TEXT_SIZE 1024
+#define TBOX_STYLE_GRID_NAME_SIZE 64
+
+typedef struct tbox_style_grid_units {
+    double font_size, root_font_size, viewport_width, viewport_height;
+} tbox_style_grid_units;
+
+typedef struct tbox_style_grid_line {
+    int number; /* 0 = auto; signed line number or positive span count */
+    bool span;
+    char name[TBOX_STYLE_GRID_NAME_SIZE];
+} tbox_style_grid_line;
+typedef enum tbox_style_column_fill {
+    TBOX_STYLE_COLUMN_FILL_BALANCE,
+    TBOX_STYLE_COLUMN_FILL_AUTO,
+    TBOX_STYLE_COLUMN_FILL_BALANCE_ALL,
+} tbox_style_column_fill;
+
+typedef enum tbox_style_column_break {
+    TBOX_STYLE_COLUMN_BREAK_AUTO,
+    TBOX_STYLE_COLUMN_BREAK_AVOID,
+    TBOX_STYLE_COLUMN_BREAK_COLUMN,
+} tbox_style_column_break;
+
+enum {
+    TBOX_STYLE_HANG_FIRST = 1u,
+    TBOX_STYLE_HANG_LAST = 2u,
+    TBOX_STYLE_HANG_FORCE_END = 4u,
+    TBOX_STYLE_HANG_ALLOW_END = 8u
+};
+
 typedef struct tbox_style {
     /* Initial value in v0 is TBOX_STYLE_DISPLAY_BLOCK, NOT CSS2.1's
      * spec-correct `inline` -- a deliberate v0 simplification, since there
@@ -673,7 +976,8 @@ typedef struct tbox_style {
     /* 0 for a real element; 1 for a ::before box, 2 for ::after -- its
      * style table entry's node is a synthetic element (tag "::before" /
      * "::after", one TEXT child with the generated text) that only
-     * tbox_layout_build links into the tree, while it lays out. */
+     * tbox_layout_build links into the tree, while it lays out.
+     * 3 is a ::first-letter box made only by Layout (never a table entry). */
     unsigned char generated;
     tbox_style_overflow_y overflow_y;             /* initial: visible; auto scrolls, auto/hidden clip */
     tbox_style_overflow overflow_x;               /* initial: visible; auto/hidden clip horizontally, auto scrolls */
@@ -704,7 +1008,7 @@ typedef struct tbox_style {
     double marker_font_size;
     int marker_font_weight;
     bool marker_italic;
-    char marker_font_family[64];
+    char marker_font_family[TBOX_FONT_FAMILY_CAPACITY];
     bool marker_has_content;
     char marker_content[32];
     /* Form-control parts, only through tbox_style_resolve_tree and only
@@ -716,6 +1020,8 @@ typedef struct tbox_style {
     int line_clamp;                               /* `line-clamp`/`-webkit-line-clamp`: max lines, 0 is none */
     tbox_style_text_transform text_transform;     /* inheritable; initial NONE */
     tbox_style_list_style_type list_style_type;   /* inheritable */
+    char list_style_custom[256]; /* name, quoted string or symbols(); inheritable */
+    const tbox_style_counter_styles *counter_styles; /* frame arena; shared registry */
     bool pointer_events_none;                     /* inheritable; auto by default */
     tbox_style_length width, height;              /* also inline-size/block-size in horizontal LTR; initial: AUTO */
     tbox_style_size_keyword width_keyword;        /* min-/max-/fit-content; `width` is then AUTO */
@@ -733,6 +1039,10 @@ typedef struct tbox_style {
     bool text_indent_each_line;                   /* inheritable; also lines after a forced break */
     double word_spacing;                          /* inheritable; px; initial 0 */
     double letter_spacing;                        /* inheritable; px; initial 0 */
+    double initial_letter_size;                  /* non-inherited; 0 is normal, otherwise >= 1 lines */
+    int initial_letter_sink;                     /* baseline on this line (>= 1) */
+    unsigned hanging_punctuation;                /* inherited; TBOX_STYLE_HANG_* bits */
+    const struct tbox_style *first_letter;        /* ::first-letter style, owned by the style table arena */
     tbox_style_line_height_kind line_height_kind; /* inheritable */
     double line_height_value;                     /* multiplier or absolute px */
     tbox_css_rgba color;                          /* inheritable; initial (no parent): opaque black */
@@ -792,6 +1102,14 @@ typedef struct tbox_style {
     /* `font-kerning`: auto/normal apply the font's kerning pairs (the
      * initial value auto does), none disables them. Inheritable. */
     bool font_kerning_none;
+    /* Inherited OpenType selection, independent of the shaping backend. */
+    tbox_font_feature_settings font_feature_settings;
+    uint32_t font_variant_ligatures;
+    uint32_t font_variant_numeric;
+    uint32_t font_variant_east_asian;
+    bool font_variant_alternates;
+    uint32_t font_language_override;
+    char font_palette[64]; /* empty = normal; retained, no color glyph raster */
     /* `font-size-adjust` (inheritable): the wanted x-height as a fraction
      * of font-size; 0 is `none`. Layout scales the face's size so its
      * x-height matches; `em` keeps using font_size. */
@@ -824,9 +1142,26 @@ typedef struct tbox_style {
      * the positioned descendants of the nearest stacking parent. */
     int z_index;
     bool z_index_auto; /* initial true */
-    /* `transform: translate(...)`/`translateX/Y` and `translate`: a visual
-     * offset like `position: relative`'s, percentages of the border box. */
+    /* The `translate` property, percentages of the border box. With
+     * `rotate`, `scale` and `transform` it makes the element's transform
+     * (tbox_style_transform_matrix), applied in that order. */
     tbox_style_length translate_x, translate_y;
+    /* `rotate`: `rotate_angle` degrees around the axis (x, y, z); a zero
+     * axis means z. 0 degrees is `none`. */
+    double rotate_axis[3], rotate_angle;
+    /* `scale`: has_scale false is `none` (1 1). */
+    bool has_scale;
+    double scale[2];
+    tbox_style_offset_path offset_path;
+    tbox_style_length offset_distance;
+    tbox_style_offset_position offset_position, offset_anchor;
+    tbox_style_offset_rotate offset_rotate;
+    /* `transform`: up to TBOX_STYLE_MAX_TRANSFORMS functions, in order;
+     * all NONE is `none`. */
+    tbox_style_transform_function transforms[TBOX_STYLE_MAX_TRANSFORMS];
+    /* `transform-origin` x and y, from the border box's top-left;
+     * initial 50% 50% (the z value is ignored). */
+    tbox_style_length transform_origin[2];
     /* `text-align`. Inheritable, same mechanism as `color`/
      * `font_weight_bold` above (herda do pai já resolvido se não
      * declarado/reconhecido; `LEFT` -- o valor inicial -- sem pai). */
@@ -837,8 +1172,24 @@ typedef struct tbox_style {
     unsigned char text_align_logical;
     /* `direction: rtl` (inheritable; initial ltr). Flips the inline-start/
      * -end mapping of logical properties, `text-align: start/end` and the
-     * main axis of `flex-direction: row`; text is not reordered (no bidi). */
+     * main axis of `flex-direction: row`, and is the base direction of a
+     * block's bidi paragraphs (docs/09-texto-e-fontes.md, "Texto
+     * bidirecional"). */
     bool direction_rtl;
+    /* `writing-mode` and `text-orientation` (inheritable; initial
+     * horizontal-tb and mixed) and `text-combine-upright: all` (not
+     * inherited): see docs/08-layout-e-pintura.md, "Escrita vertical".
+     * Logical properties already map to physical sides through them. */
+    tbox_style_writing_mode writing_mode;
+    tbox_style_text_orientation text_orientation;
+    bool text_combine_upright;
+    /* Not CSS: the frame Layout remapped this style into (its physical
+     * sides and sizes turned into the frame's), NONE for every style the
+     * Style layer resolves. See tbox_style_frame. */
+    tbox_style_frame layout_frame;
+    /* `unicode-bidi` (not inherited; initial normal). The HTML `dir`
+     * attribute, <bdi> and <bdo> give a user-agent value below any CSS. */
+    tbox_style_unicode_bidi unicode_bidi;
     tbox_style_text_align_last text_align_last; /* inheritable */
     bool text_justify_none; /* inheritable; `text-justify: none` leaves justified lines at the start */
     /* `font-family`. Fixed buffer, NOT a tbox_string_view -- every
@@ -848,7 +1199,16 @@ typedef struct tbox_style {
      * docs/dev/historico.md's v12 Style section). Inheritable, same mechanism as
      * `color` above. `""` = no override anywhere in the inheritance chain --
      * the initial value. */
-    char font_family[64];
+    char font_family[TBOX_FONT_FAMILY_CAPACITY];
+    /* The x-height and the advance of "0" of that family's face, as
+     * fractions of the font size: what `ex` and `ch` resolve against.
+     * Measured through tbox_style_font_metrics where the family changes,
+     * inherited otherwise; 0 = unmeasured (CSS's 0.5em fallback). */
+    double ex_ratio, ch_ratio;
+    /* font_size derives from a keyword (the initial medium, small, ...,
+     * and em/% of such a size): it follows the generic monospace family's
+     * smaller medium (13px). False after a px/rem/calc() font-size. */
+    bool font_size_keyword;
     /* `font-style: italic`. Inheritable, same mechanism as
      * `font_weight_bold` above; initial value (no parent): false. */
     bool font_italic;
@@ -859,6 +1219,17 @@ typedef struct tbox_style {
     tbox_style_border_style text_decoration_style; /* solid, dashed, dotted or double */
     tbox_css_rgba text_decoration_color; /* initial: current text color */
     double text_decoration_thickness;    /* px; initial: 1 */
+    /* The ancestors' decorations this box's text also carries (CSS Text
+     * Decoration 3: a decoration is drawn across the inline content of
+     * every descendant, except atomic inlines, floats and out-of-flow
+     * boxes). Lines of all of them; style/color/thickness of the nearest
+     * decorating ancestor. Set by tbox_style_propagate_decoration. */
+    struct {
+        unsigned int lines;
+        tbox_style_border_style style;
+        tbox_css_rgba color;
+        double thickness;
+    } decoration_propagated;
     /* Inheritable. AUTO keeps the default underline position; PX is the
      * distance from the baseline to the underline's top edge. */
     tbox_style_length text_underline_offset;
@@ -871,6 +1242,16 @@ typedef struct tbox_style {
     char text_emphasis_string[16];
     tbox_css_rgba text_emphasis_color;
     bool text_emphasis_under;
+
+    /* Inherited HTML text painting; currentColor is distinct from transparent. */
+    double text_stroke_width;
+    tbox_css_rgba text_stroke_color;
+    bool text_stroke_current_color;
+    tbox_style_paint_layer paint_order[3];
+    /* SVG-only: inherited marker URLs (start/mid/end), empty means none;
+     * mask-type is non-inherited, false is luminance. No drawing effect. */
+    char marker_urls[3][256];
+    bool mask_type_alpha;
     /* `vertical-align`. NOT inheritable; initial value BASELINE. */
     tbox_style_vertical_align vertical_align;
     /* Only meaningful for VERTICAL_ALIGN_LENGTH: PX, or PERCENT of the
@@ -951,14 +1332,29 @@ typedef struct tbox_style {
     /* `mix-blend-mode`: how the element's layer composites onto what is
      * under it; not inheritable. */
     tbox_style_blend_mode mix_blend_mode;
-    /* `mask-image` and friends: one layer, painted like a background
-     * layer over the border box (mask-origin/-clip border-box) into the
-     * layer's mask. mask_luminance: `mask-mode: luminance` (the default
-     * match-source is alpha for images and gradients). Not inheritable. */
+    /* First-layer views retained for callers constructing styles directly. */
     bool has_mask;
     tbox_style_background_layer mask;
     bool mask_luminance;
+    size_t mask_layer_count;
+    tbox_style_mask_layer mask_layers[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
+    tbox_style_reflection box_reflect;
+    bool box_decoration_clone; /* initial slice; not inherited */
+    /* `border-image` and its longhands; has_border_image when the source
+     * is not `none`. It replaces the border-style painting (the widths
+     * still come from border-width/-style). Not inheritable. */
+    bool has_border_image;
+    tbox_style_border_image border_image;
     tbox_style_clip_path clip_path;
+    /* `float`/`clear` (none when absolutely positioned or a flex item;
+     * a float's display is blockified), `shape-outside`, `shape-margin`
+     * and `shape-image-threshold` (0..1). Not inheritable. */
+    tbox_style_float float_side;
+    tbox_style_clear clear;
+    tbox_style_shape_outside shape_outside;
+    tbox_style_length shape_margin;
+    double shape_image_threshold;
+    bool display_flow_root; /* `display: flow-root`: a block that is a BFC root */
     /* Replaced images: fit and position pixels inside their CSS content box.
      * Positions are percentages of the free space, or px offsets from the
      * left/top edge. Initial position is 50% 50%. */
@@ -982,6 +1378,17 @@ typedef struct tbox_style {
      * table; tbox_style_resolve alone has no arena and passes the parent's
      * on (its own `--x` declarations still apply to itself). NULL: none. */
     const tbox_style_custom_properties *custom_properties;
+    /* Container queries: `container-type` and `container-name` (the
+     * space-separated names, truncated to fit; empty for none), neither
+     * inheritable. `container-type: size`/`inline-size` also applies size
+     * containment on that axis (Layout ignores the content's size there). */
+    tbox_css_container_type container_type;
+    char container_name[64];
+    /* The query containers in scope for this element's descendants and
+     * pseudo-elements, nearest first: this element's own entry when it is
+     * a container, else its parent's chain. Set by tbox_style_resolve_tree
+     * (in its arena); NULL otherwise. cq* units resolve against it. */
+    const tbox_css_query_container *query_container;
     tbox_style_scrollbar_width scrollbar_width; /* not inheritable */
     bool scrollbar_gutter_stable; /* reserve the vertical scrollbar's inline-end space */
     tbox_style_overscroll overscroll_y; /* not inheritable */
@@ -992,18 +1399,44 @@ typedef struct tbox_style {
     /* On a snap target: its block-axis alignment, and `always`. */
     tbox_style_scroll_snap_align scroll_snap_align;
     bool scroll_snap_stop_always;
+    /* `resize` (not inheritable). Takes effect on boxes whose overflow is
+     * not visible and on <textarea>; see tbox_style_resize_allowed. */
+    tbox_style_resize resize;
+    /* `zoom`, stored as the effective factor: the product of the element's
+     * own zoom and every ancestor's. Already folded into every absolute
+     * length of this style (font sizes included, so em follows); layout
+     * also scales intrinsic image sizes by it. 0 in a hand-built style
+     * means 1 (read it through tbox_style_zoom). */
+    double zoom;
     /* flexbox, none inheritable. Container properties: */
     tbox_style_flex_direction flex_direction;
     tbox_style_flex_wrap flex_wrap;
     tbox_style_flex_justify justify_content, align_content;
     tbox_style_flex_align align_items;
-    tbox_style_length row_gap, column_gap; /* PX or PERCENT; AUTO (`normal`) = 0 */
+    int column_count; /* 0 = auto; not inherited */
+    tbox_style_length column_width; /* AUTO or positive PX; not inherited */
+    tbox_style_column_fill column_fill;
+    bool column_span_all;
+    double column_rule_width;
+    tbox_style_border_style column_rule_style;
+    tbox_css_rgba column_rule_color;
+    tbox_style_column_break break_before, break_after, break_inside;
+    tbox_style_length row_gap, column_gap; /* normal = 0 in flex, 1em in multicol */
     /* Item properties. flex_basis AUTO means `auto` (and `content`). A
      * hand-built, zero-initialized style has flex-shrink 0, not CSS's 1. */
     tbox_style_flex_align align_self;
     double flex_grow, flex_shrink; /* initial 0 and 1 */
     tbox_style_length flex_basis;
     int order;
+    tbox_style_grid_units grid_units[4]; /* template columns/rows, auto columns/rows */
+    char grid_template_columns[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_template_rows[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_template_areas[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_auto_columns[256], grid_auto_rows[256];
+    bool grid_auto_flow_column, grid_auto_flow_dense;
+    tbox_style_grid_line grid_row_start, grid_row_end;
+    tbox_style_grid_line grid_column_start, grid_column_end;
+    tbox_style_flex_align justify_items, justify_self;
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
 
@@ -1112,7 +1545,8 @@ typedef struct tbox_style {
  * `border-radius`; multiple and inset `box-shadow`, multiple `text-shadow`;
  * `z-index`; numeric `font-weight`, `font-stretch`, `font-variant:
  * small-caps`; `text-align-last`; `empty-cells`; `table-layout`;
- * `visibility: collapse`; `transform: translate()` and `translate`.
+ * `visibility: collapse`; `transform` (2D, 3D flattened), `translate`,
+ * `rotate`, `scale` and `transform-origin`.
  * Then (v19): CSS Color 4/5 colors, min()/max()/clamp(), intrinsic size
  * keywords, `place-*`, 3D border styles, `scrollbar-color`/`-width`,
  * `background-origin` and background layers, `text-wrap`/
@@ -1121,8 +1555,19 @@ typedef struct tbox_style {
  * basic shapes, `filter` color functions, custom properties and var(),
  * `list-style-image`, `::marker`, real `position: sticky`,
  * `font-kerning` and `hyphens`.
- * Out of scope: `float`, grid, transforms other than translation. */
+ * Then `float`, `clear` and `shape-outside`.
+ * Out of scope: real 3D transforms. */
 tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
+
+/* The text-decoration lines `style` declares itself (bit 0 underline, bit
+ * 1 line-through, bit 2 overline). */
+unsigned int tbox_style_decoration_lines(const tbox_style *style);
+
+/* Fills style->decoration_propagated from `parent` (its propagated lines
+ * plus its own), or clears it when `parent` is NULL or `style` is an
+ * atomic inline, a float or out of flow. Done by every resolve call;
+ * Layout uses it for the anonymous boxes it creates. */
+void tbox_style_propagate_decoration(tbox_style *style, const tbox_style *parent);
 
 /* tbox_style_resolve with a viewport size for the vw/vh/vmin/vmax units.
  * tbox_style_resolve passes 0x0, which makes those units invalid (the
@@ -1148,18 +1593,23 @@ tbox_css_rgba tbox_style_border_side_color(const tbox_style *style, size_t side)
  * interpolate it. */
 unsigned long long tbox_style_animatable_mask(tbox_string_view name);
 
-/* `property`'s value in `style` as 4 doubles: colors premultiplied
- * (r·a, g·a, b·a, a), lengths (value, px_offset, kind, 0), numbers
- * (value, 0, 0, 0), radii (horizontal, vertical, horizontal %, vertical %). */
-void tbox_style_animatable_read(const tbox_style *style, tbox_style_animatable property, double out[4]);
-void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable property, const double value[4]);
+/* `property`'s value in `style` as TBOX_STYLE_ANIM_VALUE_SIZE doubles
+ * (unused ones 0): colors premultiplied (r·a, g·a, b·a, a), lengths
+ * (value, px_offset, kind), numbers (value), radii (horizontal, vertical,
+ * horizontal %, vertical %), `rotate` (axis x, y, z, degrees), `scale`
+ * (x, y), a `transform` slot (kind, then the function's six `v`). */
+void tbox_style_animatable_read(const tbox_style *style, tbox_style_animatable property, double out[TBOX_STYLE_ANIM_VALUE_SIZE]);
+void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable property, const double value[TBOX_STYLE_ANIM_VALUE_SIZE]);
 
 /* False when the two values can't be blended (a length switching between
- * px, % and auto; `auto` accent/caret colors): the change happens at once. */
-bool tbox_style_animatable_interpolable(tbox_style_animatable property, const double from[4], const double to[4]);
+ * px, % and auto; `auto` accent/caret colors; `rotate` around different
+ * axes; two different `transform` functions in one slot): the change
+ * happens at once. */
+bool tbox_style_animatable_interpolable(tbox_style_animatable property, const double from[TBOX_STYLE_ANIM_VALUE_SIZE], const double to[TBOX_STYLE_ANIM_VALUE_SIZE]);
 
-/* `from` + (`to` - `from`) · `t`, componentwise. */
-void tbox_style_animatable_mix(const double from[4], const double to[4], double t, double out[4]);
+/* `from` + (`to` - `from`) · `t`, componentwise; an empty `transform`
+ * slot blends as the other side's identity function. */
+void tbox_style_animatable_mix(tbox_style_animatable property, const double from[TBOX_STYLE_ANIM_VALUE_SIZE], const double to[TBOX_STYLE_ANIM_VALUE_SIZE], double t, double out[TBOX_STYLE_ANIM_VALUE_SIZE]);
 
 /* The eased progress for a linear `progress` in [0, 1]. */
 double tbox_style_easing_apply(const tbox_style_easing *easing, double progress);
@@ -1171,9 +1621,25 @@ bool tbox_style_parse_easing_function(tbox_string_view text, tbox_style_easing *
 /* The `ease` preset, the initial timing function. */
 tbox_style_easing tbox_style_easing_default(void);
 
+/* True when `style` has a transform (`transform`, `translate`, `rotate`
+ * or `scale` other than none, or an offset-path): a stacking context and the containing
+ * block of its absolute and fixed descendants, as in CSS. */
+bool tbox_style_has_transform(const tbox_style *style);
+
+/* The element's transform for its border box at (x, y), width x height,
+ * as the 2D affine
+ * matrix (a b c d e f) of CSS matrix(): x' = a·x + c·y + e,
+ * y' = b·x + d·y + f, in the same coordinates as the box. Composed as CSS
+ * Transforms 2 §8: transform-origin, translate, rotate, scale, offset,
+ * transform, minus the origin. `offset` is the resolved Motion Path term
+ * relative to transform-origin (Layout resolves its containing block and
+ * samples the path); NULL means identity. False (and identity) when there
+ * is none. */
+bool tbox_style_transform_matrix(const tbox_style *style, double x, double y, double width, double height, const double offset[6], double out[6]);
+
 /* Whether Render paints the element on its own compositing layer:
  * opacity < 1, a filter with blur()/drop-shadow(), mix-blend-mode, a
- * mask, polygon clip-path or `isolation: isolate`. See docs/08-layout-e-pintura.md. */
+ * mask, reflection, polygon clip-path or `isolation: isolate`. See docs/08-layout-e-pintura.md. */
 bool tbox_style_needs_layer(const tbox_style *style);
 
 /* How far (px, each side) the layer's effects can reach past what it
@@ -1192,6 +1658,10 @@ typedef struct tbox_style_entry {
 typedef struct tbox_style_table {
     tbox_style_entry *items;
     size_t count;
+    /* Searched by tbox_style_table_find when `items` has no entry for a
+     * node: Layout overlays a vertical subtree's remapped styles on the
+     * resolved table this way. NULL for a table from the Style layer. */
+    const struct tbox_style_table *fallback;
 } tbox_style_table;
 
 /* `arena` is supplied by the caller (same pattern as tbox_layout_build and
@@ -1216,19 +1686,63 @@ tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node
 /* tbox_style_resolve_tree with a viewport size, see
  * tbox_style_resolve_in_viewport. */
 tbox_style_table tbox_style_resolve_tree_in_viewport(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height);
-tbox_style_table tbox_style_resolve_tree_in_viewport_with_preferences(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion);
+/* The laid-out content box of a query container (an element with
+ * `container-type` size or inline-size), fed back from a first layout
+ * pass so `@container` rules and cq* units can be decided. */
+typedef struct tbox_style_container_size {
+    const tbox_html_node *node;
+    double width, height;
+} tbox_style_container_size;
+
+/* Font metrics for `ex` and `ch`: `measure` fills the x-height and the
+ * advance of "0" of the face `font_family` selects (regular, upright), as
+ * fractions of the font size, or returns false to keep CSS's 0.5em
+ * fallback. Only called during the resolve call it is passed to; neither
+ * the struct nor `userdata` is kept. */
+typedef struct tbox_style_font_metrics {
+    bool (*measure)(void *userdata, const char *font_family, double *out_ex, double *out_ch);
+    void *userdata;
+} tbox_style_font_metrics;
+
+/* With `reduced_motion` for `@media (prefers-reduced-motion)`, and the
+ * query containers' sizes (`container_sizes`, NULL/0 when there is no
+ * layout yet: every container is then unmeasured, its size queries are
+ * false and cq* units fall back to the small viewport ones). `font_metrics`
+ * (NULL = none) measures `ex`/`ch` for each element whose font-family
+ * differs from its parent's. */
+tbox_style_table tbox_style_resolve_tree_in_viewport_with_preferences(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, const tbox_style_container_size *container_sizes, size_t container_size_count, const tbox_style_font_metrics *font_metrics);
+
+/* True when some entry of `table` is a size query container
+ * (`container-type` size or inline-size) -- when a frame needs the
+ * second, container-aware style pass. */
+bool tbox_style_table_has_size_containers(const tbox_style_table *table);
 
 /* Linear scan for `node`'s entry, same pattern as tbox_css_computed_style_find
  * and tbox_css_selector_match -- acceptable for UI-sized trees (tens to a
  * few thousand nodes); if O(n) per lookup ever becomes a measured
  * bottleneck, revisit alongside the dirty-tracking debt (only the
  * implementation would gain an auxiliary index, not this signature).
- * Returns NULL if table == NULL, node == NULL, or no entry has that node. */
+ * `table->fallback` is searched next. Returns NULL if table == NULL,
+ * node == NULL, or no entry has that node. */
 const tbox_style *tbox_style_table_find(const tbox_style_table *table, const tbox_html_node *node);
 
 /* `style`'s resolved control `part`, or NULL when its element has no such
  * part or the style didn't come from tbox_style_resolve_tree. */
 const tbox_style_part_style *tbox_style_part_find(const tbox_style *style, tbox_style_part part);
+
+/* The layout frame of `mode` (tbox_style_frame). */
+tbox_style_frame tbox_style_writing_mode_frame(tbox_style_writing_mode mode);
+
+/* The physical side (0 top, 1 right, 2 bottom, 3 left) that side `side`
+ * of `frame`'s coordinates lands on. */
+size_t tbox_style_frame_side(tbox_style_frame frame, size_t side);
+
+/* `style`'s effective zoom factor (1 when unset). */
+double tbox_style_zoom(const tbox_style *style);
+
+/* The axes `style`'s `resize` lets the user drag on its element: none
+ * unless overflow clips (not visible) or the element is a <textarea>. */
+tbox_style_resize tbox_style_resize_allowed(const tbox_style *style, bool textarea);
 
 /* Width of `style`'s vertical scrollbar in px: ::-tbox-scrollbar-track's
  * `width` (a % of `base`), else 10, or 6 for `scrollbar-width: thin`; 0 for

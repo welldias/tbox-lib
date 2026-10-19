@@ -271,7 +271,14 @@ void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *o
             const tbox_font_face *face = tbox_layout_style_face(ctx->fonts, style);
             if (face != NULL) {
                 tbox_string_view value = tbox_string_view_make(field->value, field->length);
-                double cursor_x = tbox_context_input_advance(box->node, face, value, field->cursor, style->letter_spacing);
+                /* The caret goes where its logical offset is drawn after
+                 * bidi reordering; an rtl field's text may also be
+                 * aligned away from the content box's left edge. */
+                double cursor_x = tbox_layout_is_password_input(box->node) ?
+                    tbox_context_input_advance(box->node, face, value, field->cursor, style->letter_spacing) :
+                    tbox_layout_bidi_caret_x(face, style->letter_spacing, value, field->cursor, style->direction_rtl);
+                if (style->direction_rtl && box->text_run_count > 0)
+                    cursor_x += box->text_runs[0].rect.x - box->content_box.x;
                 double visible_width = box->content_box.width - control_width - 1.0;
                 if (visible_width < 0.0) visible_width = 0.0;
                 if (cursor_x < field->scroll_x) field->scroll_x = cursor_x;

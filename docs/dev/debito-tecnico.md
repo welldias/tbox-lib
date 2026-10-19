@@ -177,7 +177,159 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 - **Regra até lá:** ver [Convenções](convencoes.md#estado-global-e-threads) —
   nenhum global/estático mutável novo sem discussão.
 
+### Limites das at-rules de cascata
+
+`@scope` não aceita `&` nem seletores relativos (`> p`; use `:scope > p`).
+`@property` não tem gramáticas compostas (`<length>+`, `|`), `currentColor`
+nem valor inicial relativo, e as propriedades registradas não fazem
+transição. `@counter-style`: até 64 símbolos, 16 intervalos de `range` e
+4096 repetições de `pad`.
+
+### Limites das container queries
+
+Uma iteração por frame: contêineres aninhados cujo tamanho depende de uma
+consulta a um contêiner externo usam o tamanho da primeira passada. O
+tamanho medido ignora transições em curso no próprio contêiner. Com
+contêiner presente, a árvore inteira é re-resolvida e o layout é feito
+duas vezes. `@keyframes`/`@font-face`/`@font-palette-values` dentro de
+`@container` são ignorados; escrita só horizontal; nomes até 64 bytes.
+Unidades `cq*` em listas de trilhas do grid e no valor inicial de
+`@property` caem nas `sv*`.
+
 ## Layout
+
+### Limites de `border-image`
+
+Sem `-webkit-border-image`; não é interpolável (transições trocam de uma
+vez); `border: inherit`/`initial` não zera o `border-image` (o shorthand
+`border` com valor comum zera); ladrilhos de `url()` alinhados a pixel
+inteiro podem ficar 1px fora do navegador; um trecho com mais de 4096
+ladrilhos não é desenhado; `border-radius` é ignorado sob a imagem.
+
+### Recursos OpenType
+
+Sem glifos coloridos (COLR/CPAL), `font-palette` e `@font-palette-values`
+não mudam o desenho; sem `@font-feature-values`, as funções de
+`font-variant-alternates` (`stylistic()`, `swash()`…) não têm efeito.
+Limites: 64 tags distintas em `font-feature-settings` e nomes de paleta de
+até 63 bytes. Sem HarfBuzz nada disso tem efeito.
+
+### Limites das transformações
+
+Controles com geometria interna (cursor de texto, slider, barra de rolagem,
+popups) não levam o ponteiro pela inversa da matriz; `backdrop-filter`
+dentro de uma caixa transformada lê só a própria camada; listas de
+`transform` com tipos diferentes trocam de uma vez (sem decomposição de
+matriz); até 8 funções; a camada transformada é re-rasterizada a cada frame
+em que suja; `rotate`/`translate` zero contam como `none` (sem contexto de
+empilhamento).
+
+### Limites do Grid
+
+Contribuições de itens com span sobre trilhas flexíveis usam partes iguais,
+sem todas as redistribuições do §11; até 128 trilhas por eixo, 256 nomes de
+linha e 64 áreas; sem escapes CSS em nomes; `last baseline` vira a
+primeira; sem `safe`/`unsafe`, `legacy`, subgrid nem fragmentação; itens
+absolutos só usam áreas que cabem nas trilhas existentes; listas de trilhas
+não interpolam.
+
+### Blur de `box-shadow` e fundo do canvas
+
+O blur de `box-shadow` sai mais largo e em faixas que no Firefox (visto ao
+testar a T02, com ou sem transformação). O fundo do `body` não se propaga
+para o canvas como no CSS (fixture 123).
+
+### Limites dos floats
+
+Floats são pintados depois do texto dos blocos em fluxo (aparece quando
+o texto cruza a área pintada fora da forma); a faixa de cada linha usa a
+`line-height` do bloco, não a altura final da linha; absolutos dentro de
+um float inline resolvem contra uma origem provisória; um BFC desvia de
+floats pela margin box (a CSS pede a border box); `shape-margin` é
+aproximado em `polygon()` e imagens; a geometria das formas está duplicada
+entre render e layout; `text-wrap: balance` é desligado quando há floats;
+formas não animam.
+
+### Limites de `zoom` e `resize`
+
+`zoom: reset` não existe e `zoom: inherit` vale 1; `zoom` não anima; partes
+embutidas dos controles e barras de rolagem não ampliam; `list-style-image`
+não escala. O tamanho arrastado com `resize` não tem API para ser zerado e
+só vale enquanto o eixo continuar permitido; `block`/`inline` supõem escrita
+horizontal.
+
+### Limites da multicoluna
+
+`column-span` só em filhos diretos; sem `orphans`/`widows`; `max-height`
+com altura `auto` é aplicado depois de fragmentar; flex, tabelas, imagens
+e multicolunas aninhadas são atômicos na fragmentação; até 4096 colunas.
+
+### Máscara de propriedades animáveis
+
+`tbox_style_animatable` usa uma máscara de 64 bits e está cheia (64
+entradas, 8 delas as posições de `transform`); `paint-order` ficou de fora
+por isso e não anima em `@keyframes` (troca na hora). A próxima propriedade
+animável exige trocar a máscara pública por um conjunto maior.
+
+### Limites do motion path
+
+Sem `url()` em `offset-path` (não há SVG); `offset-path` não interpola;
+expressões percentuais com limites em `offset-distance`/`-position`/
+`-anchor` interpolam de forma discreta; dados de `path()` até 4095 bytes,
+polígonos até 32 vértices, amostragem até 16384 segmentos.
+
+### `<br>` sozinho entre blocos
+
+Um `<br>` entre dois blocos não vira uma linha anônima (o navegador dá uma
+linha em branco); visto ao testar a multicoluna.
+
+### Limites do texto bidirecional
+
+No `<input>`, seleção, clique e setas seguem a ordem lógica (só o caret é
+visual); `<textarea>` e o rótulo do `<select>` não são reordenados; as
+reticências de `text-overflow` supõem LTR; com `unicode-bidi: plaintext`,
+`text-align: start` segue o `direction` do bloco; mais de 6 marcas
+aninhadas por palavra são ignoradas; o marcador de lista em `rtl` continua
+à esquerda.
+
+### Contorno em fontes bitmap
+
+`-webkit-text-stroke` exige glifos vetoriais; fontes só bitmap ficam sem
+contorno (falta um fallback por dilatação da máscara).
+
+### Limites de máscara e `box-decoration-break`
+
+Até quatro camadas de `mask`; `match-source` é alfa (sem SVG); `no-clip`
+fica limitado ao viewport. `box-decoration-break` não dá continuidade entre
+inlines aninhados de estilos diferentes, e o fundo de `slice` não é
+contínuo entre fragmentos. O fragmento inline usa a altura da linha, não a
+da área de conteúdo da fonte como no navegador (pré-existente).
+
+### Limites de `::first-letter` e `initial-letter`
+
+`::first-letter` não se propaga por blocos descendentes (aplique ao bloco
+que contém o texto), não trata grafemas/dígrafos completos, e `::first-line`
+continua sem estilo; `initial-letter` usa estilo uniforme no trecho e a
+altura sujeita ao arredondamento da fonte; `hanging-punctuation` só em
+escrita horizontal LTR.
+
+### Espaço em branco entre `inline-block`
+
+O tbox não dá largura ao espaço em branco entre caixas `inline-block`
+(o navegador dá um espaço da fonte): duas caixas que somadas cabem
+exatamente na linha ficam lado a lado no tbox e quebram no navegador.
+Visto nos fixtures 148 (1px) e 154/155 quando reformatados.
+
+### Limites da escrita vertical
+
+Imagens, fundos com imagem ou gradiente, `border-image` e sombras dentro do
+referencial giram junto com ele; `absolute`/`fixed` numa subárvore vertical
+usam a caixa que inicia o modo como referência, e o ancorado pelo fim do
+bloco cai na simplificação de altura `auto`; a medição intrínseca de uma
+caixa ortogonal não conhece a altura da janela; sem `vmtx`/`VORG` nem as
+features `vert`/`vrt2`; `text-combine-upright: digits` não existe;
+`overflow` e rolagem não trocam de eixo; tabelas e controles só giram; a
+tabela sobreposta copia os estilos da subárvore a cada frame.
 
 ### Margens negativas no collapsing entre irmãos
 
@@ -195,10 +347,12 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 
 ### Algoritmo CSS 2.1 §10.3.7 completo
 
-- **O que é:** `left`+`right` esticam a caixa, mas o sistema completo de
-  equações (incluindo shrink-to-fit quando largura e os dois lados são `auto`)
-  não está implementado.
-- **Quando revisitar:** um tooltip que precise "abraçar" o conteúdo.
+- **O que é:** `left`+`right` esticam a caixa, e sem um dos dois a largura
+  `auto` é shrink-to-fit, limitada ao espaço depois do deslocamento. O resto
+  do sistema de equações não está implementado: margens `auto` centrando a
+  caixa e `right` contra a posição estática.
+- **Quando revisitar:** um diálogo centrado por `margin: auto` com
+  `left: 0; right: 0`.
 
 ### Bloco dentro de um elemento inline
 
@@ -221,13 +375,52 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 - **Toca:** `tbox_css_parser_run` (ranqueamento) e a montagem das folhas
   em `tbox_context_open_with_options`.
 
-### Margem de listas aninhadas
+### Estilo das caixas anônimas copiado campo a campo
 
-- **O que é:** a folha UA só tem seletores de uma tag, sem a regra
-  `ul ul, ol ul… { margin: 0 }` dos navegadores; uma lista dentro de um
-  `<li>` ganha a margem vertical de lista. Contorno no autor:
-  `li > ul, li > ol { margin: 0 }`.
-- **Toca:** `src/context/tbox_ua_style.c` (`tbox_ua_build_selector`).
+- **O que é:** `tbox_layout_build_anonymous_box` monta o estilo do texto
+  solto de um bloco copiando as propriedades herdáveis uma a uma. Um campo
+  herdável novo que não entre nessa lista some do texto anônimo, embora
+  funcione em `<span>`. Foi o que aconteceu com `text-emphasis`.
+- **Quando revisitar:** na próxima propriedade herdável. O natural é partir
+  de uma cópia do estilo do contêiner e zerar só os campos não herdáveis.
+- **Toca:** `src/layout/tbox_layout_flow.c`.
+
+### Fallback de fonte por glifo
+
+- **O que é:** a lista de `font-family` escolhe uma face por run. Um glifo
+  que falta nela não é procurado no próximo nome nem no Fontconfig.
+- **Quando revisitar:** texto misturando escritas (latim com CJK ou emoji)
+  numa família que só cobre uma delas.
+- **Toca:** `tbox_font_face_cache_get_shaped` e o shaping por run.
+
+### Layout automático de tabela aproximado
+
+- **O que é:** as colunas usam min/max-content e `%`/px na ordem dos
+  navegadores, mas não reproduzem cada regra de distribuição. Células que
+  abrangem colunas dividem o excesso igualmente. `min-width` em célula é
+  respeitado, enquanto o Firefox o ignora. Tabelas sem espaçamento nem
+  outros recursos ainda passam pelo caminho simples
+  (`tbox_layout_table.c`), sem shrink-to-fit.
+- **Quando revisitar:** uma tabela real com larguras visivelmente diferentes
+  das do navegador, ou para unificar os dois caminhos.
+- **Toca:** `src/layout/tbox_layout_table_grid.c`, `tbox_layout_table.c`.
+
+### Padrão de `dashed` medido no Firefox
+
+- **O que é:** os segmentos dos lados tracejados reproduzem medidas do
+  Firefox, mas não o algoritmo dele. Com cantos, o número de segmentos é o
+  par mais próximo de (trecho + largura) / (3 × largura). Sem cantos, é o
+  ímpar mínimo com segmento de até 3× a largura. Lados vizinhos com estilos
+  diferentes, e o encontro de tracejado com raio pequeno, podem divergir.
+- **Toca:** `tbox_render_push_box_side`, `tbox_render_push_border_side`.
+
+### Quebra de linha do `<textarea>`
+
+- **O que é:** o `<textarea>` quebra uma palavra longa em qualquer
+  caractere. Não usa as oportunidades depois de `-` e de `/` que o texto
+  comum ganhou.
+- **Toca:** `src/layout/tbox_layout_textarea.c`,
+  `src/context/tbox_context_textarea.c`.
 
 ### Containing block de ancestral posicionado com `height: auto`
 

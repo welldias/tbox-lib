@@ -1,8 +1,14 @@
 #include "tbox_context_internal.h"
 #include "tbox_ua_style.h"
+#include "css_parser/tbox_css_stylesheet.h"
+
+typedef struct tbox_context_style_origin {
+    size_t start, end;
+    const tbox_html_node *parent;
+} tbox_context_style_origin;
 
 static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_list *list);
-static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder, const char *asset_base, tbox_string_view document_base);
+static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder, tbox_vector *origins, const char *asset_base, tbox_string_view document_base);
 
 static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_list *list) {
     if (ctx->select_fields == NULL && ctx->open_select == NULL && ctx->open_color == NULL && ctx->open_date == NULL && ctx->open_file == NULL && !ctx->has_file_input && !ctx->has_number_input && !ctx->has_range_input && !ctx->has_search_input && !ctx->has_gauge)
@@ -266,7 +272,7 @@ static void tbox_context_append_link_css(const tbox_html_node *node, tbox_string
     free(buffer);
 }
 
-static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder,
+static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder, tbox_vector *origins,
     const char *asset_base, tbox_string_view document_base) {
     if (node == NULL) {
         return;
@@ -274,13 +280,15 @@ static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_ht
 
     if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "style")) {
         tbox_string_view text = tbox_html_node_text_content(arena, node);
+        size_t start = builder->length;
         tbox_context_append_css(builder, text, (tbox_context_css_base){ NULL, asset_base, document_base }, 0);
+        *(tbox_context_style_origin *)tbox_vector_push(origins) = (tbox_context_style_origin){ start, builder->length, node->parent };
     }
     if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "link"))
         tbox_context_append_link_css(node, builder, asset_base, document_base);
 
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
-        tbox_context_collect_style_elements(arena, child, builder, asset_base, document_base);
+        tbox_context_collect_style_elements(arena, child, builder, origins, asset_base, document_base);
     }
 }
 
@@ -307,7 +315,9 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     tbox_string_view document_base = base_href != NULL ? base_href->value : tbox_string_view_make(NULL, 0);
     if (document_base.size > 0 && memchr(document_base.data, ':', document_base.size) != NULL)
         document_base = tbox_string_view_make(NULL, 0);
-    tbox_context_collect_style_elements(&scratch, tbox_html_document_root(document), &style_builder, options.asset_base_dir, document_base);
+    tbox_vector origins;
+    tbox_vector_init(&origins, &scratch, sizeof(tbox_context_style_origin), 0);
+    tbox_context_collect_style_elements(&scratch, tbox_html_document_root(document), &style_builder, &origins, options.asset_base_dir, document_base);
     tbox_string_view internal_css_text = tbox_string_builder_finish(&style_builder);
 
     tbox_css_stylesheet *internal_stylesheet = NULL;
@@ -317,6 +327,19 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
             tbox_arena_destroy(&scratch);
             tbox_html_document_destroy(document);
             return NULL;
+        }
+    }
+
+    if (internal_stylesheet != NULL) {
+        for (size_t i = 0; i < internal_stylesheet->ruleset_count; i++) {
+            for (const tbox_css_scope *scope = internal_stylesheet->rulesets[i].scope; scope != NULL; scope = scope->parent) {
+                if (scope->start_count != 0 || scope->parent != NULL) continue;
+                for (size_t j = 0; j < origins.length; j++) {
+                    const tbox_context_style_origin *origin = tbox_vector_at(&origins, j);
+                    if (scope->source_offset >= origin->start && scope->source_offset < origin->end)
+                        ((tbox_css_scope *)scope)->implicit_root = origin->parent;
+                }
+            }
         }
     }
 
@@ -418,6 +441,11 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->scroll_thumb_hover                                 = NULL;
     ctx->scroll_drag_grab_y                                 = 0.0;
     ctx->scroll_pointer_consumed                            = false;
+    ctx->resize_states                                      = NULL;
+    ctx->resize_drag_node                                   = NULL;
+    ctx->resize_drag_axes                                   = TBOX_STYLE_RESIZE_NONE;
+    ctx->resize_drag_rtl                                    = false;
+    ctx->resize_grab_x = ctx->resize_grab_y = ctx->resize_start_width = ctx->resize_start_height = 0.0;
     ctx->focus_scroll_pending                               = false;
     ctx->input_handler                                      = NULL;
     ctx->input_userdata                                     = NULL;
@@ -493,6 +521,7 @@ void tbox_context_close(tbox_context *ctx) {
         free(state);
         state = next;
     }
+    tbox_context_free_resize_states(ctx);
 
     /* Each binding owns its compiled query's own arena (see
      * tbox_css_selector_query_destroy) -- distinct from handler_arena,
@@ -517,6 +546,34 @@ void tbox_context_close(tbox_context *ctx) {
     tbox_html_document_destroy(ctx->document);
     tbox_arena_destroy(&ctx->frame_arena);
     free(ctx);
+}
+
+/* Appends the content box of every size query container under `box` to
+ * `sizes` (tbox_style_container_size). */
+/* tbox_style_font_metrics over the context's fonts: the regular upright
+ * face of `font_family`, loaded once at a 100px reference size. */
+static bool tbox_context_font_metrics(void *userdata, const char *font_family, double *out_ex, double *out_ch) {
+    const double size          = 100.0;
+    const tbox_font_face *face = tbox_font_face_cache_get_styled(userdata, tbox_string_view_from_cstr(font_family), 400, 100.0, false, size);
+    if (face == NULL)
+        return false;
+    *out_ex = tbox_font_face_x_height(face) / size;
+    *out_ch = tbox_font_measure_text(face, tbox_string_view_from_cstr("0")) / size;
+    return true;
+}
+
+static void tbox_context_collect_container_sizes(const tbox_layout_box *box, tbox_vector *sizes) {
+    for (; box != NULL; box = box->next_sibling) {
+        if (box->node != NULL && box->style != NULL && box->style->container_type != TBOX_CSS_CONTAINER_NORMAL) {
+            bool seen = false;
+            for (size_t i = 0; i < sizes->length && !seen; i++)
+                seen = ((const tbox_style_container_size *)tbox_vector_at_const(sizes, i))->node == box->node;
+            tbox_style_container_size *size = seen ? NULL : (tbox_style_container_size *)tbox_vector_push(sizes);
+            if (size != NULL)
+                *size = (tbox_style_container_size){ box->node, box->content_box.width, box->content_box.height };
+        }
+        tbox_context_collect_container_sizes(box->first_child, sizes);
+    }
 }
 
 void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double viewport_height, tbox_display_list *out_list) {
@@ -584,10 +641,26 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
         { ctx->stylesheet,          TBOX_CSS_ORIGIN_AUTHOR     },
         { ctx->internal_stylesheet, TBOX_CSS_ORIGIN_AUTHOR     },
     };
-    tbox_style_table styles = tbox_style_resolve_tree_in_viewport_with_preferences(&ctx->frame_arena, root, sources, 3, viewport_width, viewport_height, ctx->prefers_reduced_motion);
+    tbox_style_font_metrics metrics = { tbox_context_font_metrics, ctx->fonts };
+    const tbox_style_font_metrics *font_metrics = ctx->fonts != NULL ? &metrics : NULL;
+    tbox_style_table styles = tbox_style_resolve_tree_in_viewport_with_preferences(&ctx->frame_arena, root, sources, 3, viewport_width, viewport_height, ctx->prefers_reduced_motion, NULL, 0, font_metrics);
+    /* Container queries (docs/07-html-e-css.md, "@container"): style needs
+     * the containers' sizes, which come from layout. With a size container
+     * in the tree, a first layout measures them (size containment keeps
+     * their size independent of what the queries change inside), and the
+     * styles are resolved once more against those sizes. One iteration per
+     * frame; a tree without containers pays only the table scan. */
+    if (tbox_style_table_has_size_containers(&styles)) {
+        const tbox_layout_box *first = tbox_layout_build(&ctx->frame_arena, root, &styles, ctx->fonts, ctx->images, viewport_width, viewport_height);
+        tbox_vector sizes;
+        tbox_vector_init(&sizes, &ctx->frame_arena, sizeof(tbox_style_container_size), 0);
+        tbox_context_collect_container_sizes(first, &sizes);
+        styles = tbox_style_resolve_tree_in_viewport_with_preferences(&ctx->frame_arena, root, sources, 3, viewport_width, viewport_height, ctx->prefers_reduced_motion, (const tbox_style_container_size *)sizes.data, sizes.length, font_metrics);
+    }
     ctx->styles             = styles;
     tbox_context_apply_transitions(ctx, sources, 3, viewport_width, viewport_height);
     tbox_context_apply_animations(ctx, sources, 3, viewport_width, viewport_height);
+    tbox_context_apply_resize(ctx, &styles);
 
     /* NULL for an empty document (e.g. no ELEMENT to lay out) -- tracked
      * so tbox_context_hit_test has something to search (or not) between

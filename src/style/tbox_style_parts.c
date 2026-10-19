@@ -23,6 +23,7 @@ static const char *const tbox_style_part_names[TBOX_STYLE_PART_COUNT] = {
     [TBOX_STYLE_PART_SCROLLBAR_THUMB]      = "-tbox-scrollbar-thumb",
     [TBOX_STYLE_PART_SCROLLBAR_THUMB_HOVER]  = "-tbox-scrollbar-thumb",
     [TBOX_STYLE_PART_SCROLLBAR_THUMB_ACTIVE] = "-tbox-scrollbar-thumb",
+    [TBOX_STYLE_PART_RESIZER]                = "-tbox-resizer",
 };
 
 /* The user-action state each part is resolved in (tbox_css_part_state). */
@@ -81,6 +82,9 @@ static unsigned tbox_style_parts_of(const tbox_html_node *node, const tbox_style
     if (style->overflow_y == TBOX_STYLE_OVERFLOW_Y_AUTO && style->scrollbar_width != TBOX_STYLE_SCROLLBAR_WIDTH_NONE)
         parts |= TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SCROLLBAR_TRACK) | TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SCROLLBAR_THUMB) |
                  TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SCROLLBAR_THUMB_HOVER) | TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SCROLLBAR_THUMB_ACTIVE);
+    /* A box the user may resize has the handle. */
+    if (tbox_style_resize_allowed(style, tbox_string_view_equal_cstr(node->element.tag_name, "textarea")) != TBOX_STYLE_RESIZE_NONE)
+        parts |= TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_RESIZER);
     return parts;
 }
 
@@ -115,7 +119,7 @@ void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, con
         tbox_style_part_style *out = (tbox_style_part_style *)tbox_arena_alloc(arena, sizeof(*out));
         if (out == NULL)
             continue;
-        tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, tbox_style_part_names[part], tbox_style_part_states[part], viewport_width, viewport_height, reduced_motion);
+        tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, tbox_style_part_names[part], tbox_style_part_states[part], viewport_width, viewport_height, reduced_motion, &(tbox_css_query_context){ style->query_container, style->custom_properties });
         tbox_style resolved              = tbox_style_resolve_in_viewport(NULL, style, &computed, viewport_width, viewport_height);
         tbox_style_part_copy(&resolved, out);
         out->color_declared      = tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("color")) != NULL;

@@ -38,8 +38,13 @@ typedef enum tbox_paint_op_kind {
      * `blend_mode` (mix-blend-mode), clipped to this op's clip and
      * rounded_clip. `rect` is unused. Layers nest. */
     TBOX_PAINT_LAYER_BEGIN,
-    /* Inside a layer: the ops up to its LAYER_END paint the mask (alpha,
-     * or luminance when `mask_luminance`) instead of the content. */
+    /* (A LAYER_BEGIN with `has_transform` paints its ops untransformed and
+     * composites the buffer through `transform`, sampling bilinearly;
+     * its clip is in the coordinates around the layer, the ops' inside
+     * it in the untransformed ones.) */
+    /* Inside a layer: the ops up to its next LAYER_MASK/LAYER_END paint
+     * one mask source (alpha, or luminance when `mask_luminance`). Sources
+     * are emitted bottom to top, combined through `mask_composite`. */
     TBOX_PAINT_LAYER_MASK,
     TBOX_PAINT_LAYER_END,
 } tbox_paint_op_kind;
@@ -81,11 +86,21 @@ typedef struct tbox_paint_op {
      * NULL/0 makes Output shape `text` itself with the same shaper. */
     const tbox_glyph *glyphs;
     size_t glyph_count;
+    /* TEXT_RUN: centered glyph outline; zero width disables it. */
+    double text_stroke_width;
+    tbox_css_rgba text_stroke_color;
+    bool text_stroke_first;
 
     /* IMAGE only (NULL for FILL_RECT/TEXT_RUN): the decoded image to
      * composite into `rect` -- see tbox_raster_image. */
     const tbox_image *image;
     bool image_pixelated; /* IMAGE only: nearest-neighbor enlargement */
+    /* IMAGE: when set, just this part of `image` (image pixels, rounded
+     * to whole ones) is scaled into `rect` -- a border-image slice.
+     * GRADIENT: the gradient is laid out over a box of source_rect's size
+     * (x/y unused) and that box stretched onto `rect`. */
+    bool has_source_rect;
+    tbox_rect source_rect;
 
     /* FILL_RECT only: radius keeps the original uniform value; corner_radii
      * carries individual clockwise radii. Both are zero for plain fills.
@@ -122,6 +137,7 @@ typedef struct tbox_paint_op {
      * owns it outlives the display list); NULL for none. */
     const tbox_style_filter_list *filters;
     bool mask_luminance; /* LAYER_MASK */
+    tbox_style_mask_composite mask_composite; /* LAYER_MASK: source over layers below */
 
     /* Optional paint clip, applied to every op kind. Input text and the
      * descendants of overflow-y:auto blocks use it. */
@@ -137,6 +153,11 @@ typedef struct tbox_paint_op {
 
     const tbox_paint_polygon *polygon_clip; /* NULL for none; also LAYER_BEGIN */
     double polygon_clip_origin[2];
+
+    /* LAYER_BEGIN: the layer's content maps to the buffer below through
+     * this 2D affine matrix (a b c d e f, as CSS matrix()). */
+    bool has_transform;
+    double transform[6];
 } tbox_paint_op;
 
 typedef struct tbox_display_list {

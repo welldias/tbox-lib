@@ -741,6 +741,8 @@ static void tbox_backend_wayland_apply_cursor(tbox_backend_wayland *backend) {
         [TBOX_STYLE_CURSOR_ROW_RESIZE]  = { "row-resize", "sb_v_double_arrow" },
         [TBOX_STYLE_CURSOR_EW_RESIZE]   = { "ew-resize", "sb_h_double_arrow" },
         [TBOX_STYLE_CURSOR_NS_RESIZE]   = { "ns-resize", "sb_v_double_arrow" },
+        [TBOX_STYLE_CURSOR_NWSE_RESIZE] = { "nwse-resize", "bottom_right_corner" },
+        [TBOX_STYLE_CURSOR_NESW_RESIZE] = { "nesw-resize", "bottom_left_corner" },
         [TBOX_STYLE_CURSOR_PROGRESS]    = { "progress", "left_ptr_watch" },
         [TBOX_STYLE_CURSOR_COPY]        = { "copy", "dnd-copy" },
         [TBOX_STYLE_CURSOR_ZOOM_IN]     = { "zoom-in", "left_ptr" },

@@ -13,6 +13,7 @@ int tbox_test_list_run(void);
 int tbox_test_vector_run(void);
 int tbox_test_string_run(void);
 int tbox_test_number_run(void);
+int tbox_test_bidi_run(void);
 int tbox_test_debug_run(void);
 int tbox_test_html_parser_tokenizer_run(void);
 int tbox_test_html_parser_tree_run(void);
@@ -31,6 +32,7 @@ int tbox_test_layout_run(void);
 int tbox_test_render_run(void);
 int tbox_test_output_raster_run(void);
 int tbox_test_context_run(void);
+int tbox_test_container_queries_run(void);
 
 static const tbox_test_group tbox_test_groups[] = {
     { "arena",                     tbox_test_arena_run                     },
@@ -38,6 +40,7 @@ static const tbox_test_group tbox_test_groups[] = {
     { "vector",                    tbox_test_vector_run                    },
     { "string",                    tbox_test_string_run                    },
     { "number",                    tbox_test_number_run                    },
+    { "bidi",                      tbox_test_bidi_run                      },
     { "debug",                     tbox_test_debug_run                     },
     { "html_parser_tokenizer",     tbox_test_html_parser_tokenizer_run     },
     { "html_parser_tree",          tbox_test_html_parser_tree_run          },
@@ -56,6 +59,7 @@ static const tbox_test_group tbox_test_groups[] = {
     { "render",                    tbox_test_render_run                    },
     { "output_raster",             tbox_test_output_raster_run             },
     { "context",                   tbox_test_context_run                   },
+    { "container_queries",         tbox_test_container_queries_run         },
 };
 
 int main(int argc, char **argv) {

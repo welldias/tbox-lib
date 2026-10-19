@@ -1,14 +1,82 @@
 #include "style/tbox_style_internal.h"
 
 #include <string.h>
+#include <math.h>
+#include "base/tbox_number.h"
+#include "css_parser/tbox_css_stylesheet.h"
+#include "css_parser/tbox_css_tokenizer.h"
 
 #include "base/tbox_arena.h"
 #include "base/tbox_string.h"
+
+static void tbox_style_registered_number(tbox_string_builder *b, double n, const char *unit) {
+    char text[64];
+    int count = tbox_number_format(text, sizeof(text), n, 15);
+    if (count > 0 && (size_t)count < sizeof(text)) tbox_string_builder_append_view(b, tbox_string_view_make(text, (size_t)count));
+    tbox_string_builder_append_view(b, tbox_string_view_from_cstr(unit));
+}
+
+bool tbox_style_registered_value(tbox_arena *arena, tbox_string_view syntax, tbox_string_view value,
+    const tbox_style_units *units, tbox_string_view *out) {
+    value = tbox_string_view_trim_ascii_space(value);
+    if (tbox_string_view_equal_cstr(syntax, "*")) { *out = value; return true; }
+    /* Relative initial values are outside this registration subset. */
+    tbox_style_units initial = { 16, 16, 800, 600, false, -1.0, -1.0, 1.0, TBOX_STYLE_FRAME_NONE, 0.0, 0.0 };
+    if (units == NULL) {
+        static const char *const dependent[] = { "em", "rem", "ex", "ch", "vw", "vh", "vmin", "vmax", "svw", "svh", "svmin", "svmax", "lvw", "lvh", "lvmin", "lvmax", "dvw", "dvh", "dvmin", "dvmax", "currentcolor" };
+        tbox_css_tokenizer tokenizer;
+        tbox_css_token token;
+        tbox_css_tokenizer_init(&tokenizer, value.data, value.size);
+        do {
+            tbox_css_tokenizer_next(&tokenizer, &token);
+            if (token.type == TBOX_CSS_TOKEN_FUNCTION && tbox_style_is(token.text, "var")) return false;
+            if (token.type == TBOX_CSS_TOKEN_IDENT)
+                for (size_t i = 0; i < sizeof(dependent) / sizeof(dependent[0]); i++)
+                    if (tbox_style_is(token.text, dependent[i])) return false;
+        } while (token.type != TBOX_CSS_TOKEN_EOF);
+        units = &initial;
+    }
+    tbox_string_builder b;
+    tbox_string_builder_init(&b, arena, value.size + 32);
+    double number;
+    if (tbox_string_view_equal_cstr(syntax, "<color>")) {
+        tbox_css_rgba color;
+        if (!tbox_css_color_parse(value, &color)) return false;
+        tbox_string_builder_append_view(&b, tbox_string_view_from_cstr("rgba("));
+        tbox_style_registered_number(&b, color.r, ",");
+        tbox_style_registered_number(&b, color.g, ",");
+        tbox_style_registered_number(&b, color.b, ",");
+        tbox_style_registered_number(&b, color.a / 255.0, ")");
+    } else if (tbox_string_view_equal_cstr(syntax, "<number>") || tbox_string_view_equal_cstr(syntax, "<integer>")) {
+        if (!tbox_number_parse(value, &number) &&
+            (memchr(value.data, '%', value.size) != NULL || !tbox_style_parse_calc_number(value, units, &number))) return false;
+        if (tbox_string_view_equal_cstr(syntax, "<integer>") && trunc(number) != number) return false;
+        tbox_style_registered_number(&b, number, "");
+    } else if (tbox_string_view_equal_cstr(syntax, "<angle>")) {
+        if (!tbox_style_parse_angle(value, units, &number)) return false;
+        tbox_style_registered_number(&b, number, "deg");
+    } else if (tbox_string_view_equal_cstr(syntax, "<length>") || tbox_string_view_equal_cstr(syntax, "<percentage>") || tbox_string_view_equal_cstr(syntax, "<length-percentage>")) {
+        tbox_style_length length;
+        if (!tbox_style_parse_length(value, units, &length) || length.kind == TBOX_STYLE_LENGTH_AUTO || length.bounds != 0 || !isfinite(length.value) || !isfinite(length.px_offset)) return false;
+        if (tbox_string_view_equal_cstr(syntax, "<length>") && length.kind != TBOX_STYLE_LENGTH_PX) return false;
+        if (tbox_string_view_equal_cstr(syntax, "<percentage>") && (length.kind != TBOX_STYLE_LENGTH_PERCENT || length.px_offset != 0)) return false;
+        if (length.kind == TBOX_STYLE_LENGTH_PX) tbox_style_registered_number(&b, length.value, "px");
+        else if (length.px_offset == 0) tbox_style_registered_number(&b, length.value, "%");
+        else {
+            tbox_string_builder_append_view(&b, tbox_string_view_from_cstr("calc("));
+            tbox_style_registered_number(&b, length.value, "% + ");
+            tbox_style_registered_number(&b, length.px_offset, "px)");
+        }
+    } else return false;
+    *out = tbox_string_builder_finish(&b);
+    return true;
+}
 
 /* One element's own custom properties (`--name: value`), values already
  * free of var(); inherited ones are reached through `parent`. */
 typedef struct tbox_style_custom_property {
     tbox_string_view name, value;
+    bool valid;
 } tbox_style_custom_property;
 
 struct tbox_style_custom_properties {
@@ -39,18 +107,45 @@ bool tbox_style_vars_present(const tbox_css_computed_style *computed) {
     return false;
 }
 
-static bool tbox_style_vars_substitute_text(tbox_arena *arena, tbox_string_view text, const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, int depth, tbox_string_view *out);
+static bool tbox_style_vars_substitute_text(tbox_arena *arena, const tbox_style_units *units, tbox_string_view text, const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, int depth, tbox_string_view *out);
 
 /* The value of custom property `name` (its own var() references
  * substituted): this element's declaration first, then the inherited
  * chain. False when undefined, or on a reference cycle (depth). */
-static bool tbox_style_vars_lookup(tbox_arena *arena, tbox_string_view name, const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, int depth, tbox_string_view *out) {
+static bool tbox_style_vars_lookup(tbox_arena *arena, const tbox_style_units *units, tbox_string_view name, const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, int depth, tbox_string_view *out) {
     if (depth > TBOX_STYLE_VAR_MAX_DEPTH)
         return false;
-    for (size_t i = 0; i < computed->count; i++)
-        if (tbox_string_view_equal_ascii_ci(computed->items[i].property, name))
-            return tbox_style_vars_substitute_text(arena, computed->items[i].value, computed, inherited, depth + 1, out);
+    for (size_t i = 0; i < computed->count; i++) {
+        const tbox_css_resolved_declaration *decl = &computed->items[i];
+        if (!tbox_string_view_equal(decl->property, name)) continue;
+        const tbox_css_property_rule *rule = decl->registration;
+        if (rule == NULL)
+            return tbox_style_vars_substitute_text(arena, units, decl->value, computed, inherited, depth + 1, out);
+        bool inherit = tbox_style_is(decl->value, "inherit") ||
+            (rule->inherits && (decl->registered_default || tbox_style_is(decl->value, "unset")));
+        if (inherit) {
+            for (const tbox_style_custom_properties *set = inherited; set != NULL; set = set->parent)
+                for (size_t j = 0; j < set->count; j++)
+                    if (tbox_string_view_equal(set->items[j].name, name)) { *out = set->items[j].value; return set->items[j].valid; }
+        }
+        tbox_string_view value;
+        if (!decl->registered_default && !inherit && !tbox_style_is(decl->value, "initial") && !tbox_style_is(decl->value, "unset") &&
+            tbox_style_vars_substitute_text(arena, units, decl->value, computed, inherited, depth + 1, &value) &&
+            tbox_style_registered_value(arena, rule->syntax, value, units, out)) return true;
+        *out = rule->initial;
+        return out->size > 0;
+    }
     for (const tbox_style_custom_properties *set = inherited; set != NULL; set = set->parent)
+        for (size_t i = 0; i < set->count; i++)
+            if (tbox_string_view_equal(set->items[i].name, name)) {
+                *out = set->items[i].value;
+                return set->items[i].valid;
+            }
+    return false;
+}
+
+bool tbox_style_custom_property_get(const tbox_style_custom_properties *set, tbox_string_view name, tbox_string_view *out) {
+    for (; set != NULL; set = set->parent)
         for (size_t i = 0; i < set->count; i++)
             if (tbox_string_view_equal_ascii_ci(set->items[i].name, name)) {
                 *out = set->items[i].value;
@@ -61,7 +156,7 @@ static bool tbox_style_vars_lookup(tbox_arena *arena, tbox_string_view name, con
 
 /* Replaces every `var(--name[, fallback])` in `text`. A reference with no
  * value and no fallback makes the whole value invalid (false). */
-static bool tbox_style_vars_substitute_text(tbox_arena *arena, tbox_string_view text, const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, int depth, tbox_string_view *out) {
+static bool tbox_style_vars_substitute_text(tbox_arena *arena, const tbox_style_units *units, tbox_string_view text, const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, int depth, tbox_string_view *out) {
     if (!tbox_style_vars_mentions_var(text)) {
         *out = text;
         return true;
@@ -93,10 +188,10 @@ static bool tbox_style_vars_substitute_text(tbox_arena *arena, tbox_string_view 
             tbox_string_view value;
             if (!tbox_style_vars_is_custom(name))
                 return false;
-            if (!tbox_style_vars_lookup(arena, name, computed, inherited, depth, &value)) {
+            if (!tbox_style_vars_lookup(arena, units, name, computed, inherited, depth, &value)) {
                 if (comma == 0)
                     return false;
-                if (!tbox_style_vars_substitute_text(arena, tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data + comma + 1, j - comma - 1)), computed, inherited, depth + 1, &value))
+                if (!tbox_style_vars_substitute_text(arena, units, tbox_string_view_trim_ascii_space(tbox_string_view_make(text.data + comma + 1, j - comma - 1)), computed, inherited, depth + 1, &value))
                     return false;
             }
             tbox_string_builder_append_view(&builder, value);
@@ -110,7 +205,7 @@ static bool tbox_style_vars_substitute_text(tbox_arena *arena, tbox_string_view 
     return true;
 }
 
-tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, tbox_arena *arena, const tbox_style_custom_properties **out_own, bool keep_own) {
+tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style *computed, const tbox_style_units *units, const tbox_style_custom_properties *inherited, tbox_arena *arena, const tbox_style_custom_properties **out_own, bool keep_own) {
     tbox_css_computed_style result = { NULL, 0, NULL };
     *out_own                       = inherited;
     if (computed == NULL || computed->count == 0)
@@ -135,18 +230,21 @@ tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style
     for (size_t i = 0; i < computed->count; i++) {
         const tbox_css_resolved_declaration *decl = &computed->items[i];
         tbox_string_view value;
-        bool valid = tbox_style_vars_substitute_text(arena, decl->value, computed, inherited, 0, &value);
+        bool custom = tbox_style_vars_is_custom(decl->property);
+        bool valid = custom ? tbox_style_vars_lookup(arena, units, decl->property, computed, inherited, 0, &value) :
+            tbox_style_vars_substitute_text(arena, units, decl->value, computed, inherited, 0, &value);
         if (tbox_style_vars_is_custom(decl->property)) {
             /* Custom properties keep their substituted text for children;
              * an invalid one is simply undefined. */
-            if (valid && set != NULL) {
+            if ((valid || decl->registration != NULL) && set != NULL) {
+                if (!valid) value = tbox_string_view_make(NULL, 0);
                 tbox_string_builder copy;
                 tbox_string_builder_init(&copy, arena, value.size + 1);
                 tbox_string_builder_append_view(&copy, tbox_string_view_trim_ascii_space(value));
                 tbox_string_builder name;
                 tbox_string_builder_init(&name, arena, decl->property.size + 1);
                 tbox_string_builder_append_view(&name, decl->property);
-                set->items[set->count++] = (tbox_style_custom_property){ tbox_string_builder_finish(&name), tbox_string_builder_finish(&copy) };
+                set->items[set->count++] = (tbox_style_custom_property){ tbox_string_builder_finish(&name), tbox_string_builder_finish(&copy), valid };
             }
             continue;
         }

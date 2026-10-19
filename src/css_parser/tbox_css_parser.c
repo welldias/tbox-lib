@@ -11,7 +11,7 @@
  *   stylesheet      : [ CDO | CDC | S | statement ]*
  *   statement       : ruleset | at_rule
  *   at_rule         : AT_KEYWORD <anything> [ block | ';' ]
- *                     -- @media, @layer, @starting-style and true @supports
+ *                     -- @media, @container, @layer, @starting-style and true @supports
  *                        rules and top-level @font-face retained;
  *                        other contents discarded
  *   ruleset         : selector_group '{' declaration_list '}'
@@ -43,6 +43,12 @@ void tbox_css_parser_init(tbox_css_parser *parser, const char *input, size_t len
     tbox_css_tokenizer_init(&parser->tokenizer, input, length);
     parser->arena  = arena;
     parser->layers = NULL;
+    parser->palettes = NULL;
+    parser->palettes_out = NULL;
+    parser->palettes_out_count = 0;
+    parser->scope = NULL;
+    parser->properties = NULL;
+    parser->counter_styles = NULL;
     parser->keyframes           = NULL;
     parser->keyframes_out       = NULL;
     parser->keyframes_out_count = 0;
@@ -599,7 +605,9 @@ static bool tbox_css_parser_parse_declaration(tbox_css_parser *parser, tbox_vect
         tbox_css_parser_skip_to_semicolon_or_rbrace(parser);
         return false;
     }
-    tbox_string_view property = tbox_string_copy_lower_ascii(parser->arena, parser->current.text);
+    tbox_string_view raw_property = parser->current.text;
+    tbox_string_view property = raw_property.size > 2 && raw_property.data[0] == '-' && raw_property.data[1] == '-' ?
+        tbox_css_parser_copy(parser, raw_property) : tbox_string_copy_lower_ascii(parser->arena, raw_property);
     tbox_css_parser_advance(parser);
     tbox_css_parser_skip_s(parser);
 
@@ -770,6 +778,104 @@ static void tbox_css_parser_rank_layers(tbox_vector *layers, size_t parent, unsi
 
 static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *rulesets, tbox_vector *faces, const tbox_css_media_condition *media, bool nested, size_t layer, bool starting);
 
+/* Parenthesized selector group in an @scope prelude. */
+static bool tbox_css_parser_scope_bound(tbox_css_parser *parser, tbox_css_selector **out, size_t *count) {
+    if (parser->current.type != TBOX_CSS_TOKEN_LPAREN) return false;
+    size_t start = parser->current.offset + 1;
+    int depth = 1;
+    tbox_css_parser_advance(parser);
+    while (parser->current.type != TBOX_CSS_TOKEN_EOF) {
+        if (parser->current.type == TBOX_CSS_TOKEN_RPAREN && --depth == 0) break;
+        if (parser->current.type == TBOX_CSS_TOKEN_LPAREN || parser->current.type == TBOX_CSS_TOKEN_FUNCTION) depth++;
+        tbox_css_parser_advance(parser);
+    }
+    if (depth != 0) return false;
+    size_t end = parser->current.offset;
+    bool valid = tbox_css_parser_parse_standalone_selector_group(parser->tokenizer.input + start, end - start, parser->arena, out, count, NULL);
+    tbox_css_parser_advance(parser);
+    tbox_css_parser_skip_s(parser);
+    for (size_t i = 0; valid && i < *count; i++)
+        for (size_t j = 0; j < (*out)[i].simple_selector_count; j++) {
+            const tbox_css_simple_selector *item = &(*out)[i].simple_selectors[j];
+            if (item->kind == TBOX_CSS_SIMPLE_SELECTOR_PSEUDO && item->name.size > 1 && item->name.data[0] == ':' && item->name.data[1] == ':') valid = false;
+        }
+    return valid;
+}
+
+static void tbox_css_parser_parse_scope(tbox_css_parser *parser, tbox_vector *rulesets, tbox_vector *faces,
+    const tbox_css_media_condition *media, size_t layer, bool starting) {
+    tbox_css_scope *scope = tbox_arena_alloc_zero(parser->arena, sizeof(*scope));
+    scope->parent = parser->scope;
+    scope->source_offset = parser->current.offset;
+    tbox_css_parser_skip_s(parser);
+    bool valid = true;
+    if (parser->current.type == TBOX_CSS_TOKEN_LPAREN)
+        valid = tbox_css_parser_scope_bound(parser, &scope->start, &scope->start_count);
+    if (valid && parser->current.type == TBOX_CSS_TOKEN_IDENT && tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("to"))) {
+        tbox_css_parser_advance(parser);
+        tbox_css_parser_skip_s(parser);
+        valid = tbox_css_parser_scope_bound(parser, &scope->limit, &scope->limit_count);
+    }
+    if (!valid || parser->current.type != TBOX_CSS_TOKEN_LBRACE) {
+        tbox_css_parser_skip_at_rule(parser);
+        return;
+    }
+    parser->scope = scope;
+    tbox_css_parser_advance(parser);
+    tbox_css_parser_parse_rules(parser, rulesets, faces, media, true, layer, starting);
+    parser->scope = scope->parent;
+}
+
+/* Descriptor rules are kept independently from selector rules. */
+static void tbox_css_parser_parse_registration(tbox_css_parser *parser, bool property, const tbox_css_media_condition *media) {
+    tbox_css_parser_skip_s(parser);
+    if (parser->current.type != TBOX_CSS_TOKEN_IDENT) {
+        tbox_css_parser_skip_at_rule(parser);
+        return;
+    }
+    tbox_string_view name = tbox_css_parser_copy(parser, parser->current.text);
+    tbox_css_parser_advance(parser);
+    tbox_css_parser_skip_s(parser);
+    if (parser->current.type != TBOX_CSS_TOKEN_LBRACE) {
+        tbox_css_parser_skip_at_rule(parser);
+        return;
+    }
+    tbox_css_ruleset block = {0};
+    tbox_css_parser_parse_declaration_list(parser, &block);
+    if (!property) {
+        if (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("none")) ||
+            tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr("decimal"))) return;
+        tbox_css_named_rule *rule = tbox_arena_alloc_zero(parser->arena, sizeof(*rule));
+        *rule = (tbox_css_named_rule){ name, block.declarations, block.declaration_count, media, parser->counter_styles };
+        parser->counter_styles = rule;
+        return;
+    }
+    if (name.size <= 2 || name.data[0] != '-' || name.data[1] != '-') return;
+    tbox_css_property_rule rule = { .name = name, .media = media, .next = parser->properties };
+    bool has_inherits = false;
+    for (size_t i = 0; i < block.declaration_count; i++) {
+        const tbox_css_declaration *d = &block.declarations[i];
+        if (tbox_string_view_equal_cstr(d->property, "syntax")) {
+            tbox_string_view v = d->value;
+            if (v.size >= 2 && (v.data[0] == '\'' || v.data[0] == '"') && v.data[v.size - 1] == v.data[0])
+                rule.syntax = tbox_string_view_make(v.data + 1, v.size - 2);
+        } else if (tbox_string_view_equal_cstr(d->property, "inherits")) {
+            if (tbox_string_view_equal_ascii_ci(d->value, tbox_string_view_from_cstr("true")) || tbox_string_view_equal_ascii_ci(d->value, tbox_string_view_from_cstr("false"))) {
+                has_inherits = true;
+                rule.inherits = tbox_string_view_equal_ascii_ci(d->value, tbox_string_view_from_cstr("true"));
+            }
+        } else if (tbox_string_view_equal_cstr(d->property, "initial-value")) rule.initial = d->value;
+    }
+    tbox_string_view initial;
+    if (!has_inherits || rule.syntax.size == 0 ||
+        (!tbox_string_view_equal_cstr(rule.syntax, "*") && rule.initial.size == 0) ||
+        !tbox_style_registered_value(parser->arena, rule.syntax, rule.initial, NULL, &initial)) return;
+    rule.initial = initial;
+    tbox_css_property_rule *copy = tbox_arena_alloc(parser->arena, sizeof(*copy));
+    *copy = rule;
+    parser->properties = copy;
+}
+
 /* AT_KEYWORD `layer` already consumed: `@layer a, b.c;` declares layers in
  * order, `@layer a { ... }` / `@layer { ... }` holds rules. A malformed
  * prelude declares nothing and is skipped. */
@@ -925,7 +1031,12 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
             break;
         }
         if (parser->current.type == TBOX_CSS_TOKEN_AT_KEYWORD) {
-            bool is_media = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("media"));
+            bool is_scope = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("scope"));
+            bool is_property = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("property"));
+            bool is_counter_style = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("counter-style"));
+            bool is_container = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("container"));
+            bool is_media = is_container || tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("media"));
+            bool is_palette = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("font-palette-values"));
             bool is_font_face = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("font-face"));
             bool is_layer = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("layer"));
             bool is_starting = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("starting-style"));
@@ -933,6 +1044,14 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
             bool is_keyframes = tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("keyframes")) ||
                                 tbox_string_view_equal_ascii_ci(parser->current.text, tbox_string_view_from_cstr("-webkit-keyframes"));
             tbox_css_parser_advance(parser);
+            if (is_scope) {
+                tbox_css_parser_parse_scope(parser, rulesets, faces, media, layer, starting);
+                continue;
+            }
+            if (is_property || is_counter_style) {
+                tbox_css_parser_parse_registration(parser, is_property, media);
+                continue;
+            }
             if (is_keyframes) {
                 tbox_css_parser_parse_keyframes(parser, media);
                 continue;
@@ -949,6 +1068,23 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
             }
             if (is_layer) {
                 tbox_css_parser_parse_layer(parser, rulesets, faces, media, layer, starting);
+                continue;
+            }
+            if (is_palette) {
+                tbox_css_parser_skip_s(parser);
+                tbox_string_view name = parser->current.text;
+                bool valid = parser->current.type == TBOX_CSS_TOKEN_IDENT && name.size > 2 && name.data[0] == '-' && name.data[1] == '-';
+                if (valid) {
+                    name = tbox_css_parser_copy(parser, name);
+                    tbox_css_parser_advance(parser);
+                    tbox_css_parser_skip_s(parser);
+                }
+                if (valid && parser->current.type == TBOX_CSS_TOKEN_LBRACE) {
+                    tbox_css_ruleset block = {0};
+                    tbox_css_parser_parse_declaration_list(parser, &block);
+                    tbox_css_font_palette_rule *palette = tbox_vector_push(parser->palettes);
+                    if (palette != NULL) *palette = (tbox_css_font_palette_rule){name, block.declarations, block.declaration_count, media};
+                } else tbox_css_parser_skip_at_rule(parser);
                 continue;
             }
             if (is_font_face) {
@@ -1001,6 +1137,7 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
                     if (condition != NULL) {
                         condition->query = tbox_css_parser_copy(parser, tbox_string_view_make(parser->tokenizer.input + start, end - start));
                         condition->parent = media;
+                        condition->container = is_container;
                         tbox_css_parser_advance(parser);
                         tbox_css_parser_parse_rules(parser, rulesets, faces, condition, true, layer, starting);
                     } else {
@@ -1015,6 +1152,7 @@ static void tbox_css_parser_parse_rules(tbox_css_parser *parser, tbox_vector *ru
 
         tbox_css_ruleset ruleset = {0};
         if (tbox_css_parser_parse_ruleset(parser, &ruleset)) {
+            ruleset.scope = parser->scope;
             ruleset.media = media;
             ruleset.layer = (unsigned)layer; /* a node id until tbox_css_parser_run ranks it */
             ruleset.starting_style = starting;
@@ -1034,8 +1172,14 @@ void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_ruleset
     tbox_vector keyframes;
     tbox_vector_init(&keyframes, parser->arena, sizeof(tbox_css_keyframes_rule), 0);
     parser->keyframes = &keyframes;
+    tbox_vector palettes;
+    tbox_vector_init(&palettes, parser->arena, sizeof(tbox_css_font_palette_rule), 0);
+    parser->palettes = &palettes;
     tbox_css_parser_parse_rules(parser, &rulesets, &faces, NULL, false, 0, false);
     parser->keyframes           = NULL;
+    parser->palettes = NULL;
+    parser->palettes_out = palettes.length > 0 ? palettes.data : NULL;
+    parser->palettes_out_count = palettes.length;
     parser->keyframes_out       = keyframes.length > 0 ? keyframes.data : NULL;
     parser->keyframes_out_count = keyframes.length;
     size_t layer_count = tbox_vector_length(&layers);

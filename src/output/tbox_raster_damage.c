@@ -36,19 +36,39 @@ static bool tbox_damage_empty(tbox_rect r) {
     return r.width <= 0.0 || r.height <= 0.0;
 }
 
+/* `r` grown to whole pixels and clipped to `area`. */
+static tbox_rect tbox_damage_snap_in(tbox_rect r, tbox_rect area) {
+    double x0 = floor(r.x), y0 = floor(r.y), x1 = ceil(r.x + r.width), y1 = ceil(r.y + r.height);
+    return tbox_damage_intersect((tbox_rect){ x0, y0, x1 - x0, y1 - y0 }, area);
+}
+
 /* `r` grown to whole pixels and clipped to the buffer. */
 static tbox_rect tbox_damage_snap(tbox_rect r, int32_t width, int32_t height) {
-    double x0 = floor(r.x), y0 = floor(r.y), x1 = ceil(r.x + r.width), y1 = ceil(r.y + r.height);
-    return tbox_damage_intersect((tbox_rect){ x0, y0, x1 - x0, y1 - y0 }, (tbox_rect){ 0.0, 0.0, (double)width, (double)height });
+    return tbox_damage_snap_in(r, (tbox_rect){ 0.0, 0.0, (double)width, (double)height });
+}
+
+tbox_rect tbox_raster_transform_bounds(const double m[6], tbox_rect r) {
+    const double xs[4] = { r.x, r.x + r.width, r.x, r.x + r.width };
+    const double ys[4] = { r.y, r.y, r.y + r.height, r.y + r.height };
+    double x0 = INFINITY, y0 = INFINITY, x1 = -INFINITY, y1 = -INFINITY;
+    for (int i = 0; i < 4; i++) {
+        double x = m[0] * xs[i] + m[2] * ys[i] + m[4], y = m[1] * xs[i] + m[3] * ys[i] + m[5];
+        x0 = fmin(x0, x), y0 = fmin(y0, y), x1 = fmax(x1, x), y1 = fmax(y1, y);
+    }
+    return (tbox_rect){ x0, y0, x1 - x0, y1 - y0 };
 }
 
 bool tbox_raster_op_paint_bounds(const tbox_paint_op *op, int32_t buffer_width, int32_t buffer_height, tbox_rect *out) {
+    return tbox_raster_op_bounds_in(op, (tbox_rect){ 0.0, 0.0, (double)buffer_width, (double)buffer_height }, out);
+}
+
+bool tbox_raster_op_bounds_in(const tbox_paint_op *op, tbox_rect area, tbox_rect *out) {
     tbox_rect r = op->rect;
     switch (op->kind) {
     case TBOX_PAINT_TEXT_RUN: {
         /* Glyphs may overhang the run's line box (italics, descenders,
          * tight line-height, letter-spacing), so pad by half a line. */
-        double pad = (op->face != NULL ? tbox_font_face_line_height(op->face) * 0.5 : 0.0) + fabs(op->letter_spacing) + 1.0;
+        double pad = (op->face != NULL ? tbox_font_face_line_height(op->face) * 0.5 : 0.0) + fabs(op->letter_spacing) + fmax(0.0, op->text_stroke_width) * 0.5 + 1.0;
         r = (tbox_rect){ r.x - pad, r.y - pad, r.width + 2.0 * pad, r.height + 2.0 * pad };
         break;
     }
@@ -79,7 +99,7 @@ bool tbox_raster_op_paint_bounds(const tbox_paint_op *op, int32_t buffer_width, 
         r = tbox_damage_intersect(r, op->clip);
     if (op->has_rounded_clip)
         r = tbox_damage_intersect(r, op->rounded_clip);
-    *out = tbox_damage_empty(r) ? (tbox_rect){ 0.0, 0.0, 0.0, 0.0 } : tbox_damage_snap(r, buffer_width, buffer_height);
+    *out = tbox_damage_empty(r) ? (tbox_rect){ 0.0, 0.0, 0.0, 0.0 } : tbox_damage_snap_in(r, area);
     return !tbox_damage_empty(*out);
 }
 
@@ -102,34 +122,39 @@ size_t tbox_raster_layer_end(const tbox_display_list *list, size_t begin, size_t
     return list->count; /* unterminated: runs to the end */
 }
 
-/* What one op inside a layer can touch: its bounds, or a nested layer's
- * content grown by that layer's reach. Sets `*next` past it. */
-static bool tbox_raster_layer_item_bounds(const tbox_display_list *list, size_t i, int32_t width, int32_t height, tbox_rect *out, size_t *next) {
+/* What one op inside a layer can touch, within `area`: its bounds, or a
+ * nested layer's content grown by that layer's reach and mapped through
+ * its transform. Sets `*next` past it. */
+static bool tbox_raster_layer_item_bounds(const tbox_display_list *list, size_t i, tbox_rect area, tbox_rect *out, size_t *next) {
     const tbox_paint_op *op = &list->items[i];
     *next = i + 1;
     if (op->kind != TBOX_PAINT_LAYER_BEGIN)
-        return tbox_raster_op_paint_bounds(op, width, height, out);
+        return tbox_raster_op_bounds_in(op, area, out);
     *next = tbox_raster_layer_end(list, i, NULL) + 1;
     tbox_rect content;
-    if (!tbox_raster_layer_content_bounds(list, i, width, height, &content))
+    if (!tbox_raster_layer_content_bounds(list, i, area, &content))
         return false;
     double extent = tbox_style_filter_extent(op->filters);
     tbox_rect r = { content.x - extent, content.y - extent, content.width + 2.0 * extent, content.height + 2.0 * extent };
+    if (op->has_transform)
+        r = tbox_raster_transform_bounds(op->transform, (tbox_rect){ r.x - 1.0, r.y - 1.0, r.width + 2.0, r.height + 2.0 });
     if (op->has_clip) r = tbox_damage_intersect(r, op->clip);
     if (op->has_rounded_clip) r = tbox_damage_intersect(r, op->rounded_clip);
-    *out = tbox_damage_snap(r, width, height);
+    *out = tbox_damage_snap_in(r, area);
     return !tbox_damage_empty(*out);
 }
 
-bool tbox_raster_layer_content_bounds(const tbox_display_list *list, size_t begin, int32_t width, int32_t height, tbox_rect *out) {
+bool tbox_raster_layer_content_bounds(const tbox_display_list *list, size_t begin, tbox_rect area, tbox_rect *out) {
     size_t mask;
     tbox_raster_layer_end(list, begin, &mask);
+    if (list->items[begin].has_transform)
+        area = TBOX_RASTER_UNBOUNDED;
     bool any = false;
     tbox_rect total = { 0.0, 0.0, 0.0, 0.0 };
     for (size_t i = begin + 1; i < mask;) {
         tbox_rect r;
         size_t next;
-        if (tbox_raster_layer_item_bounds(list, i, width, height, &r, &next)) {
+        if (tbox_raster_layer_item_bounds(list, i, area, &r, &next)) {
             if (!any) {
                 total = r;
             } else {
@@ -230,6 +255,9 @@ static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
         hash = tbox_damage_mix(hash, op->text.data, op->text.size);
     hash = tbox_damage_mix_pointer(hash, op->face);
     hash = tbox_damage_mix_double(hash, op->letter_spacing);
+    hash = tbox_damage_mix_double(hash, op->text_stroke_width);
+    hash = tbox_damage_mix_color(hash, op->text_stroke_color);
+    hash = tbox_damage_mix_int(hash, op->text_stroke_first);
     /* Glyph positions can change with the same text (justify,
      * word-spacing), so they are part of what was painted. */
     hash = tbox_damage_mix_int(hash, (long long)op->glyph_count);
@@ -240,6 +268,9 @@ static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
     }
     hash = tbox_damage_mix_pointer(hash, op->image);
     hash = tbox_damage_mix_int(hash, op->image_pixelated);
+    hash = tbox_damage_mix_int(hash, op->has_source_rect);
+    if (op->has_source_rect)
+        hash = tbox_damage_mix_rect(hash, op->source_rect);
     hash = tbox_damage_mix_double(hash, op->radius);
     hash = tbox_damage_mix_doubles(hash, op->corner_radii, 4);
     hash = tbox_damage_mix_rect(hash, op->inner_rect);
@@ -255,6 +286,7 @@ static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
         hash = tbox_damage_mix_doubles(hash, op->color_filter, 20);
     hash = tbox_damage_mix_int(hash, (long long)op->blend_mode);
     hash = tbox_damage_mix_int(hash, op->mask_luminance);
+    hash = tbox_damage_mix_int(hash, (long long)op->mask_composite);
     hash = tbox_damage_mix_int(hash, op->filters != NULL ? (long long)op->filters->count : -1);
     for (size_t i = 0; op->filters != NULL && i < op->filters->count; i++) {
         const tbox_style_filter_op *filter = &op->filters->ops[i];
@@ -284,6 +316,9 @@ static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
         for (size_t i = 0; i < polygon->count && i < TBOX_STYLE_MAX_POLYGON_POINTS; i++)
             hash = tbox_damage_mix_doubles(hash, polygon->points[i], 2);
     }
+    hash = tbox_damage_mix_int(hash, op->has_transform);
+    if (op->has_transform)
+        hash = tbox_damage_mix_doubles(hash, op->transform, 6);
     return hash;
 }
 
@@ -430,28 +465,66 @@ static void tbox_damage_diff_middle(tbox_damage *damage, const tbox_damage_signa
 /* Layers in the signatures: a LAYER_BEGIN (and its MASK/END) covers all its
  * layer can touch, so changing its effects repaints the whole layer; an
  * op inside layers that spread (blur, drop shadow) grows by their reach,
- * since changing it changes pixels that far away. */
+ * since changing it changes pixels that far away. Inside a transformed
+ * layer the ops are in untransformed coordinates: their bounds are taken
+ * unbounded there and mapped to the screen through every enclosing
+ * transform. */
 static void tbox_damage_layer_bounds(const tbox_display_list *list, tbox_damage_signature *signatures, int32_t width, int32_t height) {
-    double reach[64];
+    double reach[64], matrix[64][6];
+    bool transformed[64];
     size_t ends[64], depth = 0;
     for (size_t i = 0; list != NULL && i < list->count; i++) {
         const tbox_paint_op *op = &list->items[i];
         while (depth > 0 && i > ends[depth - 1]) depth--;
         double grow = depth > 0 ? reach[depth - 1] : 0.0;
+        bool mapped = depth > 0 && transformed[depth - 1];
+        tbox_rect area = mapped ? TBOX_RASTER_UNBOUNDED : (tbox_rect){ 0.0, 0.0, (double)width, (double)height };
         if (op->kind == TBOX_PAINT_LAYER_BEGIN) {
             size_t mask, next;
             size_t end = tbox_raster_layer_end(list, i, &mask);
             tbox_rect r;
-            if (!tbox_raster_layer_item_bounds(list, i, width, height, &r, &next))
+            if (!tbox_raster_layer_item_bounds(list, i, area, &r, &next))
                 r = (tbox_rect){ 0.0, 0.0, 0.0, 0.0 };
             if (grow > 0.0 && !tbox_damage_empty(r))
-                r = tbox_damage_snap((tbox_rect){ r.x - grow, r.y - grow, r.width + 2.0 * grow, r.height + 2.0 * grow }, width, height);
+                r = (tbox_rect){ r.x - grow, r.y - grow, r.width + 2.0 * grow, r.height + 2.0 * grow };
+            if (mapped && !tbox_damage_empty(r))
+                r = tbox_raster_transform_bounds(matrix[depth - 1], r);
+            if (!tbox_damage_empty(r))
+                r = tbox_damage_snap(r, width, height);
             signatures[i].bounds = r;
-            if (mask < list->count) signatures[mask].bounds = r;
+            for (size_t m = mask; m < end; m++)
+                if (list->items[m].kind == TBOX_PAINT_LAYER_MASK) signatures[m].bounds = r;
             if (end < list->count) signatures[end].bounds = r;
             if (depth < 64) {
+                /* the reach of an outer blur, inside a transform, is
+                 * approximated in the inner coordinates */
                 reach[depth] = grow + tbox_style_filter_extent(op->filters);
+                transformed[depth] = mapped || op->has_transform;
+                const double identity[6] = { 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
+                const double *outer = mapped ? matrix[depth - 1] : identity;
+                if (op->has_transform) {
+                    const double *m = op->transform;
+                    matrix[depth][0] = outer[0] * m[0] + outer[2] * m[1];
+                    matrix[depth][1] = outer[1] * m[0] + outer[3] * m[1];
+                    matrix[depth][2] = outer[0] * m[2] + outer[2] * m[3];
+                    matrix[depth][3] = outer[1] * m[2] + outer[3] * m[3];
+                    matrix[depth][4] = outer[0] * m[4] + outer[2] * m[5] + outer[4];
+                    matrix[depth][5] = outer[1] * m[4] + outer[3] * m[5] + outer[5];
+                } else {
+                    memcpy(matrix[depth], outer, sizeof(matrix[depth]));
+                }
                 ends[depth++] = end;
+            }
+        } else if (op->kind != TBOX_PAINT_LAYER_MASK && op->kind != TBOX_PAINT_LAYER_END && mapped) {
+            tbox_rect r;
+            if (tbox_raster_op_bounds_in(op, area, &r)) {
+                if (grow > 0.0)
+                    r = (tbox_rect){ r.x - grow, r.y - grow, r.width + 2.0 * grow, r.height + 2.0 * grow };
+                /* a pixel of margin: bilinear sampling spreads edges */
+                r = tbox_raster_transform_bounds(matrix[depth - 1], (tbox_rect){ r.x - 1.0, r.y - 1.0, r.width + 2.0, r.height + 2.0 });
+                signatures[i].bounds = tbox_damage_snap(r, width, height);
+            } else {
+                signatures[i].bounds = (tbox_rect){ 0.0, 0.0, 0.0, 0.0 };
             }
         } else if (op->kind != TBOX_PAINT_LAYER_MASK && op->kind != TBOX_PAINT_LAYER_END && grow > 0.0 && !tbox_damage_empty(signatures[i].bounds)) {
             tbox_rect r = signatures[i].bounds;

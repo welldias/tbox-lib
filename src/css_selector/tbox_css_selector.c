@@ -40,7 +40,7 @@ tbox_css_selector_node_set tbox_css_selector_query_evaluate(const tbox_css_selec
 
     tbox_vector matches;
     tbox_vector_init(&matches, &scratch, sizeof(const tbox_html_node *), 0);
-    tbox_css_selector_collect_matching_nodes(root, query->selectors, query->selector_count, &matches);
+    tbox_css_selector_collect_matching_nodes(root, query->selectors, query->selector_count, NULL, &matches);
 
     size_t count          = tbox_vector_length(&matches);
     tbox_arena *out_arena = count > 0 ? malloc(sizeof(tbox_arena)) : NULL;
@@ -99,7 +99,7 @@ tbox_css_selector_match_set tbox_css_selector_match_stylesheet(const tbox_css_st
 
             tbox_vector nodes;
             tbox_vector_init(&nodes, &scratch, sizeof(const tbox_html_node *), 0);
-            tbox_css_selector_collect_matching_nodes(root, selector, 1, &nodes);
+            tbox_css_selector_collect_matching_nodes(root, selector, 1, ruleset->scope, &nodes);
 
             size_t node_count = tbox_vector_length(&nodes);
             for (size_t n = 0; n < node_count; n++) {

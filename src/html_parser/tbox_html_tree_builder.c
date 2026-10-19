@@ -177,6 +177,17 @@ tbox_html_node *tbox_html_tree_builder_run(tbox_html_tree_builder *builder) {
             tbox_html_tree_builder_handle_leaf(builder, TBOX_HTML_NODE_COMMENT, token.text, top, tbox_html_tree_builder_copy);
             break;
         case TBOX_HTML_TOKEN_TEXT:
+            /* A newline right after <pre>, <listing> or <textarea> is
+             * dropped, so the content can start on the next source line. */
+            if (top->type == TBOX_HTML_NODE_ELEMENT && top->first_child == NULL &&
+                (tbox_string_view_equal_cstr(top->element.tag_name, "pre") || tbox_string_view_equal_cstr(top->element.tag_name, "listing") || tbox_string_view_equal_cstr(top->element.tag_name, "textarea"))) {
+                size_t skip = 0;
+                if (token.text.size >= 1 && token.text.data[0] == '\n')
+                    skip = 1;
+                else if (token.text.size >= 2 && token.text.data[0] == '\r' && token.text.data[1] == '\n')
+                    skip = 2;
+                token.text = tbox_string_view_make(token.text.data + skip, token.text.size - skip);
+            }
             if (token.text.size > 0) {
                 bool raw_text = tbox_html_tree_builder_is_raw_text_parent(top);
                 tbox_html_tree_builder_handle_leaf(builder, TBOX_HTML_NODE_TEXT, token.text, top,

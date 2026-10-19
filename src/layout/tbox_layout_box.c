@@ -28,6 +28,8 @@ tbox_layout_box *tbox_layout_build_element(tbox_arena *arena, const tbox_html_no
 
 tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const double *row_column_widths, size_t row_column_count, const tbox_layout_forced_size *forced) {
     const tbox_style *style                  = tbox_layout_style_or_default(styles, node);
+    if (tbox_layout_frame_change(style)) /* a vertical writing mode starts here */
+        return tbox_layout_build_orthogonal(arena, node, styles, fonts, images, container, cursor_y, positioned_context, forced);
     tbox_layout_classification kind          = tbox_layout_classify(node, style, styles, row_column_widths, row_column_count);
     bool is_text_tag                         = kind.text;
     bool is_image_input                      = kind.image;
@@ -52,6 +54,12 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
     tbox_layout_box *box = (tbox_layout_box *)tbox_arena_alloc_zero(arena, sizeof(tbox_layout_box));
     box->node            = node;
     box->style           = style;
+
+    /* A box that establishes a block formatting context (and the root)
+     * gives its descendants a fresh set of floats, which it contains. */
+    bool new_bfc = positioned_context.floats == NULL || tbox_layout_establishes_bfc(node, style, styles);
+    if (new_bfc)
+        positioned_context.floats = tbox_layout_floats_create(arena);
 
     double margin_top    = tbox_layout_resolve_edge(style->margin[0], container.width);
     double margin_right  = tbox_layout_resolve_edge(style->margin[1], container.width);
@@ -91,8 +99,20 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         content_width = container.width - margin_left - margin_right - horizontal_edges;
         /* An absolute/fixed box with both `left` and `right` stretches
          * between them (CSS2.1 10.3.7), instead of taking the whole width. */
-        if (is_out_of_flow && style->offset[1].kind != TBOX_STYLE_LENGTH_AUTO && style->offset[3].kind != TBOX_STYLE_LENGTH_AUTO)
+        if (is_out_of_flow && style->offset[1].kind != TBOX_STYLE_LENGTH_AUTO && style->offset[3].kind != TBOX_STYLE_LENGTH_AUTO) {
             content_width -= tbox_layout_resolve_edge(style->offset[1], container.width) + tbox_layout_resolve_edge(style->offset[3], container.width);
+        } else if (is_out_of_flow && !is_image_input && !tbox_layout_is_textarea(node) && style->width_keyword == TBOX_STYLE_SIZE_KEYWORD_NONE) {
+            /* Otherwise it is shrink-to-fit (CSS2.1 10.3.7): its content's
+             * max-content width, at most what is left of the containing
+             * block beside its `left` (or `right`), at least min-content. */
+            double offset = style->offset[3].kind != TBOX_STYLE_LENGTH_AUTO ? tbox_layout_resolve_edge(style->offset[3], container.width) :
+                            style->offset[1].kind != TBOX_STYLE_LENGTH_AUTO ? tbox_layout_resolve_edge(style->offset[1], container.width) : 0.0;
+            tbox_layout_intrinsic outer = tbox_layout_intrinsic_outer(arena, node, styles, fonts, images);
+            double outside              = margin_left + margin_right + horizontal_edges;
+            double available            = content_width - offset;
+            double minimum = outer.min - outside, maximum = outer.max - outside;
+            content_width = available > maximum ? maximum : available < minimum ? minimum : available;
+        }
         if (is_image_input)
             content_width = tbox_layout_image_auto_width(&image_content, style, container, vertical_edges);
         if (tbox_layout_is_textarea(node))
@@ -255,7 +275,7 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
     double content_height;
     if (is_image_input) {
         content_height = tbox_layout_image_height(&image_content, style, container, content_width, vertical_edges);
-    } else if (is_flex) {
+    } else if (is_flex || kind.grid) {
         bool height_definite = false;
         if (forced != NULL && forced->has_height) {
             content_height  = forced->height > vertical_edges ? forced->height - vertical_edges : 0.0;
@@ -278,12 +298,14 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         if (height_definite)
             content_height = tbox_layout_constrain_height(style, content_height, container.height, container.height_definite, vertical_edges);
         tbox_layout_positioned_context context_for_children = positioned_context;
-        if (style->position != TBOX_STYLE_POSITION_STATIC) {
+        if (style->position != TBOX_STYLE_POSITION_STATIC || tbox_style_has_transform(style)) {
             context_for_children.nearest_ancestor = (tbox_rect){ content_x - padding_left, content_y - padding_top, content_width + padding_left + padding_right, content_height + padding_top + padding_bottom };
+            if (tbox_style_has_transform(style))
+                context_for_children.viewport = context_for_children.nearest_ancestor;
         }
         double min_height = tbox_layout_constrain_height(style, 0.0, container.height, container.height_definite, vertical_edges);
         double max_height = tbox_layout_constrain_height(style, TBOX_LAYOUT_FLEX_INFINITE, container.height, container.height_definite, vertical_edges);
-        double extent     = tbox_layout_build_flex(arena, node, style, styles, fonts, images, content_x, content_y, content_width, content_height, height_definite, min_height, max_height, box, context_for_children);
+        double extent     = (kind.grid ? tbox_layout_build_grid : tbox_layout_build_flex)(arena, node, style, styles, fonts, images, content_x, content_y, content_width, content_height, height_definite, min_height, max_height, box, context_for_children);
         if (!height_definite)
             content_height = extent;
     } else if (is_text_tag) {
@@ -295,13 +317,18 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
          * lines' heights (or one face's line-height for empty text) -- see
          * tbox_layout_build_text_runs's doc comment. */
         tbox_layout_positioned_context context_for_children = positioned_context;
-        if (style->position != TBOX_STYLE_POSITION_STATIC) /* height unknown yet, same simplification as blocks */
+        if (style->position != TBOX_STYLE_POSITION_STATIC || tbox_style_has_transform(style)) { /* height unknown yet, same simplification as blocks */
             context_for_children.nearest_ancestor = (tbox_rect){ content_x - padding_left, content_y - padding_top, content_width + padding_left + padding_right, padding_top + padding_bottom };
+            if (tbox_style_has_transform(style))
+                context_for_children.viewport = context_for_children.nearest_ancestor;
+        }
         /* Gauge children are fallback text in the DOM, not visible control content. */
         const tbox_html_node *text_children = (tbox_layout_tag(node, "progress") || tbox_layout_tag(node, "meter")) ? NULL : node->first_child;
         content_height = tbox_layout_tag(node, "ruby") ?
             tbox_layout_build_ruby_runs(arena, node, styles, fonts, content_x, content_y, box) :
             tbox_layout_build_text_runs(arena, node, text_children, NULL, style, styles, fonts, images, content_x, content_y, content_width, box, &context_for_children, node, style);
+        if (new_bfc && tbox_layout_floats_bottom(positioned_context.floats) > content_y + content_height)
+            content_height = tbox_layout_floats_bottom(positioned_context.floats) - content_y; /* contains its floats */
         if (tbox_layout_tag(node, "summary") && node->parent != NULL &&
             tbox_layout_tag(node->parent, "details")) {
             bool first_summary = true;
@@ -410,7 +437,9 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
          * exercised by this version's minimum test cases (which use a
          * definite-height or default-flow positioned ancestor). */
         tbox_layout_positioned_context context_for_children = positioned_context;
-        if (style->position != TBOX_STYLE_POSITION_STATIC) {
+        /* A transform makes the box the containing block of its fixed
+         * descendants too, as in CSS. */
+        if (style->position != TBOX_STYLE_POSITION_STATIC || tbox_style_has_transform(style)) {
             tbox_rect padding_box_now = {
                 .x      = content_x - padding_left,
                 .y      = content_y - padding_top,
@@ -418,6 +447,8 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
                 .height = content_height + padding_top + padding_bottom,
             };
             context_for_children.nearest_ancestor = padding_box_now;
+            if (tbox_style_has_transform(style))
+                context_for_children.viewport = padding_box_now;
         }
 
         tbox_layout_containing_block children_container = {
@@ -427,14 +458,23 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
             .height          = content_height,
             .height_definite = height_definite,
         };
-        double children_total_height = tbox_layout_build_children(arena, node, styles, fonts, images, children_container, content_y, box, context_for_children, style);
+        if (tbox_layout_is_multicol(style) && height_definite) {
+            content_height = tbox_layout_constrain_height(style, content_height, container.height, container.height_definite, vertical_edges);
+            children_container.height = content_height;
+        }
+        double children_total_height = tbox_layout_is_multicol(style) ?
+            tbox_layout_build_multicol(arena, node, style, styles, fonts, images, children_container, box, context_for_children) :
+            tbox_layout_build_children(arena, node, styles, fonts, images, children_container, content_y, box, context_for_children, style);
+        if (new_bfc && tbox_layout_floats_bottom(positioned_context.floats) > content_y + children_total_height)
+            children_total_height = tbox_layout_floats_bottom(positioned_context.floats) - content_y; /* contains its floats */
         box->scroll_content_height   = children_total_height;
         /* A list item whose content starts with a block (<li><p>..</p>):
          * no anonymous box took the marker, so it hangs beside that block's
          * top, in the item's own runs. */
         const tbox_layout_box *first_in_flow = box->first_child;
         while (first_in_flow != NULL && first_in_flow->style != NULL &&
-               (first_in_flow->style->position == TBOX_STYLE_POSITION_ABSOLUTE || first_in_flow->style->position == TBOX_STYLE_POSITION_FIXED))
+               (first_in_flow->style->position == TBOX_STYLE_POSITION_ABSOLUTE || first_in_flow->style->position == TBOX_STYLE_POSITION_FIXED ||
+                tbox_layout_is_float(first_in_flow->node, first_in_flow->style)))
             first_in_flow = first_in_flow->next_sibling;
         if (first_in_flow != NULL && first_in_flow->node != NULL && box->text_run_count == 0) {
             tbox_vector marker_runs;
@@ -450,6 +490,11 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         }
     }
 
+    /* `container-type: size`: size containment, an auto height ignores
+     * the content (the box is as tall as min-height and padding make it). */
+    if (style->container_type == TBOX_CSS_CONTAINER_SIZE && !is_table && !is_table_row && !ratio_height && !(forced != NULL && forced->has_height) &&
+        !(style->height.kind == TBOX_STYLE_LENGTH_PX || (style->height.kind == TBOX_STYLE_LENGTH_PERCENT && container.height_definite)))
+        content_height = 0.0;
     if (stretch_height)
         content_height = stretched_height; /* text boxes too, not only blocks */
     content_height = tbox_layout_constrain_height(style, content_height, container.height, container.height_definite, vertical_edges);
@@ -499,9 +544,27 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
         while (first != NULL && first->type != TBOX_HTML_NODE_ELEMENT) first = first->next_sibling;
         if (tbox_layout_tag(first, "legend")) {
             tbox_layout_box *legend = tbox_layout_legend_box(box->first_child, first);
-            if (legend != NULL)
-                tbox_layout_translate(legend, 0.0,
-                    box->border_box.y - legend->border_box.height / 2.0 - legend->border_box.y);
+            if (legend != NULL) {
+                /* The rendered legend (HTML's rendering rules): its margin box
+                 * starts at the fieldset's top, the top border runs through
+                 * its middle, and the content follows it after padding-top.
+                 * It was laid out in the flow below the border and padding,
+                 * so every child moves up by the border, the legend further up
+                 * to the top; the box loses the border's height. */
+                double top    = box->border_box.y;
+                double height = legend->margin_box.height;
+                for (tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
+                    tbox_layout_translate(child, 0.0, -border_top);
+                /* (the legend may sit inside an anonymous line box) */
+                tbox_layout_translate(legend, 0.0, top - legend->margin_box.y);
+                double band = height > border_top ? (height - border_top) / 2.0 : 0.0;
+                box->border_box.y += band;
+                box->border_box.height -= band + border_top;
+                box->padding_box.y += band;
+                box->padding_box.height -= band + border_top;
+                box->content_box.y -= border_top;
+                box->margin_box.height -= border_top;
+            }
         }
     }
 

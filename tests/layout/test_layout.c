@@ -9,6 +9,8 @@
 #include <string.h>
 
 #include "base/tbox_arena.h"
+#include "font/tbox_font_measure.h"
+#include "layout/tbox_layout_bidi.h"
 #include "layout/tbox_layout_password.h"
 #include "test_support.h"
 
@@ -132,6 +134,12 @@ static bool tbox_test_layout_resolver(void *userdata, const tbox_font_query *que
     *out_size = state->font_size;
     return true;
 }
+
+int tbox_test_grid_run(tbox_font_face_cache *fonts);
+int tbox_test_multicol_run(tbox_font_face_cache *fonts);
+int tbox_test_motion_layout_run(tbox_font_face_cache *fonts);
+int tbox_test_inline_typography_run(tbox_font_face_cache *fonts);
+int tbox_test_writing_mode_run(tbox_font_face_cache *fonts);
 
 int tbox_test_layout_run(void) {
     int failures = 0;
@@ -1034,10 +1042,10 @@ int tbox_test_layout_run(void) {
             const tbox_layout_box *inner_box = outer_box->first_child;
             TBOX_TEST_ASSERT(inner_box != NULL);
             if (inner_box != NULL) {
-                /* outer's padding_box is 320x220 (300x200 content + 10px padding
-                 * all around); inner's width:auto must fill that minus its own
-                 * 5px margin and 3px padding on each side: 320 - 10 - 6 == 304. */
-                TBOX_TEST_ASSERT_MSG(inner_box->content_box.width == 304.0, "width:auto on an absolute box must fill the containing block, not shrink to content");
+                /* width:auto without both left and right is shrink-to-fit
+                 * (CSS2.1 10.3.7): the max-content of "x", well under the
+                 * 304px the containing block would leave. */
+                TBOX_TEST_ASSERT_MSG(fabs(inner_box->content_box.width - tbox_font_measure_text(regular_16, (tbox_string_view){ "x", 1 })) < 0.5, "width:auto on an absolute box with only left must shrink to its content");
                 TBOX_TEST_ASSERT_MSG(inner_box->content_box.height == tbox_font_face_line_height(regular_16), "height:auto must now sum in the anonymous box built for the loose \"x\" text -- a single line at the default face");
             }
         }
@@ -2043,6 +2051,37 @@ int tbox_test_layout_run(void) {
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
+    }
+
+    /* Named, string and anonymous counter styles reach actual marker runs,
+     * including an inherited custom type and a block-first list item. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<ol><li>A</li><li class='in'>B</li><li class='block'><div>C</div></li><li class='string'>D</li><li class='anonymous'>E</li></ol>");
+        tbox_css_stylesheet *sheet = parse_css_cstr("@counter-style custom { system:cyclic; symbols:'*' '+'; prefix:'['; suffix:'] '; } ol { padding-left:40px; list-style-type:custom; } .in { list-style-position:inside; } .string { list-style-type:'!'; } .anonymous { list-style-type:symbols(cyclic 'x' 'y'); }");
+        tbox_arena arena = tbox_arena_create(0);
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *ol = tbox_layout_build(&arena, root, &table, fonts, NULL, 800, 600);
+        TBOX_TEST_REQUIRE(ol != NULL && ol->first_child != NULL);
+        const tbox_layout_box *li = ol->first_child;
+        TBOX_TEST_REQUIRE(li->text_run_count == 2);
+        TBOX_TEST_ASSERT(string_view_equal_cstr(li->text_runs[1].text, "[*] "));
+        li = li->next_sibling;
+        TBOX_TEST_REQUIRE(li != NULL && li->text_run_count == 1);
+        TBOX_TEST_ASSERT(string_view_equal_cstr(li->text_runs[0].text, "[+] B"));
+        li = li->next_sibling;
+        TBOX_TEST_REQUIRE(li != NULL && li->first_child != NULL);
+        TBOX_TEST_ASSERT(li->text_run_count == 1);
+        if (li->text_run_count == 1)
+            TBOX_TEST_ASSERT(string_view_equal_cstr(li->text_runs[0].text, "[*] "));
+        li = li->next_sibling;
+        TBOX_TEST_REQUIRE(li != NULL && li->text_run_count == 2);
+        TBOX_TEST_ASSERT(string_view_equal_cstr(li->text_runs[1].text, "!"));
+        li = li->next_sibling;
+        TBOX_TEST_REQUIRE(li != NULL && li->text_run_count == 2);
+        TBOX_TEST_ASSERT(string_view_equal_cstr(li->text_runs[1].text, "x "));
+        tbox_arena_destroy(&arena); tbox_css_stylesheet_destroy(sheet); tbox_html_document_destroy(doc);
     }
 
     /* 34: <ul><li></li></ul>, an EMPTY <li>: intentional
@@ -3831,6 +3870,57 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* A fieldset's legend sits on its top border: the legend starts at the
+     * fieldset's top, the border runs through its middle and the content
+     * follows it after padding-top. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<fieldset id='f'><legend id='l'>Legend</legend><div id='d'>x</div></fieldset>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("#f { display: block; border: 2px solid black; padding: 6px 12px 10px; margin: 0; } #l { display: inline-block; padding: 0 2px; } #d { height: 20px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table resolved      = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *f = find_box_for_node(layout, find_html_id(root, "f"));
+        const tbox_layout_box *l = find_box_for_node(layout, find_html_id(root, "l"));
+        const tbox_layout_box *d = find_box_for_node(layout, find_html_id(root, "d"));
+        TBOX_TEST_REQUIRE(f != NULL && l != NULL && d != NULL);
+        double h = l->margin_box.height;
+        TBOX_TEST_ASSERT(fabs(l->margin_box.y - f->margin_box.y) < 1e-9);
+        TBOX_TEST_ASSERT(fabs(f->border_box.y - (f->margin_box.y + (h - 2.0) / 2.0)) < 1e-9);
+        TBOX_TEST_ASSERT(fabs(d->margin_box.y - (l->margin_box.y + h + 6.0)) < 1e-6);
+        TBOX_TEST_ASSERT(fabs(f->margin_box.y + f->margin_box.height - (d->margin_box.y + 20.0 + 10.0 + 2.0)) < 1e-6);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Automatic table layout: an auto-width table shrinks to its content,
+     * a percentage column takes its share, the UA spacing is 2px, and a
+     * collapsed row still sizes the columns. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><table id='auto'><tr><td>aa</td><td>bb</td></tr></table>"
+            "<table id='pct'><tr><td id='p70'>a</td><td>b</td><td>c</td></tr></table>"
+            "<table id='col'><tr><td id='short'>x</td></tr><tr id='hidden'><td>a much longer hidden cell</td></tr></table></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("table { border-spacing: 2px; } #pct { width: 400px; } #p70 { width: 70%; } #hidden { visibility: collapse; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table resolved      = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *autot   = find_box_for_node(layout, find_html_id(root, "auto"));
+        const tbox_layout_box *p70     = find_box_for_node(layout, find_html_id(root, "p70"));
+        const tbox_layout_box *shortc  = find_box_for_node(layout, find_html_id(root, "short"));
+        TBOX_TEST_REQUIRE(autot != NULL && p70 != NULL && shortc != NULL);
+        TBOX_TEST_ASSERT(autot->content_box.width < 100.0);
+        TBOX_TEST_ASSERT(fabs(p70->border_box.width - (400.0 - 8.0) * 0.7) < 1.0);
+        TBOX_TEST_ASSERT(shortc->border_box.width > 100.0);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* Plain direct-row tables also grow to satisfy a cell's min-width. */
     {
         tbox_html_document *doc        = parse_html_cstr("<table id='grid'><tr><td id='a'>A</td><td id='b'>B</td></tr></table>");
@@ -4110,6 +4200,35 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Break opportunities after a hyphen and a slash, also for
+     * min-content; none before a digit nor inside "//". */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><p id=\"hy\">xx ease-out</p><p id=\"url\">http://ab.com/cd</p><p id=\"num\">aaaaaaa-1</p>"
+            "<div id=\"min\">aaaa-bbbb</div><div id=\"whole\">aaaabbbb</div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "p { font-size: 16px; width: 60px; } #min, #whole { width: min-content; font-size: 16px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table resolved      = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *hy      = find_box_for_node(layout, find_html_id(root, "hy"));
+        const tbox_layout_box *url     = find_box_for_node(layout, find_html_id(root, "url"));
+        const tbox_layout_box *num     = find_box_for_node(layout, find_html_id(root, "num"));
+        TBOX_TEST_REQUIRE(hy != NULL && url != NULL && num != NULL);
+        TBOX_TEST_ASSERT(hy->text_run_count == 2 && string_view_equal_cstr(hy->text_runs[1].text, "out"));
+        TBOX_TEST_ASSERT(url->text_run_count >= 2 && string_view_equal_cstr(url->text_runs[0].text, "http://"));
+        TBOX_TEST_ASSERT(num->text_run_count == 1);
+        const tbox_layout_box *min   = find_box_for_node(layout, find_html_id(root, "min"));
+        const tbox_layout_box *whole = find_box_for_node(layout, find_html_id(root, "whole"));
+        TBOX_TEST_REQUIRE(min != NULL && whole != NULL);
+        TBOX_TEST_ASSERT(min->content_box.width < whole->content_box.width * 0.75);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* Intrinsic width keywords, hanging indent, soft hyphens, balance and
      * display: list-item markers. */
     {
@@ -4178,6 +4297,190 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* Inherited OpenType options reach anonymous inline boxes, not just
+     * explicit spans. Their run width must match the selected face. */
+    {
+        size_t ot_size = 0;
+        char *ot_data = read_file(TBOX_TEST_ASSETS_DIR "/150-sans.ttf", &ot_size);
+        TBOX_TEST_REQUIRE(ot_data != NULL);
+        tbox_font_face_cache *ot_fonts = tbox_font_face_cache_create(ot_data, ot_size, ot_data, ot_size, NULL, NULL, NULL);
+        free(ot_data);
+        TBOX_TEST_REQUIRE(ot_fonts != NULL);
+        tbox_html_document *doc = parse_html_cstr("<section><div id='on'>office<p></p></div><div id='off'>office<p></p></div></section>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("section, div, p { display: block; } div { font-size: 24px; } #off { font-variant-ligatures: none; font-language-override: 'TRK'; }");
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_css_cascade_source source = {sheet, TBOX_CSS_ORIGIN_AUTHOR};
+        tbox_style_table table = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout = tbox_layout_build(&arena, root, &table, ot_fonts, NULL, 800, 600);
+        const tbox_layout_box *on = find_box_for_node(layout, find_html_id(root, "on"));
+        const tbox_layout_box *off = find_box_for_node(layout, find_html_id(root, "off"));
+        TBOX_TEST_REQUIRE(on != NULL && off != NULL && on->first_child != NULL && off->first_child != NULL);
+        on = on->first_child;
+        off = off->first_child;
+        TBOX_TEST_REQUIRE(on->text_run_count == 1 && off->text_run_count == 1);
+        TBOX_TEST_ASSERT(on->text_runs[0].glyph_count == (TBOX_TEST_COMPLEX_SHAPING ? 4u : 6u));
+        TBOX_TEST_ASSERT(off->text_runs[0].glyph_count == 6);
+        const tbox_style *style = tbox_style_table_find(&table, find_html_id(root, "off"));
+        const tbox_font_face *face = tbox_layout_style_face(ot_fonts, style);
+        TBOX_TEST_ASSERT(face == off->text_runs[0].font && face != on->text_runs[0].font);
+        TBOX_TEST_ASSERT(off->text_runs[0].rect.width == tbox_font_measure_text(face, tbox_string_view_make("office", 6)));
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+        tbox_font_face_cache_destroy(ot_fonts);
+    }
+
+    failures += tbox_test_grid_run(fonts);
+    failures += tbox_test_inline_typography_run(fonts);
+    /* Floats (CSS 2.1 section 9.5): lines beside a float are shortened
+     * while the block itself passes under it; floats stack side by side
+     * and drop below when they do not fit; clear; a flow-root contains its
+     * float and an overflow block sits beside it; a float among the words
+     * of a paragraph; shape-outside: circle() lets lines in near its top. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><div class='g'><div id='a'><div id='f1'></div><p id='p1'>aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr ss tt uu vv ww xx yy zz</p></div></div>"
+            "<div class='g'><div id='b'><div class='s' id='s1'></div><div class='s' id='s2'></div><div class='s' id='s3'></div><div class='s' id='s4'></div>"
+            "<div id='cl'>x</div></div></div>"
+            "<div class='g'><div id='root'><div class='t'></div>x</div>"
+            "<div id='plain'><div class='t'></div>x</div></div>"
+            "<div class='g'><div id='c'><div id='f2'></div><div id='ovf'>x</div></div></div>"
+            "<div class='g'><div id='d'><p id='p2'>aa bb <span id='f3'></span>cc dd ee ff gg hh ii jj kk ll mm nn oo pp</p></div></div>"
+            "<div class='g'><div id='e'><div id='circ'></div><p id='p3'>aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr ss tt uu vv ww xx yy zz aa bb cc dd ee ff gg hh ii jj kk</p></div></div></div>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            "body { margin: 0; } div, p { margin: 0; } .g { display: flow-root; } p { font-size: 16px; line-height: 20px; }"
+            "#a, #b, #c, #d, #e { width: 300px; }"
+            "#f1 { float: left; width: 50px; height: 50px; margin-right: 10px; }"
+            ".s { float: left; width: 90px; height: 30px; } #s4 { float: right; width: 100px; height: 40px; }"
+            "#cl { clear: both; height: 10px; }"
+            "#root { display: flow-root; width: 100px; } #plain { width: 100px; } .t { float: left; width: 20px; height: 80px; }"
+            "#f2 { float: right; width: 80px; height: 40px; } #ovf { overflow: hidden; }"
+            "#f3 { float: right; width: 40px; height: 30px; }"
+            "#circ { float: left; width: 100px; height: 100px; shape-outside: circle(); }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table resolved      = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+#define FLOAT_BOX(id) find_box_for_node(layout, find_html_id(root, id))
+        const tbox_layout_box *a = FLOAT_BOX("a"), *f1 = FLOAT_BOX("f1"), *p1 = FLOAT_BOX("p1");
+        TBOX_TEST_ASSERT(a != NULL && f1 != NULL && p1 != NULL);
+        if (a != NULL && f1 != NULL && p1 != NULL && p1->text_run_count > 3) {
+            TBOX_TEST_ASSERT(f1->margin_box.x == a->content_box.x && f1->margin_box.y == a->content_box.y);
+            TBOX_TEST_ASSERT(p1->border_box.x == a->content_box.x && p1->border_box.width == 300.0); /* the block passes under */
+            TBOX_TEST_ASSERT(p1->text_runs[0].rect.x == a->content_box.x + 60.0);                     /* its lines do not */
+            const tbox_layout_text_run *last = &p1->text_runs[p1->text_run_count - 1];
+            TBOX_TEST_ASSERT(last->rect.y >= f1->margin_box.y + 50.0 && last->rect.x == a->content_box.x);
+            TBOX_TEST_ASSERT(a->content_box.height == p1->margin_box.height); /* a plain block does not contain the float */
+        }
+        const tbox_layout_box *b = FLOAT_BOX("b"), *s1 = FLOAT_BOX("s1"), *s2 = FLOAT_BOX("s2"), *s3 = FLOAT_BOX("s3"), *s4 = FLOAT_BOX("s4"), *cl = FLOAT_BOX("cl");
+        TBOX_TEST_ASSERT(b != NULL && s1 != NULL && s2 != NULL && s3 != NULL && s4 != NULL && cl != NULL);
+        if (b != NULL && s1 != NULL && s2 != NULL && s3 != NULL && s4 != NULL && cl != NULL) {
+            double x = b->content_box.x, y = b->content_box.y;
+            TBOX_TEST_ASSERT(s1->margin_box.x == x && s2->margin_box.x == x + 90.0 && s3->margin_box.x == x + 180.0);
+            TBOX_TEST_ASSERT(s3->margin_box.y == y);
+            /* 100px do not fit in the 30px left: below the floats, at the right. */
+            TBOX_TEST_ASSERT(s4->margin_box.y == y + 30.0 && s4->margin_box.x == x + 200.0);
+            TBOX_TEST_ASSERT(cl->border_box.y == y + 70.0); /* clear: both */
+        }
+        const tbox_layout_box *flow_root = FLOAT_BOX("root"), *plain = FLOAT_BOX("plain");
+        TBOX_TEST_ASSERT(flow_root != NULL && plain != NULL);
+        if (flow_root != NULL && plain != NULL) {
+            TBOX_TEST_ASSERT(flow_root->content_box.height == 80.0);
+            TBOX_TEST_ASSERT(plain->content_box.height < 80.0);
+        }
+        const tbox_layout_box *c = FLOAT_BOX("c"), *f2 = FLOAT_BOX("f2"), *ovf = FLOAT_BOX("ovf");
+        TBOX_TEST_ASSERT(c != NULL && f2 != NULL && ovf != NULL);
+        if (c != NULL && f2 != NULL && ovf != NULL) {
+            TBOX_TEST_ASSERT(f2->margin_box.x == c->content_box.x + 220.0);
+            TBOX_TEST_ASSERT(ovf->border_box.x == c->content_box.x && ovf->border_box.width == 220.0);
+            TBOX_TEST_ASSERT(c->content_box.height < 40.0);
+        }
+        const tbox_layout_box *d = FLOAT_BOX("d"), *p2 = FLOAT_BOX("p2"), *f3 = FLOAT_BOX("f3");
+        TBOX_TEST_ASSERT(d != NULL && p2 != NULL && f3 != NULL);
+        if (d != NULL && p2 != NULL && f3 != NULL && p2->text_run_count > 0) {
+            TBOX_TEST_ASSERT(f3->parent == p2);
+            TBOX_TEST_ASSERT(f3->margin_box.x == d->content_box.x + 260.0 && f3->margin_box.y == p2->content_box.y);
+            TBOX_TEST_ASSERT(p2->text_runs[0].rect.x + p2->text_runs[0].rect.width <= f3->margin_box.x);
+            /* the words around the float stay on one line */
+            TBOX_TEST_ASSERT(p2->text_runs[0].text.size > 8 && memcmp(p2->text_runs[0].text.data, "aa bb cc", 8) == 0);
+        }
+        const tbox_layout_box *e = FLOAT_BOX("e"), *p3 = FLOAT_BOX("p3");
+        TBOX_TEST_ASSERT(e != NULL && p3 != NULL);
+        if (e != NULL && p3 != NULL && p3->text_run_count >= 4) {
+            double first = p3->text_runs[0].rect.x - e->content_box.x, third = p3->text_runs[2].rect.x - e->content_box.x;
+            TBOX_TEST_ASSERT(first < 100.0 && first > 50.0); /* the circle is narrow at its top */
+            TBOX_TEST_ASSERT(third > first && third <= 100.0);
+        }
+#undef FLOAT_BOX
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Bidi (docs/09-texto-e-fontes.md, "Texto bidirecional"): <bdo dir=rtl>
+     * draws its text right to left; an rtl paragraph puts a Hebrew word
+     * right of the Latin one that follows it; an isolate keeps the number
+     * after it on its own side; pure left-to-right text keeps one run. */
+    {
+        tbox_html_document *doc = parse_html_cstr(
+            "<div><p id=\"bdo\">ab <bdo dir=\"rtl\">cd ef</bdo> gh</p>"
+            "<p id=\"rtl\" style=\"direction: rtl\">\xd7\x90\xd7\x91 cd</p>"
+            "<p id=\"normal\">u <span style=\"direction: rtl\">\xd7\x90</span> 5</p>"
+            "<p id=\"isolate\">u <span dir=\"rtl\">\xd7\x90</span> 5</p>"
+            "<p id=\"plain\">ab <span>cd</span> ef</p></div>");
+        const tbox_html_node *root     = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet     = parse_css_cstr("div, p { display: block; } p { width: 300px; } span, bdo { display: inline; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+
+        const tbox_layout_box *bdo = find_box_for_node(layout, find_html_id(root, "bdo"));
+        TBOX_TEST_REQUIRE(bdo != NULL && bdo->text_run_count == 3);
+        const tbox_layout_text_run *reversed = &bdo->text_runs[1];
+        TBOX_TEST_ASSERT(string_view_equal_cstr(reversed->text, "cd ef"));
+        TBOX_TEST_ASSERT(reversed->glyph_count == 5 && reversed->glyphs[0].cluster == 4 && reversed->glyphs[4].cluster == 0);
+        TBOX_TEST_ASSERT(reversed->glyphs[0].x < reversed->glyphs[4].x);
+        TBOX_TEST_ASSERT(bdo->text_runs[0].rect.x < reversed->rect.x && reversed->rect.x < bdo->text_runs[2].rect.x);
+
+        const tbox_layout_box *rtl = find_box_for_node(layout, find_html_id(root, "rtl"));
+        TBOX_TEST_REQUIRE(rtl != NULL && rtl->text_run_count == 1);
+        const tbox_layout_text_run *mixed = &rtl->text_runs[0];
+        TBOX_TEST_ASSERT(mixed->glyph_count == 5 && mixed->glyphs[0].cluster == 5); /* "cd" leftmost */
+        TBOX_TEST_ASSERT(mixed->glyphs[4].cluster == 0);                            /* alef rightmost */
+        TBOX_TEST_ASSERT(mixed->rect.x + mixed->rect.width > rtl->content_box.x + rtl->content_box.width - 1.0); /* start = right */
+
+        /* "u א 5": with normal the number joins the Hebrew run (5 left of
+         * alef); isolated, it stays after it. */
+        const tbox_layout_box *normal  = find_box_for_node(layout, find_html_id(root, "normal"));
+        const tbox_layout_box *isolate = find_box_for_node(layout, find_html_id(root, "isolate"));
+        TBOX_TEST_REQUIRE(normal != NULL && isolate != NULL && normal->text_run_count == 3 && isolate->text_run_count == 3);
+        TBOX_TEST_ASSERT(string_view_equal_cstr(normal->text_runs[1].text, "5") && string_view_equal_cstr(normal->text_runs[2].text, "\xd7\x90"));
+        TBOX_TEST_ASSERT(string_view_equal_cstr(isolate->text_runs[1].text, "\xd7\x90") && string_view_equal_cstr(isolate->text_runs[2].text, "5"));
+
+        const tbox_layout_box *plain = find_box_for_node(layout, find_html_id(root, "plain"));
+        TBOX_TEST_REQUIRE(plain != NULL && plain->text_run_count == 3);
+        TBOX_TEST_ASSERT(string_view_equal_cstr(plain->text_runs[0].text, "ab") && plain->text_runs[0].glyphs[0].cluster == 0);
+
+        /* The caret of an input: plain text is the prefix width; after the
+         * Hebrew word in "אב cd" (rtl) it sits at that word's left edge. */
+        const tbox_font_face *face = regular_16;
+        tbox_string_view value     = tbox_string_view_make("\xd7\x90\xd7\x91 cd", 7);
+        TBOX_TEST_ASSERT(tbox_layout_bidi_caret_x(face, 0.0, tbox_string_view_make("abc", 3), 2, false) == tbox_text_prefix_width(face, 0.0, tbox_string_view_make("abc", 3), 2));
+        double total = tbox_font_measure_text(face, value);
+        double hebrew = tbox_font_measure_text(face, tbox_string_view_make("\xd7\x90\xd7\x91", 4));
+        TBOX_TEST_ASSERT(tbox_test_double_approx_equal(tbox_layout_bidi_caret_x(face, 0.0, value, 0, true), total));
+        TBOX_TEST_ASSERT(tbox_test_double_approx_equal(tbox_layout_bidi_caret_x(face, 0.0, value, 4, true), total - hebrew));
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    failures += tbox_test_multicol_run(fonts);
+    failures += tbox_test_motion_layout_run(fonts);
+    failures += tbox_test_writing_mode_run(fonts);
     tbox_font_face_cache_destroy(fonts);
     free(font_data);
 

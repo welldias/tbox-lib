@@ -864,3 +864,222 @@ Daqui em diante, cada mudança relevante ganha uma entrada curta aqui.
 - `cmake --build build --target cppcheck` sai com 0; pode virar verificação
   de CI.
 
+## 2026-10-18 — `border-image`
+
+- `border-image` e os cinco longhands (Backgrounds 3 §6): nove fatias de
+  `url()` ou gradiente, `fill`, `border-image-width`/`-outset` com
+  comprimento, percentual ou número, os quatro modos de `border-image-repeat`.
+  Fixture 148.
+- `tbox_paint_op` ganhou `source_rect`: em `IMAGE`, o recorte da imagem; em
+  `GRADIENT`, a caixa em que o gradiente é disposto, esticada até o `rect`.
+
+## 2026-10-18 — Recursos OpenType
+
+- `font-feature-settings`, `font-variant-ligatures`, `-numeric`,
+  `-east-asian`, `-alternates` (`historical-forms`) e
+  `font-language-override` viram features/idioma do HarfBuzz; herdáveis.
+  `font-variant` ajusta esses longhands e `font` os reseta. Fixture 150, com
+  uma fonte própria (`150-sans.ttf`) para Firefox e tbox usarem os mesmos
+  glifos.
+- `@font-palette-values` e `font-palette` passam pelo parser e pela cascata,
+  sem efeito no desenho enquanto não houver glifos coloridos.
+
+## 2026-10-18 — `@scope`, `@property`, `@counter-style`
+
+- `@scope (<raiz>) [to (<limite>)]`, raiz implícita num `<style>`, `:scope`
+  e proximidade de escopo na cascata (depois da especificidade, antes da
+  ordem).
+- `@property` registra custom properties tipadas (`<length>`, `<color>`,
+  `<number>`, `<percentage>`, `<length-percentage>`, `<angle>`,
+  `<integer>`, `*`): `inherits`, `initial-value` e valor inválido caindo no
+  inicial.
+- `@counter-style` com os sete sistemas e todos os descritores, usado por
+  `list-style-type`, `counter()` e `counters()`; `list-style-type` também
+  aceita `<string>` e `symbols()`. No fallback, o marcador mantém
+  `prefix`/`suffix` do estilo nomeado, como no Firefox. Fixture 153.
+
+## 2026-10-18 — Transformações além de translação
+
+- `transform` com `rotate()`, `scale*()`, `skew*()`, `matrix()` e listas
+  compostas (até 8 funções); propriedades individuais `rotate`, `scale` e
+  `translate` (ordem translate → rotate → scale → transform);
+  `transform-origin`. Funções 3D multiplicadas em 4x4 e achatadas por
+  projeção ortográfica. Fixture 149.
+- Caixa transformada pintada numa camada composta pela inversa da matriz
+  (bilinear); translação pura continua no layout, sem camada. Damage pelo
+  bounding box transformado; hit test pela inversa.
+- Qualquer transformação cria contexto de empilhamento e bloco de contenção
+  de `absolute`/`fixed`. `@supports` aceita rotação/escala/skew/matriz (o
+  fixture 123 foi ajustado).
+- API: `tbox_style_animatable_*` usam arrays de `TBOX_STYLE_ANIM_VALUE_SIZE`
+  (8); `tbox_style_animatable_mix` recebe a propriedade; novos
+  `tbox_style_has_transform`/`tbox_style_transform_matrix`.
+
+## 2026-10-18 — CSS Grid
+
+- `display: grid`/`inline-grid`, `grid-template-*`, `grid-auto-*`,
+  `grid-area`/`-row`/`-column`, `grid`/`grid-template`, `minmax()`,
+  `repeat()` (inclusive `auto-fill`/`auto-fit`), `fit-content()`, nomes de
+  linha e áreas, `dense`, `justify-items`/`justify-self` e alinhamentos
+  existentes aplicados a grid. Algoritmo em `src/layout/tbox_layout_grid.c`
+  (CSS Grid 1 §11, spans aproximados). `@supports (display: grid)` passa a
+  ser verdadeiro (fixture 123 ajustado). Fixtures 151 e 152.
+
+## 2026-10-18 — Floats
+
+- `float` (CSS 2.1 §9.5, com os lógicos `inline-start`/`inline-end`),
+  `clear` com clearance, blocos que criam BFC (`flow-root`, `overflow`,
+  flex, tabelas, inline-block, imagens, controles) contendo e evitando
+  floats; `float` vira `none` em itens flex/grid e em absolutos.
+- `shape-outside` (formas básicas, caixas e `url()` com
+  `shape-image-threshold`) e `shape-margin`. Fixture 154; fixture 123
+  ajustado (`float` passa a ser suportado em `@supports`).
+
+## 2026-10-18 — Container queries
+
+- `@container` (tamanho, faixas, `and`/`or`/`not`, `style()` com custom
+  properties), `container-type`, `container-name`, `container` e unidades
+  `cqw`/`cqh`/`cqi`/`cqb`/`cqmin`/`cqmax`; contenção de tamanho. Fixture 156.
+- `tbox_context_run_frame` faz uma segunda passada de estilo quando há
+  contêineres. Assinaturas: as três `tbox_css_cascade_resolve_*_in_viewport`
+  recebem um `tbox_css_query_context`; `tbox_style_units` ganhou
+  `container_inline`/`container_block` (-1 sem contêiner).
+
+## 2026-10-18 — `zoom` e `resize`
+
+- `zoom` padronizado: fator efetivo (produto com os ancestrais) em
+  `tbox_style_units.zoom`, multiplicando as unidades absolutas; imagens
+  naturais escaladas no layout; `rem` = raiz sem zoom × fator.
+- `resize` com alça arrastável (`src/context/tbox_context_resize.c`, estado
+  por nó no contexto aplicado sobre o estilo a cada frame), parte
+  `::-tbox-resizer`, cursores `nwse-`/`nesw-resize`. Fixture 158.
+
+## 2026-10-18 — Multicoluna
+
+- `columns`, `column-count`, `column-width`, `column-fill`, `column-span`
+  (filhos diretos), `column-rule*`; fragmentação de blocos e linhas entre
+  colunas, margens truncadas nas quebras (CSS Fragmentation §5.2),
+  marcadores de lista acompanhando a linha; `break-before`/`-after:
+  column` e `break-inside: avoid` passam a ter efeito em multicoluna.
+  Fixture 155.
+
+## 2026-10-18 — Texto bidirecional
+
+- UAX #9 próprio (`src/base/tbox_bidi.c`, tabelas geradas do UCD 16; passa
+  nos 91 707 casos do `BidiCharacterTest.txt`), níveis por parágrafo antes
+  da quebra e reordenação por linha depois (`src/layout/tbox_layout_bidi.c`);
+  linhas só LTR não passam pelo algoritmo.
+- `unicode-bidi` completo; `<bdo>`, `<bdi>` e `dir` dão os valores padrão;
+  caret visual no `<input>`. `tbox_font_shape` ganhou `tbox_font_direction`
+  (espelhamento L4 no shaper). `all` não reseta mais `direction`/
+  `unicode-bidi`; caixas anônimas herdam `direction`. Fixture 159; os
+  fixtures 012 (`<bdo>`) e 130 passaram a bater com o Firefox.
+
+## 2026-10-18 — Contorno de texto e propriedades só de SVG/impressão
+
+- `-webkit-text-stroke` (+ `-width`/`-color`) e `paint-order` no texto
+  HTML; `marker*` e `mask-type` aceitos sem efeito (falsos em `@supports`);
+  `@page` lido e descartado com seletores e at-rules de margem. Fixture 163.
+
+## 2026-10-18 — Motion path
+
+- `offset-path` (`path()` com dados SVG, formas básicas com `<coord-box>`,
+  `ray()`), `offset-distance`, `offset-position`, `offset-anchor`,
+  `offset-rotate` e `offset`, compostos na matriz afim depois de
+  `translate`/`rotate`/`scale` e antes de `transform`. Fixture 161.
+  `tbox_style_transform_matrix` ganhou o parâmetro `offset`.
+- Na integração, o conjunto de propriedades animáveis chegou a 64 (o
+  limite da máscara de 64 bits): `paint-order` saiu dele (é discreta e uma
+  transição comum já a troca de uma vez).
+
+## 2026-10-18 — Máscaras em camadas, reflexo e `box-decoration-break`
+
+- `mask` com até quatro camadas (geometria e modo por camada) e
+  `mask-composite` (`add`/`subtract`/`intersect`/`exclude` e os aliases
+  `-webkit-` `source-over`/`source-out`/`source-in`/`xor`).
+- `box-reflect`/`-webkit-box-reflect` (quatro direções, deslocamento,
+  máscara de imagem ou gradiente; amplia o damage).
+- `box-decoration-break: slice | clone` em inline partido, também em linhas
+  bidi e ao lado de floats. Fixture 157.
+
+## 2026-10-18 — Capitulares e pontuação pendurada
+
+- Pseudo-elemento `::first-letter` (primeira letra tipográfica com a
+  pontuação que a precede); `initial-letter` (tamanho por N linhas,
+  alinhado à cap-height, com `sink`), desviado pelo gerenciador de floats;
+  `hanging-punctuation` (`first`, `last`, `force-end`, `allow-end`).
+  `tbox_font_face_cap_height` novo. Fixture 162.
+
+## 2026-10-18 — Escrita vertical
+
+- `writing-mode` (os cinco valores e os legados), `text-orientation`
+  (`mixed`, `upright`, `sideways`) e `text-combine-upright: all`. A
+  subárvore vertical é diagramada como horizontal num referencial
+  (`tbox_style_frame`, `src/layout/tbox_layout_writing.c`) e levada à tela
+  por um filho anônimo com `has_transform`; os glifos são orientados por uma
+  variante vertical da face e o raster os amostra pela inversa. Propriedades
+  lógicas, `inline-size`/`block-size` e `direction` seguem o modo. Fixture
+  160; os fixtures 001–163 saem idênticos byte a byte.
+- Folha UA: `p`, `h1`–`h6`, `ul`/`ol` usam `margin-block` e
+  `padding-inline-start`, para seguir `writing-mode` e `direction` (em `rtl`
+  o recuo de lista vai para a direita, como no navegador).
+- API: `tbox_glyph` ganhou `orient`/`scale`; `tbox_font_shaping_options`,
+  `tbox_style` e `tbox_style_table` (`fallback`) ganharam campos;
+  `tbox_style_units` ganhou `frame`.
+
+## 2026-10-19 — Correções de paridade com o Firefox
+
+Defeitos apontados pela comparação de todos os fixtures com o Firefox
+(relatório em `docs/referencia/paridade-firefox.md`).
+
+- `ex` e `ch` medidos na fonte do elemento (`tbox_style_font_metrics`,
+  `tbox_style.ex_ratio`/`ch_ratio`); antes, 0,5em fixo. Fixture 065.
+- Folha UA:
+  - listas aninhadas sem margem de bloco, com `circle`/`square`;
+  - `blockquote`/`figure` com recuo de 40px e `pre` com margem;
+  - `address` em itálico, `abbr[title]` pontilhado e aspas em `q`;
+  - cor de link só em `a:any-link`;
+  - seletores com atributo e ancestrais;
+  - `body` em `em`.
+
+  Fixtures 007, 012, 054 e 118.
+- `monospace` com `medium` de 13px para tamanhos derivados de palavra-chave
+  (`tbox_style.font_size_keyword`). Fixture 007.
+- Parser HTML descarta a quebra de linha logo após `<pre>`, `<listing>` e
+  `<textarea>`. Fixture 007.
+- `text-decoration` se propaga a descendentes e ao texto anônimo
+  (`tbox_style.decoration_propagated`, `tbox_style_propagate_decoration`,
+  `tbox_style_decoration_lines`). Fixtures 023 e 054.
+- `font-family` guarda a lista inteira, e o cache de faces tenta cada nome
+  (`TBOX_FONT_FAMILY_CAPACITY`, falha lembrada por família). O Fontconfig
+  recusa substitutos fracos, e a família vazia é `serif` também no itálico.
+  Fixtures 010, 011, 019 e 038.
+- Quebra de linha depois de `-` entre letras e depois de `/` (não antes de
+  dígito nem em `//`), também no `min-content`
+  (`tbox_layout_word.break_before`). Fixtures 033, 086, 103, 116 e 122.
+- Tabelas:
+  - layout automático por min/max-content com colunas `%` e fixas;
+  - `width: auto` encolhe ao conteúdo;
+  - linha `visibility: collapse` dimensiona as colunas;
+  - folha UA com `border-spacing: 2px` e `padding: 1px` em `td`/`th`.
+
+  Fixtures 025, 026, 027 e 072.
+- `text-overflow`: a reticência ou string vem colada ao texto cortado, e não
+  na borda da caixa. Fixtures 068 e 092.
+- Ampliação de imagem com filtro triangular (bilinear) em vez de cúbico,
+  sem overshoot em imagens pequenas. Fixtures 045 e 052.
+- `absolute`/`fixed` com `width: auto` e sem `left` e `right` ao mesmo tempo
+  é shrink-to-fit (CSS 2.1 §10.3.7), limitado ao espaço depois do
+  deslocamento; antes ocupava todo o bloco de contenção. Fixture 083.
+- Bordas como no Firefox: 3D com a cor e a cor × 2/3 e cantos em diagonal,
+  `dashed` com traço e intervalo de 3× e meio traço junto aos cantos,
+  tracejado arredondado carimbado com quadrados. Fixtures 076, 088, 090 e
+  099.
+- `<img>` inline com padding, borda e margem: ocupam espaço na linha, fundo
+  e borda são pintados, e a imagem (com `object-fit`/`object-position`)
+  fica no content box. Fixture 103.
+- `<fieldset>`/`<legend>` com a geometria dos navegadores: a legenda no topo,
+  a borda pelo meio dela e o conteúdo logo abaixo, sem o vão de antes.
+  Folha UA alinhada ao Firefox. Fixture 109.
+- `text-emphasis` herdado chega ao texto anônimo do bloco (os campos faltavam
+  na cópia do estilo anônimo). Fixture 131.

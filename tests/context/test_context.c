@@ -4017,6 +4017,84 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* resize: a handle in the padding box's bottom-right corner (12px,
+     * ::-tbox-resizer sizes and colors it) that the pointer drags to change
+     * the element's width/height, clamped by max-width and kept through
+     * later frames; horizontal resizes only the width; overflow: visible
+     * and a plain <textarea> have none, `textarea { resize: both }` does. */
+    {
+        const char *html = "<div><div id='a'>x</div><div id='b'>y</div><div id='c'>z</div><textarea></textarea><textarea id='t'></textarea></div>";
+        const char *css  = "#a, #b, #c { width: 100px; height: 50px; overflow: auto; resize: both; border: 2px solid black; padding: 3px; }"
+                           "#a { max-width: 150px; } #b { resize: horizontal; box-sizing: border-box; } #c { overflow: visible; }"
+                           "#a::-tbox-resizer { color: rgb(1, 2, 3); width: 16px; height: 16px; }"
+                           "#t { resize: both; width: 80px; height: 40px; }";
+        tbox_context *ctx = open_cstr(html, css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+            const tbox_html_node *a = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *b = a->next_sibling, *c = b->next_sibling, *plain = c->next_sibling, *t = plain->next_sibling;
+            const tbox_layout_box *box = find_context_box(ctx, a);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL) {
+                double right = box->padding_box.x + box->padding_box.width, bottom = box->padding_box.y + box->padding_box.height;
+                bool grip = false;
+                for (size_t i = 0; i < list.count; i++) {
+                    const tbox_paint_op *op = &list.items[i];
+                    if (op->kind == TBOX_PAINT_FILL_RECT && op->color.r == 1 && op->color.g == 2 && op->polygon_clip != NULL &&
+                        op->rect.x == right - 16.0 && op->rect.y == bottom - 16.0 && op->rect.width == 16.0)
+                        grip = true;
+                }
+                TBOX_TEST_ASSERT(grip);
+                TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, right - 4.0, bottom - 4.0) == TBOX_STYLE_CURSOR_NWSE_RESIZE);
+                /* Drag 30px right and 20px down: content box 130x70. */
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_press(ctx, right - 4.0, bottom - 4.0));
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_drag(ctx, right + 26.0, bottom + 16.0));
+                tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+                box = find_context_box(ctx, a);
+                TBOX_TEST_ASSERT(box != NULL && box->content_box.width == 130.0 && box->content_box.height == 70.0);
+                /* max-width still applies. */
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_drag(ctx, right + 200.0, bottom - 4.0));
+                tbox_context_scrollbar_release(ctx);
+                tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+                tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+                box = find_context_box(ctx, a);
+                TBOX_TEST_ASSERT(box != NULL && box->content_box.width == 150.0 && box->content_box.height == 50.0);
+            }
+            const tbox_layout_box *hb = find_context_box(ctx, b);
+            TBOX_TEST_ASSERT(hb != NULL);
+            if (hb != NULL) {
+                double right = hb->padding_box.x + hb->padding_box.width, bottom = hb->padding_box.y + hb->padding_box.height;
+                TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, right - 4.0, bottom - 4.0) == TBOX_STYLE_CURSOR_EW_RESIZE);
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_press(ctx, right - 4.0, bottom - 4.0));
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_drag(ctx, right - 24.0, bottom + 50.0));
+                tbox_context_scrollbar_release(ctx);
+                tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+                hb = find_context_box(ctx, b);
+                TBOX_TEST_ASSERT(hb != NULL && hb->border_box.width == 80.0 && hb->border_box.height == 50.0);
+            }
+            const tbox_layout_box *visible = find_context_box(ctx, c), *plain_box = find_context_box(ctx, plain), *tb = find_context_box(ctx, t);
+            TBOX_TEST_ASSERT(visible != NULL && plain_box != NULL && tb != NULL);
+            if (visible != NULL && plain_box != NULL && tb != NULL) {
+                TBOX_TEST_ASSERT(!tbox_context_scrollbar_press(ctx, visible->padding_box.x + visible->padding_box.width - 3.0, visible->padding_box.y + visible->padding_box.height - 3.0));
+                TBOX_TEST_ASSERT(!tbox_context_scrollbar_press(ctx, plain_box->padding_box.x + plain_box->padding_box.width - 3.0, plain_box->padding_box.y + plain_box->padding_box.height - 3.0));
+                tbox_context_scrollbar_release(ctx);
+                double x = tb->padding_box.x + tb->padding_box.width - 3.0, y = tb->padding_box.y + tb->padding_box.height - 3.0;
+                /* The default handle is 12px. */
+                TBOX_TEST_ASSERT(tbox_context_cursor_at(ctx, x - 8.0, y - 8.0) == TBOX_STYLE_CURSOR_NWSE_RESIZE &&
+                                 tbox_context_cursor_at(ctx, x - 11.0, y - 3.0) != TBOX_STYLE_CURSOR_NWSE_RESIZE);
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_press(ctx, x, y));
+                TBOX_TEST_ASSERT(tbox_context_scrollbar_drag(ctx, x + 10.0, y + 10.0));
+                tbox_context_scrollbar_release(ctx);
+                tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+                tb = find_context_box(ctx, t);
+                TBOX_TEST_ASSERT(tb != NULL && tb->content_box.width == 90.0 && tb->content_box.height == 50.0);
+            }
+            tbox_context_close(ctx);
+        }
+    }
+
     /* The default scrollbar is discreet: thin (6px), a transparent track
      * showing the content under it, and a gray pill thumb inset 1px (4px
      * wide); scrollbar-width: auto still restores the 10px bar. */
@@ -4714,7 +4792,7 @@ int tbox_test_context_run(void) {
             box = find_context_box(ctx, node);
             TBOX_TEST_ASSERT(box != NULL && fabs(box->content_box.width - 150.0) < 0.01);
             TBOX_TEST_ASSERT(box != NULL && tbox_style_border_side_color(box->style, 3).r == 255 && tbox_style_border_side_color(box->style, 3).b == 0);
-            TBOX_TEST_ASSERT(box != NULL && fabs(box->style->translate_x.value - 10.0) < 0.01);
+            TBOX_TEST_ASSERT(box != NULL && box->style->transforms[0].kind == TBOX_STYLE_TRANSFORM_TRANSLATE && fabs(box->style->transforms[0].v[1] - 10.0) < 0.01);
             tbox_context_set_animation_time(ctx, 1.5);
             tbox_context_run_frame(ctx, 400.0, 100.0, &list);
             box = find_context_box(ctx, node);
@@ -4724,12 +4802,92 @@ int tbox_test_context_run(void) {
             tbox_html_node_remove_attribute(node, tbox_string_view_make("class", 5));
             tbox_context_run_frame(ctx, 400.0, 100.0, &list);
             box = find_context_box(ctx, node);
-            TBOX_TEST_ASSERT(box != NULL && fabs(box->style->translate_x.value - 20.0) < 0.01);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->style->transforms[0].v[1] - 20.0) < 0.01);
             tbox_context_set_animation_time(ctx, 3.0);
             tbox_context_run_frame(ctx, 400.0, 100.0, &list);
             box = find_context_box(ctx, node);
-            TBOX_TEST_ASSERT(box != NULL && box->style->translate_x.value == 0.0 && fabs(box->content_box.width - 100.0) < 0.01);
+            TBOX_TEST_ASSERT(box != NULL && box->style->transforms[0].kind == TBOX_STYLE_TRANSFORM_NONE && fabs(box->content_box.width - 100.0) < 0.01);
             TBOX_TEST_ASSERT(!tbox_context_animations_active(ctx));
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Transforms: a quarter turn keeps the layout geometry and paints on
+     * a transformed layer, the pointer hits what is drawn (not the
+     * untransformed box), the transformed box contains its absolute and
+     * fixed descendants, and a translation still just moves the box. */
+    {
+        const char *css = "body { margin: 0; }"
+                          "#turn { margin: 100px 0 0 100px; width: 100px; height: 20px; background: red; transform: rotate(90deg); }"
+                          "#abs { position: absolute; left: 5px; top: 0; width: 10px; height: 10px; }"
+                          "#fix { position: fixed; left: 0; top: 0; width: 4px; height: 4px; }"
+                          "#move { width: 10px; height: 10px; translate: 30px 0; }";
+        tbox_context *ctx = open_cstr("<div><div id='turn'><i id='abs'></i><b id='fix'></b></div><p id='move'></p></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            const tbox_html_node *turn = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_layout_box *box = find_context_box(ctx, turn);
+            TBOX_TEST_ASSERT(box != NULL && box->has_transform && box->border_box.x == 100.0 && box->border_box.y == 100.0);
+            TBOX_TEST_ASSERT(box != NULL && fabs(box->transform[0]) < 1e-12 && box->transform[1] == 1.0 && fabs(box->transform[4] - 260.0) < 1e-9 && fabs(box->transform[5] + 40.0) < 1e-9);
+            /* drawn as a 20x100 bar centered on (150, 110) */
+            TBOX_TEST_ASSERT(tbox_context_hit_test(ctx, 150.0, 70.0) == box && tbox_context_hit_test(ctx, 150.0, 150.0) == box);
+            TBOX_TEST_ASSERT(tbox_context_hit_test(ctx, 110.0, 110.0) != box && tbox_context_hit_test(ctx, 190.0, 110.0) != box);
+            /* absolute and fixed children sit against the turned box */
+            const tbox_layout_box *abs = box != NULL ? box->first_child : NULL;
+            TBOX_TEST_ASSERT(abs != NULL && abs->border_box.x == 105.0 && abs->border_box.y == 100.0);
+            TBOX_TEST_ASSERT(abs != NULL && abs->next_sibling != NULL && abs->next_sibling->border_box.x == 100.0 && abs->next_sibling->border_box.y == 100.0);
+            /* the transform layer wraps the box; nothing inside is clipped from outside */
+            size_t begin = list.count;
+            for (size_t i = 0; i < list.count && begin == list.count; i++)
+                if (list.items[i].kind == TBOX_PAINT_LAYER_BEGIN && list.items[i].has_transform) begin = i;
+            TBOX_TEST_ASSERT(begin < list.count && list.items[begin + 1].kind == TBOX_PAINT_FILL_RECT && list.items[begin + 1].rect.width == 100.0);
+            const tbox_layout_box *move = find_context_box(ctx, turn->next_sibling);
+            TBOX_TEST_ASSERT(move != NULL && !move->has_transform && move->border_box.x == 30.0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* A translation alone is a stacking context too: a negative z-index
+     * child paints over its translated parent's background. */
+    {
+        const char *css = "body { margin: 0; } #t { translate: 5px; width: 50px; height: 50px; background: rgb(255, 0, 0); }"
+                          "#n { position: relative; z-index: -1; width: 10px; height: 10px; background: rgb(0, 0, 255); }";
+        tbox_context *ctx = open_cstr("<div><div id='t'><div id='n'></div></div></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 200.0, 100.0, &list);
+            size_t red = list.count, blue = list.count;
+            for (size_t i = 0; i < list.count; i++) {
+                if (list.items[i].kind != TBOX_PAINT_FILL_RECT) continue;
+                if (list.items[i].color.r == 255 && list.items[i].color.b == 0) red = i;
+                if (list.items[i].color.b == 255 && list.items[i].color.r == 0) blue = i;
+            }
+            TBOX_TEST_ASSERT(red < blue && blue < list.count && list.items[red].rect.x == 5.0);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* A turned box inside a scroll container keeps turning around its own
+     * center once scrolled: the pointer follows it. */
+    {
+        const char *css = "body { margin: 0; } #sc { width: 200px; height: 100px; overflow-y: auto; }"
+                          "#r { margin-left: 50px; width: 100px; height: 20px; transform: rotate(90deg); }";
+        tbox_context *ctx = open_cstr("<div><div id='sc'><div style='height: 80px'></div><div id='r'></div><div style='height: 200px'></div></div></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            const tbox_html_node *r = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child->first_child->next_sibling;
+            const tbox_layout_box *box = find_context_box(ctx, r);
+            TBOX_TEST_ASSERT(box != NULL && tbox_context_hit_test(ctx, 100.0, 60.0) == box && tbox_context_hit_test(ctx, 100.0, 20.0) != box);
+            tbox_context_scroll(ctx, 100.0, 50.0, 50.0);
+            tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+            box = find_context_box(ctx, r);
+            TBOX_TEST_ASSERT(box != NULL && box->border_box.y == 30.0);
+            TBOX_TEST_ASSERT(box != NULL && tbox_context_hit_test(ctx, 100.0, 20.0) == box && tbox_context_hit_test(ctx, 60.0, 40.0) != box);
             tbox_context_close(ctx);
         }
     }
@@ -5598,6 +5756,30 @@ int tbox_test_context_run(void) {
                 tbox_context_close(ctx);
             }
         }
+    }
+
+    /* Each implicit @scope belongs to its own <style> parent after CSS
+     * concatenation; :scope also targets that parent itself. */
+    {
+        tbox_context *ctx = open_cstr("<body><div id='a'><style>@scope { :scope { background:red; } p { color:red; } }</style><p id='x'>X</p></div><div id='b'><style>@media screen { @scope { :scope { background:blue; } p { color:blue; } } }</style><p id='y'>Y</p></div><p id='z'>Z</p></body>", "p { color:black; }", fonts);
+        TBOX_TEST_REQUIRE(ctx != NULL);
+        tbox_display_list list;
+        tbox_context_run_frame(ctx, 800, 600, &list);
+        const char *ids[] = { "a", "b", "x", "y", "z" };
+        for (size_t i = 0; i < 5; i++) {
+            const tbox_style *style = NULL;
+            for (size_t j = 0; j < ctx->styles.count; j++) {
+                const tbox_html_attribute *id = tbox_html_node_get_attribute(ctx->styles.items[j].node, tbox_string_view_from_cstr("id"));
+                if (id != NULL && string_view_equal_cstr(id->value, ids[i])) style = &ctx->styles.items[j].style;
+            }
+            TBOX_TEST_REQUIRE(style != NULL);
+            if (i == 0) TBOX_TEST_ASSERT(style->background_color.r == 255);
+            if (i == 1) TBOX_TEST_ASSERT(style->background_color.b == 255);
+            if (i == 2) TBOX_TEST_ASSERT(style->color.r == 255);
+            if (i == 3) TBOX_TEST_ASSERT(style->color.b == 255);
+            if (i == 4) TBOX_TEST_ASSERT(style->color.r == 0 && style->color.b == 0);
+        }
+        tbox_context_close(ctx);
     }
 
     tbox_font_face_cache_destroy(fonts);

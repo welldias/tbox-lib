@@ -227,6 +227,18 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   (`dispatch_click`, `update_hover`, `dispatch_key`, ...) retornam `bool`; quem
   decide recomputar é a Application (v1, v3).
 
+- **Container queries em duas passadas por frame**: estilo sem tamanhos;
+  se houver contêiner `size`/`inline-size`, um layout descartável mede o
+  content box de cada um; a árvore é re-resolvida com esses tamanhos e só
+  então vêm transições/animações e o layout final. Uma iteração, sem
+  estado entre frames nem global; um documento sem contêiner paga só uma
+  varredura da tabela. Descartados: usar os tamanhos do frame anterior
+  (um frame atrasado, estado no contexto, screenshot errado), refazer só
+  as subárvores dependentes (o layout não tem relayout parcial) e iterar
+  até estabilizar (custo imprevisível). Transições rodam só sobre os
+  estilos finais, para não disparar transições falsas entre as passadas
+  (2026-10-18).
+
 ## API pública e interatividade
 
 - **`scroll-behavior: smooth` só anima rolagens feitas pela tbox** (foco,
@@ -358,7 +370,39 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   presentational hint, abaixo de qualquer CSS), porque a folha UA tipada não
   tem seletores de atributo (2026-10-12).
 
+- **Raiz de `@scope` passada ao matcher** como parâmetro explícito, em vez
+  de estado do contexto de seleção; registros de `@property` e
+  `@counter-style` ficam na folha, separados das regras, e os descritores
+  de contador são copiados para a arena do frame, com uma formatação só
+  para listas e `counter()` (2026-10-18).
+- **`ex`/`ch` medidos por um provedor passado à Style**
+  (`tbox_style_font_metrics`, parâmetro de
+  `tbox_style_resolve_tree_in_viewport_with_preferences`), em vez de a Style
+  depender do módulo de fontes ou de uma tabela fixa por família. A razão
+  (altura-x e avanço do "0" sobre o tamanho da fonte) fica no `tbox_style`,
+  herdada, e só é medida onde a `font-family` muda; usa a face regular,
+  sem peso nem itálico. Sem provedor, 0,5em como antes (2026-10-19).
+- **`medium` de 13px para `monospace` só em tamanho derivado de
+  palavra-chave**, como no Gecko. A escala direta de todo texto
+  monoespaçado encolheria `font: 16px monospace`, e um `font-size` fixo na
+  folha UA encolheria `code` dentro de `h1`. Por isso o `body` da UA passou
+  de `px` para `em` (2026-10-19).
+- **`<textarea>` continua com a fonte do documento**, e não com a
+  monoespaçada dos navegadores. Os controles do tbox seguem um app nativo
+  (2026-10-19).
+- **Decoração propagada aproxima várias camadas por uma**: as linhas de
+  todos os ancestrais se somam, mas estilo, cor e espessura são os do mais
+  próximo. Dois ancestrais com cores diferentes desenham ambos na cor do
+  mais interno (2026-10-19).
+
 ## Texto e fontes
+
+- **Lista de `font-family` resolvida no cache de faces**, nome a nome, com
+  a família padrão no fim. O Fontconfig só aceita a própria família ou um
+  alias de ligação forte/`same`, e recusa o substituto fraco. É a regra do
+  Firefox, que faz um nome desconhecido cair no próximo da lista em vez de
+  virar DejaVu Sans. A escolha é por run, sem fallback por glifo
+  (2026-10-19).
 
 - **Fontconfig no Linux atrás de `tbox_font_source`**; backend embedded
   (Liberation Sans Regular) para testes determinísticos sem depender das
@@ -431,7 +475,44 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   strings herdadas, e fica para quando houver caso real (ver Débito
   técnico).
 
+- **Features OpenType na chave do cache de faces**: a configuração de
+  features e idioma é imutável por face e entra na chave do cache, em vez
+  de ir como parâmetro a cada shaping. `font-feature-settings` explícito
+  prevalece sobre o que os `font-variant-*` pedem para a mesma tag
+  (2026-10-18).
+
+- **Bidi próprio, no layout**: implementação de UAX #9 sem FriBidi/ICU (sem
+  dependência nova; o HarfBuzz não faz bidi), aplicada sobre as palavras já
+  montadas — níveis do parágrafo inteiro antes da quebra, reordenação por
+  linha depois — em vez de dentro do shaper. O espelhamento (L4) fica no
+  shaper. Os padrões HTML de `unicode-bidi` (`<bdo>`, `<bdi>`, `dir`)
+  ficam em `tbox_style.c`, como o `dir`, porque a folha UA não tem seletor
+  de atributo; `<br>` fecha o parágrafo bidi e reabre as marcas
+  (2026-10-18).
+
+- **Contorno de texto por `FT_Glyph_Stroke`** (raio = metade da largura
+  CSS) em vez de dilatar a máscara do glifo, para preservar curvas e bordas
+  internas. `marker*`/`mask-type` (só SVG) ficam falsos em `@supports`,
+  como as propriedades 3D, para não levar a página a um caminho SVG que
+  não existe (2026-10-18).
+
+- **Motion path como mais um termo da matriz afim** (translate → rotate →
+  scale → offset → transform), reaproveitando a camada das transformações;
+  o caminho é amostrado com tolerância de 0,125px em tabelas por elemento
+  na arena do frame (2026-10-18).
+- **`paint-order` fora das propriedades animáveis** para caber na máscara
+  de 64 bits; alternativa adiada: trocar a máscara pública por um conjunto
+  maior (muda `tbox_style_animatable_mask`) (2026-10-18).
+
 ## Layout
+
+- **Larguras de coluna pelo algoritmo automático dos navegadores**
+  (min/max-content, `%` antes de fixas antes de automáticas), e não pela
+  divisão igual da sobra que havia. Com `border-spacing: 2px` na folha UA,
+  quase toda tabela passa pelo caminho estendido
+  (`tbox_layout_table_grid.c`). O caminho simples
+  (`tbox_layout_table.c`) só fica para tabelas sem espaçamento nem outros
+  recursos (2026-10-19).
 
 - **`::before`/`::after` como nós sintéticos encaixados só durante o
   layout**, em vez de ensinar cada caminho do layout (palavras, caixas
@@ -472,6 +553,43 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
 - **Infraestrutura de medição antes de posicionar** (tamanhos intrínsecos,
   `tbox_layout_build_element_sized`, `tbox_layout_translate`) para
   inline-block e flexbox (v15, v16).
+
+- **Grid separado de flex**: `src/layout/tbox_layout_grid.c` com as listas
+  de trilhas e áreas já validadas no estilo (`tbox_style_grid.c`), em
+  buffers próprios do `tbox_style` — não dependem da vida das declarações
+  da cascata nem pedem destrutor. O algoritmo usa a arena do frame e
+  constrói os itens com tamanho forçado (2026-10-18).
+
+- **Um gerenciador de floats por BFC**, criado pela caixa que estabelece o
+  contexto e levado em `tbox_layout_positioned_context.floats` — em vez de
+  um parâmetro novo em todas as funções de layout ou de estado global. Um
+  float no meio do texto vira uma palavra de largura zero com a caixa
+  pronta, posta por `break_lines`. Floats são pintados como camadas do
+  contexto de empilhamento, entre o conteúdo em fluxo e os posicionados;
+  dividir `tbox_render_box` nas fases exatas do Apêndice E ficou para
+  depois, por ser grande demais (2026-10-18).
+
+- **Fragmentos de multicoluna são caixas comuns** na arena do frame,
+  compartilhando o nó DOM (um nó pode ter várias caixas); a regra entre
+  colunas reaproveita a pintura de bordas; o balanceamento procura a menor
+  altura que cabe (2026-10-18).
+
+- **Capitulares como floats**: `initial-letter` e `::first-letter`
+  flutuante usam o gerenciador de floats do BFC; a exclusão segue a tinta
+  dos glifos (como o Firefox), não a caixa inteira da linha. O estilo de
+  `::first-letter` fica na arena do frame, e a validação das propriedades
+  novas é a mesma na cascata e em `@supports` (2026-10-18).
+
+- **Escrita vertical por referencial e transformação**, em vez de um layout
+  com eixos abstratos: a subárvore é diagramada como horizontal e girada
+  (ou transposta) pelo caminho das transformações, que já cuida de pintura,
+  damage e hit test; o custo para documentos horizontais é uma comparação
+  por caixa. Os estilos são convertidos numa tabela sobreposta
+  (`tbox_style_table.fallback`), não na cascata, para o Style continuar
+  físico. O avanço de glifo em pé é 1em sintetizado (como o Firefox faz
+  para fontes sem `vmtx`) em vez de `HB_DIRECTION_TTB`, o que funciona
+  também sem HarfBuzz. Motion path dentro do modo vertical é amostrado na
+  orientação da tela (2026-10-18).
 
 ## HTML
 
@@ -518,6 +636,31 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   grade de pixels, porque o raster testa cobertura no centro do pixel e uma
   marca de poucos pixels sairia torta. Só a `<string>` usa texto, numa face
   de meio tamanho que o Layout escolhe (2026-10-12).
+- **`border-image` como ops recortados**: cada fatia e cada ladrilho é um
+  `IMAGE`/`GRADIENT` com `clip` e `source_rect`, recortado no Output.
+  Descartados: escalar a imagem inteira e recortar (memória, vazamento de
+  pixels vizinhos) e rasterizar o gradiente no Render (o Render não
+  rasteriza). Gradientes são dispostos no tamanho da área e esticados de
+  forma não uniforme, para `circle` e ângulos ficarem contínuos entre as
+  fatias; ladrilhos de imagem são alinhados a pixel inteiro para não deixar
+  frestas (2026-10-18).
+
+- **Transformações como matriz afim 2D numa camada**: a caixa transformada
+  vira um `LAYER_BEGIN` com a matriz, por fora da camada de efeitos (o
+  `mix-blend-mode` passa para ela, que é quem compõe com o fundo), composto
+  pela inversa com amostragem bilinear. Translação pura continua deslocando
+  as caixas no layout, sem camada. Funções 3D: a sequência é multiplicada
+  em 4x4 e só a parte 2D do produto é guardada (achatar função por função
+  erra `rotateX() rotateY()`); `@supports` aceita as funções 2D e recusa as
+  3D, para a página seguir o caminho 2D. Interpolação de `transform`
+  posição a posição, com troca discreta quando os tipos diferem, em vez de
+  decomposição de matriz (2026-10-18).
+
+- **Máscaras e reflexo sobre as camadas de composição existentes**: as
+  camadas de máscara são acumuladas de trás para frente numa cobertura
+  alfa; o reflexo copia o grupo já pintado sob uma matriz de espelhamento;
+  os fragmentos de `clone` reaproveitam a pintura normal de caixas
+  (2026-10-18).
 
 ## Loop da aplicação e threads
 
@@ -553,6 +696,12 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   em todos. Se nenhum buffer estiver livre, o `present` recusa o frame e a
   aplicação tenta de novo quando o compositor liberar um — o dano não se
   perde porque já foi somado aos buffers (2026-10-16).
+
+- **`<textarea>` sem `resize` por padrão** (app nativo, ao contrário dos
+  navegadores); o autor liga com `resize`. O tamanho arrastado é aplicado
+  sobre o estilo resolvido a cada frame, não gravado como estilo inline no
+  DOM, e o arrasto reaproveita `tbox_context_scrollbar_press`/`_drag`/
+  `_release` em vez de uma API pública nova (2026-10-18).
 
 ## Callbacks e structs na fronteira de FFI
 

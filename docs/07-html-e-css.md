@@ -90,6 +90,27 @@ Campos: `font.base_px`, `font.heading_em[6]` (escala de `h1`…`h6`),
 `margin.heading_px[6]`, `margin.paragraph_px`, `margin.body_px`,
 `margin.list_px`, `margin.hr_px`, `list_padding_left_px`, `hr_height_px`.
 Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
+As margens de `p`, `h1`…`h6`, `ul`/`ol` são `margin-block` e o recuo de
+`ul`/`ol` é `padding-inline-start` (como nos navegadores): seguem
+`direction` e `writing-mode` (em `rtl` o recuo vai para a direita).
+
+Também seguem os navegadores:
+- **Listas aninhadas:** perdem as margens de bloco, e o marcador de `ul` vira `circle` no segundo nível e `square` do terceiro em diante.
+- **Recuo de bloco:** `blockquote` e `figure` têm 40px de recuo lateral, e `pre` tem margem de bloco.
+- **Texto:** `address` sai em itálico, `abbr[title]` com sublinhado pontilhado e `q` com aspas (`open-quote`/`close-quote` em `::before`/`::after`).
+- **Links:** só `a:any-link` (com `href`) fica azul e sublinhado.
+
+A folha aceita, além de tag, estado e parte, um atributo presente e uma
+cadeia de ancestrais (`UA_SEL_ATTR`, `UA_SEL_DESC`).
+
+O `body` recebe `font.base_px` como `em` sobre o `medium` inicial, e não
+como `px`. Assim, o tamanho continua "derivado de palavra-chave", e a
+família genérica `monospace` usa um `medium` próprio de 13px, como nos
+navegadores. Isso vale para tamanhos que vêm de `medium`/`small`/... ou de
+`em`/`%` sobre eles: `pre` e `code` saem com 13px, aninhados não encolhem
+de novo, e `font: 16px monospace` fica com 16px
+(`tbox_style.font_size_keyword`). O `<textarea>` usa a fonte do documento
+(escolha de app nativo), e não a monoespaçada do navegador.
 
 ## Regras e at-rules
 
@@ -129,6 +150,43 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   (`a.b`), camadas anônimas (`@layer { … }`), aninhamento com `@media` nos
   dois sentidos e `@import … layer(nome)`/`layer`. Um prelúdio inválido
   descarta a regra inteira.
+- **`@container [<nome>] <condição>`** (CSS Containment 3): um elemento
+  vira contêiner de consulta com `container-type: size | inline-size`
+  (`normal` é o inicial), `container-name: <ident>+ | none` ou o atalho
+  `container: <nome> [/ <tipo>]` (nenhum herda). A condição usa as
+  features `width`, `height`, `inline-size`, `block-size`, `aspect-ratio`
+  e `orientation` — forma `nome: valor` (com `min-`/`max-`), booleana
+  (`(width)`) e de faixa (`(width > 30em)`, `(400px <= width < 700px)`) —,
+  `and`/`or`/`not`, parênteses, `style(--x)`/`style(--x: valor)` (custom
+  property computada, comparada como texto aparado) e uma lista com
+  vírgula (qualquer uma basta). `@container nome { … }` sem condição vale
+  se existe um ancestral com esse nome. A regra consulta o **ancestral**
+  contêiner mais próximo que tem o nome (se dado) e o tipo que as features
+  pedem (`height`/`block-size`/`aspect-ratio`/`orientation` exigem
+  `size`); um `style()` sem nome consulta o pai. Para pseudo-elementos o
+  próprio elemento conta. Lógica de três valores: feature desconhecida,
+  unidade inválida ou contêiner ausente/não medido é "desconhecido", que
+  `not` mantém e a regra trata como falso. `em`/`rem` na condição usam a
+  fonte do contêiner. Aninha com `@media`/`@layer`/`@supports` nos dois
+  sentidos. Escrita sempre horizontal (inline = largura). Um `@keyframes`
+  ou `@font-face` dentro de `@container` não vale (não há elemento para
+  decidir). Código: `src/css_cascade/tbox_css_container.c`.
+
+  *O ciclo estilo → layout → estilo.* O tamanho do contêiner vem do
+  layout, que depende do estilo. `tbox_context_run_frame` resolve o estilo
+  uma vez sem tamanhos (toda consulta de tamanho é falsa, `cq*` usam o
+  viewport); se a tabela tem algum contêiner `size`/`inline-size`, faz um
+  layout descartável, coleta o content box de cada contêiner e resolve o
+  estilo de novo com esses tamanhos (`tbox_style_container_size`), antes
+  de transições/animações e do layout final. Uma iteração por frame, sem
+  estado entre frames — resize reavalia tudo. A contenção de tamanho torna
+  o tamanho do contêiner (quase sempre) independente do que as consultas
+  mudam dentro dele: `inline-size` zera a contribuição intrínseca do
+  conteúdo na largura (min/max-content), `size` também zera a altura
+  automática. Um documento sem contêiner paga só uma varredura da tabela.
+  Limites: contêineres aninhados cujo tamanho depende de uma consulta a um
+  contêiner externo usam o tamanho da primeira passada; o tamanho medido
+  ignora transições/animações em curso.
 - **`@font-face`**: arquivos locais via `url()` relativos ao documento (ou ao
   diretório do CSS externo), com `font-family`, um `font-weight` e
   `font-style`. Sem URLs remotas nem faixas de peso.
@@ -138,8 +196,11 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   declaração é verdadeira quando a tbox resolve a **propriedade** (tabela
   em `tbox_css_supports.c`, igual à [referência](referencia/css-suportado.md))
   e custom properties sempre; o valor não é validado, exceto os que
-  enganariam a detecção: `display` fora dos valores suportados (`grid`…),
-  `transform` com rotação/escala/matriz, `filter`/`backdrop-filter` com
+  enganariam a detecção: `display` fora dos valores suportados,
+  `transform` com funções 3D (`rotateX/Y`, `rotate3d`, `matrix3d`,
+  `translateZ`/`translate3d`, `scaleZ`/`scale3d`, `perspective`: a tbox só
+  as achata, então a página deve seguir o caminho 2D; as 2D são
+  verdadeiras), `filter`/`backdrop-filter` com
   `url()` e `backdrop-filter` com `drop-shadow()`. `selector()` exige que o seletor compile e só use
   pseudo-classes e pseudo-elementos que o matcher conhece. Outras funções
   (`font-tech()`, `font-format()`) são falsas. Aninha com `@media` e
@@ -152,6 +213,63 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   [Transições e animações](#transições-e-animações).
 - **Ignorados sem quebrar o resto**: um `@import` fora do início da folha e
   qualquer at-rule desconhecida; propriedades e valores desconhecidos.
+
+### Escopos e registros de cascata
+
+- **`@scope [(início)] [to (limite)] { regras }`**: seletores de início e
+  limite (inclusive listas), limite exclusivo, `:scope`, proximidade depois
+  da especificidade e antes da ordem de declaração. Aninha com `@scope`,
+  `@layer`, `@media`, `@supports` e `@starting-style`. Um prelúdio inválido
+  ou com pseudo-elemento descarta o bloco. A proximidade usa a raiz mais
+  próxima cuja instância e seletor casam; escopos externos continuam impondo
+  seus limites. Sem início, um `<style>` usa seu pai como raiz; CSS sem nó
+  proprietário usa o elemento raiz do documento. Um escopo interno sem
+  início reutiliza a raiz externa. Seletores com `:scope` explícito podem
+  referenciar ancestrais externos. Sem `&` ou combinador inicial implícito
+  (`> p`); escreva `:scope > p`. Permanecem as limitações gerais dos seletores.
+- **`@property --nome`**: exige `syntax` e `inherits`; `initial-value` é
+  obrigatório salvo com `syntax: '*'`. Aceita um tipo simples: `<length>`,
+  `<color>`, `<number>`, `<percentage>`, `<length-percentage>`, `<angle>`,
+  `<integer>` ou `*`. Nomes são sensíveis a maiúsculas. `inherits: false`
+  bloqueia a herança, inclusive sem declaração local; valores ausentes ou
+  inválidos usam o inicial. `inherit`, `initial` e `unset` explícitos são
+  respeitados. Comprimentos relativos declarados são computados para px
+  antes da herança, cores para RGBA e ângulos para graus. Registros inválidos
+  são ignorados e o último válido ativo por nome vence. Sem gramáticas com
+  alternativas/multiplicadores, `currentColor` registrado, inicial relativo,
+  transição de custom property ou resolução de dependências circulares com
+  `font-size`; cálculos seguem o subconjunto existente de valores.
+- **`@counter-style nome`**: `cyclic`, `numeric`, `alphabetic`, `symbolic`,
+  `additive`, `fixed [inteiro]` e `extends nome`; `symbols`,
+  `additive-symbols`, `prefix`, `suffix`, `range`, `pad`, `negative` e
+  `fallback`. Usa-se em `list-style-type`, no shorthand `list-style`,
+  `counter()` e `counters()`. Prefixo/sufixo só decoram marcadores e pertencem
+  ao estilo original mesmo quando a representação vem do `fallback`. Também
+  aceita `list-style-type: "texto"` e `symbols([sistema] "a" "b" ...)`.
+  As representações são compartilhadas entre Layout e conteúdo gerado.
+  Limites: 64 símbolos/pares aditivos, 16 intervalos, inteiros de descritor
+  de 32 bits, 4096 repetições/padding, 16 referências encadeadas e 255 bytes
+  na expressão de `list-style-type`. Tuplas aditivas e `pad` usam inteiro
+  antes do símbolo. `extends` cobre estilos registrados e os estilos
+  textuais predefinidos (decimal, letras, romanos, grego e bullets).
+  Estilos de contador dentro de media queries são reavaliados por frame;
+  ciclos/falhas de representação terminam em fallback decimal.
+
+`@scope` guarda seus limites e o vínculo externo na arena da folha. O matcher
+recebe a raiz de `:scope` por argumento, sem estado global; a API de matching
+de folhas também respeita os escopos. Folhas internas preservam a associação
+entre cada trecho CSS e o pai do `<style>` durante a concatenação.
+`@property` e `@counter-style` mantêm registros na folha, separados das
+regras de seletores. A cascata acrescenta defaults registrados mesmo quando
+nenhum seletor casa. Textos computados são copiados para a arena do frame.
+A tabela de estilos copia os descritores de contador para a arena do frame;
+a folha pode ser destruída depois de resolver a tabela. Registros emprestados
+em `tbox_css_resolved_declaration` vivem até destruir
+a folha; os campos novos alteram o tamanho de `tbox_css_ruleset`,
+`tbox_css_resolved_declaration` e `tbox_style`, exigindo recompilação.
+
+`@supports selector(:scope)` é verdadeiro. A função `at-rule()` não existe
+no parser de supports e continua falsa. Fixture: `tests/assets/153.html`.
 
 ## Seletores
 
@@ -168,8 +286,8 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   opção escolhida agora no select (não o atributo `selected`) e `:disabled`
   inclui opções de um `<optgroup disabled>`.
 - `:not()` com um seletor simples.
-- Pseudo-elementos: `::marker`, `::before` e `::after` (também na forma
-  CSS2 `:before`/`:after`); pesam como seletor de tipo na especificidade.
+- Pseudo-elementos: `::marker`, `::before`, `::after` e `::first-letter`
+  (também na forma CSS2 com um `:`); pesam como seletor de tipo na especificidade.
   As partes dos controles de formulário (`::slider-thumb`, `::selection`,
   o funcional `::picker(select)`…) estão em
   [Formulários e controles](10-formularios-e-controles.md); as da barra de
@@ -192,7 +310,8 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
   `ol { counter-reset } li { counter-increment }` com `counters()`
   funciona); elementos em `display: none` não contam. Estilos de contador:
   os de `list-style-type` (decimal, decimal-leading-zero, romanos, letras,
-  grego, disc/circle/square, none). O contador implícito `list-item`
+  grego, disc/circle/square, none), além dos registros `@counter-style`.
+  O contador implícito `list-item`
   não está ligado à numeração das listas.
 - **`quotes`** (herdado): `auto` (aspas curvas “ ” ‘ ’), `none` ou pares de
   strings; a profundidade de aninhamento corre pelo documento.
@@ -203,8 +322,25 @@ Qualquer regra da UA pode ser sobrescrita pelo CSS de autor normalmente.
 - **Limitações**: pseudos não têm `transition`, `animation` nem `@starting-style`; um
   pseudo `position: absolute` dentro de `<p>`/`<li>`/`<button>` (contexto
   inline) não aparece, como qualquer filho absoluto nesses elementos;
-  `::first-line`/`::first-letter` são reconhecidos mas não estilizam nada.
+  `::first-line` é reconhecido mas não estiliza nada.
 - Um seletor não suportado invalida só a própria regra, como no CSS.
+
+### Primeira letra (`::first-letter`)
+
+A primeira letra tipográfica do contexto inline de um bloco pode receber
+fonte, cor, margem, padding, borda, fundo e `float`. A seleção inclui
+pontuação precedente (categorias Unicode P*) e marcas combinantes da
+letra; atravessa fronteiras de texto/inline e espaços entre a pontuação e
+a letra. O DOM permanece intacto. Sem `float`, a caixa participa da linha;
+com `float`, as linhas desviam da sua margin box. O estilo herda do inline
+que contém o primeiro texto. Não exige `content`.
+
+`initial-letter: normal | <number> [<integer> | drop | raise]?` transforma
+a letra em capitular; `@supports` valida esta sintaxe e a de
+`hanging-punctuation`. Valores literais inválidos são ignorados antes da
+cascata, preservando declarações válidas anteriores. Veja
+[capitulares e pontuação](08-layout-e-pintura.md#capitulares-e-pontuação-pendurada)
+e o fixture `162.html`.
 
 ## Valores
 
@@ -214,11 +350,15 @@ em `tbox_style_functions.c`, apoiados pelos utilitários de valores em
 `tbox_style_values.c`. Cores, substituições e conteúdo gerado mantêm seus
 arquivos especializados; veja [Organização do código](dev/organizacao-do-codigo.md).
 
-- **Unidades**: `px`, `em`, `rem`, `ex`/`ch` (aproximados como 0,5em), `pt`,
+- **Unidades**: `px`, `em`, `rem`, `ex`/`ch` (altura-x e avanço do "0" da face regular da `font-family`, medidos pelo contexto; 0,5em sem fontes), `pt`,
   `pc`, `in`, `cm`, `mm`, `Q`, `%`, `vw`/`vh`/`vmin`/`vmax` (e as variantes
-  `sv*`/`lv*`/`dv*`, iguais ao tamanho da janela).
+  `sv*`/`lv*`/`dv*`, iguais ao tamanho da janela), `cqw`/`cqh`/`cqi`/`cqb`/
+  `cqmin`/`cqmax` (1% do content box do contêiner de consulta mais próximo
+  naquele eixo — `inline-size` ou `size` para o eixo inline, só `size` para
+  o de bloco; sem contêiner medido, caem nas `sv*`).
 - **Funções**: `calc()` (`+ - * /`, parênteses, aninhado), `min()`, `max()`,
-  `clamp()`, `var()` com fallback (custom properties `--nome`, herdadas).
+  `clamp()`, `var()` com fallback (custom properties `--nome`, herdadas por
+  padrão; registros `@property` podem desativar a herança).
   Comparações aceitam percentuais puros (`min(20%, 50%)`) e expressões com
   o mesmo termo em pixels ou percentual; uma chamada de `min()`/`max()`
   com argumento único preserva seu valor. Misturas gerais continuam
@@ -291,14 +431,20 @@ atraso inicial de uma `transition-delay`/`animation-delay`, o fim do atraso).
 - **Propriedades que interpolam** (`tbox_style_animatable`): `color`,
   `background-color`, `opacity`, `border-*-color`, `border-*-width`,
   `border-*-radius`, `outline-color`/`-width`/`-offset`,
-  `text-decoration-color`, `accent-color`, `caret-color`, `translate` e
-  `transform` (só translação), `width`/`height` (e `inline-size`/
+  `text-decoration-color`, `accent-color`, `caret-color`, `translate`,
+  `rotate`, `scale`, `transform-origin` e `transform` (função a função,
+  ver abaixo), `width`/`height` (e `inline-size`/
   `block-size`), `padding-*`, `margin-*`, `top`/`right`/`bottom`/`left`
   (`inset`), `letter-spacing`, `word-spacing`; os shorthands (`border`,
   `border-color`, `padding`, `outline`…) valem pelos longhands. Cores
   interpolam em sRGB pré-multiplicado. Um comprimento que troca de tipo
   (px ↔ % ↔ `auto`) ou um `accent-color`/`caret-color` `auto` muda de uma
-  vez.
+  vez. `transform` interpola posição a posição da lista: funções do mesmo
+  tipo (`translateX` e `translate` são o mesmo; `rotateZ` é `rotate`)
+  misturam os argumentos, uma posição vazia (lista mais curta, `none`) vale
+  a identidade da outra, e tipos diferentes na mesma posição trocam de uma
+  vez no meio — não há interpolação por decomposição de matriz. `rotate`
+  interpola o ângulo quando o eixo é o mesmo.
 - **Funções de tempo**: `ease`, `linear`, `ease-in`, `ease-out`,
   `ease-in-out`, `cubic-bezier()`, `steps(n[, jump-start | jump-end |
   jump-none | jump-both | start | end])`, `step-start`, `step-end`. A forma
@@ -327,19 +473,39 @@ atraso inicial de uma `transition-delay`/`animation-delay`, o fim do atraso).
 
 ## Propriedades aceitas sem efeito
 
-Não fazem nada numa tela sem paginação, sem 3D e sem `float`, e isso é o
+Não fazem nada numa tela sem paginação, sem SVG e sem 3D, e isso é o
 resultado correto para o que a tbox desenha: `break-before`/`-after`/
-`-inside`, `page-break-*`, `orphans`, `widows` (impressão), `clear` (nada
-flutua), `overflow-anchor` (não há ancoragem de rolagem, o mesmo que
+`-inside` fora de multicoluna, `page-break-*`, `orphans`, `widows` (impressão), `overflow-anchor` (não há ancoragem de rolagem, o mesmo que
 `none`), `perspective`, `perspective-origin`, `transform-style` e
 `backface-visibility` (sem transformações 3D, a face de trás nunca
 aparece). As de impressão contam como suportadas em `@supports`; as de 3D
 não, para não levar uma página ao seu caminho 3D.
 
+Em multicolunas, `break-before/after: column` e
+`break-inside: avoid | avoid-column` passam a controlar fragmentação; veja
+[Multicolunas](08-layout-e-pintura.md#multicolunas). Fora desse contexto,
+continuam sem efeito. `orphans`/`widows` ainda não restringem as quebras.
+
+`marker`, `marker-start`, `marker-mid` e `marker-end` aceitam `none` ou
+`url()` e são herdados. O shorthand aplica o mesmo valor aos três pontos,
+respeitando a prioridade dos longhands. As URLs são guardadas (até 255 bytes
+UTF-8 por referência), sem carregar recursos. `mask-type` aceita `luminance`
+(inicial) ou `alpha` e não é herdado. CSS inválido é ignorado; os keywords
+CSS-wide funcionam como nas outras propriedades. São exclusivos de SVG:
+ficam falsos em `@supports` para não selecionar um caminho que exigiria SVG.
+`paint-order`, ao contrário, tem efeito sobre texto HTML com contorno;
+veja [Texto e fontes](09-texto-e-fontes.md#contorno-e-ordem-de-pintura-do-texto).
+
+`@page` é lido e descartado como um bloco balanceado, inclusive seletores
+como `:first` e at-rules de margem aninhadas (`@top-left`, etc.). As regras
+seguintes continuam sendo processadas. Não há paginação nem suporte à função
+`at-rule()` em `@supports` (ela continua falsa). Fixture: `tests/assets/163.html`.
+
 ## O que fica de fora
 
-Os grandes ausentes, para decidir rápido: `float`, `grid`, `transform`
-além de translação, `writing-mode` vertical e texto bidirecional. A lista completa
+Os grandes ausentes, para decidir rápido: transformações
+3D de verdade (as funções 3D são achatadas, ver
+[Layout e pintura](08-layout-e-pintura.md#transformações)). A lista completa
 por propriedade e função (incluindo limitações e referências ao código) está em [CSS suportado](referencia/css-suportado.md)
 e [HTML suportado](referencia/html-suportado.md); o que existe de
 layout está em [Layout e pintura](08-layout-e-pintura.md).

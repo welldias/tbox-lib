@@ -121,3 +121,19 @@ referência. A tabela abaixo cobre os que demonstram um recurso específico.
 | 145 | Checkbox e radio marcados e desmarcados alinhados na mesma linha; campos de texto vazios e preenchidos alinhados; `outline` como anel de foco em radio (redondo), checkbox, botão, slider e campos com borda reta e arredondada |
 | 146 | Lista do `<select>` pelo CSS padrão: `::picker(select)`, `option`/`optgroup`, `:hover`, `:checked`, `:disabled` (inclusive em `optgroup` desabilitado), tema por `var()`. Abra a lista para ver; o Firefox ainda mostra a lista nativa |
 | 147 | Scrollbar: padrão discreto, `scrollbar-width: auto`, `scrollbar-color`, partes `::-tbox-scrollbar-track`/`-thumb` (largura, borda, raio, margem, altura mínima, `:hover`, `:active`) e `scrollbar-gutter: stable` com largura própria. O Firefox só aplica as propriedades padrão |
+| 148 | `border-image`: gradientes como fonte (`slice` numérico/percentual, `fill`, `round`), imagem com `stretch`/`repeat`/`round`/`space`, `border-image-width` (comprimento e número), `border-image-outset` |
+| 150 | Recursos OpenType com fonte local (`150-sans.ttf`, subset da Roboto, OFL): `tabular-nums`/`proportional-nums`, `oldstyle-nums`, `diagonal-fractions`, `font-variant-ligatures: none`, `font-feature-settings` (`"smcp"`, `"liga" 0`). Exige HarfBuzz |
+| 153 | `@scope` (limite `to`, proximidade, `:scope`), `@property` (`inherits: false`, valor inválido cai no `initial-value`), `@counter-style` (`cyclic`, `additive`, `alphabetic` com `prefix`/`suffix`, `fixed` com fallback) |
+| 149 | `transform` com `rotate()`, `scale()`, `skewX()`, `matrix()`, `rotateZ()`, `rotateX()` achatado, `transform-origin`, propriedades `rotate`/`scale`, composição `translate() rotate()` |
+| 151 | Grid: trilhas fixas + `fr`, `repeat()`, `minmax()`, `auto-fill`, spans, linhas negativas e nomeadas |
+| 152 | Grid: `grid-template-areas`, `grid-auto-flow: column`/`dense`, `justify-items`/`align-items`/`justify-self`/`place-self`, `justify-content: space-between`, `auto-fit` |
+| 154 | `float: left/right`, floats lado a lado, `clear: both`, `display: flow-root` contendo float x bloco comum, `shape-outside: circle()` |
+| 156 | `@container` em contêineres `inline-size` de 200/380/600px, unidades `cqi`, contêiner nomeado consultado através de um sem nome |
+| 158 | `zoom` (1, 1.5, 50%, pai 2 com filho .5) e `resize` (`both`, `horizontal`, textarea padrão sem alça, textarea `vertical`) |
+| 155 | Multicoluna: `column-count` com `column-rule`, `column-width`, `column-fill: auto` com altura fixa, `column-span: all`, regra tracejada com gap grande, bloco com fundo/borda partido entre colunas |
+| 159 | Texto bidirecional: hebraico/árabe com números e latim em `ltr` e `rtl`, espelhamento de parênteses, `<bdo>`, `unicode-bidi: normal` x `isolate`, `plaintext`, `<bdi>` + `embed` |
+| 163 | `-webkit-text-stroke` com `paint-order: normal` x `stroke`, texto vazado (`color: transparent`), `marker`/`mask-type`/`@page` aceitos sem quebrar a folha |
+| 161 | Motion path: `offset-path: path()` com `offset-distance` 0/50/100% e `offset-rotate: auto`, `circle()`, `ray()`, `offset-anchor` |
+| 157 | Duas camadas de `mask` com `mask-composite` (`add`, `subtract`, `intersect`, `exclude`), `box-decoration-break: slice` x `clone` em inline partido em 3 linhas, `-webkit-box-reflect` (N/A no Firefox) |
+| 162 | `::first-letter` flutuante, `initial-letter: 3` e `3 2` (N/A no Firefox), `hanging-punctuation: first` e `allow-end` com texto justificado (N/A no Firefox) |
+| 160 | Escrita vertical: `vertical-rl`, `vertical-lr`, `text-orientation: upright`, `text-combine-upright: all`, `sideways-lr`, fluxo ortogonal com `margin-block-start`/`padding-inline-start` |

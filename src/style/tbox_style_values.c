@@ -16,8 +16,9 @@ bool tbox_style_parse_number(tbox_string_view text, double *out_value) {
 /* px per one `unit`, or false for an unknown unit (or a viewport unit with
  * no viewport). em is `em_base` -- the element's own font size, except for
  * `font-size` itself, which uses the parent's; rem is the root element's
- * font size; ex and ch use CSS's 0.5em fallback, since this layer has no
- * font metrics; absolute units use CSS's fixed 96px-per-inch ratios. */
+ * font size; ex and ch the measured x-height and "0" advance of the
+ * element's font (units->ex_ratio/ch_ratio), else CSS's 0.5em fallback;
+ * absolute units use CSS's fixed 96px-per-inch ratios. */
 static bool tbox_style_unit_scale(tbox_string_view unit, const tbox_style_units *units, double em_base, double *out) {
     static const struct {
         const char *name;
@@ -33,7 +34,7 @@ static bool tbox_style_unit_scale(tbox_string_view unit, const tbox_style_units 
     };
     for (size_t i = 0; i < sizeof(absolute) / sizeof(absolute[0]); i++) {
         if (tbox_string_view_equal_ascii_ci(unit, tbox_string_view_from_cstr(absolute[i].name))) {
-            *out = absolute[i].px;
+            *out = absolute[i].px * units->zoom;
             return true;
         }
     }
@@ -45,8 +46,8 @@ static bool tbox_style_unit_scale(tbox_string_view unit, const tbox_style_units 
     } relative[] = {
         { "em",    em_base,               false },
         { "rem",   units->root_font_size, false },
-        { "ex",    em_base * 0.5,         false },
-        { "ch",    em_base * 0.5,         false },
+        { "ex",    em_base * (units->ex_ratio > 0.0 ? units->ex_ratio : 0.5), false },
+        { "ch",    em_base * (units->ch_ratio > 0.0 ? units->ch_ratio : 0.5), false },
         { "vw",    vw,                    true  },
         { "vh",    vh,                    true  },
         { "vmin",  vw < vh ? vw : vh,     true  },
@@ -66,6 +67,31 @@ static bool tbox_style_unit_scale(tbox_string_view unit, const tbox_style_units 
         { "dvmin", vw < vh ? vw : vh,     true  },
         { "dvmax", vw > vh ? vw : vh,     true  },
     };
+    /* cq* (container query units): a percent of the query container's
+     * content box on that axis, or the small viewport's without one. */
+    double ci = units->container_inline >= 0.0 ? units->container_inline / 100.0 : vw;
+    double cb = units->container_block >= 0.0 ? units->container_block / 100.0 : vh;
+    const struct {
+        const char *name;
+        double px;
+        bool inline_axis, block_axis;
+    } container[] = {
+        { "cqw",   ci,                 true,  false },
+        { "cqi",   ci,                 true,  false },
+        { "cqh",   cb,                 false, true  },
+        { "cqb",   cb,                 false, true  },
+        { "cqmin", ci < cb ? ci : cb,  true,  true  },
+        { "cqmax", ci > cb ? ci : cb,  true,  true  },
+    };
+    for (size_t i = 0; i < sizeof(container) / sizeof(container[0]); i++) {
+        if (tbox_string_view_equal_ascii_ci(unit, tbox_string_view_from_cstr(container[i].name))) {
+            if ((container[i].inline_axis && units->container_inline < 0.0 && units->viewport_width <= 0.0) ||
+                (container[i].block_axis && units->container_block < 0.0 && units->viewport_height <= 0.0))
+                return false;
+            *out = container[i].px;
+            return true;
+        }
+    }
     for (size_t i = 0; i < sizeof(relative) / sizeof(relative[0]); i++) {
         if (tbox_string_view_equal_ascii_ci(unit, tbox_string_view_from_cstr(relative[i].name))) {
             if (relative[i].viewport && (units->viewport_width <= 0.0 || units->viewport_height <= 0.0))

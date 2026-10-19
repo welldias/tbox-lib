@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8">
+    <title>Contorno e paint-order</title>
+    <style>
+        @page {
+            margin: 1in;
+        }
+
+        @page :first {
+            margin: 1in;
+
+            @top-left {
+                content: "163";
+            }
+        }
+
+        body {
+            margin: 20px;
+            width: 720px;
+            background: white;
+            color: #222;
+            font-family: sans-serif;
+            font-size: 16px;
+        }
+
+        .row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .panel {
+            width: 344px;
+            height: 164px;
+            padding: 8px;
+            background: #eee;
+            box-sizing: border-box;
+        }
+
+        .label {
+            height: 28px;
+            line-height: 24px;
+        }
+
+        .sample {
+            font-family: sans-serif;
+            font-size: 48px;
+            font-weight: bold;
+            line-height: 80px;
+            color: #ff0;
+            -webkit-text-stroke: 3px #c00;
+        }
+
+        .normal {
+            paint-order: normal;
+        }
+
+        .stroke {
+            paint-order: stroke;
+        }
+
+        .hollow {
+            -webkit-text-stroke: 1px #c00;
+            color: transparent;
+        }
+
+        .green {
+            width: 312px;
+            height: 80px;
+            background: #189c49;
+            marker: url(#m);
+            mask-type: alpha;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="row">
+        <div class="panel">
+            <div class="label">normal: fill / stroke</div>
+            <div class="sample normal">TBOX</div>
+        </div>
+        <div class="panel">
+            <div class="label">stroke: stroke / fill</div>
+            <div class="sample stroke">TBOX</div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="panel">
+            <div class="label">1px / transparent</div>
+            <div class="sample hollow">TBOX</div>
+        </div>
+        <div class="panel">
+            <div class="label">marker / mask-type / @page</div>
+            <div class="green"></div>
+        </div>
+    </div>
+</body>
+
+</html>

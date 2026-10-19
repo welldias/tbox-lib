@@ -26,8 +26,8 @@ IMPORTANTE: Implementar apenas elementos HTML que sejam suportado pelo HTML5. Em
 | X | `<b>` | Defines bold text |
 | X* | `<base>` | Specifies the base URL/target for all relative URLs in a document |
 |  | `<basefont>` | Not supported in HTML5. Use CSS instead. Specifies a default color, size, and font for all text in a document |
-| X* | `<bdi>` | Isolates a part of text that might be formatted in a different direction from other text outside it |
-| X* | `<bdo>` | Overrides the current text direction |
+| X | `<bdi>` | Isolates a part of text that might be formatted in a different direction from other text outside it |
+| X | `<bdo>` | Overrides the current text direction |
 | X | `<big>` | Not supported in HTML5. Use CSS instead. Defines big text |
 | X* | `<blockquote>` | Defines a section that is quoted from another source |
 | X | `<body>` | Defines the document's body |

@@ -13,11 +13,11 @@ bool tbox_context_animations_active(const tbox_context *ctx) {
 }
 
 /* The value `track` shows at `now`, heading for `target`. */
-static void tbox_transition_current(const tbox_transition_track *track, const double target[4], double now, double out[4]) {
+static void tbox_transition_current(tbox_style_animatable property, const tbox_transition_track *track, const double target[TBOX_STYLE_ANIM_VALUE_SIZE], double now, double out[TBOX_STYLE_ANIM_VALUE_SIZE]) {
     double fraction = track->duration > 0.0 ? (now - track->start_time) / track->duration : 1.0;
     if (fraction < 0.0) fraction = 0.0;
     if (fraction > 1.0) fraction = 1.0;
-    tbox_style_animatable_mix(track->start, target, tbox_style_easing_apply(&track->easing, fraction), out);
+    tbox_style_animatable_mix(property, track->start, target, tbox_style_easing_apply(&track->easing, fraction), out);
 }
 
 static bool tbox_transition_any(const tbox_style *style) {
@@ -30,11 +30,11 @@ static bool tbox_transition_any(const tbox_style *style) {
  * (or leaves display: none): its style with the @starting-style rules in
  * the cascade, against the parent's current style. False when it has no
  * transitions or no @starting-style rule could apply. */
-static bool tbox_transition_starting_values(tbox_context *ctx, const tbox_style_entry *entry, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, double out[TBOX_STYLE_ANIM_COUNT][4]) {
+static bool tbox_transition_starting_values(tbox_context *ctx, const tbox_style_entry *entry, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, double out[TBOX_STYLE_ANIM_COUNT][TBOX_STYLE_ANIM_VALUE_SIZE]) {
     if (!ctx->has_starting_style || !tbox_transition_any(&entry->style))
         return false;
     const tbox_style *parent = entry->node->parent != NULL ? tbox_style_table_find(&ctx->styles, entry->node->parent) : NULL;
-    tbox_css_computed_style computed = tbox_css_cascade_resolve_starting_style_in_viewport(sources, source_count, entry->node, viewport_width, viewport_height, ctx->prefers_reduced_motion);
+    tbox_css_computed_style computed = tbox_css_cascade_resolve_starting_style_in_viewport(sources, source_count, entry->node, viewport_width, viewport_height, ctx->prefers_reduced_motion, &(tbox_css_query_context){ parent != NULL ? parent->query_container : NULL, parent != NULL ? parent->custom_properties : NULL });
     tbox_style starting = tbox_style_resolve_in_viewport(entry->node, parent, &computed, viewport_width, viewport_height);
     tbox_css_computed_style_destroy(&computed);
     for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
@@ -98,13 +98,13 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
         }
         for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++) {
             tbox_style_animatable property = (tbox_style_animatable)p;
-            double target[4];
+            double target[TBOX_STYLE_ANIM_VALUE_SIZE];
             tbox_style_animatable_read(&entry->style, property, target);
             if (memcmp(target, state->values[p], sizeof(target)) != 0) {
-                double current[4];
+                double current[TBOX_STYLE_ANIM_VALUE_SIZE];
                 memcpy(current, state->values[p], sizeof(current));
                 if (state->tracks != NULL && state->tracks[p].active)
-                    tbox_transition_current(&state->tracks[p], state->values[p], now, current);
+                    tbox_transition_current(property, &state->tracks[p], state->values[p], now, current);
                 const tbox_style_transition *transition = tbox_style_transition_find(&entry->style, property);
                 if (transition != NULL && tbox_style_animatable_interpolable(property, current, target)) {
                     if (state->tracks == NULL) state->tracks = calloc(TBOX_STYLE_ANIM_COUNT, sizeof(*state->tracks));
@@ -122,8 +122,8 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
             if (state->tracks == NULL || !state->tracks[p].active) continue;
             tbox_transition_track *track = &state->tracks[p];
             if (now < track->start_time + track->duration) {
-                double current[4];
-                tbox_transition_current(track, target, now, current);
+                double current[TBOX_STYLE_ANIM_VALUE_SIZE];
+                tbox_transition_current(property, track, target, now, current);
                 tbox_style_animatable_write(&entry->style, property, current);
                 /* in its delay the value holds still until start_time */
                 tbox_context_wake_at(ctx, now < track->start_time ? track->start_time : -INFINITY);

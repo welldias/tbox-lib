@@ -28,6 +28,7 @@
 #include "base/tbox_vector.h"
 #include "context/tbox_context_hit_test.h"
 #include "font/tbox_font_measure.h"
+#include "layout/tbox_layout_bidi.h"
 #include "layout/tbox_layout_password.h"
 
 /* One tbox_context_on_click registration: a compiled selector-group plus
@@ -68,7 +69,7 @@ typedef struct tbox_text_field {
 /* A running transition of one property: from `start` to the state's
  * value, over [start_time, start_time + duration]. */
 typedef struct tbox_transition_track {
-    double start[4];
+    double start[TBOX_STYLE_ANIM_VALUE_SIZE];
     double start_time, duration;
     tbox_style_easing easing;
     bool active;
@@ -77,7 +78,7 @@ typedef struct tbox_transition_track {
 typedef struct tbox_transition_state {
     const tbox_html_node *node;
     /* Last frame's target of every animatable property, to detect changes. */
-    double values[TBOX_STYLE_ANIM_COUNT][4];
+    double values[TBOX_STYLE_ANIM_COUNT][TBOX_STYLE_ANIM_VALUE_SIZE];
     /* NULL until the element first starts a transition. */
     tbox_transition_track *tracks;
     bool hidden; /* display: none last frame: showing it again uses @starting-style */
@@ -89,7 +90,7 @@ typedef struct tbox_transition_state {
 typedef struct tbox_animation_frame {
     double offset;
     unsigned long long mask;
-    double values[TBOX_STYLE_ANIM_COUNT][4];
+    double values[TBOX_STYLE_ANIM_COUNT][TBOX_STYLE_ANIM_VALUE_SIZE];
     bool has_easing; /* animation-timing-function inside the keyframe */
     tbox_style_easing easing;
 } tbox_animation_frame;
@@ -135,6 +136,16 @@ typedef struct tbox_scroll_state {
     double snap_time, snap_origin_y;
     struct tbox_scroll_state *next;
 } tbox_scroll_state;
+
+/* A `resize` the user dragged: the element's `width`/`height` (in its
+ * box-sizing box) from then on, applied over its style every frame while
+ * the axis stays resizable. */
+typedef struct tbox_resize_state {
+    const tbox_html_node *node;
+    bool has_width, has_height;
+    double width, height;
+    struct tbox_resize_state *next;
+} tbox_resize_state;
 
 typedef struct tbox_date {
     int year, month, day;
@@ -212,6 +223,11 @@ struct tbox_context {
     const tbox_html_node *scroll_thumb_hover; /* box whose scrollbar thumb is under the pointer (compared, never dereferenced) */
     double scroll_drag_grab_y;
     bool scroll_pointer_consumed;
+    tbox_resize_state *resize_states;
+    const tbox_html_node *resize_drag_node; /* whose resize handle the pointer holds */
+    tbox_style_resize resize_drag_axes;
+    bool resize_drag_rtl;
+    double resize_grab_x, resize_grab_y, resize_start_width, resize_start_height;
     bool focus_scroll_pending;
     tbox_context_input_handler input_handler;
     void *input_userdata;
@@ -320,6 +336,16 @@ void tbox_context_reveal_focused(tbox_context *ctx);
 void tbox_context_apply_sticky(tbox_context *ctx, double viewport_width, double viewport_height);
 tbox_rect tbox_context_rect_intersection(tbox_rect a, tbox_rect b);
 void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list);
+/* `resize` (tbox_context_resize.c): the handle's rect on `box` (false when
+ * it has none), the dragged sizes applied over the frame's styles, the
+ * handles painted, and the pointer press/drag/release on them. */
+bool tbox_context_resizer_rect(const tbox_layout_box *box, tbox_rect *out);
+const tbox_layout_box *tbox_context_resizer_at(const tbox_context *ctx, double x, double y);
+void tbox_context_apply_resize(tbox_context *ctx, tbox_style_table *styles);
+void tbox_context_paint_resizers(tbox_context *ctx, const tbox_layout_box *box, tbox_vector *items);
+bool tbox_context_resize_press(tbox_context *ctx, double x, double y);
+bool tbox_context_resize_drag(tbox_context *ctx, double x, double y);
+void tbox_context_free_resize_states(tbox_context *ctx);
 /* The node whose scrollbar thumb is at (x, y), or NULL. */
 const tbox_html_node *tbox_context_scrollbar_thumb_at(tbox_context *ctx, double x, double y);
 void tbox_context_push_fill(tbox_vector *items, tbox_rect rect, tbox_css_rgba color, bool has_clip, tbox_rect clip);
@@ -338,6 +364,11 @@ void tbox_context_layout_textareas(tbox_context *ctx, tbox_layout_box *box);
 void tbox_context_paint_text_input_caret(tbox_context *ctx, tbox_display_list *out_list);
 void tbox_context_paint_textarea_caret(tbox_context *ctx, tbox_display_list *out_list);
 bool tbox_context_point_in_rect(tbox_rect r, double x, double y);
+/* Maps the screen point (*x, *y) into `box`'s untransformed coordinates
+ * (those of its layout rects): through the inverse of every transform
+ * from the root down to `box`, its own included. False when one of them
+ * is singular (nothing there can be hit). */
+bool tbox_context_box_point(const tbox_layout_box *box, double *x, double *y);
 bool tbox_context_popup_click(tbox_context *ctx, double x, double y);
 bool tbox_context_node_attached(const tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_is_text_input(const tbox_html_node *node);

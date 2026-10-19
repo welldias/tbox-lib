@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* Escrita vertical (docs/08-layout-e-pintura.md, "Escrita vertical";
+     * docs/09-texto-e-fontes.md, "Escrita vertical"). Linha 1: um bloco
+     * vertical-rl 200x220 com dois parágrafos (colunas da direita para a
+     * esquerda), o mesmo em vertical-lr (da esquerda para a direita) e
+     * text-orientation: upright num texto latino curto. Linha 2: um título
+     * vertical-rl com text-combine-upright: all em "2024", um rótulo
+     * sideways-lr (lido de baixo para cima) e um div horizontal com um
+     * filho vertical-rl (fluxo ortogonal) ao lado de uma caixa normal: o
+     * margin-block-start (verde, à direita) e o padding-inline-start (topo,
+     * dentro do fundo amarelo) mostram o mapeamento lógico. */
+    body {
+      margin: 20px;
+      background: white;
+      color: black;
+      font-family: sans-serif;
+      font-size: 16px;
+    }
+
+    .linha {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+
+    .celula {
+      margin-right: 24px;
+    }
+
+    .rotulo {
+      font-size: 12px;
+      height: 20px;
+      color: #333;
+    }
+
+    .bloco {
+      width: 200px;
+      height: 220px;
+      border: 2px solid #1f4e9c;
+      background: #e8f0ff;
+      box-sizing: border-box;
+    }
+
+    .bloco p {
+      margin: 0 0 0 0;
+      margin-block-end: 12px;
+      padding: 4px;
+    }
+
+    .bloco p:first-child {
+      background: #ffd27a;
+    }
+
+    .bloco p + p {
+      background: #b9e6b0;
+    }
+
+    .rl {
+      writing-mode: vertical-rl;
+    }
+
+    .lr {
+      writing-mode: vertical-lr;
+    }
+
+    .upright {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      width: 60px;
+      height: 220px;
+      border: 2px solid #8a2be2;
+      background: #f3e6ff;
+      box-sizing: border-box;
+    }
+
+    .titulo {
+      writing-mode: vertical-rl;
+      width: 80px;
+      height: 180px;
+      border: 2px solid #b22222;
+      background: #ffe4e1;
+      box-sizing: border-box;
+      font-size: 20px;
+    }
+
+    .combinado {
+      text-combine-upright: all;
+      color: #b22222;
+    }
+
+    .lateral {
+      writing-mode: sideways-lr;
+      width: 40px;
+      height: 180px;
+      background: #2e8b57;
+      color: white;
+      box-sizing: border-box;
+    }
+
+    .horizontal {
+      display: flex;
+      align-items: flex-start;
+      width: 260px;
+      height: 180px;
+      background: #dddddd;
+    }
+
+    .ortogonal {
+      writing-mode: vertical-rl;
+      width: 60px;
+      height: 150px;
+      margin-block-start: 20px;
+      padding-inline-start: 30px;
+      background: #ffff66;
+      border: 2px solid #333;
+    }
+
+    .normal {
+      width: 100px;
+      height: 80px;
+      background: #4a90d9;
+      color: white;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="linha">
+    <div class="celula">
+      <div class="rotulo">vertical-rl</div>
+      <div class="bloco rl">
+        <p>Primeiro texto em coluna.</p>
+        <p>Segundo par.</p>
+      </div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">vertical-lr</div>
+      <div class="bloco lr">
+        <p>Primeiro texto em coluna.</p>
+        <p>Segundo par.</p>
+      </div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">upright</div>
+      <div class="upright">ABC 123</div>
+    </div>
+  </div>
+  <div class="linha">
+    <div class="celula">
+      <div class="rotulo">combine</div>
+      <div class="titulo">Ano <span class="combinado">2024</span> fim</div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">sideways-lr</div>
+      <div class="lateral">Rótulo lateral</div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">fluxo ortogonal</div>
+      <div class="horizontal">
+        <div class="ortogonal">Vertical</div>
+        <div class="normal">Normal</div>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

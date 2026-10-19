@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    /* border-image (docs/08-layout-e-pintura.md, "border-image"): gradiente
+     * como fonte com slice numérico e percentual, fill, os quatro modos de
+     * border-image-repeat (e dois valores) sobre mask-star.png (64x64,
+     * fatias de 21px), border-image-width diferente de border-width
+     * (comprimento e número) e border-image-outset (comprimento e número). */
+    body {
+      margin: 16px;
+      background: white;
+      color: #1e293b;
+      font: 12px sans-serif;
+    }
+
+    .cell {
+      display: inline-block;
+      vertical-align: top;
+      width: 150px;
+      margin: 0 26px 18px 0;
+    }
+
+    .lbl {
+      height: 16px;
+    }
+
+    .b {
+      box-sizing: border-box;
+      width: 150px;
+      height: 100px;
+      border: 20px solid #888;
+      background: #e2e8f0;
+    }
+
+    .star {
+      border-image: url(mask-star.png) 21;
+    }
+
+    .out {
+      margin: 12px;
+      width: 126px;
+      height: 76px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="cell">
+    <div class="lbl">gradiente 30</div>
+    <div class="b" style="border-image: linear-gradient(45deg, #e11d48, #2563eb) 30"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">fill</div>
+    <div class="b" style="border-image: radial-gradient(circle, #facc15, #15803d 70%) 25% fill"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">listras round</div>
+    <div class="b" style="border-image: repeating-linear-gradient(45deg, #111 0 6px, #f59e0b 6px 12px) 20 round"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">slice 34% fill</div>
+    <div class="b" style="border-image: linear-gradient(to right, #0ea5e9, #a855f7) 34% fill"></div>
+  </div>
+
+  <div class="cell">
+    <div class="lbl">stretch</div>
+    <div class="b star" style="border-image-repeat: stretch"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">repeat</div>
+    <div class="b star" style="border-image-repeat: repeat"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">round</div>
+    <div class="b star" style="border-image-repeat: round"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">space</div>
+    <div class="b star" style="border-image-repeat: space"></div>
+  </div>
+
+  <div class="cell">
+    <div class="lbl">width 10px</div>
+    <div class="b star" style="border-image-width: 10px"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">width 2 (b 8px)</div>
+    <div class="b star" style="border-width: 8px; border-image-width: 2"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">outset 12px</div>
+    <div class="b out" style="border-width: 10px; border-image: linear-gradient(#16a34a, #0f766e) 20 / 1 / 12px"></div>
+  </div>
+  <div class="cell">
+    <div class="lbl">outset 1, round stretch</div>
+    <div class="b out star" style="border-width: 12px; border-image-outset: 1; border-image-repeat: round stretch"></div>
+  </div>
+</body>
+
+</html>

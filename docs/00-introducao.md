@@ -109,7 +109,7 @@ Detalhes: [Arquitetura](02-arquitetura.md).
 | [13. Memória e concorrência](13-memoria-e-concorrencia.md) | Tempo de vida dos objetos, threads |
 | [14. Limitações e roadmap](14-limitacoes-e-roadmap.md) | O que falta e o que vem |
 | [15. Comparação e FAQ](15-comparacao-e-faq.md) | Alternativas e dúvidas comuns |
-| [Referência: CSS](referencia/css-suportado.md) · [HTML](referencia/html-suportado.md) · [Fixtures](referencia/fixtures.md) | Propriedade por propriedade, elemento por elemento, exemplo por recurso |
+| [Referência: CSS](referencia/css-suportado.md) · [HTML](referencia/html-suportado.md) · [Fixtures](referencia/fixtures.md) · [Paridade com o Firefox](referencia/paridade-firefox.md) | Propriedade por propriedade, elemento por elemento, exemplo por recurso, comparação visual com o Firefox |
 
 Para quem vai contribuir com o código: [docs/dev/](dev/README.md).
 

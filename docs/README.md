@@ -35,7 +35,8 @@ serve e quando não usar.
 
 Referência: [CSS suportado](referencia/css-suportado.md) ·
 [HTML suportado](referencia/html-suportado.md) ·
-[Fixtures por recurso](referencia/fixtures.md)
+[Fixtures por recurso](referencia/fixtures.md) ·
+[Paridade com o Firefox](referencia/paridade-firefox.md)
 
 Para quem desenvolve o tbox: [dev/](dev/README.md) — convenções,
 organização do código, decisões, débito técnico e histórico (v0–v20).

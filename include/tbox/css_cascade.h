@@ -24,12 +24,13 @@ extern "C" {
  *      TBOX_CSS_ORIGIN_AUTHOR_INLINE step (v9) for the `style=""` HTML
  *      attribute, which CSS2.1/Level 4 both express instead as "infinite
  *      specificity" rather than a distinct origin).
- *   2. selector specificity (a, b, c) -- see tbox_css_cascade_specificity.
+ *   2. cascade layer order, then selector specificity (a, b, c) -- see tbox_css_cascade_specificity.
  *      Not consulted at all between two TBOX_CSS_ORIGIN_AUTHOR_INLINE
  *      declarations, since tbox_css_cascade_resolve synthesizes at most one
  *      such declaration per property per node (see TBOX_CSS_ORIGIN_AUTHOR_INLINE
  *      below).
- *   3. source order: a stylesheet later in the `sources` array beats an
+ *   3. scope proximity (fewer ancestor hops wins; unscoped is infinite).
+ *   4. source order: a stylesheet later in the `sources` array beats an
  *      earlier one; within one stylesheet, a ruleset later in
  *      tbox_css_stylesheet_rulesets beats an earlier one; within one
  *      ruleset, a later declaration beats an earlier one.
@@ -157,13 +158,9 @@ typedef struct tbox_css_cascade_source {
  * `style="..."` declarations non-deterministically depending on how much
  * other cascade/Style-layer allocation happened to land on the freed bytes
  * first. `ruleset`/`selector` are NOT copied (still real pointers into
- * whichever stylesheet produced them, when that stylesheet is one of the
- * caller's own `sources` -- same aliasing contract as
- * tbox_css_selector_match); for an AUTHOR_INLINE item specifically, both
- * alias the already-destroyed synthetic stylesheet and must never be
- * dereferenced (nothing in this project does today -- only `property`/
- * `value`/`origin`/`important`/`specificity` are ever read back from a
- * resolved declaration). */
+ * whichever stylesheet produced them; for an AUTHOR_INLINE item both are
+ * NULL, since its synthetic stylesheet is destroyed before returning).
+ * `registration` also borrows its source stylesheet. */
 typedef struct tbox_css_resolved_declaration {
     const tbox_css_ruleset *ruleset;
     const tbox_css_selector *selector;
@@ -172,6 +169,9 @@ typedef struct tbox_css_resolved_declaration {
     tbox_string_view value;
     bool important;
     tbox_css_specificity specificity;
+    size_t scope_hops; /* 0: unscoped; scoped distance is hops + 1 */
+    const tbox_css_property_rule *registration; /* borrowed from stylesheet */
+    bool registered_default; /* no declaration: use registration inheritance/initial */
     size_t source_order; /* order among matching declarations, across all sources */
 } tbox_css_resolved_declaration;
 
@@ -200,11 +200,53 @@ typedef struct tbox_css_computed_style {
  * source_count == 0, or node == NULL, yields an empty computed_style (count
  * == 0, still safe to pass to tbox_css_computed_style_destroy). */
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node);
+/* Container queries (CSS Containment 3). `container-type` of a query
+ * container; NORMAL elements with a `container-name` still answer
+ * style() queries. */
+typedef enum tbox_css_container_type {
+    TBOX_CSS_CONTAINER_NORMAL,
+    TBOX_CSS_CONTAINER_INLINE_SIZE,
+    TBOX_CSS_CONTAINER_SIZE,
+} tbox_css_container_type;
+
+/* One ancestor query container -- an element with a `container-type`
+ * other than normal, or with a `container-name` -- as `@container` sees
+ * it. `parent` is the next one up. Built by the Style layer in the frame
+ * arena; the sizes come from the layout of the frame's first pass (see
+ * docs/07-html-e-css.md, "@container"). */
+typedef struct tbox_css_query_container {
+    const struct tbox_css_query_container *parent;
+    tbox_string_view names;       /* `container-name`: space-separated idents, empty for none */
+    tbox_css_container_type type;
+    double width, height;         /* content box in px; negative while not laid out yet (unknown) */
+    double font_size, root_font_size; /* em/rem inside the condition */
+    /* Its custom properties, for `style(--x: v)` queries (the opaque
+     * tbox_style_custom_properties of <tbox/style.h>); NULL for none. */
+    const struct tbox_style_custom_properties *custom_properties;
+} tbox_css_query_container;
+
+/* What `@container` rules are decided against for one element: its
+ * ancestor containers (nearest first), and the custom properties of its
+ * parent -- the container of an unnamed style() query. For a
+ * pseudo-element, the originating element itself takes the parent's
+ * place. NULL (or an empty context) makes every `@container` rule
+ * false. */
+typedef struct tbox_css_query_context {
+    const tbox_css_query_container *containers;
+    const struct tbox_style_custom_properties *custom_properties;
+} tbox_css_query_context;
+
 /* True when every condition in the `media` chain holds for this viewport
- * (NULL: unconditional) -- the test the cascade applies to each ruleset. */
+ * (NULL: unconditional) -- the test the cascade applies to each ruleset.
+ * An `@container` condition has no element here and is false. */
 bool tbox_css_cascade_media_matches(const tbox_css_media_condition *media, double viewport_width, double viewport_height, bool reduced_motion);
-/* Resolves @media rules against the current viewport. */
-tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion);
+/* True when the `@container` prelude `prelude` (`[<name>] <condition>`)
+ * holds for an element with `query` (NULL: false). Unknown features,
+ * malformed text and a missing or not yet measured container are false. */
+bool tbox_css_cascade_container_matches(tbox_string_view prelude, const tbox_css_query_context *query, double viewport_width, double viewport_height);
+/* Resolves @media rules against the current viewport, and `@container`
+ * rules against `query` (NULL: none apply). */
+tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query);
 /* User-action state of a pseudo-element, for selectors that go on past it
  * with :hover / :active ("::-tbox-scrollbar-thumb:hover"): such a rule
  * applies only when `state` has every one it names. */
@@ -214,11 +256,11 @@ typedef enum tbox_css_part_state {
 } tbox_css_part_state;
 /* tbox_css_cascade_resolve_pseudo_element with a viewport, and the
  * pseudo-element's own `state` (a tbox_css_part_state mask, 0 for none). */
-tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion);
+tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query);
 /* tbox_css_cascade_resolve_in_viewport with the `@starting-style` rules
  * taking part too (they cascade like any other rule): the style a
  * transition starts from when `node` first appears. */
-tbox_css_computed_style tbox_css_cascade_resolve_starting_style_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion);
+tbox_css_computed_style tbox_css_cascade_resolve_starting_style_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query);
 
 /* Convenience for the common case of a single stylesheet resolved as
  * TBOX_CSS_ORIGIN_AUTHOR -- equivalent to tbox_css_cascade_resolve with a

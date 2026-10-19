@@ -279,11 +279,72 @@ static void tbox_layout_apply_soft_hyphens(tbox_arena *arena, tbox_vector *words
                 if (!first_piece) {
                     entry->space_width     = 0.0;
                     entry->no_space_before = true;
+                    entry->break_before    = true;
                 }
                 first_piece = false;
             }
             if (at_shy)
                 i++;
+            start = i + 1;
+        }
+    }
+}
+
+/* The break opportunities inside a word that UAX #14 gives and browsers
+ * take: after a hyphen-minus between word characters ("ease-|out"), and
+ * after a slash in a path ("example.com/|path"), never before a digit
+ * ("-5", "1/2") nor between repeated slashes ("http://"). Each split
+ * leaves glued pieces like a soft hyphen's, only where lines wrap. */
+static bool tbox_layout_break_after(tbox_string_view text, size_t i) {
+    char c = text.data[i];
+    if ((c != '-' && c != '/') || i == 0 || i + 1 >= text.size)
+        return false;
+    char before = text.data[i - 1], after = text.data[i + 1];
+    if (after >= '0' && after <= '9')
+        return false;
+    if (c == '-')
+        return before != '-' && before != ' ' && after != '-';
+    return after != '/';
+}
+
+static void tbox_layout_apply_break_opportunities(tbox_arena *arena, tbox_vector *words, size_t first, const tbox_style *style) {
+    if (style->white_space == TBOX_STYLE_WHITE_SPACE_NOWRAP || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE)
+        return;
+    bool any = false;
+    for (size_t w = first; w < words->length && !any; w++) {
+        const tbox_layout_word *word = (const tbox_layout_word *)tbox_vector_at(words, w);
+        for (size_t i = 0; i < word->text.size && !any; i++)
+            any = tbox_layout_break_after(word->text, i);
+    }
+    if (!any)
+        return;
+    size_t count               = words->length - first;
+    tbox_layout_word *original = (tbox_layout_word *)tbox_arena_alloc(arena, count * sizeof(tbox_layout_word));
+    if (original == NULL)
+        return;
+    memcpy(original, (tbox_layout_word *)words->data + first, count * sizeof(tbox_layout_word));
+    words->length = first;
+    for (size_t w = 0; w < count; w++) {
+        const tbox_layout_word *word = &original[w];
+        if (word->hard_break || word->image != NULL || word->atomic != NULL || word->floating != NULL) {
+            *tbox_layout_new_word(words) = *word;
+            continue;
+        }
+        size_t start = 0;
+        for (size_t i = 0; i < word->text.size; i++) {
+            if (i + 1 < word->text.size && !tbox_layout_break_after(word->text, i))
+                continue;
+            tbox_layout_word *entry = tbox_layout_new_word(words);
+            *entry                  = *word;
+            entry->text             = tbox_string_view_make(word->text.data + start, i + 1 - start);
+            entry->width            = tbox_font_measure_text_spaced(word->face, entry->text, style->letter_spacing);
+            if (start > 0) {
+                entry->space_width     = 0.0;
+                entry->no_space_before = true;
+                entry->break_before    = true;
+            }
+            if (i + 1 < word->text.size)
+                entry->soft_hyphen_after = false;
             start = i + 1;
         }
     }
@@ -452,6 +513,7 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
             tbox_string_view text      = child->text.text;
             tbox_layout_push_text_words(arena, words, text, face, style);
             tbox_layout_apply_soft_hyphens(arena, words, first, style);
+            tbox_layout_apply_break_opportunities(arena, words, first, style);
             if (style->font_small_caps && !style->font_synthesis_no_small_caps)
                 tbox_layout_apply_small_caps(arena, words, first, style, fonts);
             if (text.size == 0)
@@ -468,16 +530,45 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
                 state->trailing_space = true;
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
+            if (tbox_layout_is_float(child, child_style)) {
+                /* A float: a zero-width word carrying its box, placed when
+                 * the line reaches it (tbox_layout_break_lines). Measured,
+                 * it counts like an inline-block. */
+                const tbox_font_face *face = tbox_layout_style_face(fonts, style);
+                if (measure_only) {
+                    tbox_layout_push_atomic_word(arena, child, child_style, face, styles, fonts, images, containing_width, true, words);
+                    continue;
+                }
+                tbox_layout_containing_block container = { 0.0, 0.0, containing_width, 0.0, false };
+                tbox_rect origin                       = { 0.0, 0.0, containing_width, 0.0 };
+                tbox_layout_positioned_context context = { origin, origin, NULL };
+                tbox_layout_box *box                   = tbox_layout_build_float_box(arena, child, child_style, styles, fonts, images, container, 0.0, context);
+                tbox_layout_word *word                 = tbox_layout_new_word(words);
+                word->face                             = face;
+                word->style                            = style;
+                word->no_space_before                  = true;
+                word->floating                         = box;
+                continue;
+            }
             if (tbox_string_view_equal_cstr(child->element.tag_name, "img")) {
                 const tbox_font_face *face = tbox_layout_style_face(fonts, style);
                 tbox_layout_push_image_word(arena, child, child_style, face, images, containing_width, words);
                 tbox_layout_join_words(words, first, false, state);
-            } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) {
+            } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX || child_style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) {
                 const tbox_font_face *face = tbox_layout_style_face(fonts, style);
                 tbox_layout_push_atomic_word(arena, child, child_style, face, styles, fonts, images, containing_width, measure_only, words);
                 tbox_layout_join_words(words, first, false, state);
             } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE || (inside_inline && child_style->display != TBOX_STYLE_DISPLAY_NONE)) {
                 tbox_layout_collect_words_in(arena, child->first_child, NULL, child_style, styles, fonts, images, containing_width, true, measure_only, state, words);
+                tbox_layout_mark_bidi(words, first, child_style);
+                if (child_style->initial_letter_size >= 1.0) {
+                    /* An outer initial wins over initials nested inside it. */
+                    for (size_t i = first; i < words->length; i++) {
+                        tbox_layout_word *word = tbox_vector_at(words, i);
+                        word->initial_style = child_style;
+                        word->initial_node = child;
+                    }
+                }
             }
         }
         /* else: COMMENT/DOCTYPE, or a block/none ELEMENT directly under the

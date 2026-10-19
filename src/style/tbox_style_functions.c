@@ -764,57 +764,346 @@ bool tbox_style_parse_gradient(tbox_string_view token, const tbox_style_units *u
     return true;
 }
 
-/* `translate(x[, y])`, `translateX(x)`, `translateY(y)` (several functions
- * add up), `none`; any other transform function makes the whole value
- * invalid. Percentages are of the element's own border box. */
-bool tbox_style_parse_transform(tbox_string_view raw, const tbox_style_units *units, tbox_style_length *out_x, tbox_style_length *out_y) {
-    tbox_style_length x = { TBOX_STYLE_LENGTH_PX, 0.0, 0.0, 0, 0.0, 0.0 }, y = x;
+/* ---- transform ---- */
+
+/* A transform function's number (scale(), matrix()...): a literal or a
+ * numeric calc(); with `percent`, `50%` is 0.5 as in scale(). */
+static bool tbox_style_transform_number(tbox_string_view raw, const tbox_style_units *units, bool percent, double *out) {
+    tbox_string_view text = tbox_string_view_trim_ascii_space(raw);
+    if (percent && text.size > 1 && text.data[text.size - 1] == '%' && tbox_style_parse_number(tbox_string_view_make(text.data, text.size - 1), out)) {
+        *out /= 100.0;
+        return isfinite(*out);
+    }
+    if (tbox_style_parse_number(text, out))
+        return isfinite(*out);
+    return tbox_style_parse_calc_number(text, units, out) && isfinite(*out);
+}
+
+/* A translation length as (percent, px): plain lengths have 0 percent. */
+static bool tbox_style_transform_length(tbox_string_view raw, const tbox_style_units *units, double *out_percent, double *out_px) {
+    tbox_style_length length;
+    if (!tbox_style_parse_spacing_length(raw, units, &length) || length.kind == TBOX_STYLE_LENGTH_AUTO)
+        return false;
+    *out_percent = length.kind == TBOX_STYLE_LENGTH_PERCENT ? length.value : 0.0;
+    *out_px      = length.kind == TBOX_STYLE_LENGTH_PERCENT ? length.px_offset : length.value;
+    return isfinite(*out_percent) && isfinite(*out_px);
+}
+
+/* 4x4 matrices for the 3D functions, m[row][col] acting on column
+ * vectors; out = a * b (b applies first). */
+static void tbox_style_matrix4_multiply(const double a[4][4], const double b[4][4], double out[4][4]) {
+    double r[4][4];
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++) {
+            r[i][j] = 0.0;
+            for (int k = 0; k < 4; k++)
+                r[i][j] += a[i][k] * b[k][j];
+        }
+    memcpy(out, r, sizeof(r));
+}
+
+static void tbox_style_matrix4_identity(double m[4][4]) {
+    memset(m, 0, 16 * sizeof(double));
+    m[0][0] = m[1][1] = m[2][2] = m[3][3] = 1.0;
+}
+
+/* rotate3d(x, y, z, a) as CSS Transforms 2 §13 defines it. False for a
+ * zero axis (no rotation). */
+static bool tbox_style_matrix4_rotate(double x, double y, double z, double degrees, double m[4][4]) {
+    double length = sqrt(x * x + y * y + z * z);
+    tbox_style_matrix4_identity(m);
+    if (!(length > 0.0))
+        return false;
+    x /= length, y /= length, z /= length;
+    double half = degrees * 3.14159265358979323846 / 360.0;
+    double sc = sin(half) * cos(half), sq = sin(half) * sin(half);
+    /* CSS lists the matrix column by column: m_ij is m[j][i] here */
+    m[0][0] = 1.0 - 2.0 * (y * y + z * z) * sq;
+    m[1][0] = 2.0 * (x * y * sq + z * sc);
+    m[2][0] = 2.0 * (x * z * sq - y * sc);
+    m[0][1] = 2.0 * (x * y * sq - z * sc);
+    m[1][1] = 1.0 - 2.0 * (x * x + z * z) * sq;
+    m[2][1] = 2.0 * (y * z * sq + x * sc);
+    m[0][2] = 2.0 * (x * z * sq + y * sc);
+    m[1][2] = 2.0 * (y * z * sq - x * sc);
+    m[2][2] = 1.0 - 2.0 * (x * x + y * y) * sq;
+    return true;
+}
+
+/* The 2D affine part (a b c d e f) of a 4x4 matrix: what an orthographic
+ * projection of the 3D transform leaves on the screen plane. */
+static void tbox_style_matrix4_flatten(const double m[4][4], double out[6]) {
+    out[0] = m[0][0], out[1] = m[1][0], out[2] = m[0][1], out[3] = m[1][1], out[4] = m[0][3], out[5] = m[1][3];
+}
+
+/* `args` split by commas into exactly `min`..`max` parts. */
+static size_t tbox_style_transform_args(tbox_string_view args, tbox_string_view *parts, size_t min, size_t max) {
+    if (args.size == 0)
+        return 0;
+    tbox_string_view all[17];
+    size_t count = tbox_style_split_top_level(args, ',', all, 17);
+    if (count < min || count > max)
+        return 0;
+    for (size_t i = 0; i < count; i++)
+        parts[i] = all[i];
+    return count;
+}
+
+/* One 3D function (rotateX, matrix3d, perspective...) as a 4x4 matrix.
+ * 0 when `token` isn't one, -1 when it is but invalid, 1 when parsed. */
+static int tbox_style_parse_transform_3d(tbox_string_view token, const tbox_style_units *units, double m[4][4]) {
+    tbox_string_view args, parts[16];
+    double v[16];
+    tbox_style_matrix4_identity(m);
+    if (tbox_style_function_args(token, "rotateX", &args) || tbox_style_function_args(token, "rotateY", &args)) {
+        bool y = token.data[6] == 'Y' || token.data[6] == 'y';
+        if (!tbox_style_parse_angle(args, units, &v[0]))
+            return -1;
+        tbox_style_matrix4_rotate(y ? 0.0 : 1.0, y ? 1.0 : 0.0, 0.0, v[0], m);
+        return 1;
+    }
+    if (tbox_style_function_args(token, "rotate3d", &args)) {
+        if (tbox_style_transform_args(args, parts, 4, 4) != 4 || !tbox_style_parse_angle(parts[3], units, &v[3]))
+            return -1;
+        for (size_t i = 0; i < 3; i++)
+            if (!tbox_style_transform_number(parts[i], units, false, &v[i]))
+                return -1;
+        tbox_style_matrix4_rotate(v[0], v[1], v[2], v[3], m);
+        return 1;
+    }
+    if (tbox_style_function_args(token, "matrix3d", &args)) {
+        if (tbox_style_transform_args(args, parts, 16, 16) != 16)
+            return -1;
+        for (size_t i = 0; i < 16; i++) {
+            if (!tbox_style_transform_number(parts[i], units, false, &v[i]))
+                return -1;
+            m[i % 4][i / 4] = v[i];
+        }
+        return 1;
+    }
+    if (tbox_style_function_args(token, "translateZ", &args)) {
+        if (!tbox_style_transform_length(args, units, &v[0], &v[1]) || v[0] != 0.0)
+            return -1;
+        m[2][3] = v[1];
+        return 1;
+    }
+    if (tbox_style_function_args(token, "scaleZ", &args)) {
+        if (!tbox_style_transform_number(args, units, true, &v[0]))
+            return -1;
+        m[2][2] = v[0];
+        return 1;
+    }
+    if (tbox_style_function_args(token, "scale3d", &args)) {
+        if (tbox_style_transform_args(args, parts, 3, 3) != 3)
+            return -1;
+        for (size_t i = 0; i < 3; i++) {
+            if (!tbox_style_transform_number(parts[i], units, true, &v[i]))
+                return -1;
+            m[i][i] = v[i];
+        }
+        return 1;
+    }
+    if (tbox_style_function_args(token, "perspective", &args)) {
+        /* Only reaches w, which an orthographic projection drops. */
+        if (!tbox_style_is(args, "none") && (!tbox_style_transform_length(args, units, &v[0], &v[1]) || v[0] != 0.0 || v[1] < 0.0))
+            return -1;
+        return 1;
+    }
+    return 0;
+}
+
+/* A 2D function, as its primitive. False when `token` isn't a valid one. */
+static bool tbox_style_parse_transform_2d(tbox_string_view token, const tbox_style_units *units, tbox_style_transform_function *out) {
+    tbox_string_view args, parts[6];
+    size_t count;
+    *out = (tbox_style_transform_function){ TBOX_STYLE_TRANSFORM_NONE, { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 } };
+    double *v = out->v;
+    if (tbox_style_function_args(token, "translate", &args)) {
+        count = tbox_style_transform_args(args, parts, 1, 2);
+        if (count == 0 || !tbox_style_transform_length(parts[0], units, &v[0], &v[1]) || (count == 2 && !tbox_style_transform_length(parts[1], units, &v[2], &v[3])))
+            return false;
+        out->kind = TBOX_STYLE_TRANSFORM_TRANSLATE;
+    } else if (tbox_style_function_args(token, "translateX", &args) || tbox_style_function_args(token, "translateY", &args)) {
+        size_t at = token.data[9] == 'Y' || token.data[9] == 'y' ? 2 : 0;
+        if (!tbox_style_transform_length(args, units, &v[at], &v[at + 1]))
+            return false;
+        out->kind = TBOX_STYLE_TRANSFORM_TRANSLATE;
+    } else if (tbox_style_function_args(token, "rotate", &args) || tbox_style_function_args(token, "rotateZ", &args)) {
+        if (!tbox_style_parse_angle(args, units, &v[0]))
+            return false;
+        out->kind = TBOX_STYLE_TRANSFORM_ROTATE;
+    } else if (tbox_style_function_args(token, "scale", &args)) {
+        count = tbox_style_transform_args(args, parts, 1, 2);
+        if (count == 0 || !tbox_style_transform_number(parts[0], units, true, &v[0]) || (count == 2 && !tbox_style_transform_number(parts[1], units, true, &v[1])))
+            return false;
+        if (count == 1)
+            v[1] = v[0];
+        out->kind = TBOX_STYLE_TRANSFORM_SCALE;
+    } else if (tbox_style_function_args(token, "scaleX", &args) || tbox_style_function_args(token, "scaleY", &args)) {
+        size_t at = token.data[5] == 'Y' || token.data[5] == 'y' ? 1 : 0;
+        v[0] = v[1] = 1.0;
+        if (!tbox_style_transform_number(args, units, true, &v[at]))
+            return false;
+        out->kind = TBOX_STYLE_TRANSFORM_SCALE;
+    } else if (tbox_style_function_args(token, "skew", &args)) {
+        count = tbox_style_transform_args(args, parts, 1, 2);
+        if (count == 0 || !tbox_style_parse_angle(parts[0], units, &v[0]) || (count == 2 && !tbox_style_parse_angle(parts[1], units, &v[1])))
+            return false;
+        out->kind = TBOX_STYLE_TRANSFORM_SKEW;
+    } else if (tbox_style_function_args(token, "skewX", &args) || tbox_style_function_args(token, "skewY", &args)) {
+        size_t at = token.data[4] == 'Y' || token.data[4] == 'y' ? 1 : 0;
+        if (!tbox_style_parse_angle(args, units, &v[at]))
+            return false;
+        out->kind = TBOX_STYLE_TRANSFORM_SKEW;
+    } else if (tbox_style_function_args(token, "matrix", &args)) {
+        if (tbox_style_transform_args(args, parts, 6, 6) != 6)
+            return false;
+        for (size_t i = 0; i < 6; i++)
+            if (!tbox_style_transform_number(parts[i], units, false, &v[i]))
+                return false;
+        out->kind = TBOX_STYLE_TRANSFORM_MATRIX;
+    } else if (tbox_style_function_args(token, "translate3d", &args)) {
+        /* the z part goes to the 3D run, see tbox_style_parse_transform */
+        if (tbox_style_transform_args(args, parts, 3, 3) != 3 || !tbox_style_transform_length(parts[0], units, &v[0], &v[1]) || !tbox_style_transform_length(parts[1], units, &v[2], &v[3]))
+            return false;
+        out->kind = TBOX_STYLE_TRANSFORM_TRANSLATE;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+/* `transform`: `none` or a list of functions, stored one per slot as
+ * their primitives. Consecutive 3D functions multiply as 4x4 matrices
+ * into one MATRIX slot holding the 2D part of the product (a 2D function
+ * leaves z alone, so flattening around it changes nothing). More than
+ * TBOX_STYLE_MAX_TRANSFORMS slots, or any invalid function, makes the
+ * whole value invalid. Translation percentages are of the border box. */
+bool tbox_style_parse_transform(tbox_string_view raw, const tbox_style_units *units, tbox_style_transform_function out[TBOX_STYLE_MAX_TRANSFORMS]) {
+    tbox_style_transform_function result[TBOX_STYLE_MAX_TRANSFORMS];
+    memset(result, 0, sizeof(result));
     if (tbox_style_is(raw, "none")) {
-        *out_x = x;
-        *out_y = y;
+        memcpy(out, result, sizeof(result));
         return true;
     }
-    tbox_string_view functions[8];
-    size_t count = tbox_style_tokens(raw, functions, 8);
+    tbox_string_view functions[32];
+    size_t count = tbox_style_tokens(raw, functions, 32), slots = 0;
     if (count == 0)
         return false;
-    for (size_t f = 0; f < count; f++) {
-        tbox_string_view args, parts[2];
-        size_t part_count;
-        tbox_style_length values[2] = {
-            { TBOX_STYLE_LENGTH_PX, 0.0, 0.0, 0, 0.0, 0.0 },
-            { TBOX_STYLE_LENGTH_PX, 0.0, 0.0, 0, 0.0, 0.0 }
-        };
-        int axis;
-        if (tbox_style_function_args(functions[f], "translate", &args))
-            axis = 2;
-        else if (tbox_style_function_args(functions[f], "translateX", &args))
-            axis = 0;
-        else if (tbox_style_function_args(functions[f], "translateY", &args))
-            axis = 1;
-        else
+    double run[4][4];
+    bool in_run = false;
+    for (size_t f = 0; f <= count; f++) {
+        double m[4][4];
+        int is_3d = f < count ? tbox_style_parse_transform_3d(functions[f], units, m) : 0;
+        tbox_style_transform_function fn;
+        bool is_2d = f < count && is_3d == 0 && tbox_style_parse_transform_2d(functions[f], units, &fn);
+        if (is_3d < 0 || (f < count && is_3d == 0 && !is_2d))
             return false;
-        part_count = tbox_style_split_top_level(args, ',', parts, axis == 2 ? 2 : 1);
-        if (part_count == 0)
-            return false;
-        for (size_t i = 0; i < part_count; i++)
-            if (!tbox_style_parse_spacing_length(parts[i], units, &values[i]) || values[i].kind == TBOX_STYLE_LENGTH_AUTO)
+        if (is_3d > 0) {
+            if (!in_run)
+                tbox_style_matrix4_identity(run);
+            tbox_style_matrix4_multiply(run, m, run);
+            in_run = true;
+            continue;
+        }
+        if (in_run) {
+            if (slots == TBOX_STYLE_MAX_TRANSFORMS)
                 return false;
-        tbox_style_length *targets[2] = { axis == 1 ? &y : &x, &y };
-        for (size_t i = 0; i < (axis == 2 ? 2u : 1u); i++) {
-            tbox_style_length *t = targets[i];
-            tbox_style_length v  = values[i];
-            /* Sum into one PX or PERCENT length. */
-            if (v.kind == TBOX_STYLE_LENGTH_PX)
-                t->kind == TBOX_STYLE_LENGTH_PX ? (void)(t->value += v.value) : (void)(t->px_offset += v.value);
-            else if (t->kind == TBOX_STYLE_LENGTH_PX)
-                *t = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, v.value, v.px_offset + t->value, 0, 0.0, 0.0 };
-            else
-                t->value += v.value, t->px_offset += v.px_offset;
+            result[slots].kind = TBOX_STYLE_TRANSFORM_MATRIX;
+            tbox_style_matrix4_flatten(run, result[slots++].v);
+            in_run = false;
+        }
+        if (!is_2d)
+            continue;
+        if (slots == TBOX_STYLE_MAX_TRANSFORMS)
+            return false;
+        result[slots++] = fn;
+        /* translate3d's z: translations commute, so it starts a 3D run */
+        tbox_string_view args, parts[3];
+        double percent, px;
+        if (tbox_style_function_args(functions[f], "translate3d", &args) && tbox_style_transform_args(args, parts, 3, 3) == 3 && tbox_style_transform_length(parts[2], units, &percent, &px)) {
+            if (percent != 0.0)
+                return false;
+            if (px != 0.0) {
+                tbox_style_matrix4_identity(run);
+                run[2][3] = px;
+                in_run    = true;
+            }
         }
     }
-    *out_x = x;
-    *out_y = y;
+    memcpy(out, result, sizeof(result));
+    return true;
+}
+
+/* The `rotate` property: `none`, an angle, or an axis (x, y, z or three
+ * numbers) with an angle, in either order. */
+bool tbox_style_parse_rotate(tbox_string_view raw, const tbox_style_units *units, double axis[3], double *degrees) {
+    double a[3] = { 0.0, 0.0, 0.0 }, angle = 0.0;
+    if (!tbox_style_is(raw, "none")) {
+        tbox_string_view tokens[5];
+        size_t count = tbox_style_tokens(raw, tokens, 5);
+        bool has_angle = false, has_axis = false;
+        for (size_t i = 0; i < count; i++) {
+            if (!has_angle && tbox_style_parse_angle(tokens[i], units, &angle) && !(tokens[i].size == 1 && tokens[i].data[0] == '0' && count == 4 && i < 3)) {
+                has_angle = true;
+            } else if (!has_axis && (tbox_style_is(tokens[i], "x") || tbox_style_is(tokens[i], "y") || tbox_style_is(tokens[i], "z"))) {
+                a[tokens[i].data[0] == 'x' || tokens[i].data[0] == 'X' ? 0 : tokens[i].data[0] == 'y' || tokens[i].data[0] == 'Y' ? 1 : 2] = 1.0;
+                has_axis = true;
+            } else if (!has_axis && i + 2 < count && tbox_style_transform_number(tokens[i], units, false, &a[0]) && tbox_style_transform_number(tokens[i + 1], units, false, &a[1]) && tbox_style_transform_number(tokens[i + 2], units, false, &a[2])) {
+                has_axis = true;
+                i += 2;
+            } else {
+                return false;
+            }
+        }
+        if (!has_angle)
+            return false;
+    }
+    memcpy(axis, a, sizeof(a));
+    *degrees = angle;
+    return true;
+}
+
+/* The `scale` property: `none` or one to three numbers/percentages (y
+ * defaults to x; z is ignored). False when invalid. */
+bool tbox_style_parse_scale(tbox_string_view raw, const tbox_style_units *units, bool *has_scale, double out[2]) {
+    if (tbox_style_is(raw, "none")) {
+        *has_scale = false;
+        out[0] = out[1] = 1.0;
+        return true;
+    }
+    tbox_string_view tokens[3];
+    double v[3];
+    size_t count = tbox_style_tokens(raw, tokens, 3);
+    if (count == 0)
+        return false;
+    for (size_t i = 0; i < count; i++)
+        if (!tbox_style_transform_number(tokens[i], units, true, &v[i]))
+            return false;
+    *has_scale = true;
+    out[0] = v[0];
+    out[1] = count > 1 ? v[1] : v[0];
+    return true;
+}
+
+/* `transform-origin`: one or two position values (keywords, lengths,
+ * percentages) and an optional z length, which is checked and ignored. */
+bool tbox_style_parse_transform_origin(tbox_string_view raw, const tbox_style_units *units, tbox_style_length out[2]) {
+    tbox_string_view tokens[3];
+    size_t count = tbox_style_tokens(raw, tokens, 3);
+    if (count == 0)
+        return false;
+    if (count == 3) {
+        double percent, px;
+        if (!tbox_style_transform_length(tokens[2], units, &percent, &px) || percent != 0.0)
+            return false;
+        count = 2;
+    }
+    tbox_style_length position[2];
+    if (!tbox_style_parse_position(tokens, count, units, position))
+        return false;
+    out[0] = position[0];
+    out[1] = position[1];
     return true;
 }
 

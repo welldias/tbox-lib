@@ -17,7 +17,8 @@ tbox_layout_intrinsic tbox_layout_intrinsic_outer(tbox_arena *arena, const tbox_
 bool tbox_layout_tag(const tbox_html_node *node, const char *name);
 
 /* Min/max widths of a word sequence: lines end only at hard breaks; a
- * piece stays unbreakable across words glued without a space. `no_wrap`
+ * piece stays unbreakable across words glued without a space, except
+ * where the glued word is a break opportunity (break_before). `no_wrap`
  * (nowrap/pre text) makes every line unbreakable. */
 tbox_layout_intrinsic tbox_layout_measure_words(const tbox_layout_word *words, size_t count, bool no_wrap) {
     tbox_layout_intrinsic result = { 0.0, 0.0 };
@@ -46,7 +47,7 @@ tbox_layout_intrinsic tbox_layout_measure_words(const tbox_layout_word *words, s
             }
         }
         line += space + word->width;
-        if (no_wrap || (!anywhere && !line_start && word->no_space_before))
+        if (no_wrap || (!anywhere && !line_start && word->no_space_before && !word->break_before))
             piece += space + min_width;
         else
             piece = min_width;
@@ -69,6 +70,10 @@ static double tbox_layout_px_or_zero(tbox_style_length length) {
 tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images) {
     tbox_layout_intrinsic result = { 0.0, 0.0 };
     const tbox_style *style      = tbox_layout_style_or_default(styles, node);
+    /* `container-type: size`/`inline-size`: inline-size containment, the
+     * content doesn't size the box in the inline axis. */
+    if (style->container_type != TBOX_CSS_CONTAINER_NORMAL)
+        return result;
     const tbox_font_face *face   = tbox_layout_style_face(fonts, style);
 
     if (tbox_layout_tag(node, "ruby")) {
@@ -77,7 +82,7 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
     }
     if (tbox_layout_is_replaced_image(node)) {
         const tbox_image *image = tbox_image_cache_get(images, tbox_layout_image_url(arena, node));
-        result.min = result.max = image != NULL ? (double)image->width : 16.0;
+        result.min = result.max = image != NULL ? (double)image->width * tbox_style_zoom(style) : 16.0;
         /* A px height with an auto width keeps the image's aspect ratio. */
         if (image != NULL && image->height > 0 && style->height.kind == TBOX_STYLE_LENGTH_PX) {
             double height = style->height.value;
@@ -102,6 +107,9 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
         }
         return result;
     }
+
+    if ((style->display == TBOX_STYLE_DISPLAY_GRID || style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node))
+        return tbox_layout_grid_intrinsic(arena, node, styles, fonts, images);
 
     /* a row sums its items (a nowrap row also sums their minimums);
      * a column, like a block, takes the widest item. */
@@ -214,6 +222,17 @@ tbox_layout_intrinsic tbox_layout_intrinsic_outer(tbox_arena *arena, const tbox_
     tbox_layout_intrinsic result = { 0.0, 0.0 };
     if (style->display == TBOX_STYLE_DISPLAY_NONE)
         return result;
+    /* An orthogonal flow (vertical inside horizontal or the reverse) is
+     * as wide as its laid-out columns: lay it out to measure. */
+    if (tbox_layout_frame_change(style) && style->width.kind != TBOX_STYLE_LENGTH_PX) {
+        tbox_layout_containing_block container = { 0.0, 0.0, 0.0, 0.0, false };
+        tbox_rect none                         = { 0.0, 0.0, 0.0, 0.0 };
+        tbox_layout_positioned_context context = { none, none, NULL };
+        tbox_layout_box *box = tbox_layout_build_orthogonal(arena, node, styles, fonts, images, container, 0.0, context, NULL);
+        if (box != NULL)
+            result.min = result.max = box->margin_box.width;
+        return result;
+    }
     double edges    = tbox_layout_px_or_zero(style->padding[1]) + tbox_layout_px_or_zero(style->padding[3]) + tbox_style_border_side_width(style, 1) + tbox_style_border_side_width(style, 3);
     double margins  = tbox_layout_px_or_zero(style->margin[1]) + tbox_layout_px_or_zero(style->margin[3]);
     bool border_box = style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX;
@@ -295,7 +314,7 @@ void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node,
     }
     tbox_layout_containing_block container = { 0.0, 0.0, containing_width, 0.0, false };
     tbox_rect origin                       = { 0.0, 0.0, containing_width, 0.0 };
-    tbox_layout_positioned_context context = { origin, origin };
+    tbox_layout_positioned_context context = { origin, origin, NULL };
     tbox_layout_box *box                   = tbox_layout_build_element_sized(arena, node, styles, fonts, images, container, 0.0, context, NULL, 0, forced.has_width ? &forced : NULL);
 
     /* A checkbox's checkmark run is decoration, not a line of content: the

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8">
+    <title>155 — Multicolunas</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 736px;
+            margin: 12px;
+            background: white;
+            color: #15243b;
+            font-family: sans-serif;
+            font-size: 14px;
+            line-height: 18px;
+        }
+
+        h1 {
+            font-size: 18px;
+            line-height: 24px;
+            margin: 0 0 10px;
+        }
+
+        .panel {
+            display: inline-block;
+            vertical-align: top;
+            width: 328px;
+            height: 156px;
+            margin-right: 8px;
+        }
+
+        .wide {
+            width: 400px;
+            margin-right: 0;
+        }
+
+        .label {
+            margin: 0 0 6px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .box {
+            width: 328px;
+            background: #e6f1ff;
+            column-gap: 16px;
+        }
+
+        .wide .box {
+            width: 400px;
+        }
+
+        p {
+            margin: 0;
+        }
+
+        .count {
+            column-count: 3;
+            column-rule: 2px solid #1758a6;
+        }
+
+        .width {
+            column-width: 120px;
+            column-rule: 2px solid #267444;
+        }
+
+        .auto {
+            width: 156px;
+            height: 72px;
+            column-count: 2;
+            column-fill: auto;
+            column-gap: 12px;
+            column-rule: 2px solid #a53320;
+            background: #fff0c9;
+        }
+
+        .span {
+            columns: 2;
+            column-rule: 2px solid #1758a6;
+        }
+
+        h2 {
+            column-span: all;
+            margin: 4px 0;
+            height: 24px;
+            font-size: 14px;
+            line-height: 24px;
+            background: #1758a6;
+            color: white;
+        }
+
+        .dashed {
+            columns: 3;
+            column-gap: 36px;
+            column-rule-width: 3px;
+            column-rule-style: dashed;
+            column-rule-color: #a53320;
+        }
+
+        .fragment {
+            columns: 2;
+            column-gap: 20px;
+        }
+
+        .fragment p {
+            border: 3px solid #a53320;
+            padding: 4px;
+            background: #ffe096;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>155 — Layout multicoluna</h1>
+    <div class="panel">
+        <p class="label">3 colunas · regra sólida</p>
+        <div class="box count">
+            <p>Um<br>Dois<br>Três<br>Quatro<br>Cinco<br>Seis<br>Sete<br>Oito<br>Nove<br>Dez<br>Onze<br>Doze</p>
+        </div>
+    </div>
+    <div class="panel wide">
+        <p class="label">Largura 120px · contêiner 400px</p>
+        <div class="box width">
+            <p>Sol<br>Lua<br>Mar<br>Céu<br>Rio<br>Lago<br>Flor<br>Folha<br>Terra<br>Vento<br>Chuva<br>Neve</p>
+        </div>
+    </div>
+    <div class="panel">
+        <p class="label">auto · altura 72px · overflow lateral</p>
+        <div class="auto">
+            <p>01<br>02<br>03<br>04<br>05<br>06<br>07<br>08<br>09<br>10<br>11<br>12<br>13<br>14<br>15<br>16</p>
+        </div>
+    </div>
+    <div class="panel wide">
+        <p class="label">Título atravessa todas as colunas</p>
+        <div class="box span">
+            <p>Antes A<br>Antes B<br>Antes C<br>Antes D</p>
+            <h2>Título no meio</h2>
+            <p>Depois A<br>Depois B<br>Depois C<br>Depois D</p>
+        </div>
+    </div>
+    <div class="panel">
+        <p class="label">Regra tracejada · gap 36px</p>
+        <div class="box dashed">
+            <p>Norte<br>Sul<br>Leste<br>Oeste<br>Azul<br>Verde<br>Ouro<br>Prata<br>Cobre<br>Ferro<br>Pedra<br>Areia</p>
+        </div>
+    </div>
+    <div class="panel wide">
+        <p class="label">Fundo e borda partidos entre colunas</p>
+        <div class="box fragment">
+            <p>Faixa 01<br>Faixa 02<br>Faixa 03<br>Faixa 04<br>Faixa 05<br>Faixa 06<br>Faixa 07<br>Faixa 08<br>Faixa
+                09<br>Faixa 10</p>
+        </div>
+    </div>
+</body>
+
+</html>

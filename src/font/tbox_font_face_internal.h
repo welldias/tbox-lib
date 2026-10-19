@@ -7,12 +7,16 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_GLYPH_H
 
 #include <tbox/font.h>
 #include <tbox/string_view.h>
+#include "tbox_font_measure.h"
 
 struct tbox_font_face {
     FT_Face ft_face;
+    FT_Glyph stroke_glyph; /* owned auxiliary outline/bitmap, replaced per stroke */
+    tbox_font_shaping_options options;
     bool kerning;           /* font-kerning, and the face has a FreeType `kern` table */
     bool kerning_requested; /* font-kerning as asked (the HarfBuzz shaper reads GPOS too) */
     /* FT_New_Memory_Face never copies its input -- it keeps the pointer and
@@ -37,6 +41,6 @@ void tbox_font_shaper_detach(tbox_font_face *face);
  * 0) and returns how many glyphs the whole text takes -- a caller whose
  * buffer was too small calls again with a larger one. *out_width receives
  * the total advance, letter-spacing included. */
-size_t tbox_font_shaper_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_glyph *out, size_t capacity, double *out_width);
+size_t tbox_font_shaper_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, tbox_glyph *out, size_t capacity, double *out_width);
 
 #endif /* TBOX_FONT_FACE_INTERNAL_H */

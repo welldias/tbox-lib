@@ -5,12 +5,31 @@
 
 #include <tbox/style.h>
 
+typedef struct tbox_rect tbox_rect;
+
 /* What relative length units resolve against: em/ex/ch the element's own
  * font size, rem the root's, viewport units the window (0 = unknown). */
 typedef struct tbox_style_units {
     double font_size, root_font_size, viewport_width, viewport_height;
     bool rtl; /* `direction: rtl`: inline-start is the right side */
+    /* The query container's content width/height for cq* units; negative
+     * without one (they fall back to the small viewport units). */
+    double container_inline, container_block;
+    /* Effective `zoom`: multiplies absolute units (px, pt, cm...). em and
+     * rem come in already zoomed through font_size/root_font_size. */
+    double zoom;
+    /* The element's writing-mode frame: logical sides map to physical ones
+     * through it (tbox_style_logical_side). NONE is horizontal. */
+    tbox_style_frame frame;
+    /* ex and ch as fractions of font_size (tbox_style.ex_ratio/ch_ratio);
+     * 0 falls back to 0.5. */
+    double ex_ratio, ch_ratio;
 } tbox_style_units;
+
+/* The physical side (top, right, bottom, left) of logical side `side`
+ * given in horizontal left-to-right terms (0 block-start, 1 inline-end,
+ * 2 block-end, 3 inline-start), for `units`' direction and frame. */
+size_t tbox_style_logical_side(const tbox_style_units *units, size_t side);
 
 /* Calculation value: px + percent, a plain number (`number`), or an
  * angle in degrees (`angle`). Numbers can scale lengths and angles. */
@@ -27,6 +46,10 @@ typedef struct tbox_style_calc_value {
 /* Typed value/function parsers. False leaves error recovery to the property
  * resolver; these routines do not perform cascade or mutate DOM state. */
 bool tbox_style_parse_number(tbox_string_view text, double *out_value);
+bool tbox_style_parse_initial_letter(tbox_string_view value, double *size, int *sink);
+bool tbox_style_parse_hanging_punctuation(tbox_string_view value, unsigned *bits);
+bool tbox_style_inline_declaration_valid(tbox_string_view property, tbox_string_view value);
+void tbox_style_resolve_inline(const tbox_css_computed_style *computed, const tbox_style *parent, tbox_style *style);
 bool tbox_style_parse_dimension(tbox_string_view text, const tbox_style_units *units, double em_base, double *out);
 bool tbox_style_parse_calc(tbox_string_view text, const tbox_style_units *units, double em_base, double percent_base, double *out_px, double *out_percent);
 /* Unitless evaluation for opacity: percentages are numbers with 100% = 1.
@@ -40,6 +63,17 @@ bool tbox_style_parse_object_position_component(tbox_string_view token, const tb
 size_t tbox_style_four_value_index(size_t count, size_t side);
 bool tbox_style_parse_radius(tbox_string_view value, const tbox_style_units *units, double *out_px, double *out_percent);
 bool tbox_style_parse_shadow(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, int max_lengths, double out_lengths[4], tbox_css_rgba *out_color, bool *out_inset);
+/* Literal validation shared with cascade and @supports; unrelated properties
+ * and values containing var() pass through for later resolution. */
+bool tbox_style_paint_declaration_valid(tbox_string_view property, tbox_string_view value);
+void tbox_style_resolve_paint(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_style_units *units, tbox_style *style);
+bool tbox_style_opentype_declaration_valid(tbox_string_view property, tbox_string_view value);
+/* Atomic parse: failure leaves style unchanged. */
+bool tbox_style_parse_opentype(const char *property, tbox_string_view value, tbox_style *style);
+void tbox_style_shaping_options(const tbox_style *style, tbox_font_shaping_options *out);
+void tbox_style_resolve_opentype(const tbox_css_computed_style *computed, const tbox_style *parent,
+                                 const tbox_css_resolved_declaration *font, tbox_string_view font_variant, tbox_style *style);
+
 bool tbox_style_is(tbox_string_view value, const char *keyword);
 size_t tbox_style_split_top_level(tbox_string_view text, char separator, tbox_string_view *parts, size_t max);
 size_t tbox_style_tokens(tbox_string_view text, tbox_string_view *tokens, size_t max);
@@ -53,12 +87,34 @@ bool tbox_style_parse_position(const tbox_string_view *tokens, size_t count, con
 void tbox_style_init_gradient(tbox_style_gradient *gradient);
 bool tbox_style_parse_gradient(tbox_string_view token, const tbox_style_units *units, tbox_css_rgba current_color, tbox_style_gradient *out);
 bool tbox_style_parse_radius_list(const tbox_string_view *tokens, size_t count, const tbox_style_units *units, double px[4], double percent[4]);
-bool tbox_style_parse_transform(tbox_string_view raw, const tbox_style_units *units, tbox_style_length *out_x, tbox_style_length *out_y);
+bool tbox_style_parse_transform(tbox_string_view raw, const tbox_style_units *units, tbox_style_transform_function out[TBOX_STYLE_MAX_TRANSFORMS]);
+bool tbox_style_parse_rotate(tbox_string_view raw, const tbox_style_units *units, double axis[3], double *degrees);
+bool tbox_style_parse_scale(tbox_string_view raw, const tbox_style_units *units, bool *has_scale, double out[2]);
+bool tbox_style_parse_transform_origin(tbox_string_view raw, const tbox_style_units *units, tbox_style_length out[2]);
 void tbox_style_matrix_identity(double m[20]);
 bool tbox_style_parse_filter(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, tbox_style_filter_list *out_list);
 bool tbox_style_filter_matrix_of(const tbox_style_filter_list *list, double out[20]);
 void tbox_style_parse_clip_rect(tbox_string_view raw, const tbox_style_units *units, tbox_style_clip_path *out);
 bool tbox_style_parse_clip_path(tbox_string_view raw, const tbox_style_units *units, tbox_style_clip_path *out);
+/* `border-image` and its longhands into style->border_image and
+ * has_border_image (tbox_style_border_image.c); style->color must be
+ * resolved already (gradient currentColor). */
+void tbox_style_resolve_border_image(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style);
+/* `float`, `clear`, `shape-outside`, `shape-margin` and
+ * `shape-image-threshold` (tbox_style_float.c). tbox_style_finish_float
+ * runs after the CSS-wide keywords: it drops `float` where it does not
+ * apply and blockifies a float's display. */
+void tbox_style_resolve_float(const tbox_css_computed_style *computed, const tbox_style *parent_style, const tbox_style_units *units, tbox_style *style);
+void tbox_style_finish_float(tbox_style *style, const tbox_style *parent_style);
+
+/* Motion Path parsers share validation with cascade/@supports. */
+bool tbox_style_motion_declaration_valid(tbox_string_view property, tbox_string_view value);
+void tbox_style_resolve_motion(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style);
+/* Resolves the offset term relative to transform-origin; table storage is
+ * in arena, never borrowed from a stylesheet or retained across frames. */
+bool tbox_style_motion_matrix(const tbox_style *style, tbox_rect box, tbox_rect reference, const tbox_style_clip_path *outline, tbox_arena *arena, double out[6]);
+typedef struct tbox_vector tbox_vector;
+bool tbox_style_motion_svg(tbox_string_view data, tbox_vector *points, bool *closed);
 
 /* CSS-wide keywords (`inherit`, `initial`, `unset`), see
  * tbox_style_keywords.c. Resolution runs in two passes: the declarations
@@ -98,7 +154,11 @@ bool tbox_style_vars_present(const tbox_css_computed_style *computed);
  * cycle) becomes `unset`. Everything lives in `arena`. `*out_own` receives
  * the element's custom-property set for its children (its own
  * declarations chained to `inherited`) when `keep_own`, else `inherited`. */
-tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style *computed, const tbox_style_custom_properties *inherited, tbox_arena *arena, const tbox_style_custom_properties **out_own, bool keep_own);
+tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style *computed, const tbox_style_units *units, const tbox_style_custom_properties *inherited, tbox_arena *arena, const tbox_style_custom_properties **out_own, bool keep_own);
+
+/* The value of custom property `name` in `set` (own or inherited), for
+ * container style() queries; false when undefined. */
+bool tbox_style_custom_property_get(const tbox_style_custom_properties *set, tbox_string_view name, tbox_string_view *out);
 
 /* True when some declaration in `computed` uses light-dark(). */
 bool tbox_style_light_dark_present(const tbox_css_computed_style *computed);
@@ -108,6 +168,15 @@ bool tbox_style_light_dark_present(const tbox_css_computed_style *computed);
  * declaration `unset`. Everything lives in `arena`. */
 tbox_css_computed_style tbox_style_light_dark_substitute(const tbox_css_computed_style *computed, bool dark, tbox_arena *arena);
 
+typedef struct tbox_string_builder tbox_string_builder;
+
+/* Shared counter representations for list markers and generated content. */
+bool tbox_style_parse_content_string(tbox_string_view *text, tbox_string_builder *builder);
+void tbox_style_counter_builtin(tbox_string_builder *builder, long value, tbox_string_view style);
+bool tbox_style_counter_type_valid(tbox_string_view raw);
+tbox_style_counter_styles *tbox_style_counter_styles_create(tbox_arena *arena, const tbox_css_cascade_source *sources, size_t count, double width, double height, bool reduced_motion);
+tbox_string_view tbox_style_counter_format(tbox_arena *arena, const tbox_style_counter_styles *styles, tbox_string_view name, long value, bool marker);
+
 /* Generated content -- ::before/::after, counters, quotes
  * (tbox_style_generated.c). One state per tbox_style_resolve_tree walk,
  * fed in document order. */
@@ -115,7 +184,7 @@ typedef struct tbox_style_generated tbox_style_generated;
 
 /* NULL (nothing to do) when no rule in `sources` targets ::before or
  * ::after; else a state in `arena`. */
-tbox_style_generated *tbox_style_generated_create(tbox_arena *arena, const tbox_css_cascade_source *sources, size_t source_count);
+tbox_style_generated *tbox_style_generated_create(tbox_arena *arena, const tbox_css_cascade_source *sources, size_t source_count, const tbox_style_counter_styles *counter_styles);
 
 /* Whether a rule ends in ::before (`which` 0) or ::after (1). */
 bool tbox_style_generated_wants(const tbox_style_generated *generated, int which);
@@ -151,5 +220,7 @@ void tbox_style_generated_leave(tbox_style_generated *generated, const tbox_html
  * against its own already-resolved `style` and stores them, allocated in
  * `arena`, in style->parts. See tbox_style_part. */
 void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena);
+
+bool tbox_style_composition_declaration_valid(tbox_string_view name, tbox_string_view value);
 
 #endif /* TBOX_STYLE_INTERNAL_H */

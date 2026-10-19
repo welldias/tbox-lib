@@ -7,6 +7,7 @@
 #include "base/tbox_arena.h"
 #include "font/tbox_font_measure.h"
 #include "test_support.h"
+#include "style/tbox_style_internal.h"
 
 /* <tbox/string_view.h> (pulled in by <tbox/font.h>) only exposes
  * tbox_string_view_make; tbox_string_view_from_cstr lives in Base's
@@ -234,7 +235,7 @@ int tbox_test_font_run(void) {
             tbox_glyph *glyphs;
             size_t glyph_count;
             tbox_string_view fi = tbox_string_view_make("fi", 2);
-            TBOX_TEST_ASSERT(tbox_font_shape(&arena, regular_16, fi, 0.0, 0.0, 0, &glyphs, &glyph_count, NULL));
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, regular_16, fi, 0.0, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &glyphs, &glyph_count, NULL));
             if (glyph_count == 1) { /* the face (and shaper) made a ligature */
                 tbox_text_measurer_init(&measurer, regular_16, 0.0, fi.data, fi.size);
                 tbox_text_measurer_step(&measurer);
@@ -243,6 +244,16 @@ int tbox_test_font_run(void) {
                 TBOX_TEST_ASSERT(measurer.width == glyphs[0].advance);
                 tbox_text_measurer_finish(&measurer);
             }
+            /* RTL (a bidi level): visual order, clusters descending, and
+             * brackets mirrored (L4) -- "a(" draws as ")a". */
+            tbox_glyph *close_glyph, *rtl;
+            size_t close_count, rtl_count;
+            double ltr_width, rtl_width;
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, regular_16, tbox_string_view_make(")", 1), 0.0, TBOX_FONT_DIRECTION_LTR, 0.0, 0, &close_glyph, &close_count, NULL));
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, regular_16, tbox_string_view_make("a(", 2), 0.0, TBOX_FONT_DIRECTION_RTL, 0.0, 0, &rtl, &rtl_count, &rtl_width));
+            TBOX_TEST_ASSERT(close_count == 1 && rtl_count == 2 && rtl[0].id == close_glyph[0].id && rtl[0].cluster == 1 && rtl[1].cluster == 0 && rtl[0].x < rtl[1].x);
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, regular_16, tbox_string_view_make("a(", 2), 0.0, TBOX_FONT_DIRECTION_LTR, 0.0, 0, &glyphs, &glyph_count, &ltr_width));
+            TBOX_TEST_ASSERT(glyph_count == 2 && glyphs[0].cluster == 0 && (ltr_width - rtl_width < 0.5 && rtl_width - ltr_width < 0.5));
             tbox_arena_destroy(&arena);
 
             tbox_text_measurer masked;
@@ -354,16 +365,106 @@ int tbox_test_font_run(void) {
         TBOX_TEST_ASSERT(released == 1);
     }
 
-    /* 19: a cache with resolver == NULL returns NULL for a non-empty family,
-     * without crashing. */
+    /* 19: a cache with resolver == NULL falls back to the default family
+     * for a non-empty one, without crashing; so does a list of unknown
+     * names, and a known name later in a list wins. */
     tbox_font_face_cache *no_resolver_cache = tbox_font_face_cache_create(font_data, font_size, font_data, font_size, NULL, NULL, NULL);
     TBOX_TEST_ASSERT(no_resolver_cache != NULL);
 
     if (no_resolver_cache != NULL) {
         tbox_string_view family = tbox_test_font_view_from_cstr("Alguma Familia");
-        TBOX_TEST_ASSERT(tbox_font_face_cache_get(no_resolver_cache, family, false, false, 16.0) == NULL);
+        const tbox_font_face *fallback = tbox_font_face_cache_get(no_resolver_cache, tbox_test_font_view_from_cstr(""), false, false, 16.0);
+        TBOX_TEST_ASSERT(fallback != NULL && tbox_font_face_cache_get(no_resolver_cache, family, false, false, 16.0) == fallback);
+        TBOX_TEST_ASSERT(tbox_font_face_cache_get(no_resolver_cache, tbox_test_font_view_from_cstr("A, 'B C'"), false, false, 16.0) == fallback);
+        TBOX_TEST_ASSERT(tbox_font_face_cache_register(no_resolver_cache, tbox_test_font_view_from_cstr("Local"), 400, false, font_data, font_size));
+        const tbox_font_face *local = tbox_font_face_cache_get(no_resolver_cache, tbox_test_font_view_from_cstr("Missing, \"Local\", serif"), false, false, 16.0);
+        TBOX_TEST_ASSERT(local != NULL && local != fallback);
 
         tbox_font_face_cache_destroy(no_resolver_cache);
+    }
+
+    /* Real OpenType behavior with a small, licensed fixture font. Cache
+     * identity, measurement and prefix carets must all see the selection. */
+    {
+        size_t ot_size = 0;
+        char *ot_data = read_file(TBOX_TEST_ASSETS_DIR "/150-sans.ttf", &ot_size);
+        TBOX_TEST_REQUIRE(ot_data != NULL);
+        tbox_font_face_cache *ot_cache = tbox_font_face_cache_create(ot_data, ot_size, ot_data, ot_size, NULL, NULL, NULL);
+        free(ot_data);
+        TBOX_TEST_REQUIRE(ot_cache != NULL);
+        tbox_string_view family = tbox_string_view_make(NULL, 0);
+        const tbox_font_face *normal = tbox_font_face_cache_get(ot_cache, family, false, false, 24.0);
+        tbox_style selection = {0};
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("'liga' 0"), &selection));
+        tbox_font_shaping_options options;
+        tbox_style_shaping_options(&selection, &options);
+        const tbox_font_face *no_liga = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
+        TBOX_TEST_REQUIRE(normal != NULL && no_liga != NULL);
+        TBOX_TEST_ASSERT(normal != no_liga);
+        TBOX_TEST_ASSERT(no_liga == tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options));
+        options.language = 0x54524b20u;
+        const tbox_font_face *turkish = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
+        TBOX_TEST_ASSERT(turkish != NULL && turkish != no_liga);
+        tbox_arena arena = tbox_arena_create(0);
+        tbox_glyph *before = NULL, *after = NULL;
+        size_t before_count = 0, after_count = 0;
+        double width = 0;
+        tbox_string_view office = tbox_test_font_view_from_cstr("office");
+        TBOX_TEST_ASSERT(tbox_font_shape(&arena, normal, office, 0, TBOX_FONT_DIRECTION_AUTO, 0, 0, &before, &before_count, NULL));
+        TBOX_TEST_ASSERT(tbox_font_shape(&arena, no_liga, office, 0, TBOX_FONT_DIRECTION_AUTO, 0, 0, &after, &after_count, &width));
+        TBOX_TEST_ASSERT(after_count == 6 && width == tbox_font_measure_text(no_liga, office));
+        TBOX_TEST_ASSERT(before_count == (TBOX_TEST_COMPLEX_SHAPING ? 4u : 6u));
+        tbox_text_measurer measurer;
+        tbox_text_measurer_init(&measurer, no_liga, 0, office.data, office.size);
+        while (measurer.at < office.size) tbox_text_measurer_step(&measurer);
+        TBOX_TEST_ASSERT(measurer.width == width);
+        tbox_text_measurer_finish(&measurer);
+        /* Letter spacing still disables optional ligatures. */
+        TBOX_TEST_ASSERT(tbox_font_shape(&arena, normal, office, 1, TBOX_FONT_DIRECTION_AUTO, 0, 0, &after, &after_count, NULL));
+        TBOX_TEST_ASSERT(after_count == 6);
+
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("normal"), &selection));
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-variant-numeric", tbox_test_font_view_from_cstr("proportional-nums"), &selection));
+        tbox_style_shaping_options(&selection, &options);
+        const tbox_font_face *proportional = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-variant-numeric", tbox_test_font_view_from_cstr("tabular-nums"), &selection));
+        tbox_style_shaping_options(&selection, &options);
+        const tbox_font_face *tabular = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
+        TBOX_TEST_REQUIRE(proportional != NULL && tabular != NULL);
+        tbox_string_view ones = tbox_test_font_view_from_cstr("1111");
+        double p_width = tbox_font_measure_text(proportional, ones);
+        double t_width = tbox_font_measure_text(tabular, ones);
+        TBOX_TEST_ASSERT(TBOX_TEST_COMPLEX_SHAPING ? p_width < t_width : p_width == t_width);
+        tbox_text_measurer_init(&measurer, tabular, 0, ones.data, ones.size);
+        while (measurer.at < ones.size) tbox_text_measurer_step(&measurer);
+        TBOX_TEST_ASSERT(measurer.width == t_width);
+        tbox_text_measurer_finish(&measurer);
+        static const struct { const char *property, *value, *text; } changes[] = {
+            { "font-variant-numeric", "oldstyle-nums", "1234567890" },
+            { "font-variant-numeric", "diagonal-fractions", "1/2" },
+            { "font-feature-settings", "'smcp'", "abc" },
+        };
+        for (size_t i = 0; i < sizeof(changes) / sizeof(changes[0]); i++) {
+            selection = (tbox_style){0};
+            TBOX_TEST_ASSERT(tbox_style_parse_opentype(changes[i].property, tbox_test_font_view_from_cstr(changes[i].value), &selection));
+            tbox_style_shaping_options(&selection, &options);
+            const tbox_font_face *changed = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
+            TBOX_TEST_REQUIRE(changed != NULL);
+            tbox_string_view text = tbox_test_font_view_from_cstr(changes[i].text);
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, normal, text, 0, TBOX_FONT_DIRECTION_AUTO, 0, 0, &before, &before_count, NULL));
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, changed, text, 0, TBOX_FONT_DIRECTION_AUTO, 0, 0, &after, &after_count, NULL));
+            bool different = before_count != after_count;
+            for (size_t j = 0; j < before_count && j < after_count; j++)
+                different |= before[j].id != after[j].id;
+            TBOX_TEST_ASSERT_MSG(different == (bool)TBOX_TEST_COMPLEX_SHAPING, changes[i].value);
+        }
+        /* Same options are still cached after many intervening lookups. */
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("'liga' 0"), &selection));
+        selection.font_variant_numeric = 0;
+        tbox_style_shaping_options(&selection, &options);
+        TBOX_TEST_ASSERT(no_liga == tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options));
+        tbox_arena_destroy(&arena);
+        tbox_font_face_cache_destroy(ot_cache);
     }
 
     free(font_data);

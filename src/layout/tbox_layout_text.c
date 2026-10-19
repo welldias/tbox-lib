@@ -42,8 +42,9 @@ static bool tbox_layout_is_block_child(const tbox_html_node *child, const tbox_s
     if (child->type != TBOX_HTML_NODE_ELEMENT || tbox_layout_is_hidden_input(child) || tbox_layout_tag(child, "br"))
         return false;
     const tbox_style *style = tbox_layout_style_or_default(styles, child);
-    return (style->display == TBOX_STYLE_DISPLAY_BLOCK || style->display == TBOX_STYLE_DISPLAY_FLEX) &&
-           style->position != TBOX_STYLE_POSITION_ABSOLUTE && style->position != TBOX_STYLE_POSITION_FIXED;
+    return (style->display == TBOX_STYLE_DISPLAY_BLOCK || style->display == TBOX_STYLE_DISPLAY_FLEX || style->display == TBOX_STYLE_DISPLAY_GRID) &&
+           style->position != TBOX_STYLE_POSITION_ABSOLUTE && style->position != TBOX_STYLE_POSITION_FIXED &&
+           !tbox_layout_is_float(child, style); /* a float stays among the words */
 }
 
 /* A text box laid out as one inline formatting context. A paragraph-like
@@ -191,6 +192,8 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         tbox_layout_collect_words(arena, first_sibling, end_exclusive, style, styles, fonts, images, available_width, &words);
     }
 
+    if (!is_input && !is_select && !is_preformatted)
+        tbox_layout_prepare_initial(arena, node != NULL ? node : first_sibling != NULL ? first_sibling->parent : NULL, style, fonts, available_width, &words);
     size_t word_count = tbox_vector_length(&words);
     if (word_count == 0) {
         tbox_vector marker_runs;
@@ -221,24 +224,46 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
     const tbox_layout_word *word_items = (const tbox_layout_word *)words.data;
     word_count                         = tbox_vector_length(&words);
     const tbox_font_face *block_face   = tbox_layout_style_face(fonts, style);
-    tbox_layout_break_lines(word_items, word_count, text_width, indent, no_wrap, style->text_indent_each_line, block_face, &lines);
+    /* Bidi levels over the final words (after the overlong splits). */
+    const tbox_layout_word_bidi *bidi = tbox_layout_resolve_bidi(arena, word_items, word_count, style);
+    /* Floats around (or among the words) make each line's room depend on
+     * where it sits; without them lines keep the whole width. */
+    tbox_layout_floats *floats = context != NULL ? context->floats : NULL;
+    bool float_words           = false;
+    for (size_t w = 0; w < word_count && !float_words; w++)
+        float_words = word_items[w].floating != NULL;
+    if (float_words && floats == NULL)
+        floats = tbox_layout_floats_create(arena);
+    tbox_layout_line_space space = {
+        .floats      = floats,
+        .x           = text_x,
+        .width       = text_width,
+        .y           = content_y,
+        .line_height = block_face != NULL ? tbox_layout_style_line_height(style, block_face) : 0.0,
+        .float_x     = content_x,
+        .float_width = available_width,
+        .images      = images,
+        .arena       = arena,
+    };
+    bool use_space = floats != NULL && (float_words || !tbox_layout_floats_empty(floats));
+    tbox_layout_break_lines(word_items, word_count, text_width, indent, no_wrap, style->text_indent_each_line, block_face, use_space ? &space : NULL, &lines);
     /* text-wrap: balance -- the narrowest width that keeps the same line
      * count, so lines come out about equally long (alignment still uses
      * the full width). */
-    if (style->text_wrap_balance && !no_wrap && lines.length > 1 && lines.length <= 10) {
+    if (style->text_wrap_balance && !no_wrap && !use_space && lines.length > 1 && lines.length <= 10) {
         size_t target = lines.length;
         double low = text_width * 0.25, high = text_width;
         for (int step = 0; step < 14; step++) {
             double middle = (low + high) / 2.0;
             lines.length  = 0;
-            tbox_layout_break_lines(word_items, word_count, middle, indent, no_wrap, style->text_indent_each_line, block_face, &lines);
+            tbox_layout_break_lines(word_items, word_count, middle, indent, no_wrap, style->text_indent_each_line, block_face, NULL, &lines);
             if (lines.length <= target)
                 high = middle;
             else
                 low = middle;
         }
         lines.length = 0;
-        tbox_layout_break_lines(word_items, word_count, high, indent, no_wrap, style->text_indent_each_line, block_face, &lines);
+        tbox_layout_break_lines(word_items, word_count, high, indent, no_wrap, style->text_indent_each_line, block_face, NULL, &lines);
     }
 
     tbox_vector runs;
@@ -256,6 +281,11 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         line_count = (size_t)style->line_clamp;
     for (size_t li = 0; li < line_count; li++) {
         const tbox_layout_line *line = &line_items[li];
+        /* Beside floats: pushed down past them, and narrowed. */
+        cumulative_y += line->y_offset;
+        total_height += line->y_offset;
+        double line_x     = text_x + line->left;
+        double line_avail = line->width;
         bool after_break             = li > 0 && line_items[li - 1].end < word_count && word_items[line_items[li - 1].end].hard_break;
         double line_indent           = li == 0 || (style->text_indent_each_line && after_break) ? indent : 0.0;
 
@@ -281,28 +311,39 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         size_t runs_before = tbox_vector_length(&runs);
         double justify_gap = 0.0;
         if (line_align == TBOX_STYLE_TEXT_ALIGN_JUSTIFY && !no_wrap && !(clamped && li + 1 == line_count) && !style->text_justify_none) {
-            double used = line_indent;
-            size_t gaps = 0;
+            double used  = line_indent - line->hang_left - line->hang_right;
+            size_t gaps  = 0;
+            bool started = false;
             for (size_t w = line->start; w < line->end; w++) {
-                used += word_items[w].width;
-                if (w != line->start)
+                if (word_items[w].floating != NULL)
+                    continue;
+                double edges[2];
+                tbox_layout_inline_edges(word_items, word_count, w, line->start, line->end, text_width, edges);
+                used += word_items[w].width + edges[0] + edges[1];
+                if (started)
                     used += word_items[w].space_width;
-                if (w != line->start && word_items[w].space_width > 0.0)
+                if (started && word_items[w].space_width > 0.0)
                     gaps++;
+                started = true;
             }
-            if (gaps > 0 && used < text_width)
-                justify_gap = (text_width - used) / (double)gaps;
+            if (gaps > 0 && used < line_avail)
+                justify_gap = (line_avail - used) / (double)gaps;
         }
-        double line_used = tbox_layout_build_line_runs(arena, word_items, line, cumulative_y, text_x + line_indent, block_face, justify_gap, &runs);
+        double line_used = tbox_layout_build_line_runs(arena, word_items, bidi, line, cumulative_y, line_x + line_indent, text_width, word_count, block_face, justify_gap, &runs);
         if (style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS && tbox_layout_white_space_nowrap(style) && (style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN || style->overflow_x != TBOX_STYLE_OVERFLOW_Y_VISIBLE) && !is_input && !is_select) {
             const tbox_font_face *face = tbox_layout_style_face(fonts, style);
-            tbox_layout_ellipsize_line(&runs, runs_before, text_x, text_width, style, face, line, cumulative_y, false);
+            tbox_layout_ellipsize_line(&runs, runs_before, line_x, line_avail, style, face, line, cumulative_y, false);
         }
         if (clamped && li + 1 == line_count) {
             const tbox_font_face *face = tbox_layout_style_face(fonts, style);
-            tbox_layout_ellipsize_line(&runs, runs_before, text_x + line_indent, text_width - line_indent, style, face, line, cumulative_y, true);
+            tbox_layout_ellipsize_line(&runs, runs_before, line_x + line_indent, line_avail - line_indent, style, face, line, cumulative_y, true);
         }
         size_t runs_after = tbox_vector_length(&runs);
+        for (size_t ri = runs_before; ri < runs_after; ri++) {
+            tbox_layout_text_run *run = tbox_vector_at(&runs, ri);
+            run->line_y = cumulative_y;
+            run->line_height = line->height;
+        }
 
         bool line_has_atomic = false;
         for (size_t w = line->start; w < line->end; w++)
@@ -313,12 +354,12 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
             double line_width               = line_indent + line_used;
             if (runs_after > runs_before) {
                 const tbox_layout_text_run *last_run = &run_items[runs_after - 1];
-                double run_right                     = (last_run->rect.x + last_run->rect.width) - text_x;
+                double run_right                     = (last_run->rect.x + last_run->rect.width) - line_x - line->hang_right;
                 if (run_right > line_width)
                     line_width = run_right; /* an ellipsis mark */
             }
 
-            double offset = (line_align == TBOX_STYLE_TEXT_ALIGN_CENTER) ? (text_width - line_width) / 2.0 : (text_width - line_width);
+            double offset = (line_align == TBOX_STYLE_TEXT_ALIGN_CENTER) ? (line_avail - line_width) / 2.0 : (line_avail - line_width);
 
             if (offset > 0.0) {
                 for (size_t ri = runs_before; ri < runs_after; ri++) {
@@ -345,12 +386,26 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
      * block outside it (so moving it from the origin would misplace them)
      * is laid out again in place, against the real positioned context. */
     for (size_t w = 0; w < word_count; w++) {
+        tbox_layout_box *floating = word_items[w].floating;
+        if (floating != NULL) {
+            /* A float among the words: a child too, painted with the floats
+             * of its stacking context (tbox_render.c). */
+            if (!use_space) /* nowhere to place it: at the top-left */
+                tbox_layout_translate(floating, content_x - floating->margin_box.x, content_y - floating->margin_box.y);
+            floating->parent = box;
+            if (box->last_child == NULL)
+                box->first_child = floating;
+            else
+                box->last_child->next_sibling = floating;
+            box->last_child = floating;
+            continue;
+        }
         tbox_layout_box *atomic = word_items[w].atomic;
         if (atomic == NULL)
             continue;
         const tbox_html_node *atomic_node = word_items[w].atomic_node;
-        const tbox_style *atomic_style    = tbox_layout_style_or_default(styles, atomic_node);
-        if (context != NULL && tbox_layout_has_escaping_positioned(atomic_node, styles, atomic_style->position != TBOX_STYLE_POSITION_STATIC)) {
+        const tbox_style *atomic_style    = atomic->style;
+        if (context != NULL && atomic_node != NULL && tbox_layout_has_escaping_positioned(atomic_node, styles, atomic_style->position != TBOX_STYLE_POSITION_STATIC)) {
             tbox_layout_forced_size forced         = { true, false, atomic->border_box.width, 0.0 };
             tbox_layout_containing_block container = { atomic->margin_box.x, atomic->margin_box.y, word_items[w].atomic_containing_width, 0.0, false };
             atomic                                 = tbox_layout_build_element_sized(arena, atomic_node, styles, fonts, images, container, atomic->margin_box.y, *context, NULL, 0, &forced);

@@ -1,6 +1,7 @@
 #include "tbox_layout_internal.h"
 #include <stdio.h>
 #include <string.h>
+#include "style/tbox_style_internal.h"
 
 /* prepends the <li> marker word (bullet or number), if any, as the
  * FIRST entry of `words` -- called before tbox_layout_collect_words so the
@@ -115,6 +116,7 @@ static const tbox_style *tbox_layout_marker_style(tbox_arena *arena, const tbox_
     marker->background_color = (tbox_css_rgba){ 0, 0, 0, 0 };
     marker->text_decoration_lines = 0;
     marker->text_decoration  = TBOX_STYLE_TEXT_DECORATION_NONE;
+    marker->decoration_propagated.lines = 0;
     memcpy(marker->font_family, style->marker_font_family, sizeof(marker->font_family));
     return marker;
 }
@@ -211,6 +213,11 @@ static bool tbox_layout_list_marker_text(tbox_arena *arena, const tbox_html_node
         }
     }
 
+    if (type == TBOX_STYLE_LIST_STYLE_CUSTOM) {
+        *out_text = tbox_style_counter_format(arena, style->counter_styles, tbox_string_view_from_cstr(style->list_style_custom), (long)index, true);
+        return out_text->size > 0;
+    }
+
     char buffer[24];
     size_t length = tbox_layout_format_list_counter(type, index, buffer, sizeof(buffer));
     if (length == 0) {
@@ -257,13 +264,15 @@ void tbox_layout_append_outside_marker(tbox_arena *arena, const tbox_html_node *
         return;
     static const tbox_string_view space = { " ", 1 };
     const tbox_font_face *face          = marker.face;
-    double gap                          = tbox_font_measure_text_spaced(face, space, style->letter_spacing);
+    double gap                          = style->list_style_type == TBOX_STYLE_LIST_STYLE_CUSTOM ? 0.0 : tbox_font_measure_text_spaced(face, space, style->letter_spacing);
     double ascent                       = first_line != NULL ? first_line->ascent : tbox_font_face_ascent(face);
     double height                       = first_line != NULL ? first_line->height : tbox_layout_style_line_height(style, face);
     tbox_layout_text_run *run           = (tbox_layout_text_run *)tbox_vector_push(runs);
     *run                                = (tbox_layout_text_run){ 0 };
     run->font                           = face;
     run->style                          = marker.style;
+    run->line_y                         = line_y;
+    run->line_height                    = height;
     if (marker.image != NULL) {
         double width  = (double)marker.image->width, image_height = (double)marker.image->height;
         run->rect     = (tbox_rect){ content_x - width - gap, line_y + ascent - image_height, width, image_height };

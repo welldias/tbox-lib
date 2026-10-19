@@ -10,6 +10,7 @@
 #include "tbox_font_face_internal.h"
 
 #include <hb.h>
+#include <hb-ot.h>
 #include <stdlib.h>
 
 typedef struct tbox_font_harfbuzz {
@@ -77,7 +78,7 @@ static hb_feature_t tbox_font_harfbuzz_off(hb_tag_t tag) {
     return (hb_feature_t){ .tag = tag, .value = 0, .start = HB_FEATURE_GLOBAL_START, .end = HB_FEATURE_GLOBAL_END };
 }
 
-size_t tbox_font_shaper_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_glyph *out, size_t capacity, double *out_width) {
+size_t tbox_font_shaper_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, tbox_glyph *out, size_t capacity, double *out_width) {
     tbox_font_harfbuzz *hb = (tbox_font_harfbuzz *)face->shaper;
     *out_width             = 0.0;
     if (hb == NULL || text.size == 0)
@@ -85,14 +86,25 @@ size_t tbox_font_shaper_run(tbox_font_face *face, tbox_string_view text, double 
 
     hb_buffer_clear_contents(hb->buffer);
     hb_buffer_add_utf8(hb->buffer, text.data, (int)text.size, 0, (int)text.size);
+    if (face->options.language != 0)
+        hb_buffer_set_language(hb->buffer, hb_ot_tag_to_language(face->options.language));
     hb_buffer_guess_segment_properties(hb->buffer);
+    /* A direction from the bidi levels wins over the guess; HarfBuzz then
+     * mirrors brackets in RTL (L4) and returns glyphs in visual order. */
+    if (direction != TBOX_FONT_DIRECTION_AUTO)
+        hb_buffer_set_direction(hb->buffer, direction == TBOX_FONT_DIRECTION_RTL ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
 
     /* font-kerning: none drops `kern`; a nonzero letter-spacing drops the
      * optional ligatures (CSS Text 3, letter-spacing). */
-    hb_feature_t features[4];
+    hb_feature_t features[TBOX_FONT_MAX_FEATURES + 4];
     unsigned int feature_count = 0;
     if (!face->kerning_requested)
         features[feature_count++] = tbox_font_harfbuzz_off(HB_TAG('k', 'e', 'r', 'n'));
+    /* CSS variants, then explicit feature settings; these override kerning.
+     * Letter spacing disables optional ligatures after explicit settings. */
+    for (size_t i = 0; i < face->options.count; i++)
+        features[feature_count++] = (hb_feature_t){ face->options.items[i].tag, face->options.items[i].value,
+                                                   HB_FEATURE_GLOBAL_START, HB_FEATURE_GLOBAL_END };
     if (letter_spacing != 0.0) {
         features[feature_count++] = tbox_font_harfbuzz_off(HB_TAG('l', 'i', 'g', 'a'));
         features[feature_count++] = tbox_font_harfbuzz_off(HB_TAG('c', 'l', 'i', 'g'));

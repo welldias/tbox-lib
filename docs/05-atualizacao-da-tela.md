@@ -131,7 +131,10 @@ list; mudar apenas um raio já invalida a área pintada pelo gradiente.
 2. aplica o estado de interação atual (`:hover`, `:focus`, `:active`) aos
    seletores;
 3. resolve cascata + estilo para todos os nós (`tbox_style_resolve_tree`),
-   com `@media` avaliado contra o viewport atual;
+   com `@media` avaliado contra o viewport atual; havendo contêineres de
+   consulta (`container-type`), um layout preliminar mede-os e o estilo é
+   resolvido de novo para as regras `@container` e as unidades `cq*` (ver
+   [HTML e CSS](07-html-e-css.md#regras-e-at-rules));
 4. constrói o layout inteiro (`tbox_layout_build`), incluindo rolagem e
    `position: sticky`;
 5. gera a display list em ordem de pintura.

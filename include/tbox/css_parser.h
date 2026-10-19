@@ -99,11 +99,30 @@ typedef struct tbox_css_declaration {
                                  * tokenized further -- that is future work. */
 } tbox_css_declaration;
 
-/* Conditions enclosing a ruleset, ordered from inner to outer. */
+/* Conditions enclosing a ruleset, ordered from inner to outer. `query` is
+ * the at-rule's prelude: a media query list for `@media`, or, when
+ * `container` is set, an `@container` prelude (`[<name>] <condition>`),
+ * which only the cascade can decide, per element (see
+ * tbox_css_query_context in <tbox/css_cascade.h>). */
 typedef struct tbox_css_media_condition {
     tbox_string_view query;
     const struct tbox_css_media_condition *parent;
+    bool container;
 } tbox_css_media_condition;
+
+/* A scoped rule's bounds, owned by its stylesheet. An omitted start uses
+ * implicit_root (bound to the <style> parent), or the document element. */
+struct tbox_html_node;
+typedef struct tbox_css_scope {
+    tbox_css_selector *start, *limit;
+    size_t start_count, limit_count;
+    const struct tbox_css_scope *parent;
+    const struct tbox_html_node *implicit_root;
+    size_t source_offset;
+} tbox_css_scope;
+
+/* Opaque descriptor records owned by the source stylesheet. */
+typedef struct tbox_css_property_rule tbox_css_property_rule;
 
 typedef struct tbox_css_ruleset {
     tbox_css_selector *selectors;
@@ -120,12 +139,22 @@ typedef struct tbox_css_ruleset {
      * for the starting style a transition begins from when the element
      * first appears (tbox_css_cascade_resolve_starting_style_in_viewport). */
     bool starting_style;
+    const tbox_css_scope *scope;
 } tbox_css_ruleset;
 
 typedef struct tbox_css_font_face_rule {
     tbox_css_declaration *declarations;
     size_t declaration_count;
 } tbox_css_font_face_rule;
+
+/* Retained @font-palette-values descriptors. No COLR/CPAL raster yet.
+ * Names and declarations are owned by the stylesheet. */
+typedef struct tbox_css_font_palette_rule {
+    tbox_string_view name;
+    tbox_css_declaration *declarations;
+    size_t declaration_count;
+    const tbox_css_media_condition *media;
+} tbox_css_font_palette_rule;
 
 /* One keyframe of an `@keyframes` rule: `from`/`to`/<percentage> as a
  * fraction 0..1 (a selector list like `0%, 50%` becomes one keyframe per
@@ -176,6 +205,11 @@ size_t tbox_css_stylesheet_ruleset_count(const tbox_css_stylesheet *stylesheet);
 /* Array of tbox_css_stylesheet_ruleset_count(stylesheet) elements, in source
  * order. NULL if ruleset_count == 0. */
 const tbox_css_ruleset *tbox_css_stylesheet_rulesets(const tbox_css_stylesheet *stylesheet);
+
+/* Retained palette rules, in source order; NULL/0 for a NULL stylesheet. */
+size_t tbox_css_stylesheet_font_palette_count(const tbox_css_stylesheet *stylesheet);
+const tbox_css_font_palette_rule *tbox_css_stylesheet_font_palettes(const tbox_css_stylesheet *stylesheet);
+
 size_t tbox_css_stylesheet_font_face_count(const tbox_css_stylesheet *stylesheet);
 const tbox_css_font_face_rule *tbox_css_stylesheet_font_faces(const tbox_css_stylesheet *stylesheet);
 

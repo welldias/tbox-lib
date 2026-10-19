@@ -87,7 +87,7 @@ typedef struct tbox_ua_style_margin_config {
 typedef struct tbox_ua_style_config {
     tbox_ua_style_font_config font;
     tbox_ua_style_margin_config margin;
-    double list_padding_left_px; /* <ul>/<ol> indentation (padding-left) -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, because it is a padding value, not a margin one, and that sub-struct is specifically for margin fields */
+    double list_padding_left_px; /* <ul>/<ol> indentation (padding-inline-start: the left in horizontal ltr) -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, because it is a padding value, not a margin one, and that sub-struct is specifically for margin fields */
     double hr_height_px;         /* <hr>'s explicit height -- lives directly on this struct, NOT inside tbox_ua_style_margin_config, same reasoning as list_padding_left_px above: it is a height value, not a margin one */
 } tbox_ua_style_config;
 
@@ -205,9 +205,10 @@ tbox_style_cursor tbox_context_cursor_at(const tbox_context *ctx, double x, doub
  * when its offset changed; caller should then request a new frame. */
 bool tbox_context_scroll(tbox_context *ctx, double x, double y, double delta_y);
 
-/* Pointer handling for the visible vertical scrollbar. A press returns true
- * when the track consumed the event. Drag returns true while the scrollbar
- * owns the press (and moves the thumb when it was grabbed); release ends it. */
+/* Pointer handling for the visible vertical scrollbar and the `resize`
+ * handle. A press returns true when the track or a handle consumed the
+ * event. Drag returns true while they own the press (and moves the thumb
+ * when it was grabbed, or resizes the element); release ends it. */
 bool tbox_context_scrollbar_press(tbox_context *ctx, double x, double y);
 bool tbox_context_scrollbar_drag(tbox_context *ctx, double x, double y);
 void tbox_context_scrollbar_release(tbox_context *ctx);

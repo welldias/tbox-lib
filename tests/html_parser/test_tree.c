@@ -886,5 +886,17 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* A newline right after <pre>/<textarea> is dropped, only the first. */
+    {
+        tbox_html_document *doc = parse_cstr("<pre>\n\na</pre><textarea>\r\nb</textarea><div>\nc</div>");
+        const tbox_html_node *pre      = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *textarea = pre->next_sibling;
+        const tbox_html_node *div      = textarea->next_sibling;
+        TBOX_TEST_ASSERT(text_eq(pre->first_child->text.text, "\na"));
+        TBOX_TEST_ASSERT(text_eq(textarea->first_child->text.text, "b"));
+        TBOX_TEST_ASSERT(text_eq(div->first_child->text.text, "\nc"));
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

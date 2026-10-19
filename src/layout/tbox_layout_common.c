@@ -1,5 +1,6 @@
 #include "tbox_layout_internal.h"
 #include <string.h>
+#include "style/tbox_style_internal.h"
 
 const tbox_style tbox_layout_default_style = {
     .display = TBOX_STYLE_DISPLAY_BLOCK,
@@ -34,6 +35,11 @@ const tbox_style *tbox_layout_style_or_default(const tbox_style_table *styles, c
 }
 
 void tbox_layout_translate(tbox_layout_box *box, double dx, double dy) {
+    if (box->has_transform) { /* the matrix moves with the box */
+        double *m = box->transform;
+        m[4] += dx - m[0] * dx - m[2] * dy;
+        m[5] += dy - m[1] * dx - m[3] * dy;
+    }
     tbox_rect *rects[4] = {&box->margin_box, &box->border_box, &box->padding_box, &box->content_box};
     for (size_t i = 0; i < 4; i++) {
         rects[i]->x += dx;
@@ -42,26 +48,33 @@ void tbox_layout_translate(tbox_layout_box *box, double dx, double dy) {
     for (size_t i = 0; i < box->text_run_count; i++) {
         box->text_runs[i].rect.x += dx;
         box->text_runs[i].rect.y += dy;
+        if (box->text_runs[i].line_height > 0.0) box->text_runs[i].line_y += dy;
     }
     for (size_t i = 0; i < box->table_edge_count; i++) {
         box->table_edges[i].rect.x += dx;
         box->table_edges[i].rect.y += dy;
+    }
+    for (size_t i = 0; i < box->column_rule_count; i++) {
+        box->column_rules[i].x += dx;
+        box->column_rules[i].y += dy;
     }
     for (tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
         tbox_layout_translate(child, dx, dy);
 }
 
 const tbox_font_face *tbox_layout_style_face(tbox_font_face_cache *fonts, const tbox_style *style) {
+    tbox_font_shaping_options options;
+    tbox_style_shaping_options(style, &options);
     int weight                 = style->font_weight > 0 ? style->font_weight : style->font_weight_bold ? 700 : 400;
     tbox_string_view family    = tbox_string_view_from_cstr(style->font_family);
-    const tbox_font_face *face = tbox_font_face_cache_get_kerned(fonts, family, weight, style->font_stretch, style->font_italic, style->font_size, !style->font_kerning_none);
+    const tbox_font_face *face = tbox_font_face_cache_get_shaped(fonts, family, weight, style->font_stretch, style->font_italic, style->font_size, !style->font_kerning_none, &options);
     /* font-size-adjust: rescale so the x-height is adjust * font-size. */
     if (face != NULL && style->font_size_adjust > 0.0 && style->font_size > 0.0) {
         double x_height = tbox_font_face_x_height(face);
         if (x_height > 0.0) {
             double size = style->font_size * style->font_size_adjust * style->font_size / x_height;
             if (size > 0.0 && size != style->font_size)
-                face = tbox_font_face_cache_get_kerned(fonts, family, weight, style->font_stretch, style->font_italic, size, !style->font_kerning_none);
+                face = tbox_font_face_cache_get_shaped(fonts, family, weight, style->font_stretch, style->font_italic, size, !style->font_kerning_none, &options);
         }
     }
     return face;

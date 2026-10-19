@@ -9,12 +9,17 @@
 extern "C" {
 #endif
 
+/* Explicit scoping root for :scope and ancestor matching. */
+bool tbox_css_selector_matches_scoped(const tbox_css_selector *selector, const tbox_html_node *node, const tbox_html_node *root);
+
+bool tbox_css_selector_scope_matches(const tbox_css_scope *scope, const tbox_html_node *node, const tbox_css_selector *selector, size_t *hops);
+
 /* Walks every ELEMENT descendant of `root` (root itself excluded) in
  * document (pre-order) order, pushing (as `const tbox_html_node *`) each one
  * that satisfies at least one of `selectors[0..selector_count)` (comma-group
  * semantics: OR across the group). Used by both tbox_css_selector_query_evaluate
  * and the node-collection half of tbox_css_selector_match_stylesheet. */
-void tbox_css_selector_collect_matching_nodes(const tbox_html_node *root, const tbox_css_selector *selectors, size_t selector_count, tbox_vector *out);
+void tbox_css_selector_collect_matching_nodes(const tbox_html_node *root, const tbox_css_selector *selectors, size_t selector_count, const tbox_css_scope *scope, tbox_vector *out);
 
 #ifdef __cplusplus
 }
