@@ -819,6 +819,18 @@ typedef struct tbox_style_mask_layer {
     bool no_clip;
 } tbox_style_mask_layer;
 
+/* The second and later comma-separated background layers, out of line
+ * (see tbox_style.background_layers). */
+typedef struct tbox_style_background_layers {
+    tbox_style_background_layer layers[TBOX_STYLE_MAX_BACKGROUND_LAYERS - 1];
+} tbox_style_background_layers;
+
+/* `mask` and its longhands, out of line (see tbox_style.masks). */
+typedef struct tbox_style_masks {
+    size_t count; /* layers in use, front to back */
+    tbox_style_mask_layer layers[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
+} tbox_style_masks;
+
 typedef enum tbox_style_reflect_direction {
     TBOX_STYLE_REFLECT_NONE,
     TBOX_STYLE_REFLECT_ABOVE,
@@ -935,6 +947,17 @@ typedef enum tbox_style_caption_side {
  * Empty track/area lists mean none; empty auto-track lists mean auto.
  * Overlong declarations are ignored rather than truncated. */
 #define TBOX_STYLE_GRID_TEXT_SIZE 1024
+
+/* The grid track lists and areas as declared text (parsed again by the
+ * layout, which knows the container), out of line (see
+ * tbox_style.grid_templates). "" is none/auto. */
+typedef struct tbox_style_grid_templates {
+    char grid_template_columns[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_template_rows[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_template_areas[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_auto_columns[256], grid_auto_rows[256];
+} tbox_style_grid_templates;
+
 #define TBOX_STYLE_GRID_NAME_SIZE 64
 
 typedef struct tbox_style_grid_units {
@@ -1067,9 +1090,10 @@ typedef struct tbox_style {
      * background_layers); not inheritable. */
     tbox_style_blend_mode background_blend_mode;
     /* Comma-separated layers: the fields above are the first (topmost)
-     * one, background_layers[i] the (i + 2)-th; background_layer_count
+     * one, layers[i] of tbox_style_background_layers_of the (i + 2)-th
+     * (out of line, NULL for a single layer); background_layer_count
      * counts them all (0 or 1 for a single layer). */
-    tbox_style_background_layer background_layers[TBOX_STYLE_MAX_BACKGROUND_LAYERS - 1];
+    const tbox_style_background_layers *background_layers;
     size_t background_layer_count;
     /* always absolute px, never a tbox_style_length -- unlike
      * width/height (PERCENT deferred to the Layout Tree, whose containing
@@ -1155,7 +1179,7 @@ typedef struct tbox_style {
     /* `scale`: has_scale false is `none` (1 1). */
     bool has_scale;
     double scale[2];
-    tbox_style_offset_path offset_path;
+    const tbox_style_offset_path *offset_path; /* out of line; tbox_style_offset_path_of */
     tbox_style_length offset_distance;
     tbox_style_offset_position offset_position, offset_anchor;
     tbox_style_offset_rotate offset_rotate;
@@ -1326,35 +1350,36 @@ typedef struct tbox_style {
      * and the whole list runs on a compositing layer. */
     bool has_filter;
     double filter_matrix[20];
-    tbox_style_filter_list filters;
+    const tbox_style_filter_list *filters; /* out of line; tbox_style_filters_of */
     /* `backdrop-filter`: the same list, applied by the Output to what is
      * already painted behind the element's border box (drop-shadow() and
      * url() ignored). Not inheritable. */
     bool has_backdrop_filter;
-    tbox_style_filter_list backdrop_filters;
+    const tbox_style_filter_list *backdrop_filters; /* out of line; tbox_style_backdrop_filters_of */
     /* `mix-blend-mode`: how the element's layer composites onto what is
      * under it; not inheritable. */
     tbox_style_blend_mode mix_blend_mode;
-    /* First-layer views retained for callers constructing styles directly. */
+    /* `mask-*`: has_mask when some layer has an image or gradient;
+     * mask_luminance is the first layer's mode. The layers themselves are
+     * out of line, NULL when no mask property is declared; read them with
+     * tbox_style_masks_of. */
     bool has_mask;
-    tbox_style_background_layer mask;
     bool mask_luminance;
-    size_t mask_layer_count;
-    tbox_style_mask_layer mask_layers[TBOX_STYLE_MAX_BACKGROUND_LAYERS];
-    tbox_style_reflection box_reflect;
+    const tbox_style_masks *masks;
+    const tbox_style_reflection *box_reflect; /* out of line; tbox_style_box_reflect_of */
     bool box_decoration_clone; /* initial slice; not inherited */
     /* `border-image` and its longhands; has_border_image when the source
      * is not `none`. It replaces the border-style painting (the widths
      * still come from border-width/-style). Not inheritable. */
     bool has_border_image;
-    tbox_style_border_image border_image;
-    tbox_style_clip_path clip_path;
+    const tbox_style_border_image *border_image; /* out of line; tbox_style_border_image_of */
+    const tbox_style_clip_path *clip_path; /* out of line; tbox_style_clip_path_of */
     /* `float`/`clear` (none when absolutely positioned or a flex item;
      * a float's display is blockified), `shape-outside`, `shape-margin`
      * and `shape-image-threshold` (0..1). Not inheritable. */
     tbox_style_float float_side;
     tbox_style_clear clear;
-    tbox_style_shape_outside shape_outside;
+    const tbox_style_shape_outside *shape_outside; /* out of line; tbox_style_shape_outside_of */
     tbox_style_length shape_margin;
     double shape_image_threshold;
     bool display_flow_root; /* `display: flow-root`: a block that is a BFC root */
@@ -1432,16 +1457,31 @@ typedef struct tbox_style {
     tbox_style_length flex_basis;
     int order;
     tbox_style_grid_units grid_units[4]; /* template columns/rows, auto columns/rows */
-    char grid_template_columns[TBOX_STYLE_GRID_TEXT_SIZE];
-    char grid_template_rows[TBOX_STYLE_GRID_TEXT_SIZE];
-    char grid_template_areas[TBOX_STYLE_GRID_TEXT_SIZE];
-    char grid_auto_columns[256], grid_auto_rows[256];
+    const tbox_style_grid_templates *grid_templates; /* out of line; tbox_style_grid_templates_of */
     bool grid_auto_flow_column, grid_auto_flow_dense;
     tbox_style_grid_line grid_row_start, grid_row_end;
     tbox_style_grid_line grid_column_start, grid_column_end;
     tbox_style_flex_align justify_items, justify_self;
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
+
+/* Out-of-line parts of tbox_style. Rare, large property groups live in
+ * the arena the style was resolved in, behind a const pointer that is
+ * NULL while none of the group's properties is declared. Read them
+ * through these accessors, which give the group's initial values for
+ * NULL (so a style built by hand from zeroed memory reads as initial).
+ * Never write through them: the Style layer copies a group before
+ * changing it, so styles may share one. */
+const tbox_style_masks *tbox_style_masks_of(const tbox_style *style);
+const tbox_style_grid_templates *tbox_style_grid_templates_of(const tbox_style *style);
+const tbox_style_background_layers *tbox_style_background_layers_of(const tbox_style *style);
+const tbox_style_clip_path *tbox_style_clip_path_of(const tbox_style *style);
+const tbox_style_border_image *tbox_style_border_image_of(const tbox_style *style);
+const tbox_style_reflection *tbox_style_box_reflect_of(const tbox_style *style);
+const tbox_style_filter_list *tbox_style_filters_of(const tbox_style *style);
+const tbox_style_filter_list *tbox_style_backdrop_filters_of(const tbox_style *style);
+const tbox_style_shape_outside *tbox_style_shape_outside_of(const tbox_style *style);
+const tbox_style_offset_path *tbox_style_offset_path_of(const tbox_style *style);
 
 /* Resolves `node`'s own tbox_style from `computed` (its already-cascaded
  * text declarations -- see tbox_css_cascade_resolve_stylesheet). Per-node,
@@ -1560,7 +1600,7 @@ typedef struct tbox_style {
  * `font-kerning` and `hyphens`.
  * Then `float`, `clear` and `shape-outside`.
  * Out of scope: real 3D transforms. */
-tbox_style tbox_style_resolve(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
+tbox_style tbox_style_resolve(tbox_arena *arena, const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed);
 
 /* The text-decoration lines `style` declares itself (bit 0 underline, bit
  * 1 line-through, bit 2 overline). */
@@ -1575,7 +1615,7 @@ void tbox_style_propagate_decoration(tbox_style *style, const tbox_style *parent
 /* tbox_style_resolve with a viewport size for the vw/vh/vmin/vmax units.
  * tbox_style_resolve passes 0x0, which makes those units invalid (the
  * declaration falls back as if unparsable). */
-tbox_style tbox_style_resolve_in_viewport(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed, double viewport_width, double viewport_height);
+tbox_style tbox_style_resolve_in_viewport(tbox_arena *arena, const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_computed_style *computed, double viewport_width, double viewport_height);
 
 /* The painted border width of `side` (0 top, 1 right, 2 bottom, 3 left):
  * its width unless that side's style is NONE, 0 otherwise -- the space the

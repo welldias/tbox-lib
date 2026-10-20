@@ -58,6 +58,35 @@ campo altera o tamanho de `tbox_style`: recompile consumidores.
 `tbox_html_node.element.focus_visible` é estado de execução mantido pelo
 contexto, não um atributo HTML; seletores o consultam junto do nó focado.
 
+### Grupos fora de linha de `tbox_style`
+
+Grupos de propriedades grandes e raros não ficam mais dentro de
+`tbox_style` (que caiu de ~39 KB para ~9,7 KB): ficam na arena em que o
+estilo foi resolvido, atrás de um ponteiro `const` que é `NULL` enquanto
+nenhuma propriedade do grupo foi declarada. Leia sempre pelo acessor, que
+devolve os valores iniciais do grupo para `NULL`:
+
+| Campo | Acessor |
+|---|---|
+| `masks` (camadas de `mask-*`) | `tbox_style_masks_of` |
+| `background_layers` (2ª camada de fundo em diante) | `tbox_style_background_layers_of` |
+| `grid_templates` (texto de `grid-template-*`/`grid-auto-*`) | `tbox_style_grid_templates_of` |
+| `clip_path` | `tbox_style_clip_path_of` |
+| `shape_outside` | `tbox_style_shape_outside_of` |
+| `offset_path` | `tbox_style_offset_path_of` |
+| `filters`, `backdrop_filters` | `tbox_style_filters_of`, `tbox_style_backdrop_filters_of` |
+| `border_image` | `tbox_style_border_image_of` |
+| `box_reflect` | `tbox_style_box_reflect_of` |
+
+- **Nunca escreva através do ponteiro:** estilos compartilham grupos (herança,
+  cópias do layout); a camada de estilo copia o grupo antes de mudá-lo. Para
+  montar um estilo à mão, preencha um grupo seu e aponte o campo para ele.
+- **Vida:** a da arena da resolução — a `frame_arena` do contexto para a
+  tabela do frame. `tbox_style_resolve` e `tbox_style_resolve_in_viewport`
+  passaram a receber essa arena como primeiro parâmetro.
+- O antigo `tbox_style.mask` (cópia da primeira camada) saiu: use
+  `tbox_style_masks_of(style)->layers[0].source`.
+
 `tbox_style.placeholder_style` é um ponteiro emprestado para o estilo de
 texto de `::placeholder`, na arena do frame, ou NULL quando não há texto
 auxiliar aplicável. Sua adição altera `tbox_style`: recompile consumidores.

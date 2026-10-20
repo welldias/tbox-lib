@@ -9,12 +9,21 @@ static const char *const tbox_motion_properties[] = {
     "offset-path", "offset-distance", "offset-position", "offset-anchor", "offset-rotate", "offset"
 };
 
-static void tbox_motion_initial(tbox_style *style) {
-    memset(&style->offset_path, 0, sizeof(style->offset_path));
-    style->offset_distance = (tbox_style_length){ .kind = TBOX_STYLE_LENGTH_PX };
-    style->offset_position = (tbox_style_offset_position){ .mode = 2 };
-    style->offset_anchor = (tbox_style_offset_position){ .mode = 1 };
-    style->offset_rotate = (tbox_style_offset_rotate){ .auto_rotate = true };
+/* The motion longhands, parsed apart from the style (whose offset_path
+ * lives out of line). */
+typedef struct tbox_motion_values {
+    tbox_style_offset_path offset_path;
+    tbox_style_length offset_distance;
+    tbox_style_offset_position offset_position, offset_anchor;
+    tbox_style_offset_rotate offset_rotate;
+} tbox_motion_values;
+
+static void tbox_motion_initial(tbox_motion_values *values) {
+    memset(&values->offset_path, 0, sizeof(values->offset_path));
+    values->offset_distance = (tbox_style_length){ .kind = TBOX_STYLE_LENGTH_PX };
+    values->offset_position = (tbox_style_offset_position){ .mode = 2 };
+    values->offset_anchor = (tbox_style_offset_position){ .mode = 1 };
+    values->offset_rotate = (tbox_style_offset_rotate){ .auto_rotate = true };
 }
 
 static bool tbox_motion_position(const tbox_string_view *tokens, size_t count, const tbox_style_units *units, bool anchor, tbox_style_offset_position *out) {
@@ -176,7 +185,7 @@ static bool tbox_motion_distance(tbox_string_view raw, const tbox_style_units *u
     return tbox_style_parse_spacing_length(raw, units, out) && out->kind != TBOX_STYLE_LENGTH_AUTO && isfinite(out->value) && isfinite(out->px_offset);
 }
 
-static bool tbox_motion_shorthand(tbox_string_view raw, const tbox_style_units *units, tbox_style *out) {
+static bool tbox_motion_shorthand(tbox_string_view raw, const tbox_style_units *units, tbox_motion_values *out) {
     tbox_string_view halves[3], tokens[16];
     size_t halves_count = tbox_style_split_top_level(raw, '/', halves, 3);
     if (halves_count == 0 || halves_count > 2) return false;
@@ -226,7 +235,7 @@ static bool tbox_motion_shorthand(tbox_string_view raw, const tbox_style_units *
     return false;
 }
 
-static bool tbox_motion_parse(size_t which, tbox_string_view raw, const tbox_style_units *units, tbox_style *out) {
+static bool tbox_motion_parse(size_t which, tbox_string_view raw, const tbox_style_units *units, tbox_motion_values *out) {
     tbox_string_view tokens[8];
     size_t count = tbox_style_tokens(raw, tokens, 8);
     switch (which) {
@@ -248,11 +257,11 @@ bool tbox_style_motion_declaration_valid(tbox_string_view property, tbox_string_
     for (size_t i = 0; i + 4 <= value.size; i++)
         if (tbox_style_is(tbox_string_view_make(value.data + i, 4), "var(")) return true;
     const tbox_style_units units = { .font_size = 16.0, .root_font_size = 16.0, .viewport_width = 800.0, .viewport_height = 600.0, .container_inline = -1.0, .container_block = -1.0, .zoom = 1.0 };
-    tbox_style parsed;
+    tbox_motion_values parsed;
     return tbox_motion_parse(which, value, &units, &parsed);
 }
 
-void tbox_style_resolve_motion(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style) {
+void tbox_style_resolve_motion(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style, tbox_arena *arena) {
     const tbox_css_resolved_declaration *decls[6];
     size_t kinds[6], count = 0;
     for (size_t k = 0; k < 6; k++) {
@@ -267,25 +276,34 @@ void tbox_style_resolve_motion(const tbox_css_computed_style *computed, const tb
         decls[at] = d;
         kinds[at] = k;
     }
-    tbox_motion_initial(style);
+    tbox_motion_values values;
+    tbox_motion_initial(&values);
+    bool path_set = false;
     for (size_t i = 0; i < count; i++) {
         /* Parse into a temporary: an invalid shorthand must not reset
          * any of the previously resolved longhands. */
-        tbox_style parsed;
+        tbox_motion_values parsed;
         if (!tbox_motion_parse(kinds[i], decls[i]->value, units, &parsed)) continue;
         switch (kinds[i]) {
-        case 0: style->offset_path = parsed.offset_path; break;
-        case 1: style->offset_distance = parsed.offset_distance; break;
-        case 2: style->offset_position = parsed.offset_position; break;
-        case 3: style->offset_anchor = parsed.offset_anchor; break;
-        case 4: style->offset_rotate = parsed.offset_rotate; break;
+        case 0: values.offset_path = parsed.offset_path, path_set = true; break;
+        case 1: values.offset_distance = parsed.offset_distance; break;
+        case 2: values.offset_position = parsed.offset_position; break;
+        case 3: values.offset_anchor = parsed.offset_anchor; break;
+        case 4: values.offset_rotate = parsed.offset_rotate; break;
         default:
-            style->offset_path = parsed.offset_path;
-            style->offset_distance = parsed.offset_distance;
-            style->offset_position = parsed.offset_position;
-            style->offset_anchor = parsed.offset_anchor;
-            style->offset_rotate = parsed.offset_rotate;
+            values   = parsed;
+            path_set = true;
             break;
         }
+    }
+    style->offset_distance = values.offset_distance;
+    style->offset_position = values.offset_position;
+    style->offset_anchor   = values.offset_anchor;
+    style->offset_rotate   = values.offset_rotate;
+    style->offset_path     = NULL; /* initial: none */
+    if (path_set) {
+        tbox_style_offset_path *path = tbox_style_group_copy(arena, &values.offset_path, sizeof(*path));
+        if (path != NULL)
+            style->offset_path = path;
     }
 }

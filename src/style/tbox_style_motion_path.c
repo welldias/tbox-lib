@@ -322,8 +322,8 @@ static double tbox_motion_ray_length(const tbox_style_offset_path *path, tbox_mo
 bool tbox_style_motion_matrix(const tbox_style *style, tbox_rect box, tbox_rect reference, const tbox_style_clip_path *outline, tbox_arena *arena, double out[6]) {
     const double identity[6] = { 1, 0, 0, 1, 0, 0 };
     memcpy(out, identity, sizeof(identity));
-    if (style == NULL || style->offset_path.kind == TBOX_STYLE_OFFSET_PATH_NONE) return false;
-    const tbox_style_offset_path *path = &style->offset_path;
+    if (style == NULL || tbox_style_offset_path_of(style)->kind == TBOX_STYLE_OFFSET_PATH_NONE) return false;
+    const tbox_style_offset_path *path = tbox_style_offset_path_of(style);
     tbox_motion_point point = { 0 }, tangent, origin = tbox_motion_origin(style, box, reference);
     if (path->kind == TBOX_STYLE_OFFSET_PATH_RAY) {
         double angle = fmod(path->value.ray.angle, 360.0) * TBOX_MOTION_PI / 180.0;

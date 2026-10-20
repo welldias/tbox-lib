@@ -373,7 +373,7 @@ static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_b
              * ancestor polygon intersections instead of escaping the clip. */
             size_t polygon_count = 0;
             for (const tbox_layout_box *ancestor = box; ancestor != NULL; ancestor = ancestor->parent) {
-                if (ancestor->style == NULL || ancestor->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_POLYGON) continue;
+                if (ancestor->style == NULL || tbox_style_clip_path_of(ancestor->style)->kind != TBOX_STYLE_CLIP_PATH_POLYGON) continue;
                 tbox_paint_op *op = tbox_vector_push(items);
                 *op = (tbox_paint_op){
                     .kind = TBOX_PAINT_LAYER_BEGIN, .color = {0, 0, 0, 255},

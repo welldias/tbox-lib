@@ -649,12 +649,12 @@ double tbox_layout_build_grid(tbox_arena *arena, const tbox_html_node *node, con
         track_units[i] = tbox_grid_units(style, i, units);
     axes[0].gap = tbox_layout_resolve_edge(style->column_gap, content_width);
     axes[1].gap = style->row_gap.kind == TBOX_STYLE_LENGTH_PERCENT && !height_definite ? 0 : tbox_layout_resolve_edge(style->row_gap, content_height);
-    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(style->grid_template_columns), &track_units[0], content_width, axes[0].gap, true, false, &axes[0].explicit_tracks);
-    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(style->grid_template_rows), &track_units[1], content_height, axes[1].gap, height_definite, false, &axes[1].explicit_tracks);
-    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(style->grid_auto_columns), &track_units[2], 0, 0, false, true, &axes[0].implicit_tracks);
-    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(style->grid_auto_rows), &track_units[3], 0, 0, false, true, &axes[1].implicit_tracks);
+    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_template_columns), &track_units[0], content_width, axes[0].gap, true, false, &axes[0].explicit_tracks);
+    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_template_rows), &track_units[1], content_height, axes[1].gap, height_definite, false, &axes[1].explicit_tracks);
+    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_auto_columns), &track_units[2], 0, 0, false, true, &axes[0].implicit_tracks);
+    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_auto_rows), &track_units[3], 0, 0, false, true, &axes[1].implicit_tracks);
     tbox_grid_areas areas;
-    tbox_style_grid_parse_areas(tbox_string_view_from_cstr(style->grid_template_areas), &areas);
+    tbox_style_grid_parse_areas(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_template_areas), &areas);
     for (int d = 0; d < 2; d++) {
         axes[d].explicit_count = axes[d].explicit_tracks.count;
         int area_count         = d == 0 ? areas.columns : areas.rows;
@@ -771,12 +771,12 @@ tbox_layout_intrinsic tbox_layout_grid_intrinsic(tbox_arena *arena, const tbox_h
     for (int i = 0; i < 4; i++)
         track_units[i] = tbox_grid_units(style, i, units);
     axes[0].gap = style->column_gap.kind == TBOX_STYLE_LENGTH_PX ? style->column_gap.value : 0;
-    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(style->grid_template_columns), &track_units[0], 0, 0, false, false, &axes[0].explicit_tracks);
-    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(style->grid_template_rows), &track_units[1], 0, 0, false, false, &axes[1].explicit_tracks);
-    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(style->grid_auto_columns), &track_units[2], 0, 0, false, true, &axes[0].implicit_tracks);
-    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(style->grid_auto_rows), &track_units[3], 0, 0, false, true, &axes[1].implicit_tracks);
+    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_template_columns), &track_units[0], 0, 0, false, false, &axes[0].explicit_tracks);
+    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_template_rows), &track_units[1], 0, 0, false, false, &axes[1].explicit_tracks);
+    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_auto_columns), &track_units[2], 0, 0, false, true, &axes[0].implicit_tracks);
+    tbox_style_grid_parse_tracks(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_auto_rows), &track_units[3], 0, 0, false, true, &axes[1].implicit_tracks);
     tbox_grid_areas areas;
-    tbox_style_grid_parse_areas(tbox_string_view_from_cstr(style->grid_template_areas), &areas);
+    tbox_style_grid_parse_areas(tbox_string_view_from_cstr(tbox_style_grid_templates_of(style)->grid_template_areas), &areas);
     for (int d = 0; d < 2; d++) {
         axes[d].explicit_count = axes[d].explicit_tracks.count;
         int area_count         = d == 0 ? areas.columns : areas.rows;

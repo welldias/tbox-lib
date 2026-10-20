@@ -10,6 +10,7 @@
 #include "base/tbox_number.h"
 #include "base/tbox_string.h"
 #include "base/tbox_vector.h"
+#include "css_cascade/tbox_css_cascade_internal.h"
 #include "style/tbox_style_internal.h"
 #include "css_parser/tbox_css_stylesheet.h"
 #include "css_selector/tbox_css_selector_match.h"
@@ -478,6 +479,17 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
         return result;
     }
 
+    /* Most elements have no rule for their ::before/::after: answer that
+     * before allocating anything. */
+    if (pseudo != NULL) {
+        bool any = false;
+        for (size_t src = 0; src < source_count && !any; src++)
+            any = sources[src].stylesheet != NULL && (sources[src].stylesheet->pseudo_element_ruleset_count > 0 || sources[src].stylesheet->properties != NULL);
+        if (!any) {
+            return result;
+        }
+    }
+
     tbox_arena scratch = tbox_arena_create(0);
 
     tbox_vector winners;
@@ -491,12 +503,12 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
         }
         tbox_css_origin origin = sources[src].origin;
 
-        size_t ruleset_count             = tbox_css_stylesheet_ruleset_count(stylesheet);
         const tbox_css_ruleset *rulesets = tbox_css_stylesheet_rulesets(stylesheet);
+        /* A pseudo-element only visits the rulesets that name one. */
+        size_t ruleset_count = pseudo != NULL ? stylesheet->pseudo_element_ruleset_count : tbox_css_stylesheet_ruleset_count(stylesheet);
 
         for (size_t r = 0; r < ruleset_count; r++) {
-            const tbox_css_ruleset *ruleset = &rulesets[r];
-            if (ruleset->media != NULL && !tbox_css_media_matches(ruleset->media, viewport_width, viewport_height, reduced_motion, query)) continue;
+            const tbox_css_ruleset *ruleset = &rulesets[pseudo != NULL ? stylesheet->pseudo_element_rulesets[r] : r];
             if (ruleset->starting_style && !starting) continue;
 
             const tbox_css_selector *best_selector = NULL;
@@ -527,7 +539,10 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
                 }
             }
 
-            if (best_selector == NULL) {
+            /* The media query only after a selector matched: re-reading
+             * its text for every node and pseudo-element was most of the
+             * cascade's cost. */
+            if (best_selector == NULL || (ruleset->media != NULL && !tbox_css_media_matches(ruleset->media, viewport_width, viewport_height, reduced_motion, query))) {
                 continue;
             }
 
@@ -650,6 +665,7 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
         }
         result.count     = count;
         result.reserved_ = out_arena;
+        tbox_css_computed_style_index(&result);
     }
 
     tbox_arena_destroy(&scratch);
@@ -673,9 +689,36 @@ void tbox_css_computed_style_destroy(tbox_css_computed_style *style) {
     style->reserved_ = NULL;
 }
 
+/* A property's bit in tbox_css_computed_style.property_filter_: its
+ * length and first and last letters, case-insensitively. */
+static unsigned tbox_css_property_filter_bit(tbox_string_view property) {
+    if (property.size == 0) {
+        return 0;
+    }
+    unsigned first = (unsigned char)tbox_ascii_to_lower(property.data[0]);
+    unsigned last  = (unsigned char)tbox_ascii_to_lower(property.data[property.size - 1]);
+    return ((unsigned)property.size * 31u + first * 7u + last) & 255u;
+}
+
+void tbox_css_computed_style_index(tbox_css_computed_style *style) {
+    memset(style->property_filter_, 0, sizeof(style->property_filter_));
+    for (size_t i = 0; i < style->count; i++) {
+        unsigned bit = tbox_css_property_filter_bit(style->items[i].property);
+        style->property_filter_[bit / 64] |= (uint64_t)1 << (bit % 64);
+    }
+}
+
 const tbox_css_resolved_declaration *tbox_css_computed_style_find(const tbox_css_computed_style *style, tbox_string_view property) {
     if (style == NULL) {
         return NULL;
+    }
+    /* Most lookups are for properties the element never declared. */
+    const uint64_t *filter = style->property_filter_;
+    if ((filter[0] | filter[1] | filter[2] | filter[3]) != 0) {
+        unsigned bit = tbox_css_property_filter_bit(property);
+        if ((filter[bit / 64] & ((uint64_t)1 << (bit % 64))) == 0) {
+            return NULL;
+        }
     }
     for (size_t i = 0; i < style->count; i++) {
         if (tbox_string_view_equal_ascii_ci(style->items[i].property, property)) {

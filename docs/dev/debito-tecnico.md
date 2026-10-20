@@ -47,7 +47,13 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 - **Por que importa:** é o próximo gargalo para hover, digitação e cursor
   piscando em documentos grandes.
 - **Quando revisitar:** quando o tempo de estilo+layout for medido como
-  problema num caso real. Esboço já discutido:
+  problema num caso real — já é: no hover do `example/file-explorer`
+  (~370 elementos) um frame de transição custa ~16 ms em Release, ~75%
+  em estilo (2026-10-20, depois do cache de runs e dos grupos fora de linha;
+  ver [Histórico](historico.md)). Durante uma
+  transição só o tempo muda; reaproveitar o resultado da cascata entre
+  frames sem mudança de DOM/estado/viewport já cortaria a maior parte.
+  Esboço já discutido:
   - marcar nós sujos na origem da mudança (hover, foco, `:active`, texto,
     scroll, mutação via API);
   - estilo: invalidar o nó, os descendentes (herança) e os afetados por
@@ -62,6 +68,21 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   O damage tracking da v20 continua válido: ele compara display lists,
   independentemente de como foram produzidas.
 - **Toca:** `tbox_context_run_frame`, Style, Layout, arenas.
+
+### Regras sem índice por seletor
+
+- **O que é:** a cascata de um elemento testa todos os seletores de todas
+  as regras (UA + autor + controles); no `example/file-explorer` são ~570
+  por elemento, ~20% de um frame em Release (2026-10-20).
+- **Por que importa:** cresce com o número de regras, inclusive as do UA
+  para controles que a página nem usa.
+- **Quando revisitar:** junto ou depois do estilo incremental. Esboço:
+  agrupar as regras, na criação da `tbox_css_stylesheet`, pelo seletor
+  composto mais à direita (id, classe, tag ou universal), como já é feito
+  para as regras com pseudo-elemento (`pseudo_element_rulesets`), e
+  visitar só os grupos do elemento, mantendo a ordem de origem.
+- **Toca:** `src/css_parser/tbox_css_stylesheet.c`,
+  `src/css_cascade/tbox_css_cascade.c`, `src/context/tbox_ua_style.c`.
 
 ### Screenshot headless incremental
 
@@ -537,15 +558,14 @@ visual não determina quando cada defeito foi introduzido.
 
 ### Shaping por palavra e a cada frame
 
-- **O que é:** o layout molda cada palavra sozinha, e de novo a cada frame
-  (não há cache de shaping). Sem contexto através de um espaço ou de uma
-  fronteira de elemento (`<b>f</b>i` não forma ligadura, kerning entre
-  palavras não existe).
-- **Por que importa:** com HarfBuzz o shaping é a parte cara da medição;
-  documentos com muito texto pagam isso em todo frame.
-- **Quando revisitar:** quando um perfil mostrar o shaping no topo, ou com
-  o layout incremental (ver "Estilo e layout incrementais"). Um cache por
-  (face, texto, letter-spacing) na face resolveria o custo.
+- **O que é:** o layout molda cada palavra sozinha. Sem contexto através
+  de um espaço ou de uma fronteira de elemento (`<b>f</b>i` não forma
+  ligadura, kerning entre palavras não existe). O custo de refazer o
+  shaping a cada frame foi resolvido em 2026-10-20 pelo cache de runs da
+  face (ver [Texto e fontes](../09-texto-e-fontes.md#cache-de-runs)).
+- **Por que importa:** só a fidelidade tipográfica entre palavras.
+- **Quando revisitar:** quando kerning ou ligaduras entre palavras/elementos
+  forem casos reais.
 - **Toca:** `src/font/tbox_font_face.c`, `src/font/tbox_font_shaper_harfbuzz.c`,
   `src/layout/tbox_layout_inline.c`.
 
@@ -572,11 +592,14 @@ visual não determina quando cada defeito foi introduzido.
   `char[N]` dentro de `tbox_style` (16 a 256 bytes). Um valor maior é
   cortado — sempre entre codepoints (`tbox_utf8_copy_truncated`), mas
   cortado.
-- **Por que importa:** perde texto silenciosamente; o struct público fica
-  grande e copiado por valor na herança.
+- **Por que importa:** perde texto silenciosamente. O tamanho deixou de ser
+  o problema principal: em 2026-10-20 os grupos grandes e raros saíram do
+  struct (ver [Decisões](decisoes.md#css-e-estilo)), de ~39 KB para ~9,7 KB;
+  restam `marker_urls` (768 B), `list_style_image`/`list_style_custom`,
+  `background_image` (256 B cada) e os arrays de `transitions`/`animations`.
 - **Quando revisitar:** quando um valor real passar do limite, ou na próxima
   revisão do ABI de `tbox_style`. A troca natural é `tbox_string_view`
-  apontando para a arena do frame/folha.
+  apontando para a arena do frame/folha, ou mais grupos fora de linha.
 - **Toca:** `include/tbox/style.h`, `src/style/tbox_style.c`,
   `src/layout/tbox_layout_flow.c` (cópia para caixas anônimas).
 

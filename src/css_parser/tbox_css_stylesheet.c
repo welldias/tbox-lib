@@ -19,6 +19,8 @@ tbox_css_stylesheet *tbox_css_stylesheet_create_empty(void) {
     }
     stylesheet->rulesets      = NULL;
     stylesheet->ruleset_count = 0;
+    stylesheet->pseudo_element_rulesets      = NULL;
+    stylesheet->pseudo_element_ruleset_count = 0;
     stylesheet->font_palettes = NULL;
     stylesheet->font_palette_count = 0;
     stylesheet->font_faces = NULL;
@@ -49,8 +51,45 @@ tbox_css_stylesheet *tbox_css_parse(const char *input, size_t length) {
     stylesheet->counter_styles = parser.counter_styles;
     stylesheet->keyframes       = parser.keyframes_out;
     stylesheet->keyframes_count = parser.keyframes_out_count;
+    if (!tbox_css_stylesheet_index_pseudo_elements(stylesheet)) {
+        tbox_css_stylesheet_destroy(stylesheet);
+        return NULL;
+    }
 
     return stylesheet;
+}
+
+/* A selector names a pseudo-element when one of its simple selectors is a
+ * "::name" pseudo (the cascade's own test, see
+ * tbox_css_cascade_targets_pseudo_element). */
+static bool tbox_css_ruleset_has_pseudo_element(const tbox_css_ruleset *ruleset) {
+    for (size_t s = 0; s < ruleset->selector_count; s++) {
+        const tbox_css_selector *selector = &ruleset->selectors[s];
+        for (size_t i = 0; i < selector->simple_selector_count; i++) {
+            const tbox_css_simple_selector *item = &selector->simple_selectors[i];
+            if (item->kind == TBOX_CSS_SIMPLE_SELECTOR_PSEUDO && item->name.size >= 3 && item->name.data[0] == ':' && item->name.data[1] == ':')
+                return true;
+        }
+    }
+    return false;
+}
+
+bool tbox_css_stylesheet_index_pseudo_elements(tbox_css_stylesheet *stylesheet) {
+    size_t count = 0;
+    for (size_t r = 0; r < stylesheet->ruleset_count; r++)
+        if (tbox_css_ruleset_has_pseudo_element(&stylesheet->rulesets[r]))
+            count++;
+    stylesheet->pseudo_element_rulesets      = NULL;
+    stylesheet->pseudo_element_ruleset_count = 0;
+    if (count == 0)
+        return true;
+    stylesheet->pseudo_element_rulesets = tbox_arena_alloc(&stylesheet->arena, count * sizeof(size_t));
+    if (stylesheet->pseudo_element_rulesets == NULL)
+        return false;
+    for (size_t r = 0; r < stylesheet->ruleset_count; r++)
+        if (tbox_css_ruleset_has_pseudo_element(&stylesheet->rulesets[r]))
+            stylesheet->pseudo_element_rulesets[stylesheet->pseudo_element_ruleset_count++] = r;
+    return true;
 }
 
 size_t tbox_css_stylesheet_ruleset_count(const tbox_css_stylesheet *stylesheet) {

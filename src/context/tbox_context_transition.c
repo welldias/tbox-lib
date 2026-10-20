@@ -35,7 +35,7 @@ static bool tbox_transition_starting_values(tbox_context *ctx, const tbox_style_
         return false;
     const tbox_style *parent = entry->node->parent != NULL ? tbox_style_table_find(&ctx->styles, entry->node->parent) : NULL;
     tbox_css_computed_style computed = tbox_css_cascade_resolve_starting_style_in_viewport(sources, source_count, entry->node, viewport_width, viewport_height, ctx->prefers_reduced_motion, &(tbox_css_query_context){ parent != NULL ? parent->query_container : NULL, parent != NULL ? parent->custom_properties : NULL });
-    tbox_style starting = tbox_style_resolve_in_viewport(entry->node, parent, &computed, viewport_width, viewport_height);
+    tbox_style starting = tbox_style_resolve_in_viewport(&ctx->frame_arena, entry->node, parent, &computed, viewport_width, viewport_height);
     tbox_css_computed_style_destroy(&computed);
     for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
         tbox_style_animatable_read(&starting, (tbox_style_animatable)p, out[p]);

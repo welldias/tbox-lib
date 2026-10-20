@@ -118,7 +118,7 @@ void tbox_layout_prepare_initial(tbox_arena *arena, const tbox_html_node *node, 
     tbox_style *letter = tbox_arena_alloc(arena, sizeof(*letter));
     if (letter == NULL)
         return;
-    *letter = pseudo != NULL ? *pseudo : explicit_inline ? *explicit_style : tbox_style_resolve(NULL, source.style, NULL);
+    *letter = pseudo != NULL ? *pseudo : explicit_inline ? *explicit_style : tbox_style_resolve(arena, NULL, source.style, NULL);
     /* ::first-letter's style is in screen terms: inside a vertical
      * writing mode, turn it into the block's layout frame. */
     if (letter->layout_frame != style->layout_frame) {

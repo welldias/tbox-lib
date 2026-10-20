@@ -329,7 +329,8 @@ Os estilos seguem o desenho do Firefox:
 
 `border-image` e seus longhands (`-source`, `-slice`, `-width`, `-outset`,
 `-repeat`) seguem CSS Backgrounds 3 §6. O estilo guarda tudo em
-`tbox_style.border_image` (resolvido em `src/style/tbox_style_border_image.c`,
+`tbox_style.border_image`, fora de linha (leia com `tbox_style_border_image_of`;
+resolvido em `src/style/tbox_style_border_image.c`,
 com `border` zerando o `border-image` como pede a spec); o Layout decodifica
 o `url()` pelo cache de imagens em `tbox_layout_box.border_image`.
 

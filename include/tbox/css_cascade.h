@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <tbox/css_parser.h>
 #include <tbox/html_parser.h>
@@ -184,6 +185,10 @@ typedef struct tbox_css_computed_style {
     tbox_css_resolved_declaration *items;
     size_t count;
     void *reserved_; /* private: owns the `items` storage; touched only by tbox_css_computed_style_destroy */
+    /* Private: lets tbox_css_computed_style_find reject an absent property
+     * without scanning. All zero (as `{ items, count, NULL }` leaves it)
+     * means "not built": find scans every item. */
+    uint64_t property_filter_[4];
 } tbox_css_computed_style;
 
 /* Resolves the cascade of `sources` for `node` itself (not its
@@ -276,7 +281,7 @@ tbox_css_computed_style tbox_css_cascade_resolve_stylesheet(const tbox_css_style
 
 void tbox_css_computed_style_destroy(tbox_css_computed_style *style);
 
-/* Linear scan for the resolved declaration of `property`, compared ASCII
+/* The resolved declaration of `property`, compared ASCII
  * case-insensitively (tbox_css_declaration.property is already lowercase
  * ASCII as produced by tbox_css_parse, but this is case-insensitive anyway
  * for caller convenience). Returns NULL if style == NULL or no resolved

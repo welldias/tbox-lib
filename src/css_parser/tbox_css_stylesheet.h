@@ -24,6 +24,11 @@ struct tbox_css_stylesheet {
     tbox_arena arena;
     tbox_css_ruleset *rulesets;
     size_t ruleset_count;
+    /* Indices into `rulesets`, in order, of those with a selector that
+     * names a pseudo-element: the only ones the cascade of a
+     * pseudo-element has to look at. */
+    size_t *pseudo_element_rulesets;
+    size_t pseudo_element_ruleset_count;
     tbox_css_font_face_rule *font_faces;
     size_t font_face_count;
     tbox_css_font_palette_rule *font_palettes;
@@ -42,5 +47,9 @@ bool tbox_style_registered_value(tbox_arena *arena, tbox_string_view syntax,
 
 /* Internal constructor for stylesheets assembled without parsing CSS text. */
 tbox_css_stylesheet *tbox_css_stylesheet_create_empty(void);
+
+/* Fills pseudo_element_rulesets once `rulesets` is final. False when out
+ * of memory. */
+bool tbox_css_stylesheet_index_pseudo_elements(tbox_css_stylesheet *stylesheet);
 
 #endif /* TBOX_CSS_PARSER_STYLESHEET_H */

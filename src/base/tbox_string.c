@@ -27,7 +27,7 @@ bool tbox_string_view_equal_cstr(tbox_string_view view, const char *cstr) {
 }
 
 tbox_string_view tbox_string_view_from_cstr(const char *nul_terminated) {
-    return tbox_string_view_make(nul_terminated, utf8size_lazy(nul_terminated));
+    return tbox_string_view_make(nul_terminated, strlen(nul_terminated));
 }
 
 size_t tbox_string_view_codepoint_count(tbox_string_view view) {

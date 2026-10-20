@@ -1,3 +1,4 @@
+#include "css_cascade/tbox_css_cascade_internal.h"
 #include "style/tbox_style_internal.h"
 
 #include <stddef.h>
@@ -6,12 +7,20 @@
 
 #include "base/tbox_string.h"
 
-/* One tbox_style member (or array element) a property sets. */
+/* One tbox_style member (or array element) a property sets, or one member
+ * of an out-of-line group (offset and size then within the group). */
 typedef struct tbox_style_field {
     size_t offset, size;
+    tbox_style_group group;
 } tbox_style_field;
 
-#define TBOX_STYLE_FIELD(member) { offsetof(tbox_style, member), sizeof(((tbox_style *)0)->member) }
+#define TBOX_STYLE_FIELD(member) { offsetof(tbox_style, member), sizeof(((tbox_style *)0)->member), TBOX_STYLE_GROUP_INLINE }
+#define TBOX_STYLE_GROUP_FIELD(group, type, member) { offsetof(type, member), sizeof(((type *)0)->member), group }
+#define TBOX_STYLE_MASKS_FIELD(member) TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_MASKS, tbox_style_masks, member)
+#define TBOX_STYLE_GRID_FIELD(member)  TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_GRID, tbox_style_grid_templates, member)
+#define TBOX_STYLE_BORDER_IMAGE_FIELD(member) TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_BORDER_IMAGE, tbox_style_border_image, member)
+/* A whole out-of-line group: overlaps every field of it. */
+#define TBOX_STYLE_WHOLE_GROUP(group, type) { 0, sizeof(type), group }
 #define TBOX_STYLE_MAX_FIELDS 24
 
 typedef struct tbox_style_property_fields {
@@ -154,24 +163,24 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "box-shadow",                 false, { TBOX_STYLE_FIELD(box_shadow_offset_x), TBOX_STYLE_FIELD(box_shadow_offset_y), TBOX_STYLE_FIELD(box_shadow_blur), TBOX_STYLE_FIELD(box_shadow_spread), TBOX_STYLE_FIELD(box_shadow_color), TBOX_STYLE_FIELD(box_shadow_inset), TBOX_STYLE_FIELD(box_shadows), TBOX_STYLE_FIELD(box_shadow_count) }                                                                                                                                                                                                                                                                                                             },
     { "text-shadow",                true,  { TBOX_STYLE_FIELD(text_shadow_offset_x), TBOX_STYLE_FIELD(text_shadow_offset_y), TBOX_STYLE_FIELD(text_shadow_blur), TBOX_STYLE_FIELD(text_shadow_color), TBOX_STYLE_FIELD(text_shadows), TBOX_STYLE_FIELD(text_shadow_count) }                                                                                                                                                                                                                                                                                                                                                                                },
     { "opacity",                    false, { TBOX_STYLE_FIELD(opacity) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   },
-    { "mask", false, { TBOX_STYLE_FIELD(has_mask), TBOX_STYLE_FIELD(mask), TBOX_STYLE_FIELD(mask_luminance), TBOX_STYLE_FIELD(mask_layer_count), TBOX_STYLE_FIELD(mask_layers) } },
-    { "-webkit-mask", false, { TBOX_STYLE_FIELD(has_mask), TBOX_STYLE_FIELD(mask), TBOX_STYLE_FIELD(mask_luminance), TBOX_STYLE_FIELD(mask_layer_count), TBOX_STYLE_FIELD(mask_layers) } },
-    { "mask-image", false, { TBOX_STYLE_FIELD(has_mask), TBOX_STYLE_FIELD(mask_layer_count), TBOX_STYLE_FIELD(mask.image), TBOX_STYLE_FIELD(mask.gradient), TBOX_STYLE_FIELD(mask_layers[0].source.image), TBOX_STYLE_FIELD(mask_layers[0].source.gradient), TBOX_STYLE_FIELD(mask_layers[1].source.image), TBOX_STYLE_FIELD(mask_layers[1].source.gradient), TBOX_STYLE_FIELD(mask_layers[2].source.image), TBOX_STYLE_FIELD(mask_layers[2].source.gradient), TBOX_STYLE_FIELD(mask_layers[3].source.image), TBOX_STYLE_FIELD(mask_layers[3].source.gradient) } },
-    { "-webkit-mask-image", false, { TBOX_STYLE_FIELD(has_mask), TBOX_STYLE_FIELD(mask_layer_count), TBOX_STYLE_FIELD(mask.image), TBOX_STYLE_FIELD(mask.gradient), TBOX_STYLE_FIELD(mask_layers[0].source.image), TBOX_STYLE_FIELD(mask_layers[0].source.gradient), TBOX_STYLE_FIELD(mask_layers[1].source.image), TBOX_STYLE_FIELD(mask_layers[1].source.gradient), TBOX_STYLE_FIELD(mask_layers[2].source.image), TBOX_STYLE_FIELD(mask_layers[2].source.gradient), TBOX_STYLE_FIELD(mask_layers[3].source.image), TBOX_STYLE_FIELD(mask_layers[3].source.gradient) } },
-    { "mask-mode", false, { TBOX_STYLE_FIELD(mask_luminance), TBOX_STYLE_FIELD(mask_layers[0].luminance), TBOX_STYLE_FIELD(mask_layers[1].luminance), TBOX_STYLE_FIELD(mask_layers[2].luminance), TBOX_STYLE_FIELD(mask_layers[3].luminance) } },
-    { "-webkit-mask-mode", false, { TBOX_STYLE_FIELD(mask_luminance), TBOX_STYLE_FIELD(mask_layers[0].luminance), TBOX_STYLE_FIELD(mask_layers[1].luminance), TBOX_STYLE_FIELD(mask_layers[2].luminance), TBOX_STYLE_FIELD(mask_layers[3].luminance) } },
-    { "mask-size", false, { TBOX_STYLE_FIELD(mask.size_kind), TBOX_STYLE_FIELD(mask.size), TBOX_STYLE_FIELD(mask_layers[0].source.size_kind), TBOX_STYLE_FIELD(mask_layers[0].source.size), TBOX_STYLE_FIELD(mask_layers[1].source.size_kind), TBOX_STYLE_FIELD(mask_layers[1].source.size), TBOX_STYLE_FIELD(mask_layers[2].source.size_kind), TBOX_STYLE_FIELD(mask_layers[2].source.size), TBOX_STYLE_FIELD(mask_layers[3].source.size_kind), TBOX_STYLE_FIELD(mask_layers[3].source.size) } },
-    { "-webkit-mask-size", false, { TBOX_STYLE_FIELD(mask.size_kind), TBOX_STYLE_FIELD(mask.size), TBOX_STYLE_FIELD(mask_layers[0].source.size_kind), TBOX_STYLE_FIELD(mask_layers[0].source.size), TBOX_STYLE_FIELD(mask_layers[1].source.size_kind), TBOX_STYLE_FIELD(mask_layers[1].source.size), TBOX_STYLE_FIELD(mask_layers[2].source.size_kind), TBOX_STYLE_FIELD(mask_layers[2].source.size), TBOX_STYLE_FIELD(mask_layers[3].source.size_kind), TBOX_STYLE_FIELD(mask_layers[3].source.size) } },
-    { "mask-position", false, { TBOX_STYLE_FIELD(mask.position), TBOX_STYLE_FIELD(mask_layers[0].source.position), TBOX_STYLE_FIELD(mask_layers[1].source.position), TBOX_STYLE_FIELD(mask_layers[2].source.position), TBOX_STYLE_FIELD(mask_layers[3].source.position) } },
-    { "-webkit-mask-position", false, { TBOX_STYLE_FIELD(mask.position), TBOX_STYLE_FIELD(mask_layers[0].source.position), TBOX_STYLE_FIELD(mask_layers[1].source.position), TBOX_STYLE_FIELD(mask_layers[2].source.position), TBOX_STYLE_FIELD(mask_layers[3].source.position) } },
-    { "mask-repeat", false, { TBOX_STYLE_FIELD(mask.repeat_x), TBOX_STYLE_FIELD(mask.repeat_y), TBOX_STYLE_FIELD(mask.repeat_mode_x), TBOX_STYLE_FIELD(mask.repeat_mode_y), TBOX_STYLE_FIELD(mask_layers[0].source.repeat_x), TBOX_STYLE_FIELD(mask_layers[0].source.repeat_y), TBOX_STYLE_FIELD(mask_layers[0].source.repeat_mode_x), TBOX_STYLE_FIELD(mask_layers[0].source.repeat_mode_y), TBOX_STYLE_FIELD(mask_layers[1].source.repeat_x), TBOX_STYLE_FIELD(mask_layers[1].source.repeat_y), TBOX_STYLE_FIELD(mask_layers[1].source.repeat_mode_x), TBOX_STYLE_FIELD(mask_layers[1].source.repeat_mode_y), TBOX_STYLE_FIELD(mask_layers[2].source.repeat_x), TBOX_STYLE_FIELD(mask_layers[2].source.repeat_y), TBOX_STYLE_FIELD(mask_layers[2].source.repeat_mode_x), TBOX_STYLE_FIELD(mask_layers[2].source.repeat_mode_y), TBOX_STYLE_FIELD(mask_layers[3].source.repeat_x), TBOX_STYLE_FIELD(mask_layers[3].source.repeat_y), TBOX_STYLE_FIELD(mask_layers[3].source.repeat_mode_x), TBOX_STYLE_FIELD(mask_layers[3].source.repeat_mode_y) } },
-    { "-webkit-mask-repeat", false, { TBOX_STYLE_FIELD(mask.repeat_x), TBOX_STYLE_FIELD(mask.repeat_y), TBOX_STYLE_FIELD(mask.repeat_mode_x), TBOX_STYLE_FIELD(mask.repeat_mode_y), TBOX_STYLE_FIELD(mask_layers[0].source.repeat_x), TBOX_STYLE_FIELD(mask_layers[0].source.repeat_y), TBOX_STYLE_FIELD(mask_layers[0].source.repeat_mode_x), TBOX_STYLE_FIELD(mask_layers[0].source.repeat_mode_y), TBOX_STYLE_FIELD(mask_layers[1].source.repeat_x), TBOX_STYLE_FIELD(mask_layers[1].source.repeat_y), TBOX_STYLE_FIELD(mask_layers[1].source.repeat_mode_x), TBOX_STYLE_FIELD(mask_layers[1].source.repeat_mode_y), TBOX_STYLE_FIELD(mask_layers[2].source.repeat_x), TBOX_STYLE_FIELD(mask_layers[2].source.repeat_y), TBOX_STYLE_FIELD(mask_layers[2].source.repeat_mode_x), TBOX_STYLE_FIELD(mask_layers[2].source.repeat_mode_y), TBOX_STYLE_FIELD(mask_layers[3].source.repeat_x), TBOX_STYLE_FIELD(mask_layers[3].source.repeat_y), TBOX_STYLE_FIELD(mask_layers[3].source.repeat_mode_x), TBOX_STYLE_FIELD(mask_layers[3].source.repeat_mode_y) } },
-    { "mask-origin", false, { TBOX_STYLE_FIELD(mask_layers[0].origin), TBOX_STYLE_FIELD(mask_layers[1].origin), TBOX_STYLE_FIELD(mask_layers[2].origin), TBOX_STYLE_FIELD(mask_layers[3].origin) } },
-    { "-webkit-mask-origin", false, { TBOX_STYLE_FIELD(mask_layers[0].origin), TBOX_STYLE_FIELD(mask_layers[1].origin), TBOX_STYLE_FIELD(mask_layers[2].origin), TBOX_STYLE_FIELD(mask_layers[3].origin) } },
-    { "mask-clip", false, { TBOX_STYLE_FIELD(mask_layers[0].clip), TBOX_STYLE_FIELD(mask_layers[0].no_clip), TBOX_STYLE_FIELD(mask_layers[1].clip), TBOX_STYLE_FIELD(mask_layers[1].no_clip), TBOX_STYLE_FIELD(mask_layers[2].clip), TBOX_STYLE_FIELD(mask_layers[2].no_clip), TBOX_STYLE_FIELD(mask_layers[3].clip), TBOX_STYLE_FIELD(mask_layers[3].no_clip) } },
-    { "-webkit-mask-clip", false, { TBOX_STYLE_FIELD(mask_layers[0].clip), TBOX_STYLE_FIELD(mask_layers[0].no_clip), TBOX_STYLE_FIELD(mask_layers[1].clip), TBOX_STYLE_FIELD(mask_layers[1].no_clip), TBOX_STYLE_FIELD(mask_layers[2].clip), TBOX_STYLE_FIELD(mask_layers[2].no_clip), TBOX_STYLE_FIELD(mask_layers[3].clip), TBOX_STYLE_FIELD(mask_layers[3].no_clip) } },
-    { "mask-composite", false, { TBOX_STYLE_FIELD(mask_layers[0].composite), TBOX_STYLE_FIELD(mask_layers[1].composite), TBOX_STYLE_FIELD(mask_layers[2].composite), TBOX_STYLE_FIELD(mask_layers[3].composite) } },
-    { "-webkit-mask-composite", false, { TBOX_STYLE_FIELD(mask_layers[0].composite), TBOX_STYLE_FIELD(mask_layers[1].composite), TBOX_STYLE_FIELD(mask_layers[2].composite), TBOX_STYLE_FIELD(mask_layers[3].composite) } },
+    { "mask", false, { TBOX_STYLE_FIELD(has_mask), TBOX_STYLE_FIELD(mask_luminance), TBOX_STYLE_WHOLE_GROUP(TBOX_STYLE_GROUP_MASKS, tbox_style_masks) } },
+    { "-webkit-mask", false, { TBOX_STYLE_FIELD(has_mask), TBOX_STYLE_FIELD(mask_luminance), TBOX_STYLE_WHOLE_GROUP(TBOX_STYLE_GROUP_MASKS, tbox_style_masks) } },
+    { "mask-image", false, { TBOX_STYLE_FIELD(has_mask), TBOX_STYLE_MASKS_FIELD(count), TBOX_STYLE_MASKS_FIELD(layers[0].source.image), TBOX_STYLE_MASKS_FIELD(layers[0].source.gradient), TBOX_STYLE_MASKS_FIELD(layers[1].source.image), TBOX_STYLE_MASKS_FIELD(layers[1].source.gradient), TBOX_STYLE_MASKS_FIELD(layers[2].source.image), TBOX_STYLE_MASKS_FIELD(layers[2].source.gradient), TBOX_STYLE_MASKS_FIELD(layers[3].source.image), TBOX_STYLE_MASKS_FIELD(layers[3].source.gradient) } },
+    { "-webkit-mask-image", false, { TBOX_STYLE_FIELD(has_mask), TBOX_STYLE_MASKS_FIELD(count), TBOX_STYLE_MASKS_FIELD(layers[0].source.image), TBOX_STYLE_MASKS_FIELD(layers[0].source.gradient), TBOX_STYLE_MASKS_FIELD(layers[1].source.image), TBOX_STYLE_MASKS_FIELD(layers[1].source.gradient), TBOX_STYLE_MASKS_FIELD(layers[2].source.image), TBOX_STYLE_MASKS_FIELD(layers[2].source.gradient), TBOX_STYLE_MASKS_FIELD(layers[3].source.image), TBOX_STYLE_MASKS_FIELD(layers[3].source.gradient) } },
+    { "mask-mode", false, { TBOX_STYLE_FIELD(mask_luminance), TBOX_STYLE_MASKS_FIELD(layers[0].luminance), TBOX_STYLE_MASKS_FIELD(layers[1].luminance), TBOX_STYLE_MASKS_FIELD(layers[2].luminance), TBOX_STYLE_MASKS_FIELD(layers[3].luminance) } },
+    { "-webkit-mask-mode", false, { TBOX_STYLE_FIELD(mask_luminance), TBOX_STYLE_MASKS_FIELD(layers[0].luminance), TBOX_STYLE_MASKS_FIELD(layers[1].luminance), TBOX_STYLE_MASKS_FIELD(layers[2].luminance), TBOX_STYLE_MASKS_FIELD(layers[3].luminance) } },
+    { "mask-size", false, { TBOX_STYLE_MASKS_FIELD(layers[0].source.size_kind), TBOX_STYLE_MASKS_FIELD(layers[0].source.size), TBOX_STYLE_MASKS_FIELD(layers[1].source.size_kind), TBOX_STYLE_MASKS_FIELD(layers[1].source.size), TBOX_STYLE_MASKS_FIELD(layers[2].source.size_kind), TBOX_STYLE_MASKS_FIELD(layers[2].source.size), TBOX_STYLE_MASKS_FIELD(layers[3].source.size_kind), TBOX_STYLE_MASKS_FIELD(layers[3].source.size) } },
+    { "-webkit-mask-size", false, { TBOX_STYLE_MASKS_FIELD(layers[0].source.size_kind), TBOX_STYLE_MASKS_FIELD(layers[0].source.size), TBOX_STYLE_MASKS_FIELD(layers[1].source.size_kind), TBOX_STYLE_MASKS_FIELD(layers[1].source.size), TBOX_STYLE_MASKS_FIELD(layers[2].source.size_kind), TBOX_STYLE_MASKS_FIELD(layers[2].source.size), TBOX_STYLE_MASKS_FIELD(layers[3].source.size_kind), TBOX_STYLE_MASKS_FIELD(layers[3].source.size) } },
+    { "mask-position", false, { TBOX_STYLE_MASKS_FIELD(layers[0].source.position), TBOX_STYLE_MASKS_FIELD(layers[1].source.position), TBOX_STYLE_MASKS_FIELD(layers[2].source.position), TBOX_STYLE_MASKS_FIELD(layers[3].source.position) } },
+    { "-webkit-mask-position", false, { TBOX_STYLE_MASKS_FIELD(layers[0].source.position), TBOX_STYLE_MASKS_FIELD(layers[1].source.position), TBOX_STYLE_MASKS_FIELD(layers[2].source.position), TBOX_STYLE_MASKS_FIELD(layers[3].source.position) } },
+    { "mask-repeat", false, { TBOX_STYLE_MASKS_FIELD(layers[0].source.repeat_x), TBOX_STYLE_MASKS_FIELD(layers[0].source.repeat_y), TBOX_STYLE_MASKS_FIELD(layers[0].source.repeat_mode_x), TBOX_STYLE_MASKS_FIELD(layers[0].source.repeat_mode_y), TBOX_STYLE_MASKS_FIELD(layers[1].source.repeat_x), TBOX_STYLE_MASKS_FIELD(layers[1].source.repeat_y), TBOX_STYLE_MASKS_FIELD(layers[1].source.repeat_mode_x), TBOX_STYLE_MASKS_FIELD(layers[1].source.repeat_mode_y), TBOX_STYLE_MASKS_FIELD(layers[2].source.repeat_x), TBOX_STYLE_MASKS_FIELD(layers[2].source.repeat_y), TBOX_STYLE_MASKS_FIELD(layers[2].source.repeat_mode_x), TBOX_STYLE_MASKS_FIELD(layers[2].source.repeat_mode_y), TBOX_STYLE_MASKS_FIELD(layers[3].source.repeat_x), TBOX_STYLE_MASKS_FIELD(layers[3].source.repeat_y), TBOX_STYLE_MASKS_FIELD(layers[3].source.repeat_mode_x), TBOX_STYLE_MASKS_FIELD(layers[3].source.repeat_mode_y) } },
+    { "-webkit-mask-repeat", false, { TBOX_STYLE_MASKS_FIELD(layers[0].source.repeat_x), TBOX_STYLE_MASKS_FIELD(layers[0].source.repeat_y), TBOX_STYLE_MASKS_FIELD(layers[0].source.repeat_mode_x), TBOX_STYLE_MASKS_FIELD(layers[0].source.repeat_mode_y), TBOX_STYLE_MASKS_FIELD(layers[1].source.repeat_x), TBOX_STYLE_MASKS_FIELD(layers[1].source.repeat_y), TBOX_STYLE_MASKS_FIELD(layers[1].source.repeat_mode_x), TBOX_STYLE_MASKS_FIELD(layers[1].source.repeat_mode_y), TBOX_STYLE_MASKS_FIELD(layers[2].source.repeat_x), TBOX_STYLE_MASKS_FIELD(layers[2].source.repeat_y), TBOX_STYLE_MASKS_FIELD(layers[2].source.repeat_mode_x), TBOX_STYLE_MASKS_FIELD(layers[2].source.repeat_mode_y), TBOX_STYLE_MASKS_FIELD(layers[3].source.repeat_x), TBOX_STYLE_MASKS_FIELD(layers[3].source.repeat_y), TBOX_STYLE_MASKS_FIELD(layers[3].source.repeat_mode_x), TBOX_STYLE_MASKS_FIELD(layers[3].source.repeat_mode_y) } },
+    { "mask-origin", false, { TBOX_STYLE_MASKS_FIELD(layers[0].origin), TBOX_STYLE_MASKS_FIELD(layers[1].origin), TBOX_STYLE_MASKS_FIELD(layers[2].origin), TBOX_STYLE_MASKS_FIELD(layers[3].origin) } },
+    { "-webkit-mask-origin", false, { TBOX_STYLE_MASKS_FIELD(layers[0].origin), TBOX_STYLE_MASKS_FIELD(layers[1].origin), TBOX_STYLE_MASKS_FIELD(layers[2].origin), TBOX_STYLE_MASKS_FIELD(layers[3].origin) } },
+    { "mask-clip", false, { TBOX_STYLE_MASKS_FIELD(layers[0].clip), TBOX_STYLE_MASKS_FIELD(layers[0].no_clip), TBOX_STYLE_MASKS_FIELD(layers[1].clip), TBOX_STYLE_MASKS_FIELD(layers[1].no_clip), TBOX_STYLE_MASKS_FIELD(layers[2].clip), TBOX_STYLE_MASKS_FIELD(layers[2].no_clip), TBOX_STYLE_MASKS_FIELD(layers[3].clip), TBOX_STYLE_MASKS_FIELD(layers[3].no_clip) } },
+    { "-webkit-mask-clip", false, { TBOX_STYLE_MASKS_FIELD(layers[0].clip), TBOX_STYLE_MASKS_FIELD(layers[0].no_clip), TBOX_STYLE_MASKS_FIELD(layers[1].clip), TBOX_STYLE_MASKS_FIELD(layers[1].no_clip), TBOX_STYLE_MASKS_FIELD(layers[2].clip), TBOX_STYLE_MASKS_FIELD(layers[2].no_clip), TBOX_STYLE_MASKS_FIELD(layers[3].clip), TBOX_STYLE_MASKS_FIELD(layers[3].no_clip) } },
+    { "mask-composite", false, { TBOX_STYLE_MASKS_FIELD(layers[0].composite), TBOX_STYLE_MASKS_FIELD(layers[1].composite), TBOX_STYLE_MASKS_FIELD(layers[2].composite), TBOX_STYLE_MASKS_FIELD(layers[3].composite) } },
+    { "-webkit-mask-composite", false, { TBOX_STYLE_MASKS_FIELD(layers[0].composite), TBOX_STYLE_MASKS_FIELD(layers[1].composite), TBOX_STYLE_MASKS_FIELD(layers[2].composite), TBOX_STYLE_MASKS_FIELD(layers[3].composite) } },
     { "box-reflect", false, { TBOX_STYLE_FIELD(box_reflect) } },
     { "-webkit-box-reflect", false, { TBOX_STYLE_FIELD(box_reflect) } },
     { "box-decoration-break", false, { TBOX_STYLE_FIELD(box_decoration_clone) } },
@@ -185,12 +194,12 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "filter",                     false, { TBOX_STYLE_FIELD(has_filter), TBOX_STYLE_FIELD(filter_matrix), TBOX_STYLE_FIELD(filters) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    },
     { "backdrop-filter",            false, { TBOX_STYLE_FIELD(has_backdrop_filter), TBOX_STYLE_FIELD(backdrop_filters) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   },
     { "mix-blend-mode",             false, { TBOX_STYLE_FIELD(mix_blend_mode) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            },
-    { "border-image",               false, { TBOX_STYLE_FIELD(has_border_image), TBOX_STYLE_FIELD(border_image) } },
-    { "border-image-source",        false, { TBOX_STYLE_FIELD(has_border_image), TBOX_STYLE_FIELD(border_image.image), TBOX_STYLE_FIELD(border_image.gradient) } },
-    { "border-image-slice",         false, { TBOX_STYLE_FIELD(border_image.slice), TBOX_STYLE_FIELD(border_image.fill) } },
-    { "border-image-width",         false, { TBOX_STYLE_FIELD(border_image.width) } },
-    { "border-image-outset",        false, { TBOX_STYLE_FIELD(border_image.outset) } },
-    { "border-image-repeat",        false, { TBOX_STYLE_FIELD(border_image.repeat) } },
+    { "border-image",               false, { TBOX_STYLE_FIELD(has_border_image), TBOX_STYLE_WHOLE_GROUP(TBOX_STYLE_GROUP_BORDER_IMAGE, tbox_style_border_image) } },
+    { "border-image-source",        false, { TBOX_STYLE_FIELD(has_border_image), TBOX_STYLE_BORDER_IMAGE_FIELD(image), TBOX_STYLE_BORDER_IMAGE_FIELD(gradient) } },
+    { "border-image-slice",         false, { TBOX_STYLE_BORDER_IMAGE_FIELD(slice), TBOX_STYLE_BORDER_IMAGE_FIELD(fill) } },
+    { "border-image-width",         false, { TBOX_STYLE_BORDER_IMAGE_FIELD(width) } },
+    { "border-image-outset",        false, { TBOX_STYLE_BORDER_IMAGE_FIELD(outset) } },
+    { "border-image-repeat",        false, { TBOX_STYLE_BORDER_IMAGE_FIELD(repeat) } },
     { "background-blend-mode",      false, { TBOX_STYLE_FIELD(background_blend_mode) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     },
     { "transition",                 false, { TBOX_STYLE_FIELD(transitions), TBOX_STYLE_FIELD(transition_count) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           },
     { "animation",                  false, { TBOX_STYLE_FIELD(animations), TBOX_STYLE_FIELD(animation_count) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             },
@@ -233,11 +242,11 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "flex-direction",             false, { TBOX_STYLE_FIELD(flex_direction) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            },
     { "flex-wrap",                  false, { TBOX_STYLE_FIELD(flex_wrap) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 },
     { "flex-flow",                  false, { TBOX_STYLE_FIELD(flex_direction), TBOX_STYLE_FIELD(flex_wrap) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               },
-    { "grid-template-columns", false, { TBOX_STYLE_FIELD(grid_template_columns), TBOX_STYLE_FIELD(grid_units[0]) } },
-    { "grid-template-rows", false, { TBOX_STYLE_FIELD(grid_template_rows), TBOX_STYLE_FIELD(grid_units[1]) } },
-    { "grid-template-areas", false, { TBOX_STYLE_FIELD(grid_template_areas) } },
-    { "grid-auto-columns", false, { TBOX_STYLE_FIELD(grid_auto_columns), TBOX_STYLE_FIELD(grid_units[2]) } },
-    { "grid-auto-rows", false, { TBOX_STYLE_FIELD(grid_auto_rows), TBOX_STYLE_FIELD(grid_units[3]) } },
+    { "grid-template-columns", false, { TBOX_STYLE_GRID_FIELD(grid_template_columns), TBOX_STYLE_FIELD(grid_units[0]) } },
+    { "grid-template-rows", false, { TBOX_STYLE_GRID_FIELD(grid_template_rows), TBOX_STYLE_FIELD(grid_units[1]) } },
+    { "grid-template-areas", false, { TBOX_STYLE_GRID_FIELD(grid_template_areas) } },
+    { "grid-auto-columns", false, { TBOX_STYLE_GRID_FIELD(grid_auto_columns), TBOX_STYLE_FIELD(grid_units[2]) } },
+    { "grid-auto-rows", false, { TBOX_STYLE_GRID_FIELD(grid_auto_rows), TBOX_STYLE_FIELD(grid_units[3]) } },
     { "grid-auto-flow", false, { TBOX_STYLE_FIELD(grid_auto_flow_column), TBOX_STYLE_FIELD(grid_auto_flow_dense) } },
     { "grid-row-start", false, { TBOX_STYLE_FIELD(grid_row_start) } },
     { "grid-row-end", false, { TBOX_STYLE_FIELD(grid_row_end) } },
@@ -246,8 +255,8 @@ static const tbox_style_property_fields tbox_style_properties[] = {
     { "grid-row", false, { TBOX_STYLE_FIELD(grid_row_start), TBOX_STYLE_FIELD(grid_row_end) } },
     { "grid-column", false, { TBOX_STYLE_FIELD(grid_column_start), TBOX_STYLE_FIELD(grid_column_end) } },
     { "grid-area", false, { TBOX_STYLE_FIELD(grid_row_start), TBOX_STYLE_FIELD(grid_column_start), TBOX_STYLE_FIELD(grid_row_end), TBOX_STYLE_FIELD(grid_column_end) } },
-    { "grid-template", false, { TBOX_STYLE_FIELD(grid_template_rows), TBOX_STYLE_FIELD(grid_units[1]), TBOX_STYLE_FIELD(grid_template_columns), TBOX_STYLE_FIELD(grid_units[0]), TBOX_STYLE_FIELD(grid_template_areas) } },
-    { "grid", false, { TBOX_STYLE_FIELD(grid_template_rows), TBOX_STYLE_FIELD(grid_units[1]), TBOX_STYLE_FIELD(grid_template_columns), TBOX_STYLE_FIELD(grid_units[0]), TBOX_STYLE_FIELD(grid_template_areas), TBOX_STYLE_FIELD(grid_auto_rows), TBOX_STYLE_FIELD(grid_units[3]), TBOX_STYLE_FIELD(grid_auto_columns), TBOX_STYLE_FIELD(grid_units[2]), TBOX_STYLE_FIELD(grid_auto_flow_column), TBOX_STYLE_FIELD(grid_auto_flow_dense) } },
+    { "grid-template", false, { TBOX_STYLE_GRID_FIELD(grid_template_rows), TBOX_STYLE_FIELD(grid_units[1]), TBOX_STYLE_GRID_FIELD(grid_template_columns), TBOX_STYLE_FIELD(grid_units[0]), TBOX_STYLE_GRID_FIELD(grid_template_areas) } },
+    { "grid", false, { TBOX_STYLE_GRID_FIELD(grid_template_rows), TBOX_STYLE_FIELD(grid_units[1]), TBOX_STYLE_GRID_FIELD(grid_template_columns), TBOX_STYLE_FIELD(grid_units[0]), TBOX_STYLE_GRID_FIELD(grid_template_areas), TBOX_STYLE_GRID_FIELD(grid_auto_rows), TBOX_STYLE_FIELD(grid_units[3]), TBOX_STYLE_GRID_FIELD(grid_auto_columns), TBOX_STYLE_FIELD(grid_units[2]), TBOX_STYLE_FIELD(grid_auto_flow_column), TBOX_STYLE_FIELD(grid_auto_flow_dense) } },
     { "justify-items", false, { TBOX_STYLE_FIELD(justify_items) } },
     { "justify-self", false, { TBOX_STYLE_FIELD(justify_self) } },
     { "justify-content",            false, { TBOX_STYLE_FIELD(justify_content) }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           },
@@ -346,14 +355,14 @@ static size_t tbox_style_side_fields(tbox_string_view property, tbox_style_field
     for (size_t f = 0; f < sizeof(families) / sizeof(families[0]); f++) {
         if (tbox_style_has_prefix_ci(property, families[f].prefix, &rest) && (side_count = tbox_style_sides(rest, sides)) > 0) {
             for (size_t i = 0; i < side_count; i++)
-                out[i] = (tbox_style_field){ families[f].offset + (size_t)sides[i] * sizeof(tbox_style_length), sizeof(tbox_style_length) };
+                out[i] = (tbox_style_field){ families[f].offset + (size_t)sides[i] * sizeof(tbox_style_length), sizeof(tbox_style_length), TBOX_STYLE_GROUP_INLINE };
             return side_count;
         }
     }
     static const char *const physical[4] = { "top", "right", "bottom", "left" };
     for (size_t i = 0; i < 4; i++)
         if (tbox_style_equal_ci(property, physical[i])) {
-            out[0] = (tbox_style_field){ offsetof(tbox_style, offset) + i * sizeof(tbox_style_length), sizeof(tbox_style_length) };
+            out[0] = (tbox_style_field){ offsetof(tbox_style, offset) + i * sizeof(tbox_style_length), sizeof(tbox_style_length), TBOX_STYLE_GROUP_INLINE };
             return 1;
         }
 
@@ -382,7 +391,7 @@ static size_t tbox_style_side_fields(tbox_string_view property, tbox_style_field
     size_t count = 0;
     for (size_t p = first_part; p < first_part + part_count; p++)
         for (size_t i = 0; i < side_count; i++)
-            out[count++] = (tbox_style_field){ parts[p].offset + (size_t)sides[i] * parts[p].size, parts[p].size };
+            out[count++] = (tbox_style_field){ parts[p].offset + (size_t)sides[i] * parts[p].size, parts[p].size, TBOX_STYLE_GROUP_INLINE };
     return count;
 }
 
@@ -437,7 +446,7 @@ bool tbox_style_keywords_present(const tbox_css_computed_style *computed) {
 }
 
 tbox_css_computed_style tbox_style_keywords_strip(const tbox_css_computed_style *computed) {
-    tbox_css_computed_style stripped = { NULL, 0, NULL };
+    tbox_css_computed_style stripped = { NULL, 0, NULL, { 0 } };
     if (computed == NULL || computed->count == 0)
         return stripped;
     stripped.items = (tbox_css_resolved_declaration *)malloc(computed->count * sizeof(tbox_css_resolved_declaration));
@@ -454,6 +463,7 @@ tbox_css_computed_style tbox_style_keywords_strip(const tbox_css_computed_style 
             stripped.count++;
         }
     }
+    tbox_css_computed_style_index(&stripped);
     return stripped;
 }
 
@@ -466,47 +476,66 @@ void tbox_style_keywords_release(tbox_css_computed_style *stripped) {
 }
 
 static bool tbox_style_fields_overlap(tbox_style_field a, tbox_style_field b) {
-    return a.offset < b.offset + b.size && b.offset < a.offset + a.size;
+    return a.group == b.group && a.offset < b.offset + b.size && b.offset < a.offset + a.size;
 }
 
-/* True when an ordinary (non-keyword) declaration beating `keyword` also
- * sets `field`. */
-static bool tbox_style_field_overridden(const tbox_css_computed_style *computed, const tbox_css_resolved_declaration *keyword, tbox_style_field field) {
+/* Marks in `overridden` the `fields` that an ordinary (non-keyword)
+ * declaration beating `keyword` also sets. One property lookup per
+ * declaration, not per field: `font: inherit` alone has 17 fields. */
+static void tbox_style_fields_overridden(const tbox_css_computed_style *computed, const tbox_css_resolved_declaration *keyword, const tbox_style_field *fields, size_t field_count, bool overridden[TBOX_STYLE_MAX_FIELDS]) {
     for (size_t i = 0; i < computed->count; i++) {
         const tbox_css_resolved_declaration *other = &computed->items[i];
         if (other == keyword || tbox_style_keyword_of(other->value) != TBOX_STYLE_KEYWORD_NONE || tbox_css_cascade_priority_compare(other, keyword) <= 0)
             continue;
-        tbox_style_field fields[TBOX_STYLE_MAX_FIELDS];
+        tbox_style_field other_fields[TBOX_STYLE_MAX_FIELDS];
         bool inherited;
-        size_t count = tbox_style_property_lookup(other->property, fields, &inherited);
-        for (size_t f = 0; f < count; f++)
-            if (tbox_style_fields_overlap(fields[f], field))
-                return true;
+        size_t other_count = tbox_style_property_lookup(other->property, other_fields, &inherited);
+        for (size_t f = 0; f < field_count; f++)
+            for (size_t o = 0; o < other_count && !overridden[f]; o++)
+                if (tbox_style_fields_overlap(other_fields[o], fields[f]))
+                    overridden[f] = true;
     }
-    return false;
 }
 
 /* Copies `property`'s fields for the keyword in `decl` from the parent or
  * the initial style, except fields a higher-priority declaration sets. */
-static void tbox_style_keyword_apply_one(tbox_style *style, const tbox_style *parent, const tbox_style *initial, const tbox_css_computed_style *computed, const tbox_css_resolved_declaration *decl, tbox_string_view property, bool *touched_borders, bool *touched_radius) {
+/* What tbox_style_keywords_apply carries across its properties: the
+ * groups it already made private to `style` (copied once, then written). */
+typedef struct tbox_style_keyword_pass {
+    tbox_arena *arena;
+    void *owned[TBOX_STYLE_GROUP_COUNT];
+    bool touched_borders, touched_radius;
+} tbox_style_keyword_pass;
+
+static void tbox_style_keyword_apply_one(tbox_style *style, const tbox_style *parent, const tbox_style *initial, const tbox_css_computed_style *computed, const tbox_css_resolved_declaration *decl, tbox_string_view property, tbox_style_keyword_pass *pass) {
     tbox_style_field fields[TBOX_STYLE_MAX_FIELDS];
     bool inherited;
     size_t field_count           = tbox_style_property_lookup(property, fields, &inherited);
     tbox_style_keyword_kind kind = tbox_style_keyword_of(decl->value);
     bool from_parent             = parent != NULL && (kind == TBOX_STYLE_KEYWORD_INHERIT || (kind == TBOX_STYLE_KEYWORD_UNSET && inherited));
     const tbox_style *source     = from_parent ? parent : initial;
+    bool overridden[TBOX_STYLE_MAX_FIELDS] = { false };
+    tbox_style_fields_overridden(computed, decl, fields, field_count, overridden);
     for (size_t f = 0; f < field_count; f++) {
-        if (tbox_style_field_overridden(computed, decl, fields[f]))
+        if (overridden[f])
             continue;
+        tbox_style_group group = fields[f].group;
+        if (group != TBOX_STYLE_GROUP_INLINE) {
+            if (pass->owned[group] == NULL)
+                pass->owned[group] = tbox_style_group_edit(style, group, pass->arena);
+            if (pass->owned[group] != NULL)
+                memcpy((char *)pass->owned[group] + fields[f].offset, (const char *)tbox_style_group_get(source, group) + fields[f].offset, fields[f].size);
+            continue;
+        }
         memcpy((char *)style + fields[f].offset, (const char *)source + fields[f].offset, fields[f].size);
         if (fields[f].offset >= offsetof(tbox_style, border_widths) && fields[f].offset < offsetof(tbox_style, border_per_side))
-            *touched_borders = true;
+            pass->touched_borders = true;
         if (fields[f].offset >= offsetof(tbox_style, border_radius_corners) && fields[f].offset < offsetof(tbox_style, border_radius_corners) + sizeof(style->border_radius_corners))
-            *touched_radius = true;
+            pass->touched_radius = true;
     }
 }
 
-void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, const tbox_style *initial, const tbox_css_computed_style *computed) {
+void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, const tbox_style *initial, const tbox_css_computed_style *computed, tbox_arena *arena) {
     if (style == NULL || initial == NULL || computed == NULL)
         return;
 
@@ -523,11 +552,11 @@ void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, cons
             order[j - 1]                              = swap;
         }
 
-    bool touched_borders = false, touched_radius = false;
+    tbox_style_keyword_pass pass = { .arena = arena };
     for (size_t k = 0; k < count; k++) {
         const tbox_css_resolved_declaration *decl = order[k];
         if (!tbox_style_equal_ci(decl->property, "all")) {
-            tbox_style_keyword_apply_one(style, parent, initial, computed, decl, decl->property, &touched_borders, &touched_radius);
+            tbox_style_keyword_apply_one(style, parent, initial, computed, decl, decl->property, &pass);
             continue;
         }
         /* `all`: every property tbox_style knows (custom properties are
@@ -535,14 +564,14 @@ void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, cons
          * declarations of its own. */
         for (size_t i = 0; i < sizeof(tbox_style_properties) / sizeof(tbox_style_properties[0]); i++)
             if (strcmp(tbox_style_properties[i].name, "direction") != 0 && strcmp(tbox_style_properties[i].name, "unicode-bidi") != 0) /* not part of `all` */
-                tbox_style_keyword_apply_one(style, parent, initial, computed, decl, tbox_string_view_from_cstr(tbox_style_properties[i].name), &touched_borders, &touched_radius);
+                tbox_style_keyword_apply_one(style, parent, initial, computed, decl, tbox_string_view_from_cstr(tbox_style_properties[i].name), &pass);
         static const char *const families[] = { "margin", "padding", "inset", "border", "scroll-margin", "scroll-padding" };
         for (size_t i = 0; i < sizeof(families) / sizeof(families[0]); i++)
-            tbox_style_keyword_apply_one(style, parent, initial, computed, decl, tbox_string_view_from_cstr(families[i]), &touched_borders, &touched_radius);
+            tbox_style_keyword_apply_one(style, parent, initial, computed, decl, tbox_string_view_from_cstr(families[i]), &pass);
     }
 
     /* Keep the derived uniform fields in step with the per-side arrays. */
-    if (touched_borders) {
+    if (pass.touched_borders) {
         style->border_per_side = false;
         for (size_t i = 1; i < 4; i++)
             if (style->border_widths[i] != style->border_widths[0] || style->border_styles[i] != style->border_styles[0] || memcmp(&style->border_colors[i], &style->border_colors[0], sizeof(tbox_css_rgba)) != 0)
@@ -551,7 +580,7 @@ void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, cons
         style->border_style = style->border_styles[0];
         style->border_color = style->border_colors[0];
     }
-    if (touched_radius) {
+    if (pass.touched_radius) {
         const double *c      = style->border_radius_corners;
         style->border_radius = c[0] == c[1] && c[0] == c[2] && c[0] == c[3] ? c[0] : 0.0;
     }

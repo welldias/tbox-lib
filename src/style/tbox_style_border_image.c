@@ -17,15 +17,19 @@ static tbox_style_border_image_value tbox_style_border_image_number(double numbe
     return value;
 }
 
+#define TBOX_STYLE_BI_SLICE_INITIAL  { .kind = TBOX_STYLE_BORDER_IMAGE_LENGTH, .length = { TBOX_STYLE_LENGTH_PERCENT, 100.0, 0.0, 0, 0.0, 0.0 } }
+#define TBOX_STYLE_BI_NUMBER(n)      { .kind = TBOX_STYLE_BORDER_IMAGE_NUMBER, .number = (n) }
+
+/* The gradient part matches tbox_style_init_gradient. */
+const tbox_style_border_image tbox_style_border_image_initial = {
+    .gradient = { .angle = 180.0, .center = { { TBOX_STYLE_LENGTH_PERCENT, 50.0, 0.0, 0, 0.0, 0.0 }, { TBOX_STYLE_LENGTH_PERCENT, 50.0, 0.0, 0, 0.0, 0.0 } } },
+    .slice    = { TBOX_STYLE_BI_SLICE_INITIAL, TBOX_STYLE_BI_SLICE_INITIAL, TBOX_STYLE_BI_SLICE_INITIAL, TBOX_STYLE_BI_SLICE_INITIAL },
+    .width    = { TBOX_STYLE_BI_NUMBER(1.0), TBOX_STYLE_BI_NUMBER(1.0), TBOX_STYLE_BI_NUMBER(1.0), TBOX_STYLE_BI_NUMBER(1.0) },
+    .outset   = { TBOX_STYLE_BI_NUMBER(0.0), TBOX_STYLE_BI_NUMBER(0.0), TBOX_STYLE_BI_NUMBER(0.0), TBOX_STYLE_BI_NUMBER(0.0) },
+};
+
 static void tbox_style_border_image_init(tbox_style_border_image *image) {
-    memset(image, 0, sizeof(*image));
-    tbox_style_init_gradient(&image->gradient);
-    for (size_t i = 0; i < 4; i++) {
-        image->slice[i].kind   = TBOX_STYLE_BORDER_IMAGE_LENGTH;
-        image->slice[i].length = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 100.0, 0.0, 0, 0.0, 0.0 };
-        image->width[i]        = tbox_style_border_image_number(1.0);
-        image->outset[i]       = tbox_style_border_image_number(0.0);
-    }
+    *image = tbox_style_border_image_initial;
 }
 
 /* none, url() or a gradient. */
@@ -224,7 +228,7 @@ static bool tbox_style_border_image_parse_longhand(size_t which, tbox_string_vie
     }
 }
 
-void tbox_style_resolve_border_image(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style) {
+void tbox_style_resolve_border_image(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style, tbox_arena *arena) {
     /* `border` resets border-image to its initial value, `border-image`
      * sets every longhand: apply the declarations from the lowest cascade
      * priority up, so the winner of each part is the last one applied. */
@@ -257,6 +261,10 @@ void tbox_style_resolve_border_image(const tbox_css_computed_style *computed, co
         decls[at] = decl;
         kinds[at] = n;
     }
+    style->border_image     = NULL; /* initial */
+    style->has_border_image = false;
+    if (count == 0)
+        return;
     tbox_style_border_image image;
     tbox_style_border_image_init(&image);
     for (size_t i = 0; i < count; i++) {
@@ -269,6 +277,9 @@ void tbox_style_resolve_border_image(const tbox_css_computed_style *computed, co
             tbox_style_border_image_parse_longhand(kinds[i], decls[i]->value, units, style->color, &image);
         }
     }
-    style->border_image     = image;
-    style->has_border_image = image.image[0] != '\0' || image.gradient.kind != TBOX_STYLE_GRADIENT_NONE;
+    tbox_style_border_image *copy = tbox_style_group_copy(arena, &image, sizeof(*copy));
+    if (copy != NULL) {
+        style->border_image     = copy;
+        style->has_border_image = image.image[0] != '\0' || image.gradient.kind != TBOX_STYLE_GRADIENT_NONE;
+    }
 }

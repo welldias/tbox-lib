@@ -1179,3 +1179,82 @@ Defeitos apontados pela comparação de todos os fixtures com o Firefox
   débito técnico; uma folha adicional temporária com `display: block`
   suprimiu esse texto. Nenhum suporte novo ou lógica do explorador foi
   implementado nesta etapa.
+
+## 2026-10-20 — Custo do estilo no hover do file-explorer
+
+- **Medição:** hover com `transition` em `example/file-explorer` custava
+  ~90 ms por frame em Release (~200 ms em Debug), 81% em estilo; layout
+  ~5%, raster ~1 ms. Os gargalos eram `font: inherit` em `button, input`
+  (`tbox_style_keywords_apply` refazia a busca linear de propriedade para
+  cada um dos 17 campos de `font` × cada declaração), `@media` re-lido do
+  texto para cada nó e pseudo-elemento antes do seletor, e
+  `tbox_string_view_from_cstr` medindo o tamanho byte a byte.
+- **Mudança:** uma busca de propriedade por declaração em
+  `tbox_style_fields_overridden`; a cascata só avalia `@media` depois que
+  um seletor da regra casa; `tbox_string_view_from_cstr` usa `strlen`.
+  Resultado: ~47 ms (Release) e ~69 ms (Debug) por frame. 118 screenshots
+  idênticos byte a byte antes/depois. Nenhum estado global novo.
+- **Segunda rodada:** `tbox_css_computed_style` ganhou um filtro privado de
+  256 bits (tamanho + primeira e última letra da propriedade), montado por
+  `tbox_css_computed_style_index` (`src/css_cascade/tbox_css_cascade_internal.h`)
+  em todo lugar que preenche um; `tbox_css_computed_style_find` rejeita sem
+  varrer as propriedades ausentes, que são a maioria das ~385 consultas por
+  elemento. Cada `tbox_css_stylesheet` guarda os índices das regras com
+  pseudo-elemento; a cascata de `::before`/`::after` percorre só essas e
+  retorna sem alocar quando nenhuma folha tem uma. Medido A/B em Release:
+  ~48,7 → ~44,1 ms por frame (resoluções de cascata por frame ~1440 →
+  ~1080). Screenshots idênticos; testes novos em `test_cascade.c`.
+- **Restante:** casar seletores (~570 por elemento, sem indexar regras por
+  id/classe/tag) ~20% do frame, layout ~20%, `find` ~12% (pelo número de
+  chamadas); o passo maior segue o
+  [estilo incremental](debito-tecnico.md#estilo-e-layout-incrementais).
+
+## 2026-10-20 — Trabalho redundante no estilo (fase A de enxugar `tbox_style`)
+
+- **Medição (callgrind):** `sizeof(tbox_style)` é 39 464 bytes, e copiar e
+  zerar esse struct dava ~35% das instruções do frame. Os nós com `var()`
+  calculavam o estilo completo três vezes; os com palavra-chave CSS-wide,
+  duas.
+- **Mudança:** `tbox_style_resolve_opentype` não zera mais um `tbox_style`
+  inteiro como rascunho do `font-variant`; sem `@property`, a substituição
+  de `var()` não depende das unidades do elemento e dispensa os dois
+  estilos preliminares (`tbox_style_vars_registered_present`); com
+  `@property`, o estilo calculado para conferir o `font-size` é reaproveitado
+  quando nada muda depois dele; o estilo "nada declarado", base de
+  `inherit`/`initial`/`unset`, é calculado uma vez por resolução da árvore;
+  `resolve_declared`/`_keywords`/`_full` escrevem num `tbox_style *` em vez
+  de devolver por valor (o GCC copiava o struct em cada `return`).
+- **Resultado:** `tbox_context_run_frame` no hover do file-explorer caiu de
+  10,5 G para 6,4 G instruções (−39%); ~44 → ~34,6 ms por frame em Release,
+  ~64 → ~50 ms em Debug. Screenshots idênticos byte a byte. O layout virou
+  metade do frame; a fase B (grupos raros fora do struct) segue.
+
+## 2026-10-20 — Cache de runs moldados na face
+
+- **Medição:** depois da fase A, o shaping do HarfBuzz (com o hinting do
+  FreeType nos avanços) era ~38% do frame de transição do file-explorer:
+  o layout molda as mesmas palavras de novo a cada frame, e
+  `tbox_font_measure_text_spaced` (só largura) era a maior parte.
+- **Mudança:** cada `tbox_font_face` guarda os runs já moldados por
+  (texto, `letter-spacing`, direção), em `src/font/tbox_font_face.c`; ver
+  [Texto e fontes](../09-texto-e-fontes.md#cache-de-runs) e
+  [Decisões](decisoes.md#texto-e-fontes). Testes em `tests/font/test_font.c`
+  (glifos depois de só medir, troca de kerning, texto longo, esvaziamento).
+- **Resultado:** `tbox_context_run_frame` 6,4 G → 4,0 G instruções; o layout
+  de 3,3 G para 0,85 G; ~34,6 → ~22 ms por frame em Release. Screenshots
+  idênticos byte a byte. Agora o estilo é ~75% do frame.
+
+## 2026-10-20 — Grupos fora de linha em `tbox_style` (fase B)
+
+- **Mudança:** nove grupos grandes e raros saíram do struct para ponteiros
+  `const` na arena da resolução (ver [Decisões](decisoes.md#css-e-estilo) e
+  [Guia da API](../03-guia-da-api.md#grupos-fora-de-linha-de-tbox_style)):
+  `sizeof(tbox_style)` 39 464 → 9 672 bytes. `tbox_style_resolve` e
+  `_in_viewport` ganharam o parâmetro de arena; `tbox_style.mask` saiu. O
+  grid e o motion path deixaram de resolver num `tbox_style` temporário
+  inteiro por declaração.
+- **Resultado:** `tbox_context_run_frame` 4,0 G → 3,15 G instruções; cópia +
+  zeragem de 1,33 G → 0,49 G; ~22 → ~16 ms por frame em Release (~60 fps),
+  ~32 ms em Debug. Screenshots idênticos byte a byte; testes ajustados aos
+  acessores. Os arquivos de teste que resolvem estilos guardam os grupos
+  numa arena própria do arquivo.

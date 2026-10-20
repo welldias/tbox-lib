@@ -75,6 +75,8 @@ tbox_font_face *tbox_font_face_load(const void *font_data, size_t size, double s
     face->kerning           = false;
     face->kerning_requested = false;
     face->shaper            = NULL;
+    face->runs              = NULL;
+    face->run_count         = 0;
     if (!tbox_font_shaper_attach(face)) {
         FT_Done_Face(ft_face);
         free(font_data_copy);
@@ -84,8 +86,12 @@ tbox_font_face *tbox_font_face_load(const void *font_data, size_t size, double s
     return face;
 }
 
+static void tbox_font_run_cache_clear(tbox_font_face *face);
+
 void tbox_font_face_set_kerning(tbox_font_face *face, bool kerning) {
     if (face != NULL) {
+        if (face->kerning_requested != kerning)
+            tbox_font_run_cache_clear(face); /* the cached runs used the old kerning */
         face->kerning_requested = kerning;
         face->kerning           = kerning && FT_HAS_KERNING(face->ft_face);
     }
@@ -108,6 +114,8 @@ void tbox_font_face_destroy(tbox_font_face *face) {
 
     /* The shaper and FT_Done_Face must run first: they stop reading
      * font_data_copy only once they return. */
+    tbox_font_run_cache_clear(face);
+    free(face->runs);
     tbox_font_shaper_detach(face);
     if (face->stroke_glyph != NULL) FT_Done_Glyph(face->stroke_glyph);
     FT_Done_Face(face->ft_face);
@@ -255,7 +263,7 @@ static void tbox_font_orient(const tbox_font_face *face, tbox_string_view text, 
 
 /* tbox_font_shaper_run plus the vertical orientation: a vertical face
  * needs every glyph, even when the caller only wants the width. */
-static size_t tbox_font_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, tbox_glyph *out, size_t capacity, double *out_width) {
+static size_t tbox_font_run_uncached(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, tbox_glyph *out, size_t capacity, double *out_width) {
     if (face->options.vertical_frame == TBOX_FONT_VERTICAL_NONE)
         return tbox_font_shaper_run(face, text, letter_spacing, direction, out, capacity, out_width);
     size_t count = tbox_font_shaper_run(face, text, letter_spacing, direction, out, capacity, out_width);
@@ -271,6 +279,99 @@ static size_t tbox_font_run(tbox_font_face *face, tbox_string_view text, double 
     if (capacity > 0)
         memcpy(out, all, capacity * sizeof(*all));
     free(all);
+    return count;
+}
+
+/* The run cache (tbox_font_face.runs): a run's glyphs depend only on the
+ * face and on (text, letter-spacing, direction), and HarfBuzz shaping was
+ * most of the layout's cost. Runs longer than this are not kept. */
+#define TBOX_FONT_RUN_CACHE_SLOTS    2048
+#define TBOX_FONT_RUN_CACHE_MAX_TEXT 256
+
+static void tbox_font_run_cache_clear(tbox_font_face *face) {
+    if (face->runs == NULL)
+        return;
+    for (size_t i = 0; i < TBOX_FONT_RUN_CACHE_SLOTS; i++) {
+        free(face->runs[i].text);
+        free(face->runs[i].glyphs);
+    }
+    memset(face->runs, 0, TBOX_FONT_RUN_CACHE_SLOTS * sizeof(*face->runs));
+    face->run_count = 0;
+}
+
+static uint64_t tbox_font_run_hash(tbox_string_view text, double letter_spacing, tbox_font_direction direction) {
+    uint64_t hash = 14695981039346656037ull;
+    for (size_t i = 0; i < text.size; i++) {
+        hash ^= (unsigned char)text.data[i];
+        hash *= 1099511628211ull;
+    }
+    uint64_t bits;
+    memcpy(&bits, &letter_spacing, sizeof(bits));
+    hash ^= bits ^ ((uint64_t)direction << 56);
+    hash *= 1099511628211ull;
+    return hash != 0 ? hash : 1;
+}
+
+/* The slot holding this run, or the empty slot where it would go. NULL
+ * only when the table cannot be allocated. */
+static tbox_font_run_entry *tbox_font_run_slot(tbox_font_face *face, uint64_t hash, tbox_string_view text, double letter_spacing, tbox_font_direction direction) {
+    if (face->runs == NULL) {
+        face->runs = calloc(TBOX_FONT_RUN_CACHE_SLOTS, sizeof(*face->runs));
+        if (face->runs == NULL)
+            return NULL;
+    }
+    for (size_t i = hash & (TBOX_FONT_RUN_CACHE_SLOTS - 1);; i = (i + 1) & (TBOX_FONT_RUN_CACHE_SLOTS - 1)) {
+        tbox_font_run_entry *entry = &face->runs[i];
+        if (entry->hash == 0 || (entry->hash == hash && entry->text_size == text.size && entry->letter_spacing == letter_spacing && entry->direction == direction && memcmp(entry->text, text.data, text.size) == 0))
+            return entry;
+    }
+}
+
+/* tbox_font_run_uncached through the face's run cache. */
+static size_t tbox_font_run(tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, tbox_glyph *out, size_t capacity, double *out_width) {
+    if (text.size == 0 || text.size > TBOX_FONT_RUN_CACHE_MAX_TEXT)
+        return tbox_font_run_uncached(face, text, letter_spacing, direction, out, capacity, out_width);
+    if (letter_spacing == 0.0)
+        letter_spacing = 0.0; /* -0.0 hashes like 0.0 */
+    uint64_t hash              = tbox_font_run_hash(text, letter_spacing, direction);
+    tbox_font_run_entry *entry = tbox_font_run_slot(face, hash, text, letter_spacing, direction);
+    if (entry != NULL && entry->hash != 0 && (entry->glyphs != NULL || capacity == 0)) {
+        if (capacity > 0 && entry->count > 0)
+            memcpy(out, entry->glyphs, (capacity < entry->count ? capacity : entry->count) * sizeof(*out));
+        *out_width = entry->width;
+        return entry->count;
+    }
+    double width;
+    size_t count = tbox_font_run_uncached(face, text, letter_spacing, direction, out, capacity, &width);
+    *out_width   = width;
+    if (entry == NULL || (capacity > 0 && count > capacity))
+        return count; /* the caller asks again with room for every glyph */
+    tbox_glyph *glyphs = NULL;
+    if (capacity > 0 && count > 0) {
+        glyphs = malloc(count * sizeof(*glyphs));
+        if (glyphs == NULL)
+            return count;
+        memcpy(glyphs, out, count * sizeof(*glyphs));
+    }
+    if (entry->hash == 0) {
+        if (face->run_count + 1 > TBOX_FONT_RUN_CACHE_SLOTS / 2) {
+            tbox_font_run_cache_clear(face);
+            entry = tbox_font_run_slot(face, hash, text, letter_spacing, direction);
+        }
+        char *copy = malloc(text.size);
+        if (copy == NULL) {
+            free(glyphs);
+            return count;
+        }
+        memcpy(copy, text.data, text.size);
+        *entry = (tbox_font_run_entry){ .hash = hash, .text = copy, .text_size = text.size, .letter_spacing = letter_spacing, .direction = direction };
+        face->run_count++;
+    }
+    /* A width-only entry gains its glyphs when a caller wants them. */
+    free(entry->glyphs);
+    entry->count  = count;
+    entry->width  = width;
+    entry->glyphs = glyphs;
     return count;
 }
 

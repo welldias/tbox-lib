@@ -53,6 +53,6 @@ typedef struct tbox_grid_areas {
 
 bool tbox_style_grid_parse_tracks(tbox_string_view text, const tbox_style_units *units, double available, double gap, bool definite, bool implicit, tbox_grid_track_list *out);
 bool tbox_style_grid_parse_areas(tbox_string_view text, tbox_grid_areas *out);
-void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style);
+void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style, tbox_arena *arena);
 
 #endif

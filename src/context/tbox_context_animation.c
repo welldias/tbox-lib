@@ -1,3 +1,4 @@
+#include "css_cascade/tbox_css_cascade_internal.h"
 #include "tbox_context_internal.h"
 
 /* `animation` + `@keyframes` (CSS Animations 1), run after transitions on
@@ -89,8 +90,9 @@ static bool tbox_animation_resolve_frames(tbox_context *ctx, tbox_animation_stat
             item->specificity  = (tbox_css_specificity){ 1000, 0, 0 };
             item->source_order = (size_t)-1;
         }
-        tbox_css_computed_style computed = { items, count, NULL };
-        tbox_style style = tbox_style_resolve_in_viewport(entry->node, parent, &computed, viewport_width, viewport_height);
+        tbox_css_computed_style computed = { items, count, NULL, { 0 } };
+        tbox_css_computed_style_index(&computed);
+        tbox_style style = tbox_style_resolve_in_viewport(&ctx->frame_arena, entry->node, parent, &computed, viewport_width, viewport_height);
         for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
             if (frame->mask & (1ull << p)) tbox_style_animatable_read(&style, (tbox_style_animatable)p, frame->values[p]);
         free(items);

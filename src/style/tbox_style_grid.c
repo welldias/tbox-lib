@@ -427,9 +427,22 @@ static bool tbox_grid_flow_parse(tbox_string_view text, bool *column, bool *dens
     return any;
 }
 
+/* The grid container and item properties, resolved apart from the style
+ * (whose track text lives out of line); member names match tbox_style's
+ * and tbox_style_grid_templates'. */
+typedef struct tbox_grid_values {
+    char grid_template_columns[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_template_rows[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_template_areas[TBOX_STYLE_GRID_TEXT_SIZE];
+    char grid_auto_columns[256], grid_auto_rows[256];
+    bool grid_auto_flow_column, grid_auto_flow_dense;
+    tbox_style_grid_line grid_row_start, grid_row_end;
+    tbox_style_grid_line grid_column_start, grid_column_end;
+} tbox_grid_values;
+
 /* Apply declarations from low to high cascade priority. Each declaration
- * is parsed into a temporary style first, so malformed shorthands are atomic. */
-static bool tbox_grid_template_parse(tbox_string_view text, const tbox_style_units *units, tbox_style *style) {
+ * is parsed into a temporary copy first, so malformed shorthands are atomic. */
+static bool tbox_grid_template_parse(tbox_string_view text, const tbox_style_units *units, tbox_grid_values *style) {
     style->grid_template_rows[0] = style->grid_template_columns[0] = style->grid_template_areas[0] = '\0';
     if (tbox_grid_is(text, "none"))
         return true;
@@ -480,7 +493,7 @@ static bool tbox_grid_template_parse(tbox_string_view text, const tbox_style_uni
     return true;
 }
 
-static bool tbox_grid_shorthand_parse(tbox_string_view text, const tbox_style_units *units, tbox_style *style) {
+static bool tbox_grid_shorthand_parse(tbox_string_view text, const tbox_style_units *units, tbox_grid_values *style) {
     style->grid_auto_columns[0] = style->grid_auto_rows[0] = '\0';
     style->grid_auto_flow_column = style->grid_auto_flow_dense = false;
     if (tbox_grid_template_parse(text, units, style))
@@ -516,7 +529,7 @@ static bool tbox_grid_shorthand_parse(tbox_string_view text, const tbox_style_un
     return false;
 }
 
-static bool tbox_grid_apply(const tbox_css_resolved_declaration *decl, const tbox_style_units *units, tbox_style *style) {
+static bool tbox_grid_apply(const tbox_css_resolved_declaration *decl, const tbox_style_units *units, tbox_grid_values *style) {
     tbox_string_view name = decl->property, text = tbox_string_view_trim_ascii_space(decl->value);
     if (tbox_grid_is(name, "grid-template"))
         return tbox_grid_template_parse(text, units, style);
@@ -567,7 +580,7 @@ static bool tbox_grid_apply(const tbox_css_resolved_declaration *decl, const tbo
     return true;
 }
 
-void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style) {
+void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style, tbox_arena *arena) {
     for (int i = 0; i < 4; i++)
         style->grid_units[i] = (tbox_style_grid_units){ units->font_size, units->root_font_size, units->viewport_width, units->viewport_height };
     static const char *const properties[] = { "grid", "grid-template", "grid-template-columns", "grid-template-rows", "grid-template-areas", "grid-auto-columns", "grid-auto-rows", "grid-auto-flow", "grid-area", "grid-row", "grid-column", "grid-row-start", "grid-row-end", "grid-column-start", "grid-column-end" };
@@ -584,9 +597,43 @@ void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox
         }
         decls[j] = decl;
     }
+    if (count == 0)
+        return; /* the style's grid fields stay as they are */
+    const tbox_style_grid_templates *templates = tbox_style_grid_templates_of(style);
+    tbox_grid_values values;
+    memcpy(values.grid_template_columns, templates->grid_template_columns, sizeof(values.grid_template_columns));
+    memcpy(values.grid_template_rows, templates->grid_template_rows, sizeof(values.grid_template_rows));
+    memcpy(values.grid_template_areas, templates->grid_template_areas, sizeof(values.grid_template_areas));
+    memcpy(values.grid_auto_columns, templates->grid_auto_columns, sizeof(values.grid_auto_columns));
+    memcpy(values.grid_auto_rows, templates->grid_auto_rows, sizeof(values.grid_auto_rows));
+    values.grid_auto_flow_column = style->grid_auto_flow_column;
+    values.grid_auto_flow_dense  = style->grid_auto_flow_dense;
+    values.grid_row_start        = style->grid_row_start;
+    values.grid_row_end          = style->grid_row_end;
+    values.grid_column_start     = style->grid_column_start;
+    values.grid_column_end       = style->grid_column_end;
     for (size_t i = 0; i < count; i++) {
-        tbox_style candidate = *style;
+        tbox_grid_values candidate = values;
         if (tbox_grid_apply(decls[i], units, &candidate))
-            *style = candidate;
+            values = candidate;
+    }
+    style->grid_auto_flow_column = values.grid_auto_flow_column;
+    style->grid_auto_flow_dense  = values.grid_auto_flow_dense;
+    style->grid_row_start        = values.grid_row_start;
+    style->grid_row_end          = values.grid_row_end;
+    style->grid_column_start     = values.grid_column_start;
+    style->grid_column_end       = values.grid_column_end;
+    /* No track text at all is the initial (NULL) group. */
+    style->grid_templates = NULL;
+    if (values.grid_template_columns[0] != '\0' || values.grid_template_rows[0] != '\0' || values.grid_template_areas[0] != '\0' || values.grid_auto_columns[0] != '\0' || values.grid_auto_rows[0] != '\0') {
+        tbox_style_grid_templates *copy = tbox_style_group_copy(arena, templates, sizeof(*copy));
+        if (copy != NULL) {
+            memcpy(copy->grid_template_columns, values.grid_template_columns, sizeof(copy->grid_template_columns));
+            memcpy(copy->grid_template_rows, values.grid_template_rows, sizeof(copy->grid_template_rows));
+            memcpy(copy->grid_template_areas, values.grid_template_areas, sizeof(copy->grid_template_areas));
+            memcpy(copy->grid_auto_columns, values.grid_auto_columns, sizeof(copy->grid_auto_columns));
+            memcpy(copy->grid_auto_rows, values.grid_auto_rows, sizeof(copy->grid_auto_rows));
+            style->grid_templates = copy;
+        }
     }
 }

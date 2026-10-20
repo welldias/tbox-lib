@@ -1,3 +1,4 @@
+#include "css_cascade/tbox_css_cascade_internal.h"
 #include "style/tbox_style_internal.h"
 
 #include <string.h>
@@ -94,6 +95,13 @@ static bool tbox_style_vars_is_custom(tbox_string_view property) {
 static bool tbox_style_vars_mentions_var(tbox_string_view value) {
     for (size_t i = 0; i + 4 <= value.size; i++)
         if (tbox_string_view_equal_ascii_ci(tbox_string_view_make(value.data + i, 4), tbox_string_view_from_cstr("var(")))
+            return true;
+    return false;
+}
+
+bool tbox_style_vars_registered_present(const tbox_css_computed_style *computed) {
+    for (size_t i = 0; computed != NULL && i < computed->count; i++)
+        if (computed->items[i].registration != NULL)
             return true;
     return false;
 }
@@ -206,7 +214,7 @@ static bool tbox_style_vars_substitute_text(tbox_arena *arena, const tbox_style_
 }
 
 tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style *computed, const tbox_style_units *units, const tbox_style_custom_properties *inherited, tbox_arena *arena, const tbox_style_custom_properties **out_own, bool keep_own) {
-    tbox_css_computed_style result = { NULL, 0, NULL };
+    tbox_css_computed_style result = { NULL, 0, NULL, { 0 } };
     *out_own                       = inherited;
     if (computed == NULL || computed->count == 0)
         return result;
@@ -255,6 +263,7 @@ tbox_css_computed_style tbox_style_vars_substitute(const tbox_css_computed_style
     }
     if (set != NULL && set->count > 0)
         *out_own = set;
+    tbox_css_computed_style_index(&result);
     return result;
 }
 
@@ -329,7 +338,7 @@ static bool tbox_style_light_dark_text(tbox_arena *arena, tbox_string_view text,
 }
 
 tbox_css_computed_style tbox_style_light_dark_substitute(const tbox_css_computed_style *computed, bool dark, tbox_arena *arena) {
-    tbox_css_computed_style result = { NULL, 0, NULL };
+    tbox_css_computed_style result = { NULL, 0, NULL, { 0 } };
     if (computed == NULL || computed->count == 0)
         return result;
     result.items = (tbox_css_resolved_declaration *)tbox_arena_alloc(arena, computed->count * sizeof(tbox_css_resolved_declaration));
@@ -341,5 +350,6 @@ tbox_css_computed_style tbox_style_light_dark_substitute(const tbox_css_computed
         result.items[i].value = tbox_style_light_dark_text(arena, computed->items[i].value, dark, 0, &value) ? value : tbox_string_view_from_cstr("unset");
     }
     result.count = computed->count;
+    tbox_css_computed_style_index(&result);
     return result;
 }

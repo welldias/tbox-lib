@@ -32,13 +32,13 @@ static tbox_rect tbox_layout_motion_reference(const tbox_layout_box *box, tbox_r
     }
     if (parent == NULL) return viewport;
     tbox_rect reference = parent->border_box;
-    switch (style->offset_path.coord_box) {
+    switch (tbox_style_offset_path_of(style)->coord_box) {
     case TBOX_STYLE_COORD_PADDING_BOX: reference = parent->padding_box; break;
     case TBOX_STYLE_COORD_CONTENT_BOX: reference = parent->content_box; break;
     case TBOX_STYLE_COORD_MARGIN_BOX: reference = parent->margin_box; break;
     default: break;
     }
-    if (style->offset_path.kind == TBOX_STYLE_OFFSET_PATH_BOX && parent->style != NULL) {
+    if (tbox_style_offset_path_of(style)->kind == TBOX_STYLE_OFFSET_PATH_BOX && parent->style != NULL) {
         const tbox_style *p = parent->style;
         const double edges[4] = {
             reference.y - parent->border_box.y,
@@ -72,33 +72,34 @@ static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images, t
             if (style->background_image[0] != '\0' && images != NULL)
                 box->background_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->background_image));
             for (size_t l = 1; l < style->background_layer_count && l < 4 && images != NULL; l++)
-                if (style->background_layers[l - 1].image[0] != '\0')
-                    box->background_layer_images[l - 1] = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->background_layers[l - 1].image));
-            if (style->has_mask && style->mask.image[0] != '\0' && images != NULL)
-                box->mask_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->mask.image));
-            for (size_t l = 0; l < style->mask_layer_count && images != NULL; l++)
-                if (style->mask_layers[l].source.image[0] != '\0')
-                    box->mask_layer_images[l] = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->mask_layers[l].source.image));
-            if (style->has_border_image && style->border_image.image[0] != '\0' && images != NULL)
-                box->border_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->border_image.image));
-            if (style->box_reflect.image[0] != '\0' && images != NULL)
-                box->reflection_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->box_reflect.image));
+                if (tbox_style_background_layers_of(style)->layers[l - 1].image[0] != '\0')
+                    box->background_layer_images[l - 1] = tbox_image_cache_get(images, tbox_string_view_from_cstr(tbox_style_background_layers_of(style)->layers[l - 1].image));
+            const tbox_style_masks *masks = tbox_style_masks_of(style);
+            if (style->has_mask && masks->layers[0].source.image[0] != '\0' && images != NULL)
+                box->mask_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(masks->layers[0].source.image));
+            for (size_t l = 0; l < masks->count && style->has_mask && images != NULL; l++)
+                if (masks->layers[l].source.image[0] != '\0')
+                    box->mask_layer_images[l] = tbox_image_cache_get(images, tbox_string_view_from_cstr(masks->layers[l].source.image));
+            if (style->has_border_image && tbox_style_border_image_of(style)->image[0] != '\0' && images != NULL)
+                box->border_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(tbox_style_border_image_of(style)->image));
+            if (tbox_style_box_reflect_of(style)->image[0] != '\0' && images != NULL)
+                box->reflection_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(tbox_style_box_reflect_of(style)->image));
             for (size_t r = 0; r < box->text_run_count; r++) {
                 tbox_layout_text_run *run = &box->text_runs[r];
                 memset(run->decoration_images, 0, sizeof(run->decoration_images));
                 run->decoration_border_image = NULL;
                 if (images == NULL || run->style == NULL || run->style == style || run->image != NULL) continue;
                 for (size_t l = 0; l < TBOX_STYLE_MAX_BACKGROUND_LAYERS; l++) {
-                    const char *image = l == 0 ? run->style->background_image : run->style->background_layers[l - 1].image;
+                    const char *image = l == 0 ? run->style->background_image : tbox_style_background_layers_of(run->style)->layers[l - 1].image;
                     if (image[0] != '\0') run->decoration_images[l] = tbox_image_cache_get(images, tbox_string_view_from_cstr(image));
                 }
-                if (run->style->has_border_image && run->style->border_image.image[0] != '\0')
-                    run->decoration_border_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(run->style->border_image.image));
+                if (run->style->has_border_image && tbox_style_border_image_of(run->style)->image[0] != '\0')
+                    run->decoration_border_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(tbox_style_border_image_of(run->style)->image));
             }
             box->has_transform = false;
             double m[6], offset[6];
             const double *motion = NULL;
-            if (style->offset_path.kind != TBOX_STYLE_OFFSET_PATH_NONE) {
+            if (tbox_style_offset_path_of(style)->kind != TBOX_STYLE_OFFSET_PATH_NONE) {
                 tbox_style_clip_path outline = { .kind = TBOX_STYLE_CLIP_PATH_INSET };
                 tbox_rect reference = tbox_layout_motion_reference(box, viewport, &outline);
                 tbox_rect motion_box = box->border_box;

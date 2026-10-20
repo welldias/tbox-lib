@@ -120,7 +120,7 @@ void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, con
             &(tbox_css_query_context){ style->query_container, style->custom_properties });
         tbox_style *text = tbox_arena_alloc(arena, sizeof(*text));
         if (text != NULL) {
-            *text = tbox_style_resolve_in_viewport(NULL, style, &computed, viewport_width, viewport_height);
+            *text = tbox_style_resolve_in_viewport(arena, NULL, style, &computed, viewport_width, viewport_height);
             if (tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("color")) == NULL)
                 text->color = (tbox_css_rgba){117, 117, 117, 255};
             /* This is text ink, not an opacity group around the control. */
@@ -137,7 +137,7 @@ void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, con
         if (out == NULL)
             continue;
         tbox_css_computed_style computed = tbox_css_cascade_resolve_pseudo_element_in_viewport(sources, source_count, node, tbox_style_part_names[part], tbox_style_part_states[part], viewport_width, viewport_height, reduced_motion, &(tbox_css_query_context){ style->query_container, style->custom_properties });
-        tbox_style resolved              = tbox_style_resolve_in_viewport(NULL, style, &computed, viewport_width, viewport_height);
+        tbox_style resolved              = tbox_style_resolve_in_viewport(arena, NULL, style, &computed, viewport_width, viewport_height);
         tbox_style_part_copy(&resolved, out);
         out->color_declared      = tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("color")) != NULL;
         out->background_declared = tbox_css_computed_style_find(&computed, tbox_string_view_from_cstr("background-color")) != NULL ||

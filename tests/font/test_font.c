@@ -128,6 +128,46 @@ int tbox_test_font_run(void) {
         TBOX_TEST_ASSERT(glyph.height > 0);
         TBOX_TEST_ASSERT(glyph.alpha != NULL);
 
+        /* 5b: the face's run cache answers like a fresh face: glyphs asked
+         * after a width-only measure, a kerning change, runs past the
+         * cache's text limit, and after the cache empties itself. */
+        tbox_font_face *fresh = tbox_font_face_load(font_data, font_size, 16.0);
+        TBOX_TEST_ASSERT(fresh != NULL);
+        if (fresh != NULL) {
+            tbox_string_view word = tbox_test_font_view_from_cstr("AVATAR Wave");
+            double width          = tbox_font_measure_text(face, word);
+            tbox_arena arena      = tbox_arena_create(0);
+            tbox_glyph *cached, *shaped;
+            size_t cached_count, shaped_count;
+            double cached_width, shaped_width;
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, face, word, 0.0, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &cached, &cached_count, &cached_width));
+            TBOX_TEST_ASSERT(tbox_font_shape(&arena, fresh, word, 0.0, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &shaped, &shaped_count, &shaped_width));
+            TBOX_TEST_ASSERT(cached_width == width && cached_width == shaped_width && cached_count == shaped_count);
+            TBOX_TEST_ASSERT(cached_count > 0 && memcmp(cached, shaped, cached_count * sizeof(*cached)) == 0);
+
+            tbox_font_face_set_kerning(face, true);
+            tbox_font_face_set_kerning(fresh, true);
+            TBOX_TEST_ASSERT(tbox_font_measure_text(face, word) == tbox_font_measure_text(fresh, word));
+            tbox_font_face_set_kerning(face, false);
+            TBOX_TEST_ASSERT(tbox_font_measure_text(face, word) == width);
+            tbox_font_face_set_kerning(fresh, false);
+
+            char long_text[600];
+            for (size_t i = 0; i < sizeof(long_text); i++)
+                long_text[i] = (char)('a' + i % 26);
+            tbox_string_view long_view = tbox_string_view_make(long_text, sizeof(long_text));
+            TBOX_TEST_ASSERT(tbox_font_measure_text(face, long_view) == tbox_font_measure_text(fresh, long_view));
+
+            char distinct[16];
+            for (int i = 0; i < 3000; i++) {
+                int length = snprintf(distinct, sizeof(distinct), "w%d", i);
+                tbox_font_measure_text(face, tbox_string_view_make(distinct, (size_t)length));
+            }
+            TBOX_TEST_ASSERT(tbox_font_measure_text(face, word) == width);
+            tbox_arena_destroy(&arena);
+            tbox_font_face_destroy(fresh);
+        }
+
         tbox_font_face_destroy(face);
     }
 

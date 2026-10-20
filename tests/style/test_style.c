@@ -9,6 +9,10 @@
 #include "test_support.h"
 #include "style/tbox_style_internal.h"
 
+/* Out-of-line style groups (tbox_style_masks_of, ...) of the styles this
+ * file resolves live here, for the whole run. */
+static tbox_arena style_arena;
+
 static tbox_html_document *parse_html_cstr(const char *html) {
     return tbox_html_parse(html, strlen(html));
 }
@@ -21,7 +25,7 @@ static tbox_css_stylesheet *parse_css_cstr(const char *css) {
  * sequence tbox_style_resolve_tree performs per node. */
 static tbox_style resolve_node(const tbox_css_stylesheet *sheet, const tbox_html_node *node, const tbox_style *parent_style) {
     tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(sheet, node);
-    tbox_style style                 = tbox_style_resolve(node, parent_style, &computed);
+    tbox_style style                 = tbox_style_resolve(&style_arena, node, parent_style, &computed);
     tbox_css_computed_style_destroy(&computed);
     return style;
 }
@@ -46,6 +50,7 @@ int tbox_test_text_paint_run(void);
 int tbox_test_motion_run(void);
 
 int tbox_test_style_run(void) {
+    style_arena = tbox_arena_create(0);
     int failures = tbox_test_style_at_rules_run();
 
     /* 1: an explicit property beats the initial value. */
@@ -1979,14 +1984,14 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(strcmp(parent.hyphenate_character, "=") == 0 && strcmp(child.hyphenate_character, "=") == 0);
         TBOX_TEST_ASSERT(parent.scroll_padding[0].value == 1.0 && parent.scroll_padding[3].value == 2.0);
         TBOX_TEST_ASSERT(parent.scroll_margin[0].value == 4.0 && parent.scroll_margin[2].value == 0.0 && child.scroll_padding[0].value == 0.0);
-        TBOX_TEST_ASSERT(parent.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET && parent.clip_path.inset[0].value == 5.0 && parent.clip_path.inset[3].value == 10.0);
-        TBOX_TEST_ASSERT(parent.clip_path.inset[1].kind == TBOX_STYLE_LENGTH_PERCENT && parent.clip_path.inset[1].value == 100.0 && parent.clip_path.inset[1].px_offset == -80.0);
-        TBOX_TEST_ASSERT(parent.clip_path.inset[2].kind == TBOX_STYLE_LENGTH_PERCENT && parent.clip_path.inset[2].value == 0.0);
-        TBOX_TEST_ASSERT(child.clip_path.kind == TBOX_STYLE_CLIP_PATH_CIRCLE);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&parent)->kind == TBOX_STYLE_CLIP_PATH_INSET && tbox_style_clip_path_of(&parent)->inset[0].value == 5.0 && tbox_style_clip_path_of(&parent)->inset[3].value == 10.0);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&parent)->inset[1].kind == TBOX_STYLE_LENGTH_PERCENT && tbox_style_clip_path_of(&parent)->inset[1].value == 100.0 && tbox_style_clip_path_of(&parent)->inset[1].px_offset == -80.0);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&parent)->inset[2].kind == TBOX_STYLE_LENGTH_PERCENT && tbox_style_clip_path_of(&parent)->inset[2].value == 0.0);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&child)->kind == TBOX_STYLE_CLIP_PATH_CIRCLE);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("div { clip: rect(1px, 2px, 3px, 4px); hyphenate-character: auto; }");
         parent = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(parent.clip_path.kind == TBOX_STYLE_CLIP_PATH_NONE && parent.hyphenate_character[0] == '\0');
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&parent)->kind == TBOX_STYLE_CLIP_PATH_NONE && parent.hyphenate_character[0] == '\0');
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -2166,10 +2171,10 @@ int tbox_test_style_run(void) {
             "div { font-size: 20px; }"
             "p { font-size: 10px; width: 2rem; height: 1in; margin: 12pt 1pc 2.54cm 10mm; padding-left: 2ch; padding-top: 4ex; min-width: 50vw; max-height: 10vh; }");
         tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(sheet, div);
-        tbox_style parent                = tbox_style_resolve_in_viewport(div, NULL, &computed, 800.0, 600.0);
+        tbox_style parent                = tbox_style_resolve_in_viewport(&style_arena, div, NULL, &computed, 800.0, 600.0);
         tbox_css_computed_style_destroy(&computed);
         computed         = tbox_css_cascade_resolve_stylesheet(sheet, p);
-        tbox_style child = tbox_style_resolve_in_viewport(p, &parent, &computed, 800.0, 600.0);
+        tbox_style child = tbox_style_resolve_in_viewport(&style_arena, p, &parent, &computed, 800.0, 600.0);
         TBOX_TEST_ASSERT(parent.root_font_size == 20.0 && child.root_font_size == 20.0);
         TBOX_TEST_ASSERT(child.width.kind == TBOX_STYLE_LENGTH_PX && child.width.value == 40.0);
         TBOX_TEST_ASSERT(child.height.value == 96.0);
@@ -2179,7 +2184,7 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(child.padding[3].value == 10.0 && child.padding[0].value == 20.0);
         TBOX_TEST_ASSERT(child.min_width.value == 400.0 && child.max_height.value == 60.0);
         /* Without a viewport, vw is invalid and falls back. */
-        tbox_style no_viewport = tbox_style_resolve(p, &parent, &computed);
+        tbox_style no_viewport = tbox_style_resolve(&style_arena, p, &parent, &computed);
         TBOX_TEST_ASSERT(no_viewport.min_width.kind == TBOX_STYLE_LENGTH_AUTO);
         tbox_css_computed_style_destroy(&computed);
         tbox_css_stylesheet_destroy(sheet);
@@ -2542,20 +2547,20 @@ int tbox_test_style_run(void) {
                                                     " background: url(a.png) 0 0 / 10px no-repeat, linear-gradient(red, blue), #fff; background-repeat: repeat-x; }");
         tbox_style style           = resolve_node(sheet, div, NULL);
         /* blur() makes it a layer filter: no op-by-op matrix */
-        TBOX_TEST_ASSERT(!style.has_filter && style.filters.count == 2 && style.filters.ops[1].kind == TBOX_STYLE_FILTER_BLUR && style.filters.ops[1].radius == 2.0);
-        TBOX_TEST_ASSERT(style.filters.ops[0].matrix[0] == -1.0 && style.filters.ops[0].matrix[4] == 1.0 && style.filters.ops[0].matrix[18] == 1.0);
-        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_CIRCLE && style.clip_path.radius[0].value == 30.0);
-        TBOX_TEST_ASSERT(style.clip_path.center[0].px_offset == 10.0 && style.clip_path.center[1].px_offset == 20.0);
+        TBOX_TEST_ASSERT(!style.has_filter && tbox_style_filters_of(&style)->count == 2 && tbox_style_filters_of(&style)->ops[1].kind == TBOX_STYLE_FILTER_BLUR && tbox_style_filters_of(&style)->ops[1].radius == 2.0);
+        TBOX_TEST_ASSERT(tbox_style_filters_of(&style)->ops[0].matrix[0] == -1.0 && tbox_style_filters_of(&style)->ops[0].matrix[4] == 1.0 && tbox_style_filters_of(&style)->ops[0].matrix[18] == 1.0);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_CIRCLE && tbox_style_clip_path_of(&style)->radius[0].value == 30.0);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->center[0].px_offset == 10.0 && tbox_style_clip_path_of(&style)->center[1].px_offset == 20.0);
         TBOX_TEST_ASSERT(style.background_layer_count == 3 && strcmp(style.background_image, "a.png") == 0 && style.background_size[0].value == 10.0);
-        TBOX_TEST_ASSERT(style.background_layers[1].image[0] == '\0' && style.background_layers[1].gradient.kind == TBOX_STYLE_GRADIENT_NONE); /* color-only last layer */
-        TBOX_TEST_ASSERT(style.background_layers[0].gradient.kind == TBOX_STYLE_GRADIENT_LINEAR);
-        TBOX_TEST_ASSERT(style.background_repeat_x && !style.background_repeat_y && style.background_layers[0].repeat_x && !style.background_layers[0].repeat_y); /* the list repeats */
+        TBOX_TEST_ASSERT(tbox_style_background_layers_of(&style)->layers[1].image[0] == '\0' && tbox_style_background_layers_of(&style)->layers[1].gradient.kind == TBOX_STYLE_GRADIENT_NONE); /* color-only last layer */
+        TBOX_TEST_ASSERT(tbox_style_background_layers_of(&style)->layers[0].gradient.kind == TBOX_STYLE_GRADIENT_LINEAR);
+        TBOX_TEST_ASSERT(style.background_repeat_x && !style.background_repeat_y && tbox_style_background_layers_of(&style)->layers[0].repeat_x && !tbox_style_background_layers_of(&style)->layers[0].repeat_y); /* the list repeats */
         TBOX_TEST_ASSERT(rgba_eq(style.background_color, (tbox_css_rgba){ 255, 255, 255, 255 }));
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("div { clip-path: inset(5px 10% round 4px / 8px); filter: none; }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET && style.clip_path.inset[0].value == 5.0 && style.clip_path.inset[1].value == 10.0);
-        TBOX_TEST_ASSERT(style.clip_path.round_h[2] == 4.0 && style.clip_path.round_v[2] == 8.0 && !style.has_filter);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_INSET && tbox_style_clip_path_of(&style)->inset[0].value == 5.0 && tbox_style_clip_path_of(&style)->inset[1].value == 10.0);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->round_h[2] == 4.0 && tbox_style_clip_path_of(&style)->round_v[2] == 8.0 && !style.has_filter);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -2691,10 +2696,10 @@ int tbox_test_style_run(void) {
             "p { min-width: 20dvmax; padding-left: 10lvw; cursor: zoom-in;"
             " list-style-type: lower-greek; background-attachment: scroll; }");
         tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(sheet, div);
-        tbox_style parent = tbox_style_resolve_in_viewport(div, NULL, &computed, 800.0, 600.0);
+        tbox_style parent = tbox_style_resolve_in_viewport(&style_arena, div, NULL, &computed, 800.0, 600.0);
         tbox_css_computed_style_destroy(&computed);
         computed = tbox_css_cascade_resolve_stylesheet(sheet, p);
-        tbox_style child = tbox_style_resolve_in_viewport(p, &parent, &computed, 800.0, 600.0);
+        tbox_style child = tbox_style_resolve_in_viewport(&style_arena, p, &parent, &computed, 800.0, 600.0);
         TBOX_TEST_ASSERT(parent.width.value == 200.0 && parent.height.value == 60.0 && parent.margin[3].value == 30.0);
         TBOX_TEST_ASSERT(child.min_width.value == 160.0 && child.padding[3].value == 80.0);
         TBOX_TEST_ASSERT(parent.cursor == TBOX_STYLE_CURSOR_COPY && child.cursor == TBOX_STYLE_CURSOR_ZOOM_IN);
@@ -2754,17 +2759,17 @@ int tbox_test_style_run(void) {
         tbox_style a = resolve_node(sheet, div, NULL);
         tbox_style b = resolve_node(sheet, p, NULL);
         tbox_style c = resolve_node(sheet, i, NULL);
-        TBOX_TEST_ASSERT(a.filters.count == 4 && a.filters.spreads && !a.has_filter && a.box_shadow_count == 1);
-        TBOX_TEST_ASSERT(a.filters.ops[0].kind == TBOX_STYLE_FILTER_MATRIX && a.filters.ops[1].kind == TBOX_STYLE_FILTER_DROP_SHADOW && a.filters.ops[2].kind == TBOX_STYLE_FILTER_BLUR && a.filters.ops[3].kind == TBOX_STYLE_FILTER_MATRIX);
-        TBOX_TEST_ASSERT(a.filters.ops[1].shadow.offset_y == 3.0 && a.filters.ops[1].shadow.color.b == 255 && a.filters.ops[2].radius == 3.0);
+        TBOX_TEST_ASSERT(tbox_style_filters_of(&a)->count == 4 && tbox_style_filters_of(&a)->spreads && !a.has_filter && a.box_shadow_count == 1);
+        TBOX_TEST_ASSERT(tbox_style_filters_of(&a)->ops[0].kind == TBOX_STYLE_FILTER_MATRIX && tbox_style_filters_of(&a)->ops[1].kind == TBOX_STYLE_FILTER_DROP_SHADOW && tbox_style_filters_of(&a)->ops[2].kind == TBOX_STYLE_FILTER_BLUR && tbox_style_filters_of(&a)->ops[3].kind == TBOX_STYLE_FILTER_MATRIX);
+        TBOX_TEST_ASSERT(tbox_style_filters_of(&a)->ops[1].shadow.offset_y == 3.0 && tbox_style_filters_of(&a)->ops[1].shadow.color.b == 255 && tbox_style_filters_of(&a)->ops[2].radius == 3.0);
         /* 3 * 3px of blur + 3px offset + half of the 4px shadow blur * 3 */
-        TBOX_TEST_ASSERT(tbox_style_filter_extent(&a.filters) == 18.0 && tbox_style_needs_layer(&a) && a.mix_blend_mode == TBOX_STYLE_BLEND_MULTIPLY);
+        TBOX_TEST_ASSERT(tbox_style_filter_extent(tbox_style_filters_of(&a)) == 18.0 && tbox_style_needs_layer(&a) && a.mix_blend_mode == TBOX_STYLE_BLEND_MULTIPLY);
         /* three layers (the last is the color one): the list repeats */
-        TBOX_TEST_ASSERT(a.background_layer_count == 3 && a.background_blend_mode == TBOX_STYLE_BLEND_MULTIPLY && a.background_layers[0].blend_mode == TBOX_STYLE_BLEND_SCREEN && a.background_layers[1].blend_mode == TBOX_STYLE_BLEND_MULTIPLY);
-        TBOX_TEST_ASSERT(b.has_filter && !b.filters.spreads && b.filter_matrix[0] == 2.0 && !a.has_backdrop_filter);
-        TBOX_TEST_ASSERT(b.has_backdrop_filter && b.backdrop_filters.count == 2 && b.backdrop_filters.ops[0].kind == TBOX_STYLE_FILTER_BLUR && fabs(b.backdrop_filters.ops[1].matrix[0] - 0.2126) < 1e-6);
-        TBOX_TEST_ASSERT(b.has_mask && b.mask_luminance && b.mask.gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && !b.mask.repeat_x && b.mask.size[0].value == 50.0 && tbox_style_needs_layer(&b));
-        TBOX_TEST_ASSERT(c.has_mask && !c.mask_luminance && strcmp(c.mask.image, "m.png") == 0 && c.mask.size_kind == TBOX_STYLE_BACKGROUND_SIZE_COVER);
+        TBOX_TEST_ASSERT(a.background_layer_count == 3 && a.background_blend_mode == TBOX_STYLE_BLEND_MULTIPLY && tbox_style_background_layers_of(&a)->layers[0].blend_mode == TBOX_STYLE_BLEND_SCREEN && tbox_style_background_layers_of(&a)->layers[1].blend_mode == TBOX_STYLE_BLEND_MULTIPLY);
+        TBOX_TEST_ASSERT(b.has_filter && !tbox_style_filters_of(&b)->spreads && b.filter_matrix[0] == 2.0 && !a.has_backdrop_filter);
+        TBOX_TEST_ASSERT(b.has_backdrop_filter && tbox_style_backdrop_filters_of(&b)->count == 2 && tbox_style_backdrop_filters_of(&b)->ops[0].kind == TBOX_STYLE_FILTER_BLUR && fabs(tbox_style_backdrop_filters_of(&b)->ops[1].matrix[0] - 0.2126) < 1e-6);
+        TBOX_TEST_ASSERT(b.has_mask && b.mask_luminance && tbox_style_masks_of(&b)->layers[0].source.gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && !tbox_style_masks_of(&b)->layers[0].source.repeat_x && tbox_style_masks_of(&b)->layers[0].source.size[0].value == 50.0 && tbox_style_needs_layer(&b));
+        TBOX_TEST_ASSERT(c.has_mask && !c.mask_luminance && strcmp(tbox_style_masks_of(&c)->layers[0].source.image, "m.png") == 0 && tbox_style_masks_of(&c)->layers[0].source.size_kind == TBOX_STYLE_BACKGROUND_SIZE_COVER);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -2787,7 +2792,7 @@ int tbox_test_style_run(void) {
         tbox_style d = resolve_node(sheet, i, NULL);
         tbox_style e = resolve_node(sheet, b, NULL);
         tbox_style f = resolve_node(sheet, st, NULL);
-        const tbox_style_border_image *bi = &a.border_image;
+        const tbox_style_border_image *bi = tbox_style_border_image_of(&a);
         TBOX_TEST_ASSERT(a.has_border_image && strcmp(bi->image, "f.png") == 0 && bi->fill);
         TBOX_TEST_ASSERT(bi->slice[0].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->slice[0].number == 30.0 && bi->slice[2].number == 30.0);
         TBOX_TEST_ASSERT(bi->slice[1].kind == TBOX_STYLE_BORDER_IMAGE_LENGTH && bi->slice[1].length.kind == TBOX_STYLE_LENGTH_PERCENT && bi->slice[3].length.value == 40.0);
@@ -2795,16 +2800,16 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(bi->width[2].kind == TBOX_STYLE_BORDER_IMAGE_AUTO && bi->width[3].length.value == 10.0);
         TBOX_TEST_ASSERT(bi->outset[0].kind == TBOX_STYLE_BORDER_IMAGE_LENGTH && bi->outset[0].length.value == 5.0 && bi->outset[1].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->outset[3].number == 1.0);
         TBOX_TEST_ASSERT(bi->repeat[0] == TBOX_STYLE_BORDER_IMAGE_ROUND && bi->repeat[1] == TBOX_STYLE_BORDER_IMAGE_SPACE && a.border_widths[0] == 10.0);
-        bi = &c.border_image;
+        bi = tbox_style_border_image_of(&c);
         TBOX_TEST_ASSERT(c.has_border_image && bi->image[0] == '\0' && bi->gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && bi->slice[3].number == 10.0 && !bi->fill);
         TBOX_TEST_ASSERT(bi->repeat[0] == TBOX_STYLE_BORDER_IMAGE_REPEAT && bi->repeat[1] == TBOX_STYLE_BORDER_IMAGE_REPEAT && bi->width[2].length.kind == TBOX_STYLE_LENGTH_PERCENT);
-        TBOX_TEST_ASSERT(!d.has_border_image && d.border_image.slice[0].length.value == 100.0);
-        bi = &e.border_image;
+        TBOX_TEST_ASSERT(!d.has_border_image && tbox_style_border_image_of(&d)->slice[0].length.value == 100.0);
+        bi = tbox_style_border_image_of(&e);
         TBOX_TEST_ASSERT(e.has_border_image && strcmp(bi->image, "z.png") == 0 && bi->slice[0].kind == TBOX_STYLE_BORDER_IMAGE_LENGTH && bi->slice[0].length.value == 100.0);
         TBOX_TEST_ASSERT(bi->outset[2].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->outset[2].number == 0.0 && bi->width[1].kind == TBOX_STYLE_BORDER_IMAGE_NUMBER && bi->width[1].number == 1.0);
         TBOX_TEST_ASSERT(bi->repeat[0] == TBOX_STYLE_BORDER_IMAGE_STRETCH && bi->repeat[1] == TBOX_STYLE_BORDER_IMAGE_ROUND);
         /* `10 / / 3px`: an empty width keeps its initial value */
-        TBOX_TEST_ASSERT(strcmp(f.border_image.image, "x.png") == 0 && f.border_image.outset[1].length.value == 3.0 && f.border_image.width[0].number == 1.0);
+        TBOX_TEST_ASSERT(strcmp(tbox_style_border_image_of(&f)->image, "x.png") == 0 && tbox_style_border_image_of(&f)->outset[1].length.value == 3.0 && tbox_style_border_image_of(&f)->width[0].number == 1.0);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -2947,27 +2952,27 @@ int tbox_test_style_run(void) {
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
         tbox_css_stylesheet *sheet = parse_css_cstr("div { clip-path: xywh(10% 5px calc(50% - 4px) 30px round 10% 20% / 3px 4px); }");
         tbox_style style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET);
-        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.inset[0], 100) == 5);
-        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.inset[3], 200) == 20);
-        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.inset[1], 200) == 84);
-        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.inset[2], 100) == 65);
-        TBOX_TEST_ASSERT(style.clip_path.round_h_percent[0] == 10 && style.clip_path.round_h_percent[1] == 20);
-        TBOX_TEST_ASSERT(style.clip_path.round_v[0] == 3 && style.clip_path.round_v[1] == 4);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_INSET);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_clip_path_of(&style)->inset[0], 100) == 5);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_clip_path_of(&style)->inset[3], 200) == 20);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_clip_path_of(&style)->inset[1], 200) == 84);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_clip_path_of(&style)->inset[2], 100) == 65);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->round_h_percent[0] == 10 && tbox_style_clip_path_of(&style)->round_h_percent[1] == 20);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->round_v[0] == 3 && tbox_style_clip_path_of(&style)->round_v[1] == 4);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("div { clip-path: inset(0 round 10% 20% 30% 40% / 5% 6% 7% 8%); }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.clip_path.round_h_percent[3] == 40 && style.clip_path.round_v_percent[3] == 8);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->round_h_percent[3] == 40 && tbox_style_clip_path_of(&style)->round_v_percent[3] == 8);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("div { clip-path: inset(0 round calc(10% + 2px) / calc(20% + 3px)); }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.clip_path.round_h[0] == 2 && style.clip_path.round_h_percent[0] == 10);
-        TBOX_TEST_ASSERT(style.clip_path.round_v[0] == 3 && style.clip_path.round_v_percent[0] == 20);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->round_h[0] == 2 && tbox_style_clip_path_of(&style)->round_h_percent[0] == 10);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->round_v[0] == 3 && tbox_style_clip_path_of(&style)->round_v_percent[0] == 20);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("div { clip-path: xywh(-10px -20px 0 0 round 25%); }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET);
-        TBOX_TEST_ASSERT(style.clip_path.round_h_percent[2] == 25 && style.clip_path.round_v_percent[2] == 25);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_INSET);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->round_h_percent[2] == 25 && tbox_style_clip_path_of(&style)->round_v_percent[2] == 25);
         tbox_css_stylesheet_destroy(sheet);
         static const char *const invalid[] = {
             "xywh(0 0 -1px 10px)", "xywh(0 0 10px -1%)", "xywh(0 0 10px)",
@@ -2980,7 +2985,7 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { clip-path: %s; }", invalid[i]);
             sheet = parse_css_cstr(css);
             style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT_MSG(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
+            TBOX_TEST_ASSERT_MSG(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
             tbox_css_stylesheet_destroy(sheet);
         }
         tbox_html_document_destroy(doc);
@@ -3053,10 +3058,10 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { clip-path: %s; }", cases[i].value);
             tbox_css_stylesheet *sheet = parse_css_cstr(css);
             tbox_style style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT_MSG(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_INSET, cases[i].value);
+            TBOX_TEST_ASSERT_MSG(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_INSET, cases[i].value);
             for (size_t side = 0; side < 4; side++)
-                TBOX_TEST_ASSERT_MSG(fabs(tbox_style_length_resolve(style.clip_path.inset[side], side % 2 ? 200 : 100) - cases[i].edges[side]) < 1e-9, cases[i].value);
-            if (i == 0) TBOX_TEST_ASSERT(style.clip_path.round_h_percent[0] == 10 && style.clip_path.round_v_percent[0] == 20);
+                TBOX_TEST_ASSERT_MSG(fabs(tbox_style_length_resolve(tbox_style_clip_path_of(&style)->inset[side], side % 2 ? 200 : 100) - cases[i].edges[side]) < 1e-9, cases[i].value);
+            if (i == 0) TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->round_h_percent[0] == 10 && tbox_style_clip_path_of(&style)->round_v_percent[0] == 20);
             tbox_css_stylesheet_destroy(sheet);
         }
         static const char *const invalid[] = {
@@ -3069,7 +3074,7 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { clip-path: %s; }", invalid[i]);
             tbox_css_stylesheet *sheet = parse_css_cstr(css);
             tbox_style style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT_MSG(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
+            TBOX_TEST_ASSERT_MSG(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
             tbox_css_stylesheet_destroy(sheet);
         }
         tbox_html_document_destroy(doc);
@@ -3429,7 +3434,7 @@ int tbox_test_style_run(void) {
                 TBOX_TEST_ASSERT(fabs(g->stops[0].position.value - cases[i].first) < 1e-9);
                 TBOX_TEST_ASSERT(fabs(g->stops[g->stop_count - 1].position.value - cases[i].last) < 1e-9);
             }
-            TBOX_TEST_ASSERT(style.has_mask && style.mask.gradient.kind == TBOX_STYLE_GRADIENT_CONIC);
+            TBOX_TEST_ASSERT(style.has_mask && tbox_style_masks_of(&style)->layers[0].source.gradient.kind == TBOX_STYLE_GRADIENT_CONIC);
             if (i == 2) TBOX_TEST_ASSERT(g->center[0].value == 25 && g->center[1].value == 75);
             if (i == 4) TBOX_TEST_ASSERT(g->stop_count == 4);
             tbox_css_stylesheet_destroy(sheet);
@@ -3459,10 +3464,10 @@ int tbox_test_style_run(void) {
         const tbox_html_node *div = tbox_html_document_root(doc)->first_child;
         tbox_css_stylesheet *sheet = parse_css_cstr("div { clip-path: polygon(evenodd, -10px 0, calc(100% - 5px) 0, 50% min(30px, 90%)); }");
         tbox_style style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_POLYGON && style.clip_path.evenodd && style.clip_path.point_count == 3);
+        TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_POLYGON && tbox_style_clip_path_of(&style)->evenodd && tbox_style_clip_path_of(&style)->point_count == 3);
         TBOX_TEST_ASSERT(tbox_style_needs_layer(&style));
-        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.points[1][0], 100) == 95);
-        TBOX_TEST_ASSERT(tbox_style_length_resolve(style.clip_path.points[2][1], 100) == 30);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_clip_path_of(&style)->points[1][0], 100) == 95);
+        TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_clip_path_of(&style)->points[2][1], 100) == 30);
         tbox_css_stylesheet_destroy(sheet);
         static const char *const invalid[] = {
             "polygon()", "polygon(0 0, 100% 0)", "polygon(0, 100% 0, 0 100%)",
@@ -3477,7 +3482,7 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { clip-path: %s; }", invalid[i]);
             sheet = parse_css_cstr(css);
             style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT_MSG(style.clip_path.kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
+            TBOX_TEST_ASSERT_MSG(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_NONE, invalid[i]);
             tbox_css_stylesheet_destroy(sheet);
         }
         for (int n = 32; n <= 33; n++) {
@@ -3486,7 +3491,7 @@ int tbox_test_style_run(void) {
             strcat(css, "); }");
             sheet = parse_css_cstr(css);
             style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT((style.clip_path.kind == TBOX_STYLE_CLIP_PATH_POLYGON) == (n == 32));
+            TBOX_TEST_ASSERT((tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_POLYGON) == (n == 32));
             tbox_css_stylesheet_destroy(sheet);
         }
         tbox_html_document_destroy(doc);
@@ -3575,8 +3580,8 @@ int tbox_test_style_run(void) {
         tbox_style style            = resolve_node(sheet, span, &parent);
         TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_LEFT && style.clear == TBOX_STYLE_CLEAR_RIGHT);
         TBOX_TEST_ASSERT(style.display == TBOX_STYLE_DISPLAY_BLOCK); /* blockified */
-        TBOX_TEST_ASSERT(style.shape_outside.kind == TBOX_STYLE_SHAPE_OUTSIDE_SHAPE && style.shape_outside.box == TBOX_STYLE_SHAPE_BOX_BORDER);
-        TBOX_TEST_ASSERT(style.shape_outside.shape.kind == TBOX_STYLE_CLIP_PATH_CIRCLE);
+        TBOX_TEST_ASSERT(tbox_style_shape_outside_of(&style)->kind == TBOX_STYLE_SHAPE_OUTSIDE_SHAPE && tbox_style_shape_outside_of(&style)->box == TBOX_STYLE_SHAPE_BOX_BORDER);
+        TBOX_TEST_ASSERT(tbox_style_shape_outside_of(&style)->shape.kind == TBOX_STYLE_CLIP_PATH_CIRCLE);
         TBOX_TEST_ASSERT(style.shape_margin.kind == TBOX_STYLE_LENGTH_PX && style.shape_margin.value == 6.0);
         TBOX_TEST_ASSERT(style.shape_image_threshold == 1.0);
         parent.direction_rtl = true;
@@ -3599,16 +3604,16 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_NONE);
         style = resolve_node(sheet, div, NULL);
         TBOX_TEST_ASSERT(style.display == TBOX_STYLE_DISPLAY_BLOCK && style.display_flow_root);
-        TBOX_TEST_ASSERT(style.shape_outside.kind == TBOX_STYLE_SHAPE_OUTSIDE_IMAGE && strcmp(style.shape_outside.image, "a.png") == 0);
+        TBOX_TEST_ASSERT(tbox_style_shape_outside_of(&style)->kind == TBOX_STYLE_SHAPE_OUTSIDE_IMAGE && strcmp(tbox_style_shape_outside_of(&style)->image, "a.png") == 0);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("div { shape-outside: content-box; float: bogus; }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.shape_outside.kind == TBOX_STYLE_SHAPE_OUTSIDE_BOX && style.shape_outside.box == TBOX_STYLE_SHAPE_BOX_CONTENT);
+        TBOX_TEST_ASSERT(tbox_style_shape_outside_of(&style)->kind == TBOX_STYLE_SHAPE_OUTSIDE_BOX && tbox_style_shape_outside_of(&style)->box == TBOX_STYLE_SHAPE_BOX_CONTENT);
         TBOX_TEST_ASSERT(style.float_side == TBOX_STYLE_FLOAT_NONE);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("div { shape-outside: circle() circle(); }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.shape_outside.kind == TBOX_STYLE_SHAPE_OUTSIDE_NONE);
+        TBOX_TEST_ASSERT(tbox_style_shape_outside_of(&style)->kind == TBOX_STYLE_SHAPE_OUTSIDE_NONE);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -3779,5 +3784,6 @@ int tbox_test_style_run(void) {
     failures += tbox_test_grid_style_run();
     failures += tbox_test_text_paint_run();
     failures += tbox_test_motion_run();
+    tbox_arena_destroy(&style_arena);
     return failures;
 }

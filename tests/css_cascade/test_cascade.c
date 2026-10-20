@@ -617,5 +617,58 @@ int tbox_test_css_cascade_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* find's property filter: present properties are found, absent ones
+     * are not, and a style without a built filter is still scanned. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<p>a</p>");
+        const tbox_html_node *p    = tbox_html_document_root(doc)->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("p { color: red; margin-top: 1px; --x: 2; border-left-color: blue; z-index: 3; }");
+        tbox_css_computed_style style = tbox_css_cascade_resolve_stylesheet(sheet, p);
+        static const char *const present[] = { "color", "margin-top", "--x", "border-left-color", "Z-INDEX" };
+        static const char *const absent[]  = { "colour", "margin", "--y", "border-left-width", "padding", "c" };
+        for (size_t i = 0; i < sizeof(present) / sizeof(present[0]); i++)
+            TBOX_TEST_ASSERT(find_cstr(&style, present[i]) != NULL);
+        for (size_t i = 0; i < sizeof(absent) / sizeof(absent[0]); i++)
+            TBOX_TEST_ASSERT(find_cstr(&style, absent[i]) == NULL);
+
+        tbox_css_computed_style unbuilt = { style.items, style.count, NULL, { 0 } };
+        TBOX_TEST_ASSERT(find_cstr(&unbuilt, "z-index") != NULL && text_eq(find_cstr(&unbuilt, "z-index")->value, "3"));
+        TBOX_TEST_ASSERT(find_cstr(&unbuilt, "padding") == NULL);
+
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Pseudo-element cascade only visits rulesets naming a pseudo-element,
+     * keeping their order; a sheet without any resolves to nothing. */
+    {
+        tbox_html_document *doc    = parse_html_cstr("<div><p class=\"a\">a</p></div>");
+        const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *p    = div->first_child;
+        tbox_css_stylesheet *sheet = parse_css_cstr("p { color: red; } .a::before { content: 'x'; color: green; } div { color: blue; } "
+                                                    "p::before { color: olive; } p::after { color: lime; }");
+        tbox_css_computed_style before = tbox_css_cascade_resolve_pseudo_element(&(tbox_css_cascade_source){ sheet, TBOX_CSS_ORIGIN_AUTHOR }, 1, p, "before");
+        TBOX_TEST_ASSERT(before.count == 2);
+        TBOX_TEST_ASSERT(find_cstr(&before, "content") != NULL && text_eq(find_cstr(&before, "content")->value, "'x'"));
+        TBOX_TEST_ASSERT(find_cstr(&before, "color") != NULL && text_eq(find_cstr(&before, "color")->value, "green"));
+        tbox_css_computed_style after = tbox_css_cascade_resolve_pseudo_element(&(tbox_css_cascade_source){ sheet, TBOX_CSS_ORIGIN_AUTHOR }, 1, p, "after");
+        TBOX_TEST_ASSERT(after.count == 1 && text_eq(find_cstr(&after, "color")->value, "lime"));
+        tbox_css_computed_style none = tbox_css_cascade_resolve_pseudo_element(&(tbox_css_cascade_source){ sheet, TBOX_CSS_ORIGIN_AUTHOR }, 1, div, "before");
+        TBOX_TEST_ASSERT(none.count == 0);
+        tbox_css_computed_style_destroy(&before);
+        tbox_css_computed_style_destroy(&after);
+        tbox_css_computed_style_destroy(&none);
+
+        tbox_css_stylesheet *plain   = parse_css_cstr("p { color: red; }");
+        tbox_css_computed_style empty = tbox_css_cascade_resolve_pseudo_element(&(tbox_css_cascade_source){ plain, TBOX_CSS_ORIGIN_AUTHOR }, 1, p, "before");
+        TBOX_TEST_ASSERT(empty.count == 0 && find_cstr(&empty, "color") == NULL);
+        tbox_css_computed_style_destroy(&empty);
+
+        tbox_css_stylesheet_destroy(plain);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

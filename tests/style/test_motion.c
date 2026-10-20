@@ -9,11 +9,15 @@
 #include "style/tbox_style_internal.h"
 #include "test_support.h"
 
+/* Out-of-line style groups (tbox_style_masks_of, ...) of the styles this
+ * file resolves live here, for the whole run. */
+static tbox_arena style_arena;
+
 static tbox_style tbox_motion_resolve(const char *css, const tbox_style *parent) {
     tbox_html_document *doc = tbox_html_parse("<div></div>", 11);
     tbox_css_stylesheet *sheet = tbox_css_parse(css, strlen(css));
     tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(sheet, tbox_html_document_root(doc)->first_child);
-    tbox_style style = tbox_style_resolve_in_viewport(tbox_html_document_root(doc)->first_child, parent, &computed, 800, 600);
+    tbox_style style = tbox_style_resolve_in_viewport(&style_arena, tbox_html_document_root(doc)->first_child, parent, &computed, 800, 600);
     tbox_css_computed_style_destroy(&computed);
     tbox_css_stylesheet_destroy(sheet);
     tbox_html_document_destroy(doc);
@@ -41,9 +45,10 @@ static int tbox_motion_check(const char *css, double x, double y, double angle, 
 }
 
 int tbox_test_motion_run(void) {
+    style_arena = tbox_arena_create(0);
     int failures = 0;
     tbox_style initial = tbox_motion_resolve("div{}", NULL);
-    TBOX_TEST_ASSERT(initial.offset_path.kind == TBOX_STYLE_OFFSET_PATH_NONE && initial.offset_position.mode == 2 && initial.offset_anchor.mode == 1 && initial.offset_rotate.auto_rotate);
+    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&initial)->kind == TBOX_STYLE_OFFSET_PATH_NONE && initial.offset_position.mode == 2 && initial.offset_anchor.mode == 1 && initial.offset_rotate.auto_rotate);
     TBOX_TEST_ASSERT(!tbox_style_has_transform(&initial));
 
     /* All SVG commands, relative/absolute, implicit lineto after moveto,
@@ -122,18 +127,18 @@ int tbox_test_motion_run(void) {
     }
     tbox_style style = tbox_motion_resolve("div{offset-distance:20px!important;offset:top left path('M0 0 L100 0') 50% auto 30deg / top left;offset-anchor:center}", NULL);
     TBOX_TEST_ASSERT(style.offset_distance.value == 20 && style.offset_distance.kind == TBOX_STYLE_LENGTH_PX);
-    TBOX_TEST_ASSERT(style.offset_path.kind == TBOX_STYLE_OFFSET_PATH_SVG && style.offset_position.mode == 0);
+    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_SVG && style.offset_position.mode == 0);
     TBOX_TEST_ASSERT(style.offset_rotate.auto_rotate && style.offset_rotate.angle == 30);
     TBOX_TEST_ASSERT(style.offset_anchor.mode == 0 && style.offset_anchor.position[0].value == 50);
     style = tbox_motion_resolve("div{offset-anchor:top left;offset-rotate:80deg;offset-distance:10px;offset:ray(0deg);}", NULL);
     TBOX_TEST_ASSERT(style.offset_anchor.mode == 1 && style.offset_distance.value == 0 && style.offset_rotate.auto_rotate && style.offset_rotate.angle == 0);
     tbox_style parent = style;
     style = tbox_motion_resolve("div{offset:inherit;offset-distance:25%}", &parent);
-    TBOX_TEST_ASSERT(style.offset_path.kind == TBOX_STYLE_OFFSET_PATH_RAY && style.offset_distance.value == 25);
+    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_RAY && style.offset_distance.value == 25);
     style = tbox_motion_resolve("div{offset:unset}", &parent);
-    TBOX_TEST_ASSERT(style.offset_path.kind == TBOX_STYLE_OFFSET_PATH_NONE && style.offset_position.mode == 2);
+    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_NONE && style.offset_position.mode == 2);
     style = tbox_motion_resolve("div{--p:path('M0 0 L100 0');offset-path:var(--p);offset-distance:1em}", NULL);
-    TBOX_TEST_ASSERT(style.offset_path.kind == TBOX_STYLE_OFFSET_PATH_SVG && style.offset_distance.value == 16);
+    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_SVG && style.offset_distance.value == 16);
     style = tbox_motion_resolve("div{width:10px}@supports (offset-path:ray(45deg)){div{width:20px}}@supports (offset-path:url('#p')){div{width:30px}}@supports (offset-path:ray(bogus)){div{width:40px}}", NULL);
     TBOX_TEST_ASSERT(style.width.value == 20);
 
@@ -174,5 +179,6 @@ int tbox_test_motion_run(void) {
     tbox_style_animatable_write(&initial, TBOX_STYLE_ANIM_OFFSET_DISTANCE, b);
     TBOX_TEST_ASSERT(tbox_style_length_resolve(initial.offset_distance, 1000) == 100);
     TBOX_TEST_ASSERT(tbox_style_animatable_mask(tbox_string_view_from_cstr("offset")) != 0);
+    tbox_arena_destroy(&style_arena);
     return failures;
 }

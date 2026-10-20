@@ -99,17 +99,19 @@ bool tbox_style_parse_clip_path(tbox_string_view raw, const tbox_style_units *un
 /* `border-image` and its longhands into style->border_image and
  * has_border_image (tbox_style_border_image.c); style->color must be
  * resolved already (gradient currentColor). */
-void tbox_style_resolve_border_image(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style);
+void tbox_style_resolve_border_image(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style, tbox_arena *arena);
+/* border-image's initial values (tbox_style_border_image.c). */
+extern const tbox_style_border_image tbox_style_border_image_initial;
 /* `float`, `clear`, `shape-outside`, `shape-margin` and
  * `shape-image-threshold` (tbox_style_float.c). tbox_style_finish_float
  * runs after the CSS-wide keywords: it drops `float` where it does not
  * apply and blockifies a float's display. */
-void tbox_style_resolve_float(const tbox_css_computed_style *computed, const tbox_style *parent_style, const tbox_style_units *units, tbox_style *style);
+void tbox_style_resolve_float(const tbox_css_computed_style *computed, const tbox_style *parent_style, const tbox_style_units *units, tbox_style *style, tbox_arena *arena);
 void tbox_style_finish_float(tbox_style *style, const tbox_style *parent_style);
 
 /* Motion Path parsers share validation with cascade/@supports. */
 bool tbox_style_motion_declaration_valid(tbox_string_view property, tbox_string_view value);
-void tbox_style_resolve_motion(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style);
+void tbox_style_resolve_motion(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style, tbox_arena *arena);
 /* Resolves the offset term relative to transform-origin; table storage is
  * in arena, never borrowed from a stylesheet or retained across frames. */
 bool tbox_style_motion_matrix(const tbox_style *style, tbox_rect box, tbox_rect reference, const tbox_style_clip_path *outline, tbox_arena *arena, double out[6]);
@@ -140,13 +142,43 @@ void tbox_style_keywords_release(tbox_css_computed_style *stripped);
  * `initial` otherwise -- `initial` too when there is no parent. A field is
  * left alone when an ordinary declaration of higher cascade priority also
  * sets it (e.g. `margin: inherit` under a more specific `margin-top`). */
-void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, const tbox_style *initial, const tbox_css_computed_style *computed);
+void tbox_style_keywords_apply(tbox_style *style, const tbox_style *parent, const tbox_style *initial, const tbox_css_computed_style *computed, tbox_arena *arena);
+
+/* The out-of-line groups of tbox_style (see tbox_style_masks_of in
+ * <tbox/style.h>). INLINE stands for tbox_style itself. */
+typedef enum tbox_style_group {
+    TBOX_STYLE_GROUP_INLINE,
+    TBOX_STYLE_GROUP_MASKS,
+    TBOX_STYLE_GROUP_GRID,
+    TBOX_STYLE_GROUP_BORDER_IMAGE,
+    TBOX_STYLE_GROUP_COUNT,
+} tbox_style_group;
+
+/* The group's values in `style`: its own, or the initial ones while its
+ * pointer is NULL. Never NULL. */
+const void *tbox_style_group_get(const tbox_style *style, tbox_style_group group);
+
+/* A private copy of the group, made in `arena` from its current values and
+ * stored in `style`, for the caller to change: groups are shared between
+ * styles (inheritance, copies), so they are never written in place. NULL
+ * when out of memory (the style keeps its old group). */
+void *tbox_style_group_edit(tbox_style *style, tbox_style_group group, tbox_arena *arena);
+
+/* `size` bytes of `current` copied into `arena` (NULL when out of memory
+ * or without an arena): a fresh out-of-line group to fill and then point
+ * the style at, starting from the current or initial values. */
+void *tbox_style_group_copy(tbox_arena *arena, const void *current, size_t size);
 
 /* CSS custom properties (tbox_style_vars.c). */
 typedef struct tbox_arena tbox_arena;
 
 /* True when `computed` declares a custom property or uses var(). */
 bool tbox_style_vars_present(const tbox_css_computed_style *computed);
+
+/* True when some declaration of `computed` is an @property registration:
+ * only then does var() substitution depend on the element's units (font
+ * size, zoom) through tbox_style_registered_value. */
+bool tbox_style_vars_registered_present(const tbox_css_computed_style *computed);
 
 /* `computed` with every var() replaced -- by this element's own `--x`
  * declarations, then `inherited` -- and the custom declarations removed; a

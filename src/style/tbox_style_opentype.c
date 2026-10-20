@@ -286,7 +286,7 @@ bool tbox_style_opentype_declaration_valid(tbox_string_view property, tbox_strin
     for (size_t i = 0; i + 4 <= value.size; i++)
         if (tbox_string_view_equal_ascii_ci(tbox_string_view_make(value.data + i, 4), tbox_string_view_from_cstr("var(")))
             return true;
-    tbox_style scratch = { 0 };
+    tbox_style scratch; /* written, never read: only validity matters */
     return tbox_style_parse_opentype(name, value, &scratch);
 }
 
@@ -350,10 +350,17 @@ void tbox_style_resolve_opentype(const tbox_css_computed_style *computed, const 
         FIELD("font-variant-position", font_variant_position, true),
 #undef FIELD
     };
-    tbox_style variant                             = { 0 };
+    /* Scratch for the shorthand: only its variant fields are ever read, so
+     * only those are zeroed (the whole struct is ~40 KB). */
+    tbox_style variant;
     const tbox_css_resolved_declaration *shorthand = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-variant"));
-    if (shorthand != NULL && !tbox_style_parse_opentype("font-variant", shorthand->value, &variant))
-        shorthand = NULL;
+    if (shorthand != NULL) {
+        for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); i++)
+            if (fields[i].variant)
+                memset((char *)&variant + fields[i].offset, 0, fields[i].size);
+        if (!tbox_style_parse_opentype("font-variant", shorthand->value, &variant))
+            shorthand = NULL;
+    }
     for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
         char *dst = (char *)style + fields[i].offset;
         if (parent != NULL)

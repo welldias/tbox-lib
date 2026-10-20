@@ -757,7 +757,7 @@ static void tbox_render_border_image_part(tbox_vector *items, const tbox_style *
                 /* the whole gradient, scaled so `source` lands on the tile */
                 double sx    = tile.width / source.width, sy = tile.height / source.height;
                 op->kind     = TBOX_PAINT_GRADIENT;
-                op->gradient = &style->border_image.gradient;
+                op->gradient = &tbox_style_border_image_of(style)->gradient;
                 op->rect     = (tbox_rect){ tile.x - source.x * sx, tile.y - source.y * sy, image_w * sx, image_h * sy };
                 op->has_source_rect = true;
                 op->source_rect     = (tbox_rect){ 0.0, 0.0, image_w, image_h };
@@ -775,7 +775,7 @@ static void tbox_render_border_image_part(tbox_vector *items, const tbox_style *
  * paint, so the ordinary border is used instead. */
 static bool tbox_render_push_border_image(tbox_vector *items, const tbox_layout_box *box, const double border[4]) {
     const tbox_style *style            = box->style;
-    const tbox_style_border_image *bi  = &style->border_image;
+    const tbox_style_border_image *bi  = tbox_style_border_image_of(style);
     bool gradient                      = bi->gradient.kind != TBOX_STYLE_GRADIENT_NONE;
     const tbox_image *image            = gradient ? NULL : box->border_image;
     if (!gradient && (image == NULL || image->width <= 0 || image->height <= 0))
@@ -1124,7 +1124,7 @@ static void tbox_render_apply_filter(tbox_vector *items, size_t start, const dou
 }
 
 const tbox_paint_polygon *tbox_render_resolve_polygon(const tbox_layout_box *box, tbox_arena *arena) {
-    const tbox_style_clip_path *clip = &box->style->clip_path;
+    const tbox_style_clip_path *clip = tbox_style_clip_path_of(box->style);
     tbox_paint_polygon *polygon = tbox_arena_alloc_zero(arena, sizeof(*polygon));
     if (polygon == NULL) return NULL;
     polygon->count = clip->point_count <= TBOX_STYLE_MAX_POLYGON_POINTS ? clip->point_count : 0;
@@ -1140,7 +1140,7 @@ const tbox_paint_polygon *tbox_render_resolve_polygon(const tbox_layout_box *box
  * An op that already has a rounded clip (a rounded background) keeps it
  * and is only clipped to the shape's bounding box. */
 static void tbox_render_apply_clip_path(tbox_vector *items, size_t start, size_t end, const tbox_layout_box *box, tbox_arena *arena) {
-    const tbox_style_clip_path *clip = &box->style->clip_path;
+    const tbox_style_clip_path *clip = tbox_style_clip_path_of(box->style);
     tbox_rect area = box->border_box, shape;
     if (clip->kind == TBOX_STYLE_CLIP_PATH_POLYGON) {
         const tbox_paint_polygon *polygon = tbox_render_resolve_polygon(box, arena);
@@ -1392,7 +1392,7 @@ static bool tbox_render_has_box_decoration(const tbox_style *style) {
     for (size_t i = 0; i < 4; i++)
         if (tbox_style_border_side_width(style, i) > 0.0) return true;
     for (size_t i = 1; i < style->background_layer_count; i++)
-        if (style->background_layers[i - 1].image[0] != '\0' || style->background_layers[i - 1].gradient.kind != TBOX_STYLE_GRADIENT_NONE) return true;
+        if (tbox_style_background_layers_of(style)->layers[i - 1].image[0] != '\0' || tbox_style_background_layers_of(style)->layers[i - 1].gradient.kind != TBOX_STYLE_GRADIENT_NONE) return true;
     return false;
 }
 
@@ -1405,7 +1405,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     size_t transform_start = items->length;
     bool transformed       = box->has_transform;
     bool outer_has_clip    = has_clip;
-    bool reflected = box->style != NULL && box->style->box_reflect.direction != TBOX_STYLE_REFLECT_NONE;
+    bool reflected = box->style != NULL && tbox_style_box_reflect_of(box->style)->direction != TBOX_STYLE_REFLECT_NONE;
     if (transformed || reflected) {
         tbox_render_push_marker(items, TBOX_PAINT_LAYER_BEGIN);
         has_clip = false;
@@ -1444,7 +1444,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
             op->kind         = TBOX_PAINT_BACKDROP_FILTER;
             op->rect         = box->border_box;
             op->color        = (tbox_css_rgba){ 0, 0, 0, 255 };
-            op->filters      = &box->style->backdrop_filters;
+            op->filters      = tbox_style_backdrop_filters_of(box->style);
             op->elliptical   = true;
             for (size_t i = 0; i < 4; i++) {
                 op->corner_radii[i]   = corners[i];
@@ -1487,7 +1487,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
      * other, as CSS isolates them. */
     bool blend_group = false;
     for (size_t l = 0; decorated && box->style != NULL && l < (box->style->background_layer_count > 1 ? box->style->background_layer_count : 1); l++)
-        if ((l == 0 ? box->style->background_blend_mode : box->style->background_layers[l - 1].blend_mode) != TBOX_STYLE_BLEND_NORMAL)
+        if ((l == 0 ? box->style->background_blend_mode : tbox_style_background_layers_of(box->style)->layers[l - 1].blend_mode) != TBOX_STYLE_BLEND_NORMAL)
             blend_group = true;
     if (blend_group)
         tbox_render_push_marker(items, TBOX_PAINT_LAYER_BEGIN);
@@ -1502,7 +1502,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
          * fields live directly in the style; copy them into a layer view,
          * except the gradient, which the op must point at in place. */
         for (size_t l = box->style->background_layer_count > 1 ? box->style->background_layer_count : 1; l > 1; l--) {
-            const tbox_style_background_layer *layer = &box->style->background_layers[l - 2];
+            const tbox_style_background_layer *layer = &tbox_style_background_layers_of(box->style)->layers[l - 2];
             if (layer->image[0] != '\0' || layer->gradient.kind != TBOX_STYLE_GRADIENT_NONE)
                 tbox_render_push_background_image(items, box, layer, box->background_layer_images[l - 2], background_box, background_h, background_v, rounded, viewport, box->style->background_origin);
         }
@@ -1813,10 +1813,10 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
                         *decoration = *run->style;
                         decoration->opacity = 1.0;
                         decoration->has_filter = decoration->has_mask = decoration->has_backdrop_filter = false;
-                        decoration->filters = (tbox_style_filter_list){ 0 };
+                        decoration->filters = NULL;
                         decoration->mix_blend_mode = TBOX_STYLE_BLEND_NORMAL;
-                        decoration->box_reflect.direction = TBOX_STYLE_REFLECT_NONE;
-                        decoration->clip_path.kind = TBOX_STYLE_CLIP_PATH_NONE;
+                        decoration->box_reflect = NULL;
+                        decoration->clip_path = NULL;
                         decoration->outline_style = TBOX_STYLE_BORDER_STYLE_NONE;
                         frame.style = decoration;
                         tbox_render_box(&frame, items, false, (tbox_rect){ 0 }, arena, viewport);
@@ -1892,10 +1892,10 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
                     if (!right) decoration->border_widths[1] = 0.0;
                     decoration->opacity = 1.0;
                     decoration->has_filter = decoration->has_mask = decoration->has_backdrop_filter = false;
-                    decoration->filters = (tbox_style_filter_list){ 0 };
+                    decoration->filters = NULL;
                     decoration->mix_blend_mode = TBOX_STYLE_BLEND_NORMAL;
-                    decoration->box_reflect.direction = TBOX_STYLE_REFLECT_NONE;
-                    decoration->clip_path.kind = TBOX_STYLE_CLIP_PATH_NONE;
+                    decoration->box_reflect = NULL;
+                    decoration->clip_path = NULL;
                     decoration->outline_style = TBOX_STYLE_BORDER_STYLE_NONE;
                     double edges[4];
                     for (size_t side = 0; side < 4; side++)
@@ -2045,7 +2045,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         tbox_render_apply_filter(items, own_start, box->style->filter_matrix, arena);
     /* clip-path: on a layer it clips the composite (after the filter, as
      * CSS orders them); otherwise every op of the subtree. */
-    if (box->style != NULL && box->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_NONE)
+    if (box->style != NULL && tbox_style_clip_path_of(box->style)->kind != TBOX_STYLE_CLIP_PATH_NONE)
         tbox_render_apply_clip_path(items, own_start, layered ? own_start + 1 : items->length, box, arena);
 
     /* Fully transparent: nothing of the subtree paints. */
@@ -2058,17 +2058,18 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         begin->color.a       = (unsigned char)(box->style->opacity * 255.0 + 0.5);
         /* Outer transform/reflection groups own the final blend. */
         begin->blend_mode    = (transformed || reflected) ? TBOX_STYLE_BLEND_NORMAL : box->style->mix_blend_mode;
-        begin->filters       = box->style->filters.spreads ? &box->style->filters : NULL;
+        begin->filters       = tbox_style_filters_of(box->style)->spreads ? tbox_style_filters_of(box->style) : NULL;
         if (box->style->has_mask) {
-            size_t count = box->style->mask_layer_count;
+            const tbox_style_masks *masks = tbox_style_masks_of(box->style);
+            size_t count                  = masks->count;
             for (size_t l = count > 0 ? count : 1; l > 0; l--) {
-                const tbox_style_mask_layer *layer = count > 0 ? &box->style->mask_layers[l - 1] : NULL;
+                const tbox_style_mask_layer *layer = count > 0 ? &masks->layers[l - 1] : NULL;
                 tbox_paint_op *mask = tbox_render_push_marker(items, TBOX_PAINT_LAYER_MASK);
                 if (mask != NULL) {
                     mask->mask_luminance = layer != NULL ? layer->luminance : box->style->mask_luminance;
                     mask->mask_composite = layer != NULL ? layer->composite : TBOX_STYLE_MASK_ADD;
                 }
-                const tbox_style_background_layer *source = layer != NULL ? &layer->source : &box->style->mask;
+                const tbox_style_background_layer *source = layer != NULL ? &layer->source : &masks->layers[0].source;
                 tbox_rect mask_box = layer != NULL && layer->no_clip ? viewport :
                     layer != NULL && layer->clip == TBOX_STYLE_BACKGROUND_CLIP_PADDING_BOX ? box->padding_box :
                     layer != NULL && layer->clip == TBOX_STYLE_BACKGROUND_CLIP_CONTENT_BOX ? box->content_box : box->border_box;
@@ -2095,7 +2096,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
             tbox_paint_op *slot = (tbox_paint_op *)tbox_vector_push(items);
             if (slot != NULL) *slot = copy;
         }
-        const tbox_style_reflection *reflect = &box->style->box_reflect;
+        const tbox_style_reflection *reflect = tbox_style_box_reflect_of(box->style);
         if (reflect->gradient.kind != TBOX_STYLE_GRADIENT_NONE || reflect->image[0] != '\0') {
             tbox_render_push_marker(items, TBOX_PAINT_LAYER_MASK);
             tbox_paint_op *gradient = (tbox_paint_op *)tbox_vector_push(items);

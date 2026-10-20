@@ -99,6 +99,28 @@ glifos em `tbox_layout_text_run.glyphs`; o render os copia para o
 `TEXT_RUN` e o raster os pinta por índice (`tbox_font_rasterize_glyph_id`)
 — ver [Layout e pintura](08-layout-e-pintura.md#texto-como-glifos-posicionados).
 
+### Cache de runs
+
+Como o layout é refeito a cada frame, as mesmas palavras seriam moldadas de
+novo em todo frame, e o shaping do HarfBuzz (com o hinting do FreeType nos
+avanços) era a maior parte do custo do layout. Cada face guarda então os
+runs já moldados (`tbox_font_face.runs`, em `src/font/tbox_font_face.c`):
+
+- **Chave:** os bytes do texto, o `letter-spacing` e a direção. O resto
+  que muda o resultado (tamanho, features OpenType, orientação vertical) já
+  é fixo na face.
+- **Valor:** a largura, o número de glifos e os glifos. Quem só mede
+  (`tbox_font_measure_text_spaced`) guarda só a largura; os glifos entram
+  quando alguém os pede.
+- **Limites:** 2048 posições por face; ao passar da metade, o cache é
+  esvaziado inteiro. Textos com mais de 256 bytes não entram.
+- **Invalidação:** `tbox_font_face_set_kerning` esvazia o cache quando o
+  valor muda; `tbox_font_face_destroy` o libera.
+
+O cache vive na face, não em estado global, e segue a afinidade de thread
+da face. O resultado é idêntico ao do shaping direto (os screenshots de
+todas as fixtures são iguais byte a byte).
+
 ## Texto bidirecional
 
 O algoritmo bidi do Unicode (UAX #9, Unicode 16.0) é implementação
@@ -306,7 +328,9 @@ desenha a máscara com o mesmo shaper, então cursor e texto coincidem.
   largura é a soma dos avanços com kerning: sem ligaduras nem formas
   contextuais, e árabe, devanágari e similares saem errados.
 - **Shaping por palavra.** Cada palavra é moldada sozinha; não há kerning
-  nem contexto através de um espaço ou de uma fronteira de elemento.
+  nem contexto através de um espaço ou de uma fronteira de elemento. (O
+  custo de refazer isso a cada frame é coberto pelo [cache de
+  runs](#cache-de-runs).)
 - **Unidade é o codepoint, não o grafema.** Cursor, backspace,
   `break-all`, reticências e máscara de senha andam por codepoint: um "é"
   decomposto (e + U+0301), emojis com modificador/ZWJ e bandeiras podem ser

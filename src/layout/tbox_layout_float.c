@@ -310,7 +310,7 @@ static void tbox_layout_float_corners(const tbox_style *style, tbox_rect border_
  * geometry Render gives clip-path, over the chosen reference box. */
 static void tbox_layout_float_shape_of(tbox_layout_float_area *area, const tbox_layout_box *box, tbox_image_cache *images, double cb_width, tbox_arena *arena) {
     const tbox_style *style             = box->style;
-    const tbox_style_shape_outside *out = &style->shape_outside;
+    const tbox_style_shape_outside *out = tbox_style_shape_outside_of(style);
     area->shape                         = TBOX_LAYOUT_FLOAT_SHAPE_RECT;
     area->rect                          = box->margin_box;
     if (box->float_ink_height > 0.0)

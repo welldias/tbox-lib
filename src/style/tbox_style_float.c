@@ -95,7 +95,7 @@ static bool tbox_style_parse_shape_outside(tbox_string_view raw, const tbox_styl
     return true;
 }
 
-void tbox_style_resolve_float(const tbox_css_computed_style *computed, const tbox_style *parent_style, const tbox_style_units *units, tbox_style *style) {
+void tbox_style_resolve_float(const tbox_css_computed_style *computed, const tbox_style *parent_style, const tbox_style_units *units, tbox_style *style, tbox_arena *arena) {
     /* Logical values follow the containing block's direction. */
     bool rtl = parent_style != NULL ? parent_style->direction_rtl : style->direction_rtl;
     style->float_side = TBOX_STYLE_FLOAT_NONE;
@@ -107,10 +107,15 @@ void tbox_style_resolve_float(const tbox_css_computed_style *computed, const tbo
     if (decl != NULL)
         tbox_style_parse_clear(tbox_string_view_trim_ascii_space(decl->value), rtl, &style->clear);
 
-    memset(&style->shape_outside, 0, sizeof(style->shape_outside));
+    style->shape_outside = NULL;
     decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("shape-outside"));
-    if (decl != NULL)
-        tbox_style_parse_shape_outside(decl->value, units, &style->shape_outside);
+    if (decl != NULL) {
+        tbox_style_shape_outside *shape = tbox_style_group_copy(arena, tbox_style_shape_outside_of(style), sizeof(*shape));
+        if (shape != NULL) {
+            tbox_style_parse_shape_outside(decl->value, units, shape);
+            style->shape_outside = shape;
+        }
+    }
 
     style->shape_margin = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 0.0, 0.0, 0, 0.0, 0.0 };
     decl                = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("shape-margin"));

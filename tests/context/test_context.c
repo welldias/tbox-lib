@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "base/tbox_arena.h"
 #include "context/tbox_context_hit_test.h"
 #include "context/tbox_context_internal.h"
 #include "context/tbox_ua_style.h"
@@ -419,7 +420,15 @@ static bool resolve_first_child_style_with_config(const char *html, tbox_ua_styl
     }
 
     tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(ua_sheet, node);
-    *out_style                       = tbox_style_resolve(node, NULL, &computed);
+    /* Keeps the style's out-of-line groups alive for the caller's checks
+     * until the process exits (still reachable, not a leak). */
+    static tbox_arena style_arena;
+    static bool style_arena_ready;
+    if (!style_arena_ready) {
+        style_arena       = tbox_arena_create(0);
+        style_arena_ready = true;
+    }
+    *out_style = tbox_style_resolve(&style_arena, node, NULL, &computed);
 
     tbox_css_computed_style_destroy(&computed);
     tbox_css_stylesheet_destroy(ua_sheet);
@@ -5675,7 +5684,7 @@ int tbox_test_context_run(void) {
             const tbox_html_attribute *id = hit != NULL && hit->node != NULL ? tbox_html_node_get_attribute(hit->node, tbox_string_view_from_cstr("id")) : NULL;
             TBOX_TEST_ASSERT(id != NULL && string_view_equal_cstr(id->value, "child"));
             hit = tbox_context_hit_test(ctx, 55, 25);
-            TBOX_TEST_ASSERT(hit == NULL || hit->style == NULL || hit->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_POLYGON);
+            TBOX_TEST_ASSERT(hit == NULL || hit->style == NULL || tbox_style_clip_path_of(hit->style)->kind != TBOX_STYLE_CLIP_PATH_POLYGON);
             hit = tbox_context_hit_test(ctx, 25, 25);
             id = hit != NULL && hit->node != NULL ? tbox_html_node_get_attribute(hit->node, tbox_string_view_from_cstr("id")) : NULL;
             TBOX_TEST_ASSERT(id != NULL && string_view_equal_cstr(id->value, "host"));
@@ -5703,7 +5712,7 @@ int tbox_test_context_run(void) {
                 tbox_raster_display_list(pixels, 60, 60, &list);
                 TBOX_TEST_ASSERT_MSG(pixels[35 * 60 + 35] == (cases[c].center ? 0xFFFF0000u : 0xFFFFFFFFu), cases[c].shape);
                 const tbox_layout_box *hit = tbox_context_hit_test(ctx, 35, 35);
-                bool target = hit != NULL && hit->style != NULL && hit->style->clip_path.kind == TBOX_STYLE_CLIP_PATH_POLYGON;
+                bool target = hit != NULL && hit->style != NULL && tbox_style_clip_path_of(hit->style)->kind == TBOX_STYLE_CLIP_PATH_POLYGON;
                 TBOX_TEST_ASSERT(target == cases[c].center);
                 if (c == 0) TBOX_TEST_ASSERT(pixels[15 * 60 + 35] == 0xFFFF0000u && pixels[35 * 60 + 15] == 0xFFFF0000u);
                 tbox_context_close(ctx);

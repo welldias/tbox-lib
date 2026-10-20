@@ -42,7 +42,9 @@ static tbox_style tbox_context_style_node(const tbox_context *ctx, const tbox_ht
                                           const tbox_style *parent) {
     tbox_css_cascade_source source = {ctx->control_stylesheet, TBOX_CSS_ORIGIN_AUTHOR};
     tbox_css_computed_style computed = tbox_css_cascade_resolve(&source, 1, node);
-    tbox_style style = tbox_style_resolve(node, parent, &computed);
+    /* Read while painting: whatever the style keeps out of line lives as
+     * long as the frame. */
+    tbox_style style = tbox_style_resolve((tbox_arena *)&ctx->frame_arena, node, parent, &computed);
     tbox_css_computed_style_destroy(&computed);
     return style;
 }

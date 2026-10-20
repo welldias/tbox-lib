@@ -13,6 +13,18 @@
 #include <tbox/string_view.h>
 #include "tbox_font_measure.h"
 
+/* One shaped run kept by its face (see tbox_font_run in tbox_font_face.c). */
+typedef struct tbox_font_run_entry {
+    uint64_t hash; /* 0: empty slot */
+    char *text;    /* malloc'd copy of the run's bytes */
+    size_t text_size;
+    double letter_spacing;
+    tbox_font_direction direction;
+    size_t count;       /* glyphs of the whole run */
+    double width;       /* total advance, letter-spacing included */
+    tbox_glyph *glyphs; /* malloc'd; NULL while only the width was asked */
+} tbox_font_run_entry;
+
 struct tbox_font_face {
     FT_Face ft_face;
     FT_Glyph stroke_glyph; /* owned auxiliary outline/bitmap, replaced per stroke */
@@ -26,6 +38,12 @@ struct tbox_font_face {
     void *font_data_copy;
     size_t font_data_size;
     void *shaper; /* the shaper backend's per-face state, NULL for none */
+    /* Shaped runs by (text, letter-spacing, direction): the layout shapes
+     * the same words again and again, every frame. Open addressing,
+     * TBOX_FONT_RUN_CACHE_SLOTS slots allocated on first use, emptied when
+     * half full or when the kerning changes. */
+    tbox_font_run_entry *runs;
+    size_t run_count;
 };
 
 /* The shaper backend (docs/09-texto-e-fontes.md, "Shaping"): exactly one

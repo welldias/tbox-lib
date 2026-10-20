@@ -1437,15 +1437,17 @@ int tbox_test_render_run(void) {
         unsigned char pixels[30 * 30 * 4] = { 0 };
         tbox_image image = { 30, 30, pixels };
         tbox_style style = tbox_test_render_default_style();
+        tbox_style_border_image border_image = *tbox_style_border_image_of(&style);
+        style.border_image = &border_image;
         style.border_width = 10.0;
         style.border_style = TBOX_STYLE_BORDER_STYLE_SOLID;
         style.border_color = (tbox_css_rgba){ 255, 0, 0, 255 };
         style.has_border_image = true;
-        strcpy(style.border_image.image, "b.png");
+        strcpy(border_image.image, "b.png");
         for (size_t i = 0; i < 4; i++) {
-            style.border_image.slice[i]  = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 10.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
-            style.border_image.width[i]  = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 1.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
-            style.border_image.outset[i] = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 0.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+            border_image.slice[i]  = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 10.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+            border_image.width[i]  = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 1.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
+            border_image.outset[i] = (tbox_style_border_image_value){ TBOX_STYLE_BORDER_IMAGE_NUMBER, 0.0, { TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 } };
         }
         tbox_layout_box box = tbox_test_render_default_box(&style);
         box.border_box  = box.margin_box = (tbox_rect){ 0, 0, 100, 60 };
@@ -1467,8 +1469,8 @@ int tbox_test_render_run(void) {
         /* horizontal repeat: 10px tiles centered on the 80px top/bottom
          * edges (and the `fill` middle, stretched vertically) start at
          * x 5, so 9 tiles each, the first clipped to x 10. */
-        style.border_image.repeat[0] = TBOX_STYLE_BORDER_IMAGE_REPEAT;
-        style.border_image.fill      = true;
+        border_image.repeat[0] = TBOX_STYLE_BORDER_IMAGE_REPEAT;
+        border_image.fill      = true;
         arena = tbox_arena_create(0);
         list  = tbox_render_build_display_list(&arena, &box);
         TBOX_TEST_ASSERT(list.count == 9 + 4 + 9 + 9 + 2);
@@ -1481,13 +1483,13 @@ int tbox_test_render_run(void) {
 
         /* outset 1 (x border width) and a gradient: corners move out by
          * 10px, the gradient box is the 120x80 area */
-        style.border_image.repeat[0] = TBOX_STYLE_BORDER_IMAGE_STRETCH;
-        style.border_image.fill      = false;
-        style.border_image.image[0]  = '\0';
-        style.border_image.gradient.kind       = TBOX_STYLE_GRADIENT_LINEAR;
-        style.border_image.gradient.stop_count = 2;
+        border_image.repeat[0] = TBOX_STYLE_BORDER_IMAGE_STRETCH;
+        border_image.fill      = false;
+        border_image.image[0]  = '\0';
+        border_image.gradient.kind       = TBOX_STYLE_GRADIENT_LINEAR;
+        border_image.gradient.stop_count = 2;
         for (size_t i = 0; i < 4; i++)
-            style.border_image.outset[i].number = 1.0;
+            border_image.outset[i].number = 1.0;
         arena = tbox_arena_create(0);
         list  = tbox_render_build_display_list(&arena, &box);
         TBOX_TEST_ASSERT(list.count == 8);
@@ -1498,8 +1500,8 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
 
         /* an image that failed to load: the ordinary border paints */
-        style.border_image.gradient.kind = TBOX_STYLE_GRADIENT_NONE;
-        strcpy(style.border_image.image, "b.png");
+        border_image.gradient.kind = TBOX_STYLE_GRADIENT_NONE;
+        strcpy(border_image.image, "b.png");
         box.border_image = NULL;
         arena = tbox_arena_create(0);
         list  = tbox_render_build_display_list(&arena, &box);
@@ -1655,8 +1657,10 @@ int tbox_test_render_run(void) {
         style.filter_matrix[0] = style.filter_matrix[6] = style.filter_matrix[12] = -1.0;
         style.filter_matrix[4] = style.filter_matrix[9] = style.filter_matrix[14] = 1.0;
         style.filter_matrix[18] = 1.0; /* invert(1) */
-        style.clip_path.kind    = TBOX_STYLE_CLIP_PATH_CIRCLE;
-        style.clip_path.center[0] = style.clip_path.center[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0, 0.0, 0, 0.0, 0.0 };
+        tbox_style_clip_path circle = *tbox_style_clip_path_of(&style);
+        circle.kind                 = TBOX_STYLE_CLIP_PATH_CIRCLE;
+        circle.center[0] = circle.center[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 50.0, 0.0, 0, 0.0, 0.0 };
+        style.clip_path = &circle;
         box = tbox_test_render_default_box(&style);
         box.border_box = box.padding_box = box.content_box = (tbox_rect){ 0, 0, 40, 20 };
         arena = tbox_arena_create(0);
@@ -1762,12 +1766,14 @@ int tbox_test_render_run(void) {
     {
         tbox_style style = tbox_test_render_default_style();
         style.background_color = (tbox_css_rgba){ 255, 0, 0, 255 };
-        style.clip_path.kind = TBOX_STYLE_CLIP_PATH_INSET;
+        tbox_style_clip_path inset = *tbox_style_clip_path_of(&style);
+        inset.kind                 = TBOX_STYLE_CLIP_PATH_INSET;
         for (size_t i = 0; i < 4; i++) {
-            style.clip_path.inset[i] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 10, 0, 0, 0, 0 };
-            style.clip_path.round_h_percent[i] = 25;
-            style.clip_path.round_v_percent[i] = 25;
+            inset.inset[i]           = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 10, 0, 0, 0, 0 };
+            inset.round_h_percent[i] = 25;
+            inset.round_v_percent[i] = 25;
         }
+        style.clip_path = &inset;
         tbox_layout_box box = tbox_test_render_default_box(&style);
         box.border_box = box.padding_box = box.content_box = (tbox_rect){ 0, 0, 200, 100 };
         tbox_arena arena = tbox_arena_create(0);
@@ -1781,8 +1787,8 @@ int tbox_test_render_run(void) {
         }
         tbox_arena_destroy(&arena);
         for (size_t i = 0; i < 4; i++) {
-            style.clip_path.round_h_percent[i] = 100;
-            style.clip_path.round_v_percent[i] = 50;
+            inset.round_h_percent[i] = 100;
+            inset.round_v_percent[i] = 50;
         }
         arena = tbox_arena_create(0);
         list = tbox_render_build_display_list(&arena, &box);

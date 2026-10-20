@@ -2,15 +2,20 @@
 
 #include <string.h>
 
+#include "base/tbox_arena.h"
 #include "base/tbox_string.h"
 #include "test_support.h"
+
+/* Out-of-line style groups (tbox_style_masks_of, ...) of the styles this
+ * file resolves live here, for the whole run. */
+static tbox_arena style_arena;
 
 static tbox_style resolve(const char *css, const tbox_style *parent) {
     tbox_html_document *doc = tbox_html_parse("<div>x</div>", 12);
     tbox_css_stylesheet *sheet = tbox_css_parse(css, strlen(css));
     const tbox_html_node *node = tbox_html_document_root(doc)->first_child;
     tbox_css_computed_style computed = tbox_css_cascade_resolve_stylesheet(sheet, node);
-    tbox_style style = tbox_style_resolve(node, parent, &computed);
+    tbox_style style = tbox_style_resolve(&style_arena, node, parent, &computed);
     tbox_css_computed_style_destroy(&computed);
     tbox_css_stylesheet_destroy(sheet);
     tbox_html_document_destroy(doc);
@@ -18,6 +23,7 @@ static tbox_style resolve(const char *css, const tbox_style *parent) {
 }
 
 int tbox_test_text_paint_run(void) {
+    style_arena = tbox_arena_create(0);
     int failures = 0;
     tbox_style initial = resolve("", NULL);
     TBOX_TEST_ASSERT(initial.text_stroke_width == 0.0 && initial.text_stroke_current_color);
@@ -97,5 +103,6 @@ int tbox_test_text_paint_run(void) {
     /* paint-order is discrete and not animatable (the 64-bit animatable
      * mask is full): it switches at once. */
     TBOX_TEST_ASSERT(tbox_style_animatable_mask(tbox_string_view_from_cstr("paint-order")) == 0);
+    tbox_arena_destroy(&style_arena);
     return failures;
 }

@@ -423,6 +423,21 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   todos os ancestrais se somam, mas estilo, cor e espessura são os do mais
   próximo. Dois ancestrais com cores diferentes desenham ambos na cor do
   mais interno (2026-10-19).
+- **Grupos grandes e raros de `tbox_style` fora de linha** (máscaras,
+  camadas extras de fundo, texto do grid, `clip-path`, `shape-outside`,
+  `offset-path`, filtros, `border-image`, `box-reflect`): ponteiro `const`
+  para a arena da resolução, `NULL` = valores iniciais, lidos por acessores
+  `tbox_style_*_of` que devolvem um `const` estático com os iniciais (a
+  mesma constante substitui as funções `init_*`, uma fonte só). Escrita
+  sempre numa cópia nova (`tbox_style_group_copy`/`_edit`): grupos são
+  compartilhados por herança e pelas cópias do layout, então nunca são
+  escritos no lugar. As palavras-chave CSS-wide copiam campo a campo dentro
+  do grupo (`tbox_style_field.group`), o que mantém casos como
+  `mask-image: inherit; mask-size: 10px`. Motivo: copiar e zerar o struct
+  de ~39 KB era ~35% das instruções de um frame. Alternativas descartadas:
+  só passar por ponteiro (as cópias por herança e no layout continuariam);
+  `NULL` = zero (exigiria que todo leitor conhecesse os iniciais não nulos).
+  `tbox_style_resolve`/`_in_viewport` passaram a receber a arena (2026-10-20).
 
 ## Texto e fontes
 
@@ -533,6 +548,17 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
 - **`paint-order` fora das propriedades animáveis** para caber na máscara
   de 64 bits; alternativa adiada: trocar a máscara pública por um conjunto
   maior (muda `tbox_style_animatable_mask`) (2026-10-18).
+
+- **Cache de runs moldados na face**, não global nem no contexto: a face já
+  carrega o estado do shaper e vive no `tbox_font_face_cache`, então o
+  cache tem o mesmo dono, a mesma vida e a mesma afinidade de thread.
+  Chave (texto, `letter-spacing`, direção); o resto do que muda o shaping
+  é fixo na face. Despejo por esvaziamento total ao passar da metade das
+  2048 posições, em vez de LRU: mais simples, sem lista, e o conjunto de
+  palavras de uma UI cabe com folga; textos acima de 256 bytes não entram.
+  Alternativa adiada: o layout incremental, que evitaria o shaping por não
+  refazer o layout (ver [Débito técnico](debito-tecnico.md#estilo-e-layout-incrementais))
+  (2026-10-20).
 
 ## Layout
 

@@ -28,8 +28,8 @@ bool tbox_context_box_point(const tbox_layout_box *box, double *x, double *y) {
  * polygon is in its own element's coordinates (inside its transform). */
 bool tbox_context_in_polygon_clips(const tbox_layout_box *box, double x, double y) {
     for (const tbox_layout_box *ancestor = box; ancestor != NULL; ancestor = ancestor->parent) {
-        if (ancestor->style == NULL || ancestor->style->clip_path.kind != TBOX_STYLE_CLIP_PATH_POLYGON) continue;
-        const tbox_style_clip_path *clip = &ancestor->style->clip_path;
+        if (ancestor->style == NULL || tbox_style_clip_path_of(ancestor->style)->kind != TBOX_STYLE_CLIP_PATH_POLYGON) continue;
+        const tbox_style_clip_path *clip = tbox_style_clip_path_of(ancestor->style);
         double points[TBOX_STYLE_MAX_POLYGON_POINTS][2];
         if (clip->point_count > TBOX_STYLE_MAX_POLYGON_POINTS) return false;
         for (size_t i = 0; i < clip->point_count; i++) {
