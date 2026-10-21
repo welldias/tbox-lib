@@ -18,6 +18,17 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — SVG inline básico (2026-10-21)
+
+Implementados os ícones e o medidor SVG do file explorer: formas básicas,
+`defs`/`symbol`/`use` locais, viewports, transformações afins, preenchimento,
+traço e tracejado com `pathLength`. Atributos entram na cascata abaixo das
+folhas de autor; instâncias têm herança própria, sem alterar o DOM. Caminhos
+compartilham o parser com motion path; FreeType rasteriza os contornos com
+estado local, sem novo global mutável ou dependência. Damage assina a
+geometria por conteúdo. Incluídos testes de pixels, herança, ciclos e
+repintura parcial e seis fixtures SVG de paridade com Firefox.
+
 ## Após v20 — Pendências visuais do explorador de arquivos
 
 Implementados sequencialmente `placeholder`/`::placeholder`, caixas próprias

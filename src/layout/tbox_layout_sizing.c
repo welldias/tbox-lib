@@ -80,6 +80,10 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
         result.min = result.max = tbox_layout_ruby_intrinsic_width(arena, node, styles, fonts);
         return result;
     }
+    if (tbox_layout_tag(node, "svg")) {
+        result.min = result.max = tbox_layout_svg_auto_width(node, style, 0);
+        return result;
+    }
     if (tbox_layout_is_replaced_image(node)) {
         const tbox_image *image = tbox_image_cache_get(images, tbox_layout_image_url(arena, node));
         result.min = result.max = image != NULL ? (double)image->width * tbox_style_zoom(style) : 16.0;

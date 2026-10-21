@@ -1,3 +1,4 @@
+#include "svg/tbox_svg_internal.h"
 #include <tbox/css_cascade.h>
 
 #include <tbox/css_selector.h>
@@ -334,6 +335,8 @@ int tbox_css_cascade_priority_compare(const tbox_css_resolved_declaration *a,
     int rank_a = tbox_css_cascade_rank(a->origin, a->important);
     int rank_b = tbox_css_cascade_rank(b->origin, b->important);
     if (rank_a != rank_b) return rank_a > rank_b ? 1 : -1;
+    if (a->presentation_attribute != b->presentation_attribute)
+        return a->presentation_attribute ? -1 : 1;
     /* Cascade layers: for normal declarations a rule outside every layer
      * (0) beats any layer and a later layer beats an earlier one; for
      * !important the order reverses. */
@@ -367,6 +370,7 @@ static void tbox_css_cascade_offer(tbox_vector *winners, const tbox_css_resolved
         !tbox_style_motion_declaration_valid(candidate->property, candidate->value)) return;
     if (!tbox_style_composition_declaration_valid(candidate->property, candidate->value)) return;
     if (!tbox_style_inline_declaration_valid(candidate->property, candidate->value)) return;
+    if (!tbox_style_svg_declaration_valid(candidate->property, candidate->value)) return;
     tbox_css_resolved_declaration *existing = NULL;
     size_t winner_count                     = tbox_vector_length(winners);
     for (size_t w = 0; w < winner_count; w++) {
@@ -495,6 +499,22 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
     tbox_vector winners;
     tbox_vector_init(&winners, &scratch, sizeof(tbox_css_resolved_declaration), 0);
     size_t source_order = 0;
+    if (pseudo == NULL && tbox_svg_is_element(node)) {
+        for (size_t i = 0; i < node->element.attribute_count; i++) {
+            const tbox_html_attribute *attr = &node->element.attributes[i];
+            if (!tbox_svg_presentation_property(attr->name)) continue;
+            if ((tbox_style_is(attr->name, "width") || tbox_style_is(attr->name, "height")) && !tbox_svg_tag(node, "svg")) continue;
+            tbox_string_view value = tbox_svg_presentation_value(&scratch, attr->name, attr->value);
+            if (value.size == 0) continue;
+            tbox_css_resolved_declaration candidate = {0};
+            candidate.origin = TBOX_CSS_ORIGIN_AUTHOR;
+            candidate.property = attr->name;
+            candidate.value = value;
+            candidate.presentation_attribute = true;
+            candidate.source_order = source_order++;
+            tbox_css_cascade_offer(&winners, &candidate);
+        }
+    }
 
     for (size_t src = 0; src < source_count; src++) {
         const tbox_css_stylesheet *stylesheet = sources[src].stylesheet;

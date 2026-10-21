@@ -6,6 +6,60 @@
 
 ## A árvore de caixas
 
+### SVG inline
+
+O SVG externo ocupa uma caixa atômica no layout HTML. Seu conteúdo usa
+coordenadas vetoriais, sem caixas HTML para cada forma. A resolução de estilo
+prepara instâncias de `use` na arena do frame, herdando do elemento que as
+referencia, sem alterar o DOM. `defs` e `symbol` são definições não pintadas.
+O Render emite caminhos preenchidos e traçados; o Output usa o rasterizador
+de contornos e o stroker do FreeType já obrigatório, com estado local e
+destruição explícita. Geometria e estilo entram por conteúdo no damage.
+O primeiro recorte inclui formas básicas, referências locais, `viewBox`,
+transformações afins, cores sólidas e tracejado com `pathLength`. SVG externo,
+texto SVG, paint servers, filtros SVG e `foreignObject` ficam fora do recorte.
+
+São suportados `svg`, `g`, `defs`, `symbol`, `use`, `path`, `rect` (com
+`rx`/`ry`), `circle`, `ellipse`, `line`, `polyline` e `polygon`. `use` aceita
+`href="#id"` e o alias `xlink:href`, apenas no mesmo documento. As definições
+podem estar num SVG de tamanho zero; não ocupam espaço quando instanciadas.
+Cada instância recalcula a herança a partir de `use`, incluindo `currentColor`
+e custom properties. Os seletores casam na árvore original das definições;
+não há implementação geral de shadow DOM nem seus eventos.
+
+A caixa externa aceita dimensões CSS, atributos `width`/`height`, percentuais
+com containing block definido, min/max, flex/grid e participação atômica em
+linhas. A dimensão automática usa a proporção de `viewBox` quando possível;
+sem tamanho, o fallback é 300px de largura e 150px de altura (ou a altura da
+proporção). Não implementa todos os casos de tamanho intrínseco de navegador.
+`viewBox` e `preserveAspectRatio` (`none`, alinhamentos e `meet`/`slice`)
+mapeiam o desenho ao content box. Viewports internos são recortados por
+padrão; `overflow:visible` libera a pintura. SVG não ganha caixas HTML para
+cada forma; o hit-test continua sendo da caixa externa, não da geometria.
+
+Os comandos `M/L/H/V/C/S/Q/T/A/Z`, absolutos e relativos, são amostrados por
+subdivisão adaptativa. Subcaminhos preservam movimentos e fechamento explícito;
+o preenchimento fecha contornos abertos implicitamente, o traço não.
+`fill-rule` aceita `nonzero` e `evenodd`. Os traços têm pontas
+`butt`/`round`/`square`, junções `miter`/`round`/`bevel`, limite de miter,
+tracejado e deslocamento. `pathLength` positivo ajusta as distâncias de
+tracejado. O traço é construído nas coordenadas do desenho e depois
+transformado, preservando a escala não uniforme. Opacidade de grupo compõe
+as sobreposições uma vez, usando as camadas existentes.
+
+Limites: 64 níveis de instanciação, 16384 nós por SVG externo, 16384
+segmentos amostrados por geometria, 32 entradas de tracejado e 1024 pontos
+em `polyline`/`polygon`. Valores não finitos, referências ausentes/cíclicas
+e geometrias inválidas são ignorados. Tracejados fechados ainda podem mostrar
+pontas separadas na emenda; tracejados de comprimento zero não produzem pontos.
+Não há gradientes/patterns SVG, `clipPath`, máscaras/filtros SVG, marcadores,
+texto, SMIL, `foreignObject`, SVG externo nem namespaces XML completos.
+As novas propriedades de pintura não interpolam em transições/keyframes.
+
+Fixtures: `svg-basic-shapes`, `svg-paths`, `svg-strokes`, `svg-symbols`,
+`svg-compositing` e `svg-style-layout`. Nenhum exige backend de janela.
+
+
 `tbox_layout_build` transforma DOM + estilos em uma árvore de
 `tbox_layout_box`. Cada caixa tem os quatro retângulos do modelo de caixa
 CSS (`margin_box`, `border_box`, `padding_box`, `content_box`), em pixels,
@@ -434,6 +488,7 @@ do CSS e emite comandos (`tbox_paint_op`):
 
 | Op | Uso |
 |---|---|
+| `PATH` | Caminho vetorial preenchido ou traçado; geometria e matriz na arena do frame |
 | `FILL_RECT` | Fundos, bordas, decorações de texto, destaque de `<mark>` (com raio, para cantos arredondados) |
 | `TEXT_RUN` | Um trecho de texto com uma face, uma cor e seus [glifos posicionados](#texto-como-glifos-posicionados) |
 | `IMAGE` | Imagens e `background-image` |

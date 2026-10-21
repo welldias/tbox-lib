@@ -174,6 +174,7 @@ typedef struct tbox_css_resolved_declaration {
     const tbox_css_property_rule *registration; /* borrowed from stylesheet */
     bool registered_default; /* no declaration: use registration inheritance/initial */
     size_t source_order; /* order among matching declarations, across all sources */
+    bool presentation_attribute; /* SVG: below every author stylesheet layer */
 } tbox_css_resolved_declaration;
 
 /* Compares the full cascade priority of two resolved declarations, even

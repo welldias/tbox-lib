@@ -26,6 +26,17 @@ Até 2026-10-19 os fixtures eram numerados (`001.html`…`163.html`, `a01.html`)
 na ordem em que os recursos foram implementados. A tabela no fim desta página
 mostra para onde foi cada um.
 
+## SVG inline
+
+| Fixture | Recurso |
+|---|---|
+| `svg-basic-shapes` | Formas básicas, arredondamento, percentuais, viewBox e preserveAspectRatio |
+| `svg-paths` | Comandos absolutos/relativos, curvas, arcos, subcaminhos e winding rules |
+| `svg-strokes` | Pontas, junções, tracejado, deslocamento e medidor com pathLength |
+| `svg-symbols` | Os 19 símbolos do file explorer em cores/tamanhos diferentes e rotação CSS |
+| `svg-compositing` | Transformações SVG, opacidade de grupo e recortes de viewports |
+| `svg-style-layout` | Cascata de atributos/CSS/@layer, var(), herança, flex/grid e SVG inline |
+
 ## HTML
 
 | Fixture | Recurso |

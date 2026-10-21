@@ -1,3 +1,4 @@
+#include "svg/tbox_svg_internal.h"
 #include <tbox/render.h>
 
 #include <tbox/css_cascade.h>
@@ -1776,6 +1777,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     }
 
     size_t text_start = items->length;
+    if (visible) tbox_render_svg(box, items, arena);
     for (size_t i = 0; i < box->text_run_count; i++) {
         const tbox_layout_text_run *run = &box->text_runs[i];
         if (run->style != NULL && run->style->visibility_hidden)

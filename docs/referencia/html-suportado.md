@@ -115,7 +115,7 @@ IMPORTANTE: Implementar apenas elementos HTML que sejam suportado pelo HTML5. Em
 | X | `<sub>` | Defines subscripted text |
 | X* | `<summary>` | Defines a visible heading for a `<details>` element |
 | X | `<sup>` | Defines superscripted text |
-|  | `<svg>` | Defines a container for SVG graphics |
+| X* | `<svg>` | Inline SVG with basic shapes, local symbols and solid paint; see SVG section below |
 | X | `<table>` | Defines a table |
 | X | `<tbody>` | Groups the body content in a table |
 | X | `<td>` | Defines a cell in a table |
@@ -134,3 +134,12 @@ IMPORTANTE: Implementar apenas elementos HTML que sejam suportado pelo HTML5. Em
 | X | `<var>` | Defines a variable |
 |  | `<video>` | Defines embedded video content |
 | X* | `<wbr>` | Defines a possible line-break |
+
+## Vocabulário SVG
+
+`svg`, `g`, `defs`, `symbol`, `use`, `path`, `rect`, `circle`, `ellipse`,
+`line`, `polyline` e `polygon` têm suporte básico. Referências `use` são
+locais; viewports, transformações afins, cores sólidas e traços são pintados.
+Texto SVG, SVG externo, SMIL, paint servers, filtros, máscaras, `clipPath`,
+marcadores e `foreignObject` não são implementados. Veja os limites em
+[SVG inline](../08-layout-e-pintura.md#svg-inline).

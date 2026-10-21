@@ -32,6 +32,17 @@ typedef struct tbox_style_property_fields {
 /* Every property with a fixed set of fields. Box-side families (margin,
  * padding, inset, border) are matched by tbox_style_side_fields instead. */
 static const tbox_style_property_fields tbox_style_properties[] = {
+    { "fill", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, fill) } },
+    { "stroke", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, stroke) } },
+    { "stroke-width", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, width) } },
+    { "stroke-dashoffset", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, dashoffset) } },
+    { "stroke-dasharray", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, dashes), TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, dash_count) } },
+    { "fill-opacity", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, fill_opacity) } },
+    { "stroke-opacity", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, stroke_opacity) } },
+    { "stroke-miterlimit", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, miterlimit) } },
+    { "stroke-linecap", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, linecap) } },
+    { "stroke-linejoin", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, linejoin) } },
+    { "fill-rule", true, { TBOX_STYLE_GROUP_FIELD(TBOX_STYLE_GROUP_SVG, tbox_style_svg_paint, evenodd) } },
     { "marker", true, { TBOX_STYLE_FIELD(marker_urls) } },
     { "marker-start", true, { TBOX_STYLE_FIELD(marker_urls[0]) } },
     { "marker-mid", true, { TBOX_STYLE_FIELD(marker_urls[1]) } },

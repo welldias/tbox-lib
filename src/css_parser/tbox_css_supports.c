@@ -19,9 +19,13 @@
  * on a screen. The 3D ones tbox accepts as no-ops (perspective,
  * transform-style, backface-visibility) stay out: answering true would
  * send pages down their 3D path. SVG-only marker* and mask-type also
- * stay out, since tbox cannot draw SVG. Keep in step with that table when a
+ * stay out, since the basic SVG subset does not draw markers/masks. Keep
+ * in step with that table when a
  * property changes status. */
 static const char *const tbox_css_supported_properties[] = {
+    "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
+    "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset",
+    "fill-rule", "fill-opacity", "stroke-opacity",
     "paint-order",
     "-webkit-text-stroke",
     "-webkit-text-stroke-width",
@@ -573,6 +577,7 @@ static bool tbox_css_supports_declaration(tbox_string_view name, tbox_string_vie
     if (!known)
         return false;
     if (!tbox_style_paint_declaration_valid(name, value)) return false;
+    if (!tbox_style_svg_declaration_valid(name, value)) return false;
     if (!tbox_style_motion_declaration_valid(name, value))
         return false;
     tbox_string_view composition = name;

@@ -489,7 +489,7 @@ static tbox_style_flex_align tbox_grid_item_align(const tbox_style *container, c
     if (align == TBOX_STYLE_FLEX_ALIGN_NORMAL)
         align = d == 0 ? container->justify_items : container->align_items;
     if (align == TBOX_STYLE_FLEX_ALIGN_NORMAL)
-        return !item->anonymous && (item->style->aspect_ratio > 0 || tbox_layout_is_replaced_image(item->node)) ? TBOX_STYLE_FLEX_ALIGN_START : TBOX_STYLE_FLEX_ALIGN_STRETCH;
+        return !item->anonymous && (item->style->aspect_ratio > 0 || tbox_layout_is_replaced_image(item->node) || tbox_layout_tag(item->node, "svg")) ? TBOX_STYLE_FLEX_ALIGN_START : TBOX_STYLE_FLEX_ALIGN_STRETCH;
     return align;
 }
 

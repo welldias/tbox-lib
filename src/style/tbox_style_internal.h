@@ -65,6 +65,11 @@ bool tbox_style_parse_radius(tbox_string_view value, const tbox_style_units *uni
 bool tbox_style_parse_shadow(tbox_string_view raw, const tbox_style_units *units, tbox_css_rgba current_color, int max_lengths, double out_lengths[4], tbox_css_rgba *out_color, bool *out_inset);
 /* Literal validation shared with cascade and @supports; unrelated properties
  * and values containing var() pass through for later resolution. */
+bool tbox_style_svg_declaration_valid(tbox_string_view property, tbox_string_view value);
+void tbox_style_resolve_svg(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_style_units *units, tbox_style *style, tbox_arena *arena);
+bool tbox_svg_is_element(const tbox_html_node *node);
+bool tbox_svg_presentation_property(tbox_string_view property);
+tbox_string_view tbox_svg_presentation_value(tbox_arena *arena, tbox_string_view property, tbox_string_view value);
 bool tbox_style_paint_declaration_valid(tbox_string_view property, tbox_string_view value);
 void tbox_style_resolve_paint(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_style_units *units, tbox_style *style);
 bool tbox_style_opentype_declaration_valid(tbox_string_view property, tbox_string_view value);
@@ -151,6 +156,7 @@ typedef enum tbox_style_group {
     TBOX_STYLE_GROUP_MASKS,
     TBOX_STYLE_GROUP_GRID,
     TBOX_STYLE_GROUP_BORDER_IMAGE,
+    TBOX_STYLE_GROUP_SVG,
     TBOX_STYLE_GROUP_COUNT,
 } tbox_style_group;
 

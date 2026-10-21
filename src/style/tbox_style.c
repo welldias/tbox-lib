@@ -1,3 +1,4 @@
+#include "svg/tbox_svg_internal.h"
 #include <tbox/style.h>
 
 #include <math.h>
@@ -2175,6 +2176,8 @@ const tbox_style_offset_path *tbox_style_offset_path_of(const tbox_style *style)
 
 const void *tbox_style_group_get(const tbox_style *style, tbox_style_group group) {
     switch (group) {
+    case TBOX_STYLE_GROUP_SVG:
+        return tbox_style_svg_paint_of(style);
     case TBOX_STYLE_GROUP_MASKS:
         return tbox_style_masks_of(style);
     case TBOX_STYLE_GROUP_GRID:
@@ -2197,6 +2200,11 @@ void *tbox_style_group_copy(tbox_arena *arena, const void *current, size_t size)
 
 void *tbox_style_group_edit(tbox_style *style, tbox_style_group group, tbox_arena *arena) {
     switch (group) {
+    case TBOX_STYLE_GROUP_SVG: {
+        tbox_style_svg_paint *copy = tbox_style_group_copy(arena, tbox_style_svg_paint_of(style), sizeof(*copy));
+        if (copy != NULL) style->svg_paint = copy;
+        return copy;
+    }
     case TBOX_STYLE_GROUP_MASKS: {
         tbox_style_masks *copy = tbox_style_group_copy(arena, tbox_style_masks_of(style), sizeof(*copy));
         if (copy != NULL)
@@ -3567,7 +3575,7 @@ static void tbox_style_resolve_declared(tbox_style *style, tbox_arena *arena, co
 
     /* display: v0's initial value is BLOCK, not CSS2.1's spec-correct
      * `inline` -- see the comment on tbox_style.display in style.h. */
-    style->display                   = TBOX_STYLE_DISPLAY_BLOCK;
+    style->display                   = node != NULL && node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "svg") ? TBOX_STYLE_DISPLAY_INLINE_BLOCK : TBOX_STYLE_DISPLAY_BLOCK;
     style->overflow_y                = TBOX_STYLE_OVERFLOW_Y_VISIBLE;
     style->box_sizing                = TBOX_STYLE_BOX_SIZING_CONTENT_BOX;
     style->visibility_hidden         = parent_style != NULL && parent_style->visibility_hidden;
@@ -4300,6 +4308,15 @@ static void tbox_style_resolve_declared(tbox_style *style, tbox_arena *arena, co
     }
     tbox_style_resolve_text_emphasis(computed, parent_style, style);
     tbox_style_resolve_paint(computed, parent_style, &units, style);
+    tbox_style_resolve_svg(computed, parent_style, &units, style, arena);
+    if (tbox_svg_is_element(node)) {
+        if ((tbox_svg_tag(node, "svg") || tbox_svg_tag(node, "symbol")) &&
+            tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("overflow")) == NULL &&
+            tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("overflow-x")) == NULL &&
+            tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("overflow-y")) == NULL)
+            style->overflow_x = style->overflow_y = TBOX_STYLE_OVERFLOW_Y_HIDDEN;
+    }
+
     style->vertical_align = tbox_style_resolve_vertical_align(computed, &units, &style->vertical_align_length);
     /* Synthesized font-variant-position moves glyphs only: atomic inlines
      * (inline-block, inline-flex, images) keep their baseline. */
@@ -4410,6 +4427,10 @@ static void tbox_style_resolve_declared(tbox_style *style, tbox_arena *arena, co
     style->caret_color = tbox_style_resolve_control_color(computed, "caret-color", parent_style != NULL ? parent_style->caret_color : (tbox_css_rgba){ 0, 0, 0, 0 }, style->color);
 
     tbox_style_resolve_extras(computed, &units, parent_style, style, arena);
+    if (tbox_svg_is_element(node) && !(tbox_svg_tag(node, "svg") && !tbox_svg_is_element(node->parent)) &&
+        tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("transform-origin")) == NULL)
+        style->transform_origin[0] = style->transform_origin[1] = (tbox_style_length){ .kind = TBOX_STYLE_LENGTH_PX };
+
     tbox_style_resolve_inline(computed, parent_style, style);
     tbox_style_matrix_identity(style->filter_matrix);
     const tbox_css_resolved_declaration *filter = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("filter"));
@@ -4680,6 +4701,7 @@ tbox_style_table tbox_style_resolve_tree_in_viewport_with_preferences(tbox_arena
     tbox_style_table table = { 0 };
     table.items = (tbox_style_entry *)items.data;
     table.count = items.length;
+    tbox_svg_prepare(arena, root, sources, source_count, &table, viewport_width, viewport_height, reduced_motion);
     return table;
 }
 

@@ -1,5 +1,5 @@
-/* Text paint and SVG-only properties. SVG references are retained without
- * loading resources: tbox has no SVG drawing pipeline. */
+/* Text paint and retained SVG marker/mask properties. The basic SVG
+ * drawing pipeline does not implement markers or SVG masks. */
 #include "style/tbox_style_internal.h"
 
 #include <math.h>

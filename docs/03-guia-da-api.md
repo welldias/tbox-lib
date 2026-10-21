@@ -283,3 +283,16 @@ O tbox é experimental. A API mudou entre versões (por exemplo, o handler de
 clique passou de `void` para `bool`) e ainda vai mudar; o
 [roadmap](14-limitacoes-e-roadmap.md) prevê fechar o contrato de aplicação e
 eventos como primeiro marco.
+
+## Pintura vetorial SVG
+
+`tbox_style.svg_paint` é um grupo imutável fora de linha: leia por
+`tbox_style_svg_paint_of`, que devolve os valores iniciais se o ponteiro é
+NULL. Como os demais grupos, vive na arena de resolução e só pode ser
+alterado por cópia. `tbox_style.svg` é uma cena interna emprestada do frame.
+`tbox_paint_op` pode ter kind `TBOX_PAINT_PATH`: `path` aponta para segmentos
+públicos e parâmetros de pintura de `render.h`, válidos até resetar a arena
+da display list. A matriz mapeia geometria ao espaço de `rect`; `rect` já
+inclui todo o traço. `tbox_css_resolved_declaration.presentation_attribute`
+identifica atributos SVG, de prioridade inferior às folhas de autor.
+Essas extensões alteram o tamanho das structs públicas; recompile clientes.

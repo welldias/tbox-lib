@@ -47,6 +47,7 @@ typedef enum tbox_paint_op_kind {
      * are emitted bottom to top, combined through `mask_composite`. */
     TBOX_PAINT_LAYER_MASK,
     TBOX_PAINT_LAYER_END,
+    TBOX_PAINT_PATH, /* vector fill or stroke; see path */
 } tbox_paint_op_kind;
 
 /* Resolved polygon vertices, local to polygon_clip_origin. Borrowed from
@@ -57,7 +58,29 @@ typedef struct tbox_paint_polygon {
     bool evenodd;
 } tbox_paint_polygon;
 
+/* Sampled vector edges. move starts a disconnected contour; close joins
+ * its final point to its start. Open contours close implicitly for fill. */
+typedef struct tbox_paint_path_segment {
+    double x0, y0, x1, y1;
+    bool move, close;
+} tbox_paint_path_segment;
+
+/* PATH geometry and stroke parameters, borrowed from the frame arena.
+ * matrix maps user coordinates to the same space as op.rect, which bounds
+ * all ink including antialiasing. Dashes are already pathLength-adjusted. */
+typedef struct tbox_paint_path {
+    const tbox_paint_path_segment *segments;
+    size_t count;
+    double matrix[6]; /* local geometry to screen, independent of op.rect bounds */
+    bool stroke, evenodd;
+    double width, miterlimit, dashoffset;
+    unsigned linecap, linejoin;
+    double dashes[TBOX_STYLE_MAX_SVG_DASHES];
+    size_t dash_count;
+} tbox_paint_path;
+
 typedef struct tbox_paint_op {
+    const tbox_paint_path *path; /* frame-owned, PATH only */
     tbox_paint_op_kind kind;
 
     /* FILL_RECT: the rectangle to fill. TEXT_RUN: only rect.x/rect.y are

@@ -99,3 +99,13 @@ eventos.
 para abrir janela, ler eventos (`tbox_input_event`), clipboard, cursor e
 apresentar quadros. Tipos nativos (Wayland, keymap, compositor) não podem
 aparecer acima dela. O único backend hoje é `tbox_backend_wayland.c`.
+
+## SVG inline
+
+`src/svg/tbox_svg.c` prepara instâncias e referências locais; `tbox_svg_geometry.c`
+lê coordenadas, formas, transformações e viewports. `base/tbox_path.*` é o
+parser de caminhos compartilhado com motion path. Pintura CSS em
+`style/tbox_style_svg.c`, caixa externa em `layout/tbox_layout_svg.c`, display
+list em `render/tbox_render_svg.c` e contornos FreeType em
+`output/tbox_raster_path.c`. `tbox_svg_internal.h` contém só tipos internos;
+a representação de pintura consumível por backends está em `render.h`.

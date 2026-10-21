@@ -720,6 +720,7 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         UA_RULE_1("a", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE)),
         /* Only a link (an <a> with href) looks like one. */
         UA_RULE_TAG_STATE("a", "any-link", UA_COLOR(TBOX_UA_PROP_COLOR, 0, 0, 255), UA_KW(TBOX_UA_PROP_TEXT_DECORATION, TBOX_UA_KW_UNDERLINE)),
+        UA_RULE_1("svg", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK)),
         UA_RULE_1("img", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE)),
         UA_RULE_1("small", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE), UA_LEN(TBOX_UA_PROP_FONT_SIZE, 80, TBOX_UA_UNIT_PERCENT)),
         UA_RULE_1("mark", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 0)),

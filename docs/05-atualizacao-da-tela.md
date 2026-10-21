@@ -193,6 +193,12 @@ correspondente e exigindo também `bounds` iguais, a chance prática é da
 ordem de 1 em 10¹⁹. Resize, invalidação e buffer novo sempre forçam
 repintura total.
 
+Caminhos SVG são assinados pelos segmentos (coordenadas, movimentos e
+fechamentos), matriz, preenchimento/traço, regra de preenchimento, pontas,
+junções e tracejado. Nunca se usa o endereço da geometria na arena do frame.
+Os bounds incluem largura do traço, miter, escala e uma margem para
+antialiasing; a pintura dentro de camadas desloca também a matriz do caminho.
+
 ### Os bounds
 
 `tbox_raster_op_paint_bounds` calcula a área que uma op *pode* pintar, de

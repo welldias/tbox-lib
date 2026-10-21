@@ -490,3 +490,25 @@ sintaxes descritas abaixo.
 | X* | url() | Allows you to include a file in the stylesheet |
 | X | var() | Inserts the value of a custom property |
 | X* | xywh() | Creates a rectangle starting at the x and y coordinates of the contaning block, with the specified width and height |
+
+## Pintura SVG inline
+
+| Status | Propriedade | Formas implementadas |
+|---|---|---|
+| X* | fill | Cor sólida, currentColor, none; sem paint servers |
+| X* | stroke | Cor sólida, currentColor, none; sem paint servers |
+| X* | stroke-width | Número, comprimento e percentual não negativo |
+| X | stroke-linecap | butt, round, square |
+| X* | stroke-linejoin | miter, round, bevel |
+| X | stroke-miterlimit | Número maior ou igual a 1 |
+| X* | stroke-dasharray | none ou até 32 comprimentos/números/percentuais não negativos |
+| X* | stroke-dashoffset | Número, comprimento ou percentual, inclusive negativo |
+| X | fill-rule | nonzero, evenodd |
+| X | fill-opacity | Número ou percentual limitado a 0–1 |
+| X | stroke-opacity | Número ou percentual limitado a 0–1 |
+
+Propriedades herdadas, com keywords CSS-wide e var(). `@supports` valida
+valores literais; `url()` não é uma pintura suportada. Ainda não interpolam
+em animações/transições. `paint-order` também ordena fill/stroke de SVG.
+Geometria via CSS (`d`, `cx`, `cy`, `r`, `rx`, `ry`, `x`, `y`) fica fora do
+recorte. [Limites de desenho](../08-layout-e-pintura.md#svg-inline).

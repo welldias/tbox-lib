@@ -530,6 +530,7 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
                 state->trailing_space = true;
         } else if (child->type == TBOX_HTML_NODE_ELEMENT) {
             const tbox_style *child_style = tbox_layout_style_or_default(styles, child);
+            if (tbox_layout_tag(child, "svg") && child_style->display == TBOX_STYLE_DISPLAY_NONE) continue;
             /* Positioned descendants have their own boxes, built after
              * the in-flow line runs; their text never belongs to this line. */
             if (child_style->position == TBOX_STYLE_POSITION_ABSOLUTE || child_style->position == TBOX_STYLE_POSITION_FIXED)
@@ -558,7 +559,7 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
                 const tbox_font_face *face = tbox_layout_style_face(fonts, style);
                 tbox_layout_push_image_word(arena, child, child_style, face, images, containing_width, words);
                 tbox_layout_join_words(words, first, false, state);
-            } else if (child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX || child_style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) {
+            } else if (tbox_layout_tag(child, "svg") || child_style->display == TBOX_STYLE_DISPLAY_INLINE_BLOCK || child_style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX || child_style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) {
                 const tbox_font_face *face = tbox_layout_style_face(fonts, style);
                 tbox_layout_push_atomic_word(arena, child, child_style, face, styles, fonts, images, containing_width, measure_only, words);
                 tbox_layout_join_words(words, first, false, state);

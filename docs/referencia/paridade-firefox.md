@@ -4,6 +4,35 @@
 > - **Código relacionado:** `tests/assets/`, `tests/tbox_cmp.cpp`
 > - **Veja também:** [Fixtures](fixtures.md), [Ferramentas e testes](../12-ferramentas-e-testes.md), [Débito técnico](../dev/debito-tecnico.md)
 
+## Verificação dirigida de SVG — 2026-10-21
+
+Complemento ao levantamento histórico abaixo, sem reexecutar os outros
+fixtures. Build Debug, FreeType 2.15.0 do sistema, Firefox 158.0 headless
+(build 20261013210526), fontes Arial/sans-serif do sistema, 800×600:
+
+| Fixture | Veredito | SSIM | Checagens locais reprovadas |
+|---|---|---:|---:|
+| `svg-basic-shapes` | EQUAL | 0,9816 | 0 |
+| `svg-compositing` | EQUAL | 0,9825 | 0 |
+| `svg-paths` | EQUAL | 0,9812 | 0 |
+| `svg-strokes` | EQUAL | 0,9883 | 0 |
+| `svg-style-layout` | EQUAL | 0,9815 | 0 |
+| `svg-symbols` | EQUAL | 0,9737 | 0 |
+
+Capturas revisadas visualmente: formas, curvas, símbolos, medidor e
+sobreposições presentes. `EQUAL` é tolerância do comparador, não identidade
+pixel a pixel; SSIM é diagnóstico. Reprodução:
+
+```sh
+build/tests/tbox_cmp --output /tmp/tbox-svg-cmp tests/assets svg-basic-shapes svg-compositing svg-paths svg-strokes svg-style-layout svg-symbols
+build/tests/tbox_cmp --output /tmp/tbox-svg-explorer --size 1440x900 example/file-explorer
+```
+
+A página completa continua DIFFERENT (SSIM 0,8687; 127 checagens locais),
+com diferenças de layout e texto HTML além dos vetores; veja
+[compatibilidade do explorer](file-explorer-compatibilidade.md).
+Os 25 grupos CTest passaram também com ASan/UBSan/LeakSanitizer.
+
 ## Medição e ambiente
 
 Esta é a medição anterior às implementações de placeholder, `:focus-visible`

@@ -17,7 +17,7 @@
 
 | Dependência | Obrigatória? | Para quê | Sem ela |
 |---|---|---|---|
-| FreeType | sim (instalada no sistema, incluindo headers de desenvolvimento) | métricas e rasterização de glifos | configure falha |
+| FreeType | sim (instalada no sistema, incluindo headers de desenvolvimento) | métricas, rasterização de glifos e contornos SVG | configure falha |
 | Fontconfig | não | achar fontes do sistema; `tbox_app`; screenshots | `tbox_app_*` continua linkável mas retorna falha; use `tbox_context` com fonte própria |
 | HarfBuzz | não | shaping: ligaduras, formas contextuais, marcas, kerning OpenType ([Texto e fontes](09-texto-e-fontes.md#shaping-do-texto-aos-glifos)) | um glifo por codepoint (`tbox_font_shaper_simple.c`) |
 | wayland-client, wayland-protocols, wayland-scanner, xkbcommon | não | janela interativa | sem janela (`tbox_app_backend_available()` = `false`) |

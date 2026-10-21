@@ -31,7 +31,8 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
     if (tbox_layout_frame_change(style)) /* a vertical writing mode starts here */
         return tbox_layout_build_orthogonal(arena, node, styles, fonts, images, container, cursor_y, positioned_context, forced);
     tbox_layout_classification kind          = tbox_layout_classify(node, style, styles, row_column_widths, row_column_count);
-    bool is_text_tag                         = kind.text;
+    bool is_svg                              = tbox_layout_tag(node, "svg");
+    bool is_text_tag                         = kind.text && !is_svg;
     bool is_image_input                      = kind.image;
     bool is_table                            = kind.table;
     bool is_table_row                        = kind.table_row;
@@ -113,6 +114,8 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
             double minimum = outer.min - outside, maximum = outer.max - outside;
             content_width = available > maximum ? maximum : available < minimum ? minimum : available;
         }
+        if (is_svg)
+            content_width = tbox_layout_svg_auto_width(node, style, vertical_edges);
         if (is_image_input)
             content_width = tbox_layout_image_auto_width(&image_content, style, container, vertical_edges);
         if (tbox_layout_is_textarea(node))
@@ -273,7 +276,11 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
     if (stretched_height < 0.0)
         stretched_height = 0.0;
     double content_height;
-    if (is_image_input) {
+    if (is_svg) {
+        content_height = tbox_layout_svg_height(node, style, container, content_width, vertical_edges);
+        if (forced != NULL && forced->has_height)
+            content_height = forced->height > vertical_edges ? forced->height - vertical_edges : 0;
+    } else if (is_image_input) {
         content_height = tbox_layout_image_height(&image_content, style, container, content_width, vertical_edges);
     } else if (is_flex || kind.grid) {
         bool height_definite = false;

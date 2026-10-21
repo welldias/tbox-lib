@@ -34,8 +34,9 @@ Simplificações de layout mais finas estão em
 
 ## Roadmap
 
-SVG, áudio, vídeo e faixas de mídia (`<track>`) ficam para uma etapa futura,
-após a biblioteca tbox amadurecer.
+SVG inline básico está implementado (formas, símbolos locais e cores sólidas).
+SVG externo e recursos vetoriais avançados, áudio, vídeo e faixas de mídia
+(`<track>`) ficam para uma etapa futura.
 
 1. **Contrato de aplicação e eventos.** Fechar a API pública de
    aplicação/eventos, posse de recursos e invalidação explícita, mantendo o

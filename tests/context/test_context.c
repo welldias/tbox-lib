@@ -441,6 +441,7 @@ static bool resolve_first_child_style(const char *html, tbox_style *out_style) {
     return resolve_first_child_style_with_config(html, tbox_ua_style_config_default(), out_style);
 }
 
+int tbox_test_svg_run(tbox_font_face_cache *fonts);
 int tbox_test_placeholder_run(tbox_font_face_cache *fonts);
 int tbox_test_inline_positioned_run(tbox_font_face_cache *fonts);
 int tbox_test_focus_visible_run(tbox_font_face_cache *fonts);
@@ -466,6 +467,7 @@ int tbox_test_context_run(void) {
         return failures + 1;
     }
 
+    failures += tbox_test_svg_run(fonts);
     failures += tbox_test_placeholder_run(fonts);
     failures += tbox_test_inline_positioned_run(fonts);
     failures += tbox_test_focus_visible_run(fonts);

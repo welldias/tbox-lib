@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+    content="Template de gerenciador de arquivos com pastas, arquivos recentes e informações de armazenamento.">
+  <meta name="color-scheme" content="light">
+  <title>Meus arquivos · File Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <!-- Ícones locais reutilizáveis: o template não depende de bibliotecas externas. -->
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24">
+        <path d="M3 5h7l2 2h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1Z" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-folder-large" viewBox="0 0 40 36">
+        <path d="M4 7a3 3 0 0 1 3-3h9l4 4h13a3 3 0 0 1 3 3v18a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3Z" fill="currentColor"
+          opacity=".35" />
+        <path d="M4 13a3 3 0 0 1 3-3h26a3 3 0 0 1 3 3v16a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3Z" fill="currentColor" />
+        <path d="M10 16h10" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".65" />
+      </symbol>
+      <symbol id="icon-chevron" viewBox="0 0 24 24">
+        <path d="m8 14 4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+          stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-pin" viewBox="0 0 24 24">
+        <path d="M8 3h8l-1 8 3 3v2h-5v5h-2v-5H6v-2l3-3Z" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-drive" viewBox="0 0 24 24">
+        <path d="m9 3 6 10h6L15 3ZM8 4 2 15l3 5 6-11Zm0 10-3 6h12l4-6Z" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-dropbox" viewBox="0 0 24 24">
+        <path d="m7 3-5 4 5 4 5-4Zm10 0-5 4 5 4 5-4ZM7 11l-5 4 5 4 5-4Zm10 0-5 4 5 4 5-4Zm-5 6-5 4 5 3 5-3Z"
+          fill="currentColor" transform="translate(0 -1)" />
+      </symbol>
+      <symbol id="icon-share" viewBox="0 0 24 24">
+        <path d="m7 11 10-6M7 13l10 6" fill="none" stroke="currentColor" stroke-width="2" />
+        <circle cx="5" cy="12" r="3" fill="currentColor" />
+        <circle cx="19" cy="4" r="3" fill="currentColor" />
+        <circle cx="19" cy="20" r="3" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-star" viewBox="0 0 24 24">
+        <path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3L12 17.4l-5.6 2.9 1.1-6.3L3 9.6l6.2-.9Z" fill="none"
+          stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24">
+        <path d="M5 6h14M9 6V3h6v3M7 6l1 15h8l1-15M10 10v7m4-7v7" fill="none" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24">
+        <path d="m10 2-1 3-3 1-3-1-2 4 2 2v3l-2 2 2 4 3-1 3 1 1 3h4l1-3 3-1 3 1 2-4-2-2v-3l2-2-2-4-3 1-3-1-1-3Z"
+          fill="currentColor" transform="translate(1 0) scale(.92)" />
+        <circle cx="12" cy="12" r="3" fill="white" />
+      </symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24">
+        <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="m16 16 4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="icon-more" viewBox="0 0 24 24">
+        <circle cx="5" cy="12" r="1.7" fill="currentColor" />
+        <circle cx="12" cy="12" r="1.7" fill="currentColor" />
+        <circle cx="19" cy="12" r="1.7" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24">
+        <path d="M5 2h9l5 5v15H5Z" fill="currentColor" />
+        <path d="M14 2v6h5M8 12h8M8 16h6" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="icon-archive" viewBox="0 0 24 24">
+        <path d="M3 5h7l2 2h9v13H3Z" fill="currentColor" />
+        <path d="M12 7v2h2v2h-2v2h2v2h-2v3" fill="none" stroke="white" stroke-width="1.6" />
+      </symbol>
+      <symbol id="icon-image" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="18" rx="2" fill="currentColor" />
+        <circle cx="8" cy="8" r="1.5" fill="white" />
+        <path d="m5 18 5-6 3 3 3-4 4 7Z" fill="white" />
+      </symbol>
+      <symbol id="icon-video" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="m10 7 7 5-7 5Z" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-music" viewBox="0 0 24 24">
+        <path d="M9 17V5l12-3v13M9 8l12-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" />
+        <ellipse cx="6" cy="18" rx="4" ry="3" fill="currentColor" />
+        <ellipse cx="18" cy="16" rx="4" ry="3" fill="currentColor" />
+      </symbol>
+      <symbol id="icon-code" viewBox="0 0 24 24">
+        <path d="m8 5-6 7 6 7m8-14 6 7-6 7M14 3l-4 18" fill="none" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+    </defs>
+  </svg>
+
+  <div class="file-manager">
+    <aside class="sidebar panel" aria-label="Menu principal">
+      <button class="create-button" type="button"><svg class="icon" aria-hidden="true">
+          <use href="#icon-plus" />
+        </svg>Criar novo</button>
+
+      <nav class="navigation" aria-label="Navegação de arquivos">
+        <div class="navigation-group">
+          <a class="nav-item active" href="#folders" aria-current="page"><svg class="icon text-yellow"
+              aria-hidden="true">
+              <use href="#icon-folder" />
+            </svg><span>Arquivos</span><svg class="icon nav-trailing chevron" aria-hidden="true">
+              <use href="#icon-chevron" />
+            </svg></a>
+          <ul class="folder-navigation">
+            <li><a href="#folder-design">Design</a></li>
+            <li><a href="#folder-development">Desenvolvimento<svg class="icon pin" aria-hidden="true">
+                  <use href="#icon-pin" />
+                </svg></a></li>
+            <li><a href="#folder-project">Projeto A</a></li>
+            <li><a href="#folder-admin">Admin<svg class="icon pin" aria-hidden="true">
+                  <use href="#icon-pin" />
+                </svg></a></li>
+          </ul>
+        </div>
+        <button class="nav-item" type="button"><svg class="icon text-muted" aria-hidden="true">
+            <use href="#icon-drive" />
+          </svg><span>Google Drive</span></button>
+        <button class="nav-item" type="button"><svg class="icon text-purple" aria-hidden="true">
+            <use href="#icon-dropbox" />
+          </svg><span>Dropbox</span></button>
+        <button class="nav-item" type="button"><svg class="icon" aria-hidden="true">
+            <use href="#icon-share" />
+          </svg><span>Compartilhados</span><span class="notification-dot nav-trailing"
+            aria-label="Há novidades"></span></button>
+        <button class="nav-item" type="button"><svg class="icon text-muted" aria-hidden="true">
+            <use href="#icon-star" />
+          </svg><span>Favoritos</span></button>
+        <button class="nav-item" type="button"><svg class="icon text-red" aria-hidden="true">
+            <use href="#icon-trash" />
+          </svg><span>Lixeira</span></button>
+        <button class="nav-item" type="button"><svg class="icon text-muted" aria-hidden="true">
+            <use href="#icon-settings" />
+          </svg><span>Configurações</span><span class="notification-badge nav-trailing"
+            aria-label="1 notificação">01</span></button>
+      </nav>
+    </aside>
+
+    <main class="main-panel panel" id="main-content">
+      <header class="main-header">
+        <h1>Meus arquivos</h1>
+        <div class="header-actions">
+          <label class="search-field"><svg class="icon" aria-hidden="true">
+              <use href="#icon-search" />
+            </svg><input type="search" placeholder="Buscar arquivos..." aria-label="Buscar arquivos"></label>
+          <button class="icon-button vertical-more" type="button" aria-label="Mais opções"><svg class="icon"
+              aria-hidden="true">
+              <use href="#icon-more" />
+            </svg></button>
+        </div>
+      </header>
+
+      <section class="folder-grid" id="folders" aria-label="Pastas">
+        <article class="folder-card" id="folder-design">
+          <div class="folder-card-top"><svg class="folder-icon text-yellow" aria-hidden="true">
+              <use href="#icon-folder-large" />
+            </svg><button class="icon-button" type="button" aria-label="Opções da pasta Design"><svg class="icon"
+                aria-hidden="true">
+                <use href="#icon-more" />
+              </svg></button></div>
+          <h2>Design</h2>
+          <div class="folder-details"><span>12 arquivos</span><span>6 GB</span></div>
+        </article>
+        <article class="folder-card" id="folder-development">
+          <div class="folder-card-top"><svg class="folder-icon text-yellow" aria-hidden="true">
+              <use href="#icon-folder-large" />
+            </svg><button class="icon-button" type="button" aria-label="Opções da pasta Desenvolvimento"><svg
+                class="icon" aria-hidden="true">
+                <use href="#icon-more" />
+              </svg></button></div>
+          <h2>Desenvolvimento</h2>
+          <div class="folder-details"><span>20 arquivos</span><span>8 GB</span></div>
+        </article>
+        <article class="folder-card" id="folder-project">
+          <div class="folder-card-top"><svg class="folder-icon text-yellow" aria-hidden="true">
+              <use href="#icon-folder-large" />
+            </svg><button class="icon-button" type="button" aria-label="Opções da pasta Projeto A"><svg class="icon"
+                aria-hidden="true">
+                <use href="#icon-more" />
+              </svg></button></div>
+          <h2>Projeto A</h2>
+          <div class="folder-details"><span>06 arquivos</span><span>2 GB</span></div>
+        </article>
+        <article class="folder-card" id="folder-admin">
+          <div class="folder-card-top"><svg class="folder-icon text-yellow" aria-hidden="true">
+              <use href="#icon-folder-large" />
+            </svg><button class="icon-button" type="button" aria-label="Opções da pasta Admin"><svg class="icon"
+                aria-hidden="true">
+                <use href="#icon-more" />
+              </svg></button></div>
+          <h2>Admin</h2>
+          <div class="folder-details"><span>08 arquivos</span><span>4 GB</span></div>
+        </article>
+        <article class="folder-card">
+          <div class="folder-card-top"><svg class="folder-icon text-yellow" aria-hidden="true">
+              <use href="#icon-folder-large" />
+            </svg><button class="icon-button" type="button" aria-label="Opções da pasta Sketch Design"><svg class="icon"
+                aria-hidden="true">
+                <use href="#icon-more" />
+              </svg></button></div>
+          <h2>Sketch Design</h2>
+          <div class="folder-details"><span>12 arquivos</span><span>6 GB</span></div>
+        </article>
+        <article class="folder-card">
+          <div class="folder-card-top"><svg class="folder-icon text-yellow" aria-hidden="true">
+              <use href="#icon-folder-large" />
+            </svg><button class="icon-button" type="button" aria-label="Opções da pasta Aplicativos"><svg class="icon"
+                aria-hidden="true">
+                <use href="#icon-more" />
+              </svg></button></div>
+          <h2>Aplicativos</h2>
+          <div class="folder-details"><span>20 arquivos</span><span>8 GB</span></div>
+        </article>
+      </section>
+
+      <section class="recent-files" aria-labelledby="recent-title">
+        <div class="section-header">
+          <h2 id="recent-title">Arquivos recentes</h2><button class="text-button" type="button">Ver todos</button>
+        </div>
+        <div class="table-container" tabindex="0" role="region" aria-label="Lista de arquivos recentes">
+          <table class="files-table">
+            <thead>
+              <tr>
+                <th scope="col">Nome</th>
+                <th scope="col">Data de modificação</th>
+                <th scope="col">Tamanho</th>
+                <th scope="col"><span class="visually-hidden">Opções</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-purple" aria-hidden="true">
+                      <use href="#icon-file" />
+                    </svg>index.html</div>
+                </td>
+                <td><time datetime="2020-10-12T09:45">12/10/2020, 09:45</time></td>
+                <td>09 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de index.html"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-yellow" aria-hidden="true">
+                      <use href="#icon-archive" />
+                    </svg>Project-A.zip</div>
+                </td>
+                <td><time datetime="2020-10-11T17:05">11/10/2020, 17:05</time></td>
+                <td>115 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de Project-A.zip"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-muted" aria-hidden="true">
+                      <use href="#icon-image" />
+                    </svg>Img-1.jpeg</div>
+                </td>
+                <td><time datetime="2020-10-11T13:26">11/10/2020, 13:26</time></td>
+                <td>86 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de Img-1.jpeg"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-muted" aria-hidden="true">
+                      <use href="#icon-file" />
+                    </svg>update list.txt</div>
+                </td>
+                <td><time datetime="2020-10-10T11:32">10/10/2020, 11:32</time></td>
+                <td>08 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de update list.txt"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-yellow" aria-hidden="true">
+                      <use href="#icon-folder" />
+                    </svg>Project B</div>
+                </td>
+                <td><time datetime="2020-10-10T10:51">10/10/2020, 10:51</time></td>
+                <td>72 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de Project B"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-muted" aria-hidden="true">
+                      <use href="#icon-file" />
+                    </svg>Changes list.txt</div>
+                </td>
+                <td><time datetime="2020-10-09T17:05">09/10/2020, 17:05</time></td>
+                <td>07 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de Changes list.txt"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-green" aria-hidden="true">
+                      <use href="#icon-image" />
+                    </svg>Img-2.png</div>
+                </td>
+                <td><time datetime="2020-10-09T15:12">09/10/2020, 15:12</time></td>
+                <td>31 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de Img-2.png"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-yellow" aria-hidden="true">
+                      <use href="#icon-folder" />
+                    </svg>Project C</div>
+                </td>
+                <td><time datetime="2020-10-09T10:11">09/10/2020, 10:11</time></td>
+                <td>20 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de Project C"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="file-name"><svg class="icon text-purple" aria-hidden="true">
+                      <use href="#icon-code" />
+                    </svg>starter-page.html</div>
+                </td>
+                <td><time datetime="2020-10-08T03:22">08/10/2020, 03:22</time></td>
+                <td>11 KB</td>
+                <td><button class="icon-button" type="button" aria-label="Opções de starter-page.html"><svg class="icon"
+                      aria-hidden="true">
+                      <use href="#icon-more" />
+                    </svg></button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <aside class="storage-panel panel" aria-labelledby="storage-title">
+      <h2 id="storage-title">Armazenamento</h2>
+      <div class="storage-summary">
+        <div class="storage-gauge" role="img" aria-label="76 por cento do armazenamento utilizado">
+          <svg viewBox="0 0 120 68" aria-hidden="true">
+            <path class="gauge-track" d="M10 58a50 50 0 0 1 100 0" />
+            <path class="gauge-segments" d="M10 58a50 50 0 0 1 100 0" pathLength="100" />
+            <path class="gauge-unused" d="M10 58a50 50 0 0 1 100 0" pathLength="100" />
+          </svg>
+          <span class="gauge-value">76%</span>
+        </div>
+        <p>48,02 GB (76%) de 64 GB usados</p>
+      </div>
+      <ul class="storage-types">
+        <li class="storage-card"><svg class="icon text-green" aria-hidden="true">
+            <use href="#icon-image" />
+          </svg>
+          <div class="storage-type">
+            <h3>Imagens</h3><span>176 arquivos</span>
+          </div><span class="storage-size">6 GB</span>
+        </li>
+        <li class="storage-card"><svg class="icon text-red" aria-hidden="true">
+            <use href="#icon-video" />
+          </svg>
+          <div class="storage-type">
+            <h3>Vídeos</h3><span>45 arquivos</span>
+          </div><span class="storage-size">4,1 GB</span>
+        </li>
+        <li class="storage-card"><svg class="icon text-blue" aria-hidden="true">
+            <use href="#icon-music" />
+          </svg>
+          <div class="storage-type">
+            <h3>Músicas</h3><span>21 arquivos</span>
+          </div><span class="storage-size">3,2 GB</span>
+        </li>
+        <li class="storage-card"><svg class="icon text-purple" aria-hidden="true">
+            <use href="#icon-file" />
+          </svg>
+          <div class="storage-type">
+            <h3>Documentos</h3><span>21 arquivos</span>
+          </div><span class="storage-size">2 GB</span>
+        </li>
+        <li class="storage-card"><svg class="icon text-yellow" aria-hidden="true">
+            <use href="#icon-folder" />
+          </svg>
+          <div class="storage-type">
+            <h3>Outros</h3><span>20 arquivos</span>
+          </div><span class="storage-size">1,4 GB</span>
+        </li>
+      </ul>
+    </aside>
+  </div>
+</body>
+
+</html>

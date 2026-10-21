@@ -988,7 +988,30 @@ enum {
     TBOX_STYLE_HANG_ALLOW_END = 8u
 };
 
+/* Basic SVG paint. Length percentages resolve against the SVG viewport's
+ * normalized diagonal. NULL svg_paint uses tbox_style_svg_paint_of defaults. */
+#define TBOX_STYLE_MAX_SVG_DASHES 32
+typedef enum tbox_style_svg_color_kind {
+    TBOX_STYLE_SVG_COLOR, TBOX_STYLE_SVG_NONE, TBOX_STYLE_SVG_CURRENT_COLOR
+} tbox_style_svg_color_kind;
+typedef struct tbox_style_svg_color {
+    tbox_css_rgba color;
+    tbox_style_svg_color_kind kind;
+} tbox_style_svg_color;
+typedef struct tbox_style_svg_paint {
+    tbox_style_svg_color fill, stroke;
+    tbox_style_length width, dashoffset;
+    tbox_style_length dashes[TBOX_STYLE_MAX_SVG_DASHES];
+    size_t dash_count;
+    double fill_opacity, stroke_opacity, miterlimit;
+    unsigned linecap, linejoin; /* butt/round/square; miter/round/bevel */
+    bool evenodd;
+} tbox_style_svg_paint;
+struct tbox_svg_node;
+
 typedef struct tbox_style {
+    const tbox_style_svg_paint *svg_paint; /* shared immutable, frame arena */
+    const struct tbox_svg_node *svg; /* internal prepared inline SVG scene */
     /* Initial value in v0 is TBOX_STYLE_DISPLAY_BLOCK, NOT CSS2.1's
      * spec-correct `inline` -- a deliberate v0 simplification, since there
      * is no user-agent stylesheet yet to make e.g. <span> default to
@@ -1692,6 +1715,8 @@ double tbox_style_filter_extent(const tbox_style_filter_list *filters);
 /* The transition entry that applies to `property` (the last that names
  * it), NULL when none does or its duration is 0. */
 const tbox_style_transition *tbox_style_transition_find(const tbox_style *style, tbox_style_animatable property);
+
+const tbox_style_svg_paint *tbox_style_svg_paint_of(const tbox_style *style);
 
 typedef struct tbox_style_entry {
     const tbox_html_node *node;

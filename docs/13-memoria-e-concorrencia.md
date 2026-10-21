@@ -45,6 +45,15 @@ e define as regras abaixo.
   `element.tag_name` de um nó criado à mão (ver
   [Exemplos](04-exemplos.md#7-criar-elementos-dinamicamente)).
 
+## Geometria SVG
+
+Cenas, instâncias de `use`, estilos por instância e segmentos da display
+list usam a arena do frame; não persistem ponteiros entre frames. A geometria
+pública `tbox_paint_path` é emprestada, como glifos e recortes. O rasterizador
+cria seu estado FreeType sob demanda na chamada de pintura e o destrói antes
+de retornar. Stroking usa memória temporária explícita; não há cache global
+novo nem necessidade de um font face para rasterizar SVG.
+
 ## Threads
 
 **Afinidade de thread, com uma única porta thread-safe.** Regras:

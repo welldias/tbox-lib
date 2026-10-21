@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
+*{box-sizing:border-box} body{margin:20px;background:#fff;color:#24304a;font:14px/20px Arial,sans-serif}h1{font-size:20px;line-height:28px;margin:0 0 12px}p{margin:8px 0 12px}svg{display:block} .row{display:flex;gap:20px;margin-bottom:16px;align-items:center} .frame{border:1px solid #cbd2df;background:#f5f7fb} .blue{color:#3978cf} .purple{color:#7866de} .gold{color:#dca32f}
+</style></head><body><h1>SVG transforms, opacity and clipping</h1><p>SVG and CSS transforms. Group opacity. Hidden definitions. Nested clipping.</p>
+<svg width="740" height="360" viewBox="0 0 740 360" class="frame">
+<g transform="translate(35 25) rotate(12 60 45)"><rect width="120" height="90" rx="12" fill="#3978cf"/><path d="M15 45h90" stroke="white" stroke-width="8" stroke-linecap="round"/></g>
+<g transform="translate(230 25) scale(1.5 .7)"><circle cx="45" cy="55" r="42" fill="#7866de" stroke="#24304a" stroke-width="5"/></g>
+<g opacity=".5" fill="#cf5967"><circle cx="490" cy="70" r="43"/><circle cx="540" cy="70" r="43"/></g>
+<g transform="translate(600 25) skewX(15)"><rect width="70" height="90" fill="#38a87b"/></g>
+<svg x="30" y="190" width="140" height="110" viewBox="0 0 70 55"><circle cx="0" cy="25" r="45" fill="#3978cf"/></svg>
+<svg x="245" y="190" width="140" height="110" viewBox="0 0 70 55" overflow="visible"><circle cx="0" cy="25" r="45" fill="#7866de"/></svg>
+<g transform="translate(450 190)"><rect width="100" height="100" fill="#38a87b"/><rect x="25" y="25" width="100" height="100" fill="#dca32f" opacity=".5"/></g>
+</svg></body></html>

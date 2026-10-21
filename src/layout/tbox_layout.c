@@ -9,8 +9,8 @@ tbox_layout_classification tbox_layout_classify(const tbox_html_node *node, cons
     kind.image     = tbox_layout_is_replaced_image(node);
     kind.table     = node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, "table");
     kind.table_row = row_column_widths != NULL && row_column_count > 0 && tbox_layout_tag(node, "tr");
-    kind.flex      = (style->display == TBOX_STYLE_DISPLAY_FLEX || style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) && !kind.image && !kind.table && !kind.table_row && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node);
-    kind.grid = (style->display == TBOX_STYLE_DISPLAY_GRID || style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) && !kind.image && !kind.table && !kind.table_row && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node);
+    kind.flex      = (style->display == TBOX_STYLE_DISPLAY_FLEX || style->display == TBOX_STYLE_DISPLAY_INLINE_FLEX) && !tbox_layout_tag(node, "svg") && !kind.image && !kind.table && !kind.table_row && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node);
+    kind.grid = (style->display == TBOX_STYLE_DISPLAY_GRID || style->display == TBOX_STYLE_DISPLAY_INLINE_GRID) && !tbox_layout_tag(node, "svg") && !kind.image && !kind.table && !kind.table_row && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node);
     return kind;
 }
 

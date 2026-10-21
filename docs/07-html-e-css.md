@@ -26,6 +26,33 @@
 - **`<script>` não é executado.** O conteúdo é guardado como texto, mas não
   há motor de JavaScript.
 
+## SVG inline
+
+O vocabulário SVG básico participa do pipeline de estilo e pintura; veja
+[SVG inline](08-layout-e-pintura.md#svg-inline). Os nomes de atributos
+continuam normalizados pelo parser (`viewBox` → `viewbox`, `pathLength` →
+`pathlength`); a API de atributos já compara nomes sem distinguir caixa.
+Não há parser XML separado nem suporte geral a namespaces.
+
+Atributos de apresentação SVG entram na origem de autor antes de todas as
+folhas de autor, inclusive suas camadas, com especificidade zero. `style`,
+seletores e `!important` seguem a cascata normal; `!important` dentro do
+atributo de apresentação é inválido. Isso vale para `fill`, `stroke`,
+`stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`,
+`stroke-dasharray`, `stroke-dashoffset`, `fill-rule`, `fill-opacity`,
+`stroke-opacity`, além dos atributos comuns `color`, `opacity`, `transform`,
+`display`, `visibility`, `overflow` e `paint-order`. `width`/`height` do SVG
+externo também participam da cascata. Os atributos de geometria das formas
+são interpretados pelo módulo SVG; suas equivalentes CSS não são suportadas.
+
+Pinturas aceitam cores sólidas, `currentColor` e `none`; gradientes e outros
+paint servers via `url()` ficam falsos em `@supports`. Comprimentos de traço
+aceitam números em unidades do desenho, comprimentos CSS e percentuais
+(relativos à diagonal normalizada do viewport). Valores iniciais: fill
+preto, stroke none, espessura 1, ponta butt, junção miter, limite 4,
+fill-rule nonzero e opacidades 1. Propriedades de pintura são herdadas e
+aceitam `var()` e keywords CSS-wide. `opacity` de elemento/grupo não herda.
+
 ## De onde vem o CSS
 
 ```mermaid
@@ -137,8 +164,8 @@ de novo, e `font: 16px monospace` fica com 16px
 - **`@charset`**: aceito e ignorado; todo CSS é lido como UTF-8.
 - **`@namespace`**: aceito e ignorado. Para HTML isso equivale ao
   comportamento correto: o namespace padrão não muda nada, e uma regra com
-  seletor prefixado (`svg|circle`) é descartada — não casaria com nada, já
-  que não há SVG.
+  seletor prefixado (`svg|circle`) é descartada — namespaces de seletor
+  não estão implementados, mesmo em SVG inline.
 - **`@starting-style { regras }`**: as regras ficam marcadas
   (`tbox_css_ruleset.starting_style`) e não entram na cascata normal. Quando
   um elemento aparece (primeiro frame ou saída de `display: none`) e tem
@@ -477,7 +504,7 @@ atraso inicial de uma `transition-delay`/`animation-delay`, o fim do atraso).
 
 ## Propriedades aceitas sem efeito
 
-Não fazem nada numa tela sem paginação, sem SVG e sem 3D, e isso é o
+Não fazem nada numa tela sem paginação e sem 3D, e isso é o
 resultado correto para o que a tbox desenha: `break-before`/`-after`/
 `-inside` fora de multicoluna, `page-break-*`, `orphans`, `widows` (impressão), `overflow-anchor` (não há ancoragem de rolagem, o mesmo que
 `none`), `perspective`, `perspective-origin`, `transform-style` e
@@ -495,8 +522,9 @@ continuam sem efeito. `orphans`/`widows` ainda não restringem as quebras.
 respeitando a prioridade dos longhands. As URLs são guardadas (até 255 bytes
 UTF-8 por referência), sem carregar recursos. `mask-type` aceita `luminance`
 (inicial) ou `alpha` e não é herdado. CSS inválido é ignorado; os keywords
-CSS-wide funcionam como nas outras propriedades. São exclusivos de SVG:
-ficam falsos em `@supports` para não selecionar um caminho que exigiria SVG.
+CSS-wide funcionam como nas outras propriedades. Continuam falsos em
+`@supports`: o subconjunto SVG não desenha marcadores
+nem máscaras SVG.
 `paint-order`, ao contrário, tem efeito sobre texto HTML com contorno;
 veja [Texto e fontes](09-texto-e-fontes.md#contorno-e-ordem-de-pintura-do-texto).
 

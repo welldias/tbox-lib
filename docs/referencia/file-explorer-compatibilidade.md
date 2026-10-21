@@ -15,47 +15,59 @@ arquivos, leitura da implementação, consultas a `tbox_css_supports`, uma
 prova de navegação por Tab e renderização headless em 1440×900.
 Não é uma medição completa de paridade com navegador nem de todos os breakpoints.
 
+## Atualização SVG — 2026-10-21
+
+O vocabulário SVG usado pelo template agora é desenhado: 19 símbolos,
+48 instâncias e o medidor com `pathLength`, cores de CSS/atributos,
+`currentColor`, transformações, opacidade e tracejado. HTML/CSS do exemplo
+permanecem preservados. A numeração de linhas da auditoria inicial abaixo
+é histórica; os arquivos atuais têm formatação expandida.
+
+Os seis fixtures SVG em `tests/assets/` receberam **EQUAL** nas checagens
+locais contra Firefox em 800×600. A página completa em 1440×900 recebeu
+**DIFFERENT** (SSIM 0,8687; 127 checagens locais): ícones e medidor aparecem,
+mas persistem diferenças de layout e texto, incluindo centralização do
+medidor/posição do texto “76%”, alinhamento de cabeçalhos e altura de linhas.
+A implementação SVG não resolve esses comportamentos do layout HTML.
+Imagens em `/tmp/tbox-svg-cmp/` e `/tmp/tbox-svg-explorer/` são temporárias;
+os fixtures e este registro preservam a evidência reproduzível.
+
 ## Resultado do inventário
 
 | Conjunto | Encontrado | Lacunas |
 |---|---:|---|
-| Nomes de elementos | 39 | 8 elementos do vocabulário SVG sem desenho e `meta` sem processamento de metadados |
-| Propriedades CSS, sem custom properties | 62 | 7 não implementadas: 5 de pintura SVG e 2 extensões WebKit |
+| Nomes de elementos | 39 | Vocabulário SVG usado implementado; `meta` sem processamento de metadados |
+| Propriedades CSS, sem custom properties | 62 | 2 extensões WebKit ignoradas; as 5 propriedades de pintura SVG usadas são implementadas |
 | Custom properties | 14 | Nomes `--*` e usos de `var()` reconhecidos |
 | Seletores distintos | 100 | Todos reconhecidos, incluindo `:focus-visible` e `::placeholder` |
 | Blocos `@media` | 5 | As sintaxes usadas são implementadas; paridade visual nos tamanhos menores ainda não avaliada |
 | Nomes de atributos HTML/SVG | 38 | Há atributos preservados no DOM sem o comportamento correspondente; detalhados abaixo |
 
-As **55 propriedades CSS restantes** têm suporte às formas usadas, com as
+As **60 propriedades CSS não WebKit** têm suporte às formas usadas, com as
 ressalvas de composição e comportamento abaixo. Reconhecer uma declaração
 ou conservar uma tag no DOM não garante seu desenho ou sua semântica.
 
-## Elementos sem implementação visual ou semântica
+## Elementos SVG e metadados
 
 Os ícones usam **19 símbolos**, referenciados por **48 elementos `use`**.
 Há 50 elementos `svg`: o repositório de símbolos oculto, os 48 ícones e o
 medidor semicircular. Todo o conjunto SVG soma 156 elementos.
 
-| Elemento | Ocorrências | Onde aparece | O que falta |
-|---|---:|---|---|
-| `svg` | 50 | `index.html:13`, ícones a partir de 39 e medidor em 121 | Viewport SVG, coordenadas e desenho vetorial; a caixa pode receber CSS, mas a arte não é pintada |
-| `defs` | 1 | `index.html:14` | Repositório de definições SVG |
-| `symbol` | 19 | `index.html:15–33` | Definição reutilizável, com seu próprio `viewBox` |
-| `use` | 48 | `index.html:39–131` | Instanciar o símbolo indicado por `href="#icon-…"` |
-| `path` | 25 | Símbolos e medidor | Interpretar `d` como geometria desenhável, com preenchimento e traço |
-| `circle` | 10 | Símbolos | Geometria de círculo, preenchimento e traço |
-| `rect` | 1 | Símbolo de imagem, `index.html:30` | Retângulo com arredondamento SVG |
-| `ellipse` | 2 | Símbolo de música, `index.html:32` | Geometria de elipse |
-| `meta` | 4 | `index.html:4–7` | Aplicar `charset`, viewport, descrição e esquema de cores como metadados de navegador |
+| Elemento | Ocorrências | Implementação atual |
+|---|---:|---|
+| `svg` | 50 | Caixa HTML externa, viewport e mapeamento de viewBox |
+| `defs` | 1 | Definições disponíveis sem pintura direta |
+| `symbol` | 19 | Conteúdo reutilizável com viewBox |
+| `use` | 48 | Referência local href e estilo independente por instância |
+| `path` | 25 | Geometria, preenchimento, traço e tracejado |
+| `circle` | 10 | Círculos preenchidos ou traçados |
+| `rect` | 1 | Retângulo com arredondamento rx/ry |
+| `ellipse` | 2 | Elipses preenchidas ou traçadas |
+| `meta` | 4 | Preservado, sem metadados de navegador |
 
-A ausência de SVG é o maior bloqueio visual: desaparecem os desenhos de
-pastas, ações, busca, tipos de arquivo e o arco do armazenamento. O texto
-`76%` permanece porque é um `span` HTML separado.
-
-O parser tolera essas tags; isso não constitui suporte a SVG. O código que
-interpreta caminhos para `offset-path: path()` também não oferece desenho
-de elementos `path`. Ver [pintura](../../src/style/tbox_style_paint.c) e
-[limitações](../14-limitacoes-e-roadmap.md#roadmap).
+O parser de caminhos agora é compartilhado entre motion path e pintura
+SVG. Os limites do subconjunto estão em [SVG inline](../08-layout-e-pintura.md#svg-inline).
+O texto `76%` continua sendo um span HTML, separado dos caminhos vetoriais.
 
 Os quatro `meta` têm impacto visual pequeno neste arquivo: a entrada já é
 UTF-8, o tamanho vem da janela/aplicação e o tema pretendido é claro.
@@ -70,36 +82,23 @@ As outras **30 tags** são aceitas na estrutura visual: `html`, `head`,
 `input type="search"` é um campo editável suportado. Os limites de `a`,
 `label` e dos atributos semânticos não desaparecem por a tag ser aceita.
 
-## Propriedades CSS não implementadas
+## Pintura SVG e extensões ignoradas
 
-| Propriedade | Valores usados | Local | Consequência |
-|---|---|---|---|
-| `fill` | `none` | `styles.css:175` | O medidor precisa de contornos sem preenchimento |
-| `stroke` | `var(--soft-background)`, `var(--purple)` | `styles.css:176–178` | Cores do arco e dos segmentos não são pintadas |
-| `stroke-width` | `8` | `styles.css:175` | Espessura SVG não é aplicada |
-| `stroke-dasharray` | `1.7 1.7`, `24 100` | `styles.css:177–178` | Faltam os segmentos e o trecho não utilizado do arco |
-| `stroke-dashoffset` | `-76` | `styles.css:178` | Falta posicionar o trecho final do arco |
-| `-webkit-font-smoothing` | `antialiased` | `styles.css:22` | Extensão ignorada; não seleciona o modo de suavização da tbox |
-| `-webkit-tap-highlight-color` | `transparent` | `styles.css:28` | Extensão ignorada; não configura realce de toque |
+| Propriedade | Valores usados | Comportamento atual |
+|---|---|---|
+| `fill` | `none` | Arcos sem preenchimento |
+| `stroke` | `var(--soft-background)`, `var(--purple)` | Cores dos arcos e segmentos |
+| `stroke-width` | `8` | Espessura nas coordenadas SVG |
+| `stroke-dasharray` | `1.7 1.7`, `24 100` | Segmentação normalizada por pathLength |
+| `stroke-dashoffset` | `-76` | Posicionamento do trecho final |
+| `-webkit-font-smoothing` | `antialiased` | Extensão ignorada |
+| `-webkit-tap-highlight-color` | `transparent` | Extensão ignorada |
 
-As cinco primeiras dependem da ausência do pipeline SVG; acrescentar apenas
-nomes de propriedades ao parser não faria o indicador funcionar. As duas
-últimas são ajustes de plataforma e não bloqueiam a estrutura da interface.
-`-webkit-text-stroke`, que a tbox suporta para texto, não implementa
-`stroke` de SVG.
-
-Além da folha CSS, os símbolos têm atributos de apresentação SVG:
-`fill="currentColor"/"none"/"white"`, `stroke`, `stroke-width`,
-`stroke-linecap="round"`, `stroke-linejoin="round"`, `opacity` e
-`transform`. Esses atributos também não são aplicados à arte SVG.
-`color`, `opacity`, `transform` e `currentColor` já têm suporte em CSS
-HTML; a falta aqui é a integração com SVG e seus atributos.
-
-Também precisam de semântica SVG os atributos geométricos `d`, `cx`, `cy`,
-`r`, `x`, `y`, `width`, `height`, `rx`, `ry`, `viewBox`, `pathLength` e
-`xmlns`. Em especial, `pathLength="100"` normaliza o comprimento usado no
-tracejado do medidor. O `href` de `use` precisa resolver e instanciar o
-símbolo, além de simplesmente conservar a string.
+Os atributos de apresentação `fill`, `stroke`, espessura, ponta/junção,
+opacidade e transformações também participam da pintura. CSS de autor
+sobrescreve atributos, inclusive dentro de camadas. `currentColor` herda de
+cada instância do símbolo. Coordenadas, `viewBox`, `pathLength` e referências
+`href` são interpretados pelo módulo SVG, sem exigir alteração do template.
 
 ## Recursos implementados após o levantamento
 
@@ -121,7 +120,7 @@ A opacidade do pseudo afeta sua tinta, preservando a opacidade do controle.
 usa `:focus` para seu anel padrão; o autor pode removê-lo e usar apenas
 `:focus-visible`. A modalidade é guardada por contexto, sem novo global.
 
-SVG fica para a última etapa. As extensões WebKit da tabela anterior são
+SVG foi implementado na etapa final. As extensões WebKit da tabela anterior são
 **ignoradas por decisão de escopo**, e os itens de semântica abaixo ficam
 adiados. O HTML e o CSS do explorador permanecem intactos.
 
@@ -197,8 +196,10 @@ captura estática não valida sua evolução temporal.
 
 O levantamento consulta 318 condições distintas: 218 pares de declaração
 e 100 seletores. Após a implementação, as 100 expressões de seletor são
-reconhecidas. Restam os nove pares de declaração das sete propriedades
-listadas: cinco propriedades SVG adiadas e duas extensões WebKit ignoradas.
+reconhecidas. Na auditoria inicial restavam nove pares de declaração de sete propriedades.
+As cinco propriedades SVG foram implementadas; restam as duas extensões
+WebKit ignoradas. O inventário completo de @supports não foi reexecutado
+nesta etapa; os novos testes cobrem a validação de valores SVG.
 `@supports` sozinho não comprova pintura, interação ou todas as composições.
 
 Os testes de contexto cobrem valor/edição/seleção de placeholders, fonte,
@@ -211,8 +212,8 @@ Na comparação dirigida com Firefox em 800×600, `forms-placeholder` recebeu
 `EQUAL` (SSIM 0,9428; nenhum teste local falhou). `selectors-states` e
 `layout-block-in-inline` receberam `DIFFERENT`, com diferenças de controles,
 fontes e composição ainda presentes; a captura estática não exercita foco.
-Os 25 grupos do CTest passaram. A captura atual do explorador em 1440×900
-mostra o placeholder e oculta “Opções”, preservando as lacunas SVG.
+Os 25 grupos do CTest passaram. A captura de 2026-10-19 do explorador em 1440×900
+mostra o placeholder e oculta “Opções”, ainda sem SVG naquela data.
 As imagens dessa comparação estão em
 `/tmp/tbox-file-explorer-implementation-cmp/`.
 

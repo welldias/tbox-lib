@@ -1,3 +1,4 @@
+#include "svg/tbox_svg_internal.h"
 #include <tbox/output.h>
 
 #include <math.h>
@@ -248,6 +249,27 @@ static uint64_t tbox_damage_mix_gradient(uint64_t hash, const tbox_style_gradien
 static uint64_t tbox_damage_hash_op(const tbox_paint_op *op) {
     uint64_t hash = 14695981039346656037ull;
     hash          = tbox_damage_mix_int(hash, (long long)op->kind);
+    if (op->path != NULL) {
+        const tbox_paint_path *p=op->path;
+        hash=tbox_damage_mix_int(hash,(long long)p->count);
+        hash=tbox_damage_mix_int(hash,p->stroke);
+        hash=tbox_damage_mix_int(hash,p->evenodd);
+        hash=tbox_damage_mix_int(hash,p->linecap);
+        hash=tbox_damage_mix_int(hash,p->linejoin);
+        hash=tbox_damage_mix_double(hash,p->width);
+        hash=tbox_damage_mix_double(hash,p->miterlimit);
+        hash=tbox_damage_mix_double(hash,p->dashoffset);
+        hash=tbox_damage_mix_int(hash,(long long)p->dash_count);
+        for (size_t i=0;i<6;i++) hash=tbox_damage_mix_double(hash,p->matrix[i]);
+        for (size_t i=0;i<p->dash_count;i++) hash=tbox_damage_mix_double(hash,p->dashes[i]);
+        for (size_t i=0;i<p->count;i++) {
+            const tbox_paint_path_segment *s=&p->segments[i];
+            hash=tbox_damage_mix_double(hash,s->x0);hash=tbox_damage_mix_double(hash,s->y0);
+            hash=tbox_damage_mix_double(hash,s->x1);hash=tbox_damage_mix_double(hash,s->y1);
+            hash=tbox_damage_mix_int(hash,s->move);hash=tbox_damage_mix_int(hash,s->close);
+        }
+    }
+
     hash          = tbox_damage_mix_rect(hash, op->rect);
     hash          = tbox_damage_mix_color(hash, op->color);
     hash          = tbox_damage_mix_int(hash, (long long)op->text.size);

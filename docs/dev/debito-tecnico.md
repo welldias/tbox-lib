@@ -639,3 +639,18 @@ visual não determina quando cada defeito foi introduzido.
   mecanismo existe (`state` na cascata e variantes da parte); falta saber
   que parte está sob o ponteiro em cada controle.
 - **Toca:** `src/style/tbox_style_parts.c`, os pintores em `src/context/`.
+
+## SVG inline básico
+
+- **Limites:** seletores das instâncias de `use` casam na árvore de origem;
+  sem shadow DOM/eventos de instâncias. Dimensionamento automático não cobre
+  todo o algoritmo de elementos substituídos de navegador. Propriedades
+  de pintura novas não interpolam em transições/animações.
+- **Traços:** a emenda de um tracejado fechado pode ter caps separados;
+  dashes de comprimento zero não geram pontos. Curvas usam amostragem
+  adaptativa com limites de segmentos e profundidade.
+- **Quando revisitar:** SVGs além dos ícones/medidor do explorer exigirem
+  esses comportamentos, ou medições justificarem cache persistente de
+  geometria/instâncias. Estado FreeType é local a cada rasterização.
+- **Toca:** `src/svg/`, `src/render/tbox_render_svg.c`,
+  `src/output/tbox_raster_path.c`, `src/layout/tbox_layout_svg.c`.

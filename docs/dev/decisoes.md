@@ -815,3 +815,20 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   não existe mais; o mantenedor quis manter o algoritmo existente. Só
   `core`+`imgproc`+`imgcodecs` são linkados. O veredito por asset não vira
   código de saída (v10).
+
+## SVG inline básico (2026-10-21)
+
+- **Caixa HTML externa e árvore vetorial interna:** formas não participam
+  do layout HTML. As instâncias de `use` vivem na arena do frame, com
+  herança recalculada; não clonam nem reparentam o DOM público.
+- **Caminhos compartilhados e FreeType:** extraído o parser amostrado de
+  motion path para `base/tbox_path.*`. O Output usa o rasterizador e o
+  stroker do FreeType obrigatório, evitando uma dependência adicional ou
+  outro rasterizador de curvas. Um estado por chamada de rasterização é
+  inicializado sob demanda e destruído ao terminar; não reutiliza o global
+  de fontes nem exige fonte carregada para pintar vetores.
+- **Atributos na cascata:** prioridade própria abaixo de qualquer folha de
+  autor, inclusive `@layer`; evitado aplicar atributos depois do CSS.
+- **Display list vetorial pública:** `PATH` carrega segmentos e parâmetros
+  de pintura acessíveis a outros backends, emprestados da arena do frame.
+  Hash por conteúdo evita repintura contínua por endereços transitórios.

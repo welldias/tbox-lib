@@ -33,6 +33,9 @@ typedef struct tbox_layout_positioned_context {
     tbox_layout_floats *floats;
 } tbox_layout_positioned_context;
 
+double tbox_layout_svg_auto_width(const tbox_html_node *node, const tbox_style *style, double vertical_edges);
+double tbox_layout_svg_height(const tbox_html_node *node, const tbox_style *style, tbox_layout_containing_block container, double width, double vertical_edges);
+
 typedef struct tbox_layout_forced_size {
     bool has_width, has_height;
     double width, height;

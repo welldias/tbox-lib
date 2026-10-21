@@ -1,3 +1,4 @@
+#include "output/tbox_raster_path.h"
 #include <tbox/output.h>
 
 #include "base/tbox_polygon.h"
@@ -849,10 +850,36 @@ void tbox_raster_image(uint32_t *pixels, int32_t buffer_width, int32_t buffer_he
     tbox_raster_image_clipped(pixels, buffer_width, buffer_height, dest_rect, image, NULL, 1.0, false, (tbox_rect){0}, false, NULL, NULL, TBOX_STYLE_BLEND_NORMAL);
 }
 
+typedef struct tbox_raster_path_target {
+    uint32_t *pixels;
+    int32_t width, height;
+    const tbox_paint_op *op;
+} tbox_raster_path_target;
+static void tbox_raster_path_span(void *userdata, int x, int y, unsigned length, unsigned char coverage) {
+    const tbox_raster_path_target *t=userdata;
+    if (y<0 || y>=t->height) return;
+    int end=x+(int)length;
+    if (end>t->width) end=t->width;
+    if (x<0) x=0;
+    for (;x<end;x++) {
+        if (!tbox_raster_in_shape_clip(t->op,x+.5,y+.5)) continue;
+        uint32_t *pixel=&t->pixels[(size_t)y*(size_t)t->width+(size_t)x];
+        *pixel=tbox_raster_blend_pixel(*pixel,t->op->color,coverage/255.0*t->op->color.a/255.0);
+    }
+}
+
 /* Rasterizes one op -- the dispatch tbox_raster_display_list and
  * tbox_raster_display_list_damaged share. */
-static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_paint_op *op) {
+static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_paint_op *op, tbox_raster_path_state *paths) {
     switch (op->kind) {
+    case TBOX_PAINT_PATH: {
+        if (op->path == NULL) break;
+        int32_t x0,y0,x1,y1;
+        if (!tbox_raster_op_bounds(op,op->rect,buffer_width,buffer_height,&x0,&y0,&x1,&y1)) break;
+        tbox_raster_path_target target={pixels,buffer_width,buffer_height,op};
+        tbox_raster_path_paint(paths,op->path,(tbox_rect){x0,y0,x1-x0,y1-y0},tbox_raster_path_span,&target);
+        break;
+    }
     case TBOX_PAINT_GRADIENT:
         tbox_raster_gradient(pixels, buffer_width, buffer_height, op);
         break;
@@ -941,6 +968,7 @@ static void tbox_raster_paint_op(uint32_t *pixels, int32_t buffer_width, int32_t
 typedef struct tbox_raster_target {
     uint32_t *pixels;
     int32_t width, height, x, y;
+    tbox_raster_path_state *paths;
 } tbox_raster_target;
 
 static tbox_rect tbox_raster_rect_intersect(tbox_rect a, tbox_rect b) {
@@ -974,6 +1002,13 @@ static bool tbox_raster_rect_covers(tbox_rect outer, tbox_rect inner) {
  * same pixels it would on the screen. */
 static void tbox_raster_paint_into(const tbox_raster_target *t, const tbox_paint_op *op, tbox_rect region) {
     tbox_paint_op shifted = *op;
+    tbox_paint_path shifted_path;
+    if (op->path != NULL) {
+        shifted_path = *op->path;
+        shifted.path = &shifted_path;
+        shifted_path.matrix[4] -= t->x;
+        shifted_path.matrix[5] -= t->y;
+    }
     if (!tbox_raster_rect_covers(region, tbox_raster_target_rect(t))) {
         shifted.clip     = shifted.has_clip ? tbox_raster_rect_intersect(shifted.clip, region) : region;
         shifted.has_clip = true;
@@ -986,7 +1021,7 @@ static void tbox_raster_paint_into(const tbox_raster_target *t, const tbox_paint
         shifted.rounded_clip.x += dx, shifted.rounded_clip.y += dy;
         shifted.polygon_clip_origin[0] += dx, shifted.polygon_clip_origin[1] += dy;
     }
-    tbox_raster_paint_op(t->pixels, t->width, t->height, &shifted);
+    tbox_raster_paint_op(t->pixels, t->width, t->height, &shifted, t->paths);
 }
 
 /* Gaussian blur (standard deviation `sigma`) of premultiplied pixels,
@@ -1222,7 +1257,7 @@ static size_t tbox_raster_paint_transformed(const tbox_raster_target *t, const t
     /* a huge enlargement of a tiny source, or the reverse, stays bounded */
     if (tbox_raster_rect_empty(needed) || needed.width * needed.height > 64.0 * 1024.0 * 1024.0)
         return end;
-    tbox_raster_target layer = { NULL, (int32_t)needed.width, (int32_t)needed.height, (int32_t)needed.x, (int32_t)needed.y };
+    tbox_raster_target layer = { NULL, (int32_t)needed.width, (int32_t)needed.height, (int32_t)needed.x, (int32_t)needed.y, t->paths };
     layer.pixels = calloc((size_t)layer.width * (size_t)layer.height, sizeof(uint32_t));
     if (layer.pixels == NULL)
         return end;
@@ -1266,7 +1301,7 @@ static size_t tbox_raster_paint_layer(const tbox_raster_target *t, const tbox_di
     out = tbox_raster_rect_intersect(tbox_raster_rect_grow(out, 0.0), area);
     if (tbox_raster_rect_empty(out))
         return end;
-    tbox_raster_target layer = { NULL, (int32_t)area.width, (int32_t)area.height, (int32_t)area.x, (int32_t)area.y };
+    tbox_raster_target layer = { NULL, (int32_t)area.width, (int32_t)area.height, (int32_t)area.x, (int32_t)area.y, t->paths };
     size_t count = (size_t)layer.width * (size_t)layer.height;
     layer.pixels = calloc(count, sizeof(uint32_t));
     if (layer.pixels == NULL)
@@ -1354,8 +1389,10 @@ void tbox_raster_display_list(uint32_t *pixels, int32_t buffer_width, int32_t bu
     if (list == NULL || pixels == NULL || buffer_width <= 0 || buffer_height <= 0) {
         return;
     }
-    tbox_raster_target screen = { pixels, buffer_width, buffer_height, 0, 0 };
+    tbox_raster_path_state paths = {0};
+    tbox_raster_target screen = { pixels, buffer_width, buffer_height, 0, 0, &paths };
     tbox_raster_paint_range(&screen, list, 0, list->count, tbox_raster_target_rect(&screen), tbox_raster_target_rect(&screen));
+    tbox_raster_path_destroy(&paths);
 }
 
 void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, int32_t buffer_height, const tbox_display_list *list, const tbox_damage *damage) {
@@ -1368,7 +1405,8 @@ void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, in
         tbox_raster_display_list(pixels, buffer_width, buffer_height, list);
         return;
     }
-    tbox_raster_target screen = { pixels, buffer_width, buffer_height, 0, 0 };
+    tbox_raster_path_state paths = {0};
+    tbox_raster_target screen = { pixels, buffer_width, buffer_height, 0, 0, &paths };
     for (size_t d = 0; d < damage->count; d++) {
         tbox_rect region = damage->rects[d];
         int32_t x0 = (int32_t)region.x, y0 = (int32_t)region.y;
@@ -1388,6 +1426,7 @@ void tbox_raster_display_list_damaged(uint32_t *pixels, int32_t buffer_width, in
         if (list != NULL)
             tbox_raster_paint_range(&screen, list, 0, list->count, region, tbox_raster_target_rect(&screen));
     }
+    tbox_raster_path_destroy(&paths);
 }
 
 /* -- tbox_raster_write_png -------------------------------------------------
