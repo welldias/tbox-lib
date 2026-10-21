@@ -37,7 +37,7 @@ Este arquivo é o mapa físico, para quem vai editar o código.
 | `render/` | `render.h` | `tbox_render.c` (display list), `tbox_render_internal.h` (`tbox_render_paint_order`) |
 | `output/` | `output.h` | `tbox_raster.c`, `tbox_raster_damage.c`, `tbox_window_backend.*`, `tbox_backend_wayland.*` |
 | `context/` | `context.h` | ver abaixo |
-| `app/` | `app.h` | `tbox_app.c`; `tbox_app_unavailable.c` (stubs quando falta Fontconfig) |
+| `app/` | `app.h` | `tbox_app.c` (janela, documento e loop); `tbox_app_events.c` (registros, adaptadores e notificações); `tbox_app_internal.h` (estado e slots de ciclo de vida); `tbox_app_unavailable.c` (stubs quando falta Fontconfig) |
 
 O teste geométrico de polígonos fica em `src/base/tbox_polygon.h`, compartilhado
 por raster e hit-test. A resolução para pixels fica em Render, inclusive para
@@ -74,7 +74,9 @@ compartilhados: `tbox_layout_internal.h`.
 ## `src/context/`
 
 `tbox_context.c` abre/fecha o contexto e coordena cada frame. Estado
-compartilhado e declarações entre arquivos: `tbox_context_internal.h`.
+compartilhado e declarações entre arquivos: `tbox_context_internal.h`. Hooks privados de registro ficam em
+`tbox_context_callbacks.h`; os adaptadores públicos e tipos de callback
+pertencem a `app.h`/`src/app/tbox_app_events.c`.
 
 | Arquivo | Responsabilidade |
 |---|---|
@@ -109,3 +111,18 @@ parser de caminhos compartilhado com motion path. Pintura CSS em
 list em `render/tbox_render_svg.c` e contornos FreeType em
 `output/tbox_raster_path.c`. `tbox_svg_internal.h` contém só tipos internos;
 a representação de pintura consumível por backends está em `render.h`.
+
+O teste independente `tests/test_app_lifecycle.c` fornece um backend
+simulado por instância e usa o mesmo construtor interno e loop da aplicação.
+`example/lifecycle_demo.c` demonstra todos os registros de ciclo de vida.
+
+## `src/app/`
+
+`tbox_app.c` coordena a criação, a troca de documento, o loop e a destruição
+da aplicação. `tbox_app_events.c` reúne todos os registros `on_*`, o
+unbind de clique, os adaptadores de callbacks do contexto, a emissão de
+eventos de ciclo de vida/teclado e a liberação dos registros. O loop informa
+os momentos de emissão; os contratos entre os dois arquivos ficam em
+`tbox_app_internal.h`, inclusive a proteção da vida do app durante callbacks.
+Sem Fontconfig, `tbox_app_unavailable.c` continua fornecendo os stubs;
+sem backend de janela, os stubs de eventos ficam em `tbox_app_events.c`.

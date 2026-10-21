@@ -9,6 +9,26 @@ Cada item: **decisão** — motivo (versão em que foi tomada). Itens marcados
 formato atual do código. O texto integral original de cada versão está em
 `git show fe51140:ARCHITECTURE.md`.
 
+## Eventos de ciclo de vida (2026-10-21)
+
+- **Registros por aplicação, um slot por evento:** seguem on_key e sobrevivem
+  ao contexto substituído. Funções específicas preservam tipos de payload
+  e evitam strings de nome de evento, casts de funções e atributos com script.
+- **Load adiado ao primeiro frame aceito:** permite registrar depois de
+  create e usar o layout dentro do callback. Recarga bem-sucedida agenda
+  outro load. Unload é da janela, não da substituição do documento.
+- **Pagehide/pageshow significam foco de janela:** contrato solicitado pelo
+  projeto, diferente da semântica de navegação/cache dos navegadores. Usa
+  foco de teclado em vez de inferir foco pela presença do ponteiro.
+- **Destruição adiada e loop não reentrante:** preserva recursos durante
+  callbacks, inclusive quando close é chamado por load/unload, tecla ou
+  tarefa. A fila de liberações existente conserva userdata em uso.
+- **Error reservado:** o registro funciona, mas nenhum retorno de falha nem
+  markup inválido emite o evento antes de definir uma política de erros.
+- **Teste de integração headless:** o mesmo arquivo do loop é compilado com
+  backend simulado e construtor interno compartilhado; não é necessário
+  adicionar um backend de teste ao produto nem estado global de mock.
+
 ## Placeholder, modalidade de foco e posicionados inline
 
 `placeholder` tem estilo de texto próprio, emprestado da arena de frame
@@ -832,3 +852,19 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
 - **Display list vetorial pública:** `PATH` carrega segmentos e parâmetros
   de pintura acessíveis a outros backends, emprestados da arena do frame.
   Hash por conteúdo evita repintura contínua por endereços transitórios.
+
+## Registro público de eventos centralizado em app — 2026-10-21
+
+Clique, input, select e submit passam a ser registrados por `tbox_app`,
+assim como teclado e ciclo de vida. O callback também recebe o app. Hooks
+privados do contexto continuam responsáveis pelo despacho; adaptadores
+por registro traduzem o contexto para o app sem estado global. Remove-se
+a API pública anterior, incluindo o unbind de clique, em vez de manter
+dois caminhos públicos para o mesmo registro. A duração dos registros de
+controles continua sendo a do documento, preservando a limpeza no reload.
+
+A implementação de eventos fica em `src/app/tbox_app_events.c`; criação,
+recarga, loop e destruição da aplicação ficam em `tbox_app.c`. O header
+interno compartilha apenas as operações de emissão, limpeza e proteção da
+vida do app. Essa separação mantém o registro e o tratamento de callbacks
+juntos sem alterar a API ou introduzir estado global.

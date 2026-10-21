@@ -246,66 +246,6 @@ bool tbox_context_update_hover(tbox_context *ctx, bool has_position, double x, d
  * clears it. Returns true when the active target changed. */
 bool tbox_context_set_active_at(tbox_context *ctx, bool pressed, double x, double y);
 
-/* v1 -- Interatividade: event delegation by CSS selector. See
- * docs/dev/historico.md's "v1 -- Interatividade" -> "Orchestration (tbox_context)
- * -- delegação de evento por seletor" for the full rationale (why this
- * lives here rather than on Application: a future script engine needs the
- * same "register by selector, fire on click, mutate the tree" primitive
- * that a native C handler does).
- *
- * Called by tbox_context_dispatch_click on each ancestor (of the
- * hit-tested node) that matches that binding's registered selector. `node`
- * is the matching ancestor, not necessarily the node directly under the
- * pointer -- see tbox_context_dispatch_click. Non-const, unlike
- * tbox_layout_box::node: the whole point of a click handler is to be able
- * to mutate the tree (e.g. via tbox_html_node_set_attribute, which needs a
- * non-const node).
- *
- * Interatividade Avançada: returns bool instead of void. true
- * means "keep propagating" (other bindings that match at a farther
- * ancestor can still fire); false means "stop propagation immediately"
- * (stopPropagation) -- no other binding fires for this click at all,
- * regardless of how far up the ancestor chain it would otherwise have
- * matched. Breaking change from v1's void-returning handler, same
- * accepted-breaking-change spirit as prior versions -- see
- * docs/dev/historico.md's "v3 -- Interatividade Avançada" -> "Bubbling completo +
- * stopPropagation + desregistro de handler". */
-typedef bool (*tbox_context_click_handler)(tbox_context *ctx, tbox_html_node *node, void *userdata);
-
-/* Compiles `selector` (tbox_css_selector_compile -- same standalone-selector
- * grammar tbox_css_selector_query_evaluate uses, hard-fails on syntax
- * error) and registers `handler`/`userdata` in an arena-backed table owned
- * by `ctx` -- its own arena, NOT frame_arena, so a registration survives
- * every tbox_context_run_frame's arena reset (same array + linear-scan
- * shape as tbox_style_table, not an index).
- *
- * Interatividade Avançada: returns an int binding handle (a
- * monotonically increasing id, scoped to `ctx`, never reused even after a
- * tbox_context_unbind_click -- so a stale handle from a removed binding can
- * never accidentally collide with a newly created one) instead of v1's
- * bool. Returns -1 on a selector syntax error (nothing is registered, same
- * failure condition as before) or if ctx == NULL or handler == NULL. Pass
- * the returned handle to tbox_context_unbind_click to remove this
- * registration later; a binding never unbound lives for `ctx`'s whole
- * lifetime, destroyed (its compiled query, specifically) in
- * tbox_context_close.
- *
- * `destroy` (may be NULL) releases `userdata` once the binding is gone:
- * at tbox_context_unbind_click or tbox_context_close -- after the
- * handler returns, if it unbinds itself (see <tbox/callback.h>). Not
- * called when this returns -1. */
-int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata, tbox_destroy_notify destroy);
-
-/* Interatividade Avançada: removes the registration identified
- * by `binding` (a handle previously returned by tbox_context_on_click) from
- * `ctx`'s internal table -- its compiled query is destroyed at this point,
- * same cleanup tbox_context_close already performs for whatever bindings
- * remain at that time. A removed binding never fires again from any later
- * tbox_context_dispatch_click. Returns false (a no-op) if `binding` does
- * not correspond to any currently-active registration -- never registered,
- * already unbound -- or if ctx == NULL; true otherwise. */
-bool tbox_context_unbind_click(tbox_context *ctx, int binding);
-
 /* Finds the tbox_layout_box under (x, y) via tbox_context_hit_test, then
  * walks the ancestor chain ONCE, from that box's ->node outward via
  * node->parent (DOM tree, not the layout tree -- the two only coincide in
@@ -313,11 +253,11 @@ bool tbox_context_unbind_click(tbox_context *ctx, int binding);
  * order, nearest ancestor to farthest.
  *
  * Interatividade Avançada: at each ancestor level, EVERY
- * currently-active tbox_context_on_click binding's compiled selector is
+ * currently-active tbox_app_on_click binding's compiled selector is
  * tested against that node (tbox_css_selector_query_matches); every
  * binding that matches at this level fires (in registration order among
  * the ones that match at this same level), passing that ancestor's node.
- * If any handler call returns false (see tbox_context_click_handler),
+ * If any handler call returns false (see tbox_app_click_handler),
  * walking stops immediately -- no farther ancestor is even tested,
  * regardless of what would have matched there (stopPropagation). This
  * replaces v1's "per-registration, nearest-match-wins independently of
@@ -395,43 +335,19 @@ bool tbox_context_url_valid(const tbox_html_node *input);
  * and step. Empty values are valid unless required is present. */
 bool tbox_context_number_valid(const tbox_html_node *input);
 
-/* Called when a form is submitted by an input type=submit or Enter in a
- * single-line field. `submitter` is NULL for Enter in a field. The library
- * does not navigate or send a network request; the application reads values
- * from the form's DOM controls. */
-typedef void (*tbox_context_submit_handler)(tbox_context *ctx, tbox_html_node *form, tbox_html_node *submitter, void *userdata);
-
-/* The single-slot handlers (submit, input, select) replace whatever was
- * set before; a NULL handler clears the slot. The previous `destroy` is
- * called for the previous `userdata` when it is replaced or cleared, and
- * the current one at tbox_context_close (see <tbox/callback.h>). */
-void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata, tbox_destroy_notify destroy);
-
 /* Absolute path chosen by the user for input type=file, or an empty view.
  * The value attribute contains only the file name. The path is owned by the
  * context and remains valid until a new selection, clearing the value, or
  * closing the context. */
 tbox_string_view tbox_context_file_path(tbox_context *ctx, const tbox_html_node *input);
 
-/* Called after the value of an input or textarea changes through editing, or
- * when the user changes an input type=color, type=date, type=datetime-local,
- * type=month, or type=file through its picker. For a file input, value is the file name.
- * `value` (`value_length` bytes, not NUL-terminated) is valid through the
- * call and until the next edit of this field. */
-typedef void (*tbox_context_input_handler)(tbox_context *ctx, tbox_html_node *input, const char *value, size_t value_length, void *userdata);
-void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata, tbox_destroy_notify destroy);
-
 /* Single-choice <select> controls. The value is the selected <option>'s
  * value attribute, or its collapsed text if no value attribute exists.
- * The returned view (and the handler's `value`, `value_length` bytes, not
- * NUL-terminated) is borrowed and valid until the next frame or document
- * mutation. The handler runs only when the user changes the choice. */
-typedef void (*tbox_context_select_handler)(tbox_context *ctx, tbox_html_node *select, const char *value, size_t value_length, void *userdata);
+ * Borrowed until the next frame or document mutation. */
 tbox_string_view tbox_context_select_value(tbox_context *ctx, const tbox_html_node *select);
 /* Chooses the first option with `value`; returns true only if selection
  * changed. Programmatic changes do not call the selection handler. */
 bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *select, tbox_string_view value);
-void tbox_context_on_select(tbox_context *ctx, tbox_context_select_handler handler, void *userdata, tbox_destroy_notify destroy);
 
 const tbox_html_node *tbox_context_focused_node(const tbox_context *ctx);
 

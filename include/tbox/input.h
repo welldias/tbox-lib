@@ -46,6 +46,7 @@ typedef enum tbox_input_event_kind {
     TBOX_INPUT_KEY,
     TBOX_INPUT_TEXT,
     TBOX_INPUT_PASTE,
+    TBOX_INPUT_WINDOW_FOCUS, /* window keyboard focus; not pointer hover */
 } tbox_input_event_kind;
 
 /* Backend queue event. TEXT carries one committed UTF-8 chunk inline so
@@ -61,6 +62,7 @@ typedef struct tbox_input_event {
         struct { double x, y; } drag;
         struct { double x, y, delta_y; } scroll;
         tbox_key_event key;
+        struct { bool focused; } window_focus;
         struct { char utf8[32]; size_t length; } text;
         struct { char *utf8; size_t length; } paste; /* receiver frees utf8 */
     } data;

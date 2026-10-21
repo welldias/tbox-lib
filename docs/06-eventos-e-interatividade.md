@@ -1,7 +1,7 @@
 # 6. Eventos e interatividade
 
 > - **Escopo:** como cliques, ponteiro, teclado e texto chegam ao documento; hit-test, delegação por seletor, bubbling, foco, pseudo-classes dinâmicas, rolagem e redimensionamento (`resize`).
-> - **Código relacionado:** `include/tbox/context.h`, `include/tbox/input.h`, `src/context/tbox_context_events.c`, `tbox_context_focus.c`, `tbox_context_hit_test.c`, `tbox_context_scroll.c`, `tbox_context_resize.c`, `src/app/tbox_app.c`
+> - **Código relacionado:** `include/tbox/app.h`, `include/tbox/context.h`, `include/tbox/input.h`, `src/context/tbox_context_events.c`, `tbox_context_focus.c`, `tbox_context_hit_test.c`, `tbox_context_scroll.c`, `tbox_context_resize.c`, `src/app/tbox_app.c`, `src/app/tbox_app_events.c`
 > - **Veja também:** [Atualização da tela](05-atualizacao-da-tela.md), [Formulários e controles](10-formularios-e-controles.md), [Guia da API](03-guia-da-api.md)
 
 Polígonos de `clip-path` são testados no elemento e em todos os ancestrais,
@@ -10,6 +10,36 @@ não recebe eventos, mesmo se sua border box contiver o ponto. Barras de rolagem
 respeitam esses recortes tanto na pintura quanto ao iniciar um arrasto.
 
 ## Caminho de um evento
+
+### Ciclo de vida da aplicação
+
+Os registros C `tbox_app_on_load`, `on_unload`, `on_pagehide`, `on_pageshow`,
+`on_resize` e `on_error` pertencem à janela/aplicação, sem seletor. Cada um
+tem um callback e seu `userdata`/`destroy`; substituir ou limpar libera o
+registro anterior após eventuais callbacks em execução. Os registros
+sobrevivem à troca do documento. Não há execução de atributos HTML com
+código de script.
+
+`load` ocorre uma vez por documento, depois do primeiro frame aceito pelo
+backend, a partir de `step`/`wait`/`run`, permitindo registrar após `create`.
+Uma troca de documento bem-sucedida agenda outro load; uma falha preserva o
+documento e não emite evento. `unload` é uma notificação não cancelável,
+uma única vez no fechamento da janela (inclusive Escape, desconexão ou
+`tbox_app_close`), antes de liberar o contexto. Não ocorre ao trocar HTML.
+
+Neste contrato, `pagehide` e `pageshow` significam perda e ganho de foco da
+janela, conforme solicitado pelo projeto; não têm a semântica de navegação
+ou cache de páginas dos navegadores. O backend entrega transições de foco
+de teclado, independentemente da posição do ponteiro. O foco inicial é
+notificado após load. Resize informa dimensões anterior e nova, sem contar
+o tamanho inicial como redimensionamento. Error pode ser registrado, mas
+nenhum caminho o emite nesta etapa, inclusive falhas de arquivo/backend.
+
+Esses callbacks podem substituir registros, carregar outro documento ou fechar a
+aplicação; destruição pedida durante despacho é adiada até sair da operação
+externa. Chamadas aninhadas do loop são ignoradas. Esses eventos não usam
+estado global novo. Testes exercitam o loop real com backend simulado para
+funcionarem sem compositor.
 
 ```mermaid
 flowchart LR
@@ -47,12 +77,38 @@ está desenhada por cima. Caixas com `visibility: hidden` ou
 > ele ganha caixa própria e vira alvo. Botões e inputs já são
 > `inline-block` por padrão.
 
+## Registro de eventos pela aplicação
+
+A implementação dos registros, dos adaptadores do contexto e das
+notificações de ciclo de vida/teclado fica em `src/app/tbox_app_events.c`.
+`tbox_app.c` coordena o loop e chama os helpers privados de emissão nos
+mesmos pontos de antes; os contratos públicos permanecem em `app.h`.
+
+Os registros públicos de clique, input, submit e select pertencem a
+`app.h`: `tbox_app_on_click`, `tbox_app_on_input`, `tbox_app_on_submit` e
+`tbox_app_on_select`. Recebem `tbox_app *`; seus callbacks também recebem o
+app e obtêm o contexto com `tbox_app_context(app)` quando precisam do DOM.
+`tbox_app_unbind_click(app, id)` remove um registro de clique.
+
+O app resolve seu contexto internamente. O contexto mantém apenas os hooks
+privados necessários ao despacho e aos testes dos controles. Os registros
+continuam ligados ao documento atual: trocar o documento com sucesso libera
+seu userdata e exige novo registro (por exemplo, no callback de load). Os
+handlers de ciclo de vida e teclado continuam ligados ao app.
+
+A propagação, os valores enviados e a liberação adiada de userdata mantêm
+os contratos anteriores. `NULL` app não transfere posse; clique retorna
+`-1` e unbind retorna `false`. Nos slots únicos, `NULL` handler limpa o
+registro sem assumir a posse do novo userdata. Para trocar o documento a
+partir de um callback de controle, agende `load_from_files` com
+`tbox_app_post`, depois do despacho atual.
+
 ## Cliques: delegação por seletor
 
 ```c
-int id = tbox_context_on_click(ctx, ".item button", 12, on_item_click, userdata, destroy);
+int id = tbox_app_on_click(app, ".item button", 12, on_item_click, userdata, destroy);
 /* ... */
-tbox_context_unbind_click(ctx, id);   /* chama destroy(userdata), se houver */
+tbox_app_unbind_click(app, id);   /* chama destroy(userdata), se houver */
 ```
 
 - O handler é associado a um **seletor CSS**, não a um nó. Vale para

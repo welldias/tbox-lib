@@ -30,61 +30,7 @@
 #define TBOX_APP_PATH_BUF_SIZE 4096
 
 #if TBOX_HAS_WINDOW_BACKEND
-/* One tbox_app_post call waiting for the UI thread. */
-typedef struct tbox_app_task_entry {
-    tbox_app_task task;
-    void *userdata;
-    tbox_destroy_notify destroy;
-    struct tbox_app_task_entry *next;
-} tbox_app_task_entry;
-
-struct tbox_app {
-    tbox_font_face_cache *fonts;
-    tbox_font_source *resolver_source;
-    tbox_image_cache *images;
-    tbox_context *ctx;
-    tbox_window_backend *backend;
-
-    /* Last size observed by tbox_app_step, used to detect a resize (see
-     * tbox_app_step). Deliberately initialized to 0/0 in tbox_app_create,
-     * not to the window's actual initial size: since a real window's size is
-     * always positive, the very first tbox_app_step call always sees a
-     * "change" against this sentinel, which doubles as the trigger for the
-     * initial frame -- same first-frame behavior tbox_app_open used to get
-     * from an explicit `first` flag, without needing one here. */
-    int32_t last_width;
-    int32_t last_height;
-
-    /* tbox_backend_wayland_should_close deliberately does NOT become true
-     * when tbox_backend_wayland_poll reports a lost compositor connection
-     * (see output.h's doc comment on tbox_backend_wayland_poll) -- v0's
-     * blocking tbox_app_open handled that itself by breaking out of its
-     * loop when poll returned false. tbox_app_step/_should_close reproduce
-     * that same "treat a lost connection as a close request" behavior here,
-     * via this flag, so a step-based caller's `while
-     * (!tbox_app_should_close(app))` loop still terminates instead of
-     * spinning forever once the connection is gone. */
-    bool closed;
-    bool redraw_requested;
-    const tbox_html_node *paste_target;
-    tbox_context_options options;
-    char *control_css_copy;
-    tbox_app_key_handler key_handler;
-    void *key_handler_userdata;
-    tbox_destroy_notify key_handler_destroy;
-    /* Userdata releases waiting for the key handler or a task in progress
-     * (see src/base/tbox_release.h). */
-    tbox_release_list releases;
-
-    /* After a frame the layout may have moved under a still pointer: the
-     * next wait re-tests :hover before sleeping. */
-    bool hover_recheck;
-
-    /* tbox_app_post's queue, the only state touched from other threads. */
-    tbox_mutex tasks_lock;
-    tbox_app_task_entry *tasks_head;
-    tbox_app_task_entry *tasks_tail;
-};
+#include "app/tbox_app_internal.h"
 #endif
 
 /* Resolves a "sans-serif" query at the given bold flag through a FRESH
@@ -252,17 +198,25 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
         return NULL;
     }
 
-    tbox_app *app = (tbox_app *)malloc(sizeof(tbox_app));
-    if (app != NULL && !tbox_mutex_init(&app->tasks_lock)) {
-        free(app);
-        app = NULL;
-    }
+    tbox_app *app = tbox_app_adopt(ctx, fonts, resolver_source, images, backend, &options);
     if (app == NULL) {
         tbox_window_backend_destroy(backend);
         tbox_context_close(ctx);
         tbox_image_cache_destroy(images);
         tbox_font_face_cache_destroy(fonts);
         tbox_font_source_destroy(resolver_source);
+    }
+    return app;
+}
+
+tbox_app *tbox_app_adopt(tbox_context *ctx, tbox_font_face_cache *fonts, tbox_font_source *resolver_source, tbox_image_cache *images, tbox_window_backend *backend, const tbox_context_options *options_in) {
+    tbox_context_options options = *options_in;
+    tbox_app *app = (tbox_app *)calloc(1, sizeof(tbox_app));
+    if (app != NULL && !tbox_mutex_init(&app->tasks_lock)) {
+        free(app);
+        app = NULL;
+    }
+    if (app == NULL) {
         return NULL;
     }
 
@@ -274,6 +228,7 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     app->last_width             = 0;
     app->last_height            = 0;
     app->closed                 = false;
+    app->load_pending           = true;
     app->redraw_requested       = false;
     app->paste_target           = NULL;
     app->options                = options;
@@ -283,11 +238,6 @@ static tbox_app *tbox_app_create_impl(const char *html, const char *css, const c
     if (options.control_css != NULL) {
         app->control_css_copy = malloc(options.control_css_length + 1);
         if (app->control_css_copy == NULL) {
-            tbox_window_backend_destroy(backend);
-            tbox_context_close(ctx);
-            tbox_image_cache_destroy(images);
-            tbox_font_face_cache_destroy(fonts);
-            tbox_font_source_destroy(resolver_source);
             tbox_mutex_destroy(&app->tasks_lock);
             free(app);
             return NULL;
@@ -421,7 +371,7 @@ tbox_app *tbox_app_create_from_files_with_options(const char *html_path, const c
 }
 
 bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path) {
-    if (app == NULL || html_path == NULL)
+    if (app == NULL || html_path == NULL || tbox_app_should_close(app))
         return false;
     char *html = tbox_app_read_file(html_path);
     if (html == NULL)
@@ -452,12 +402,17 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
         tbox_image_cache_destroy(images);
         return false;
     }
-    tbox_context_close(app->ctx);
-    tbox_image_cache_destroy(app->images);
-    app->ctx              = ctx;
-    app->images           = images;
-    app->paste_target     = NULL;
-    app->redraw_requested = true;
+    tbox_app_enter(app);
+    tbox_context *previous_context    = app->ctx;
+    tbox_image_cache *previous_images = app->images;
+    app->ctx                          = ctx;
+    app->images                       = images;
+    app->paste_target                 = NULL;
+    app->redraw_requested             = true;
+    app->load_pending                 = true;
+    tbox_context_close(previous_context);
+    tbox_image_cache_destroy(previous_images);
+    tbox_app_leave(app);
     return true;
 }
 #endif
@@ -555,6 +510,16 @@ bool tbox_app_backend_available(void) {
     return true;
 }
 
+static void tbox_app_destroy(tbox_app *app);
+void tbox_app_enter(tbox_app *app) {
+    app->call_depth++;
+    tbox_release_enter(&app->releases);
+}
+void tbox_app_leave(tbox_app *app) {
+    tbox_release_leave(&app->releases);
+    if (--app->call_depth == 0 && app->destroy_requested)
+        tbox_app_destroy(app);
+}
 /* Kept non-const to match the public header and the other tbox_app_*
  * entry points; the returned context is mutable either way. */
 /* cppcheck-suppress constParameterPointer */
@@ -565,14 +530,6 @@ tbox_context *tbox_app_context(tbox_app *app) {
     return app->ctx;
 }
 
-void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata, tbox_destroy_notify destroy) {
-    if (app == NULL)
-        return;
-    tbox_release_add(&app->releases, app->key_handler_destroy, app->key_handler_userdata);
-    app->key_handler          = handler;
-    app->key_handler_userdata = userdata;
-    app->key_handler_destroy  = destroy;
-}
 
 void tbox_app_request_redraw(tbox_app *app) {
     if (app != NULL) {
@@ -598,6 +555,11 @@ bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata, tbox_destr
     entry->destroy  = destroy;
     entry->next     = NULL;
     tbox_mutex_lock(&app->tasks_lock);
+    if (app->tasks_closed) {
+        tbox_mutex_unlock(&app->tasks_lock);
+        free(entry);
+        return false;
+    }
     if (app->tasks_tail != NULL)
         app->tasks_tail->next = entry;
     else
@@ -621,7 +583,7 @@ static bool tbox_app_run_tasks(tbox_app *app) {
     tbox_release_enter(&app->releases);
     while (entry != NULL) {
         tbox_app_task_entry *next = entry->next;
-        entry->task(app, entry->userdata);
+        if (!app->destroy_requested) entry->task(app, entry->userdata);
         tbox_release_add(&app->releases, entry->destroy, entry->userdata);
         free(entry);
         entry = next;
@@ -662,19 +624,29 @@ void tbox_app_step(tbox_app *app) {
     tbox_app_wait(app, 0);
 }
 
+static void tbox_app_wait_once(tbox_app *app, int32_t max_wait_ms);
 void tbox_app_run(tbox_app *app) {
+    if (app == NULL || app->destroying || app->call_depth != 0) return;
+    /* Keep the handle alive across the loop, but release retired userdata
+     * after each wait rather than retaining it until the window closes. */
+    app->call_depth++;
     while (!tbox_app_should_close(app))
-        tbox_app_wait(app, -1);
+        tbox_app_wait_once(app, -1);
+    tbox_app_enter(app);
+    tbox_app_notify_unload(app);
+    tbox_app_leave(app);
+    if (--app->call_depth == 0 && app->destroy_requested)
+        tbox_app_destroy(app);
 }
 
-void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
+static void tbox_app_wait_impl(tbox_app *app, int32_t max_wait_ms) {
     if (app == NULL) {
         return;
     }
     if (tbox_app_should_close(app)) {
         /* No window to serve; tasks still run, so a caller that joined its
          * worker threads can drain what they posted before closing. */
-        tbox_app_run_tasks(app);
+        if (!app->destroy_requested) tbox_app_run_tasks(app);
         return;
     }
 
@@ -687,12 +659,18 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
         return;
     }
 
+    if (tbox_app_should_close(app)) return;
+
     bool dirty            = app->redraw_requested;
     app->redraw_requested = false;
 
     tbox_input_event event;
-    while (tbox_window_backend_take_event(app->backend, &event)) {
+    while (!tbox_app_should_close(app) && tbox_window_backend_take_event(app->backend, &event)) {
         switch (event.kind) {
+        case TBOX_INPUT_WINDOW_FOCUS:
+            app->focused = event.data.window_focus.focused;
+            if (tbox_app_notify_focus(app)) dirty = true;
+            break;
         case TBOX_INPUT_POINTER_CLICK: {
             if (tbox_context_scrollbar_press(app->ctx, event.data.click.x, event.data.click.y)) {
                 dirty = true;
@@ -701,6 +679,7 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
             tbox_context_set_active_at(app->ctx, true, event.data.click.x, event.data.click.y);
 
             tbox_context_dispatch_click(app->ctx, event.data.click.x, event.data.click.y);
+            if (tbox_app_should_close(app)) break;
             if (event.data.click.double_click) {
                 tbox_context_dispatch_key(app->ctx, &(tbox_key_event){ TBOX_KEY_A, true, false, true });
             }
@@ -732,10 +711,9 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
                 dirty = true;
             break;
         case TBOX_INPUT_KEY:
-            if (app->key_handler != NULL) {
-                tbox_release_enter(&app->releases);
-                bool consumed = app->key_handler(app, &event.data.key, app->key_handler_userdata);
-                tbox_release_leave(&app->releases);
+            {
+                bool consumed = tbox_app_emit_key(app, &event.data.key);
+                if (tbox_app_should_close(app)) break;
                 if (consumed) {
                     dirty = true;
                     break;
@@ -796,8 +774,11 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
         }
     }
 
+    if (tbox_app_should_close(app)) return;
+
     if (tbox_app_run_tasks(app))
         dirty = true;
+    if (tbox_app_should_close(app)) return;
 
     /* pointer position, not just click -- :hover. Called every
      * tick unconditionally (no check for whether the pointer actually
@@ -817,9 +798,13 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
     int32_t current_height = 0;
     tbox_window_backend_size(app->backend, &current_width, &current_height);
     if (current_width != app->last_width || current_height != app->last_height) {
+        tbox_app_resize_event resized = { app->last_width, app->last_height, current_width, current_height };
+        bool initial = app->last_width <= 0 || app->last_height <= 0;
         app->last_width  = current_width;
         app->last_height = current_height;
         dirty            = true;
+        if (!initial) tbox_app_emit(app, TBOX_APP_EVENT_RESIZE, &resized);
+        if (tbox_app_should_close(app)) return;
     }
 
     double now = tbox_app_now();
@@ -835,10 +820,27 @@ void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
     tbox_context_set_animation_time(app->ctx, now);
     tbox_display_list list;
     tbox_context_run_frame(app->ctx, (double)app->last_width, (double)app->last_height, &list);
-    if (tbox_window_backend_present(app->backend, &list))
+    if (tbox_window_backend_present(app->backend, &list)) {
         app->hover_recheck = true;
-    else
+        if (app->load_pending) {
+            app->load_pending = false;
+            if (tbox_app_emit(app, TBOX_APP_EVENT_LOAD, NULL)) app->redraw_requested = true;
+            if (tbox_app_notify_focus(app)) app->redraw_requested = true;
+        }
+    } else
         app->redraw_requested = true;
+}
+
+static void tbox_app_wait_once(tbox_app *app, int32_t max_wait_ms) {
+    tbox_app_enter(app);
+    if (tbox_app_should_close(app)) tbox_app_notify_unload(app);
+    tbox_app_wait_impl(app, max_wait_ms);
+    if (tbox_app_should_close(app)) tbox_app_notify_unload(app);
+    tbox_app_leave(app);
+}
+void tbox_app_wait(tbox_app *app, int32_t max_wait_ms) {
+    if (app == NULL || app->destroying || app->call_depth != 0) return;
+    tbox_app_wait_once(app, max_wait_ms);
 }
 
 bool tbox_app_should_close(const tbox_app *app) {
@@ -849,22 +851,36 @@ bool tbox_app_should_close(const tbox_app *app) {
 }
 
 void tbox_app_close(tbox_app *app) {
-    if (app == NULL) {
-        return;
-    }
+    if (app == NULL || app->destroying) return;
+    tbox_app_enter(app);
+    app->destroy_requested = true;
+    tbox_app_notify_unload(app);
+    tbox_app_leave(app);
+}
 
-    tbox_window_backend_destroy(app->backend);
-    tbox_context_close(app->ctx);
+static void tbox_app_destroy(tbox_app *app) {
+    app->destroying = true;
+    tbox_mutex_lock(&app->tasks_lock);
+    app->tasks_closed = true;
+    tbox_app_task_entry *pending_tasks = app->tasks_head;
+    app->tasks_head = app->tasks_tail = NULL;
+    tbox_mutex_unlock(&app->tasks_lock);
+    tbox_window_backend *backend = app->backend;
+    app->backend = NULL;
+    tbox_window_backend_destroy(backend);
+    tbox_context *ctx = app->ctx;
+    app->ctx = NULL;
+    tbox_context_close(ctx);
     /* Tasks never run are dropped, their userdata released. */
-    for (tbox_app_task_entry *entry = app->tasks_head; entry != NULL;) {
+    for (tbox_app_task_entry *entry = pending_tasks; entry != NULL;) {
         tbox_app_task_entry *next = entry->next;
         tbox_release_add(&app->releases, entry->destroy, entry->userdata);
         free(entry);
         entry = next;
     }
-    tbox_mutex_destroy(&app->tasks_lock);
-    tbox_release_add(&app->releases, app->key_handler_destroy, app->key_handler_userdata);
+    tbox_app_events_release(app);
     tbox_release_finish(&app->releases);
+    tbox_mutex_destroy(&app->tasks_lock);
     tbox_image_cache_destroy(app->images);
     tbox_font_face_cache_destroy(app->fonts);
     tbox_font_source_destroy(app->resolver_source);
@@ -917,12 +933,6 @@ bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *
     return false;
 }
 
-void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata, tbox_destroy_notify destroy) {
-    (void)app;
-    (void)handler;
-    (void)userdata;
-    (void)destroy;
-}
 
 tbox_context *tbox_app_context(tbox_app *app) {
     (void)app;
@@ -959,4 +969,5 @@ bool tbox_app_should_close(const tbox_app *app) {
 void tbox_app_close(tbox_app *app) {
     (void)app;
 }
+
 #endif

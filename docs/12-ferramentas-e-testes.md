@@ -25,6 +25,22 @@ Os testes de medição de texto e layout usam a fonte embutida (Liberation
 Sans), então dão o mesmo resultado em qualquer máquina, inclusive sem
 fontes instaladas.
 
+### Testes do ciclo de vida
+
+`ctest --test-dir build -R app_lifecycle --output-on-failure` executa
+`build/tests/tbox_app_lifecycle_tests`, um binário separado que compila o
+loop real (`tbox_app.c`) e o módulo de eventos (`tbox_app_events.c`) contra
+um backend simulado por instância. Verifica load após o
+primeiro frame, foco, resize, reload, fechamento por Escape/backend/API,
+limpeza dos seis registros e callbacks reentrantes, inclusive close. Também
+verifica a API app de clique/input/select/submit com navegação por teclado,
+valores dos controles, unbind no próprio callback, troca/limpeza de slots,
+reload e liberação de userdata. Não
+abre janela e não depende de fontes do sistema. É construído quando há
+Fontconfig e biblioteca estática; o resto da suíte continua disponível nas
+configurações mínimas. Eventos de janela não têm fixture de paridade
+estática com Firefox; o exemplo interativo é `tbox_lifecycle_demo`.
+
 ## Fixtures visuais — `tests/assets/`
 
 Arquivos `<categoria>-<tema>.html` (`layout-grid-tracks.html`,

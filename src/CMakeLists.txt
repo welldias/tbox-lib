@@ -113,7 +113,9 @@ endif()
 # Screenshot rendering needs Fontconfig but no window backend. When font
 # discovery is absent, linkable application stubs expose that limitation.
 if(NOT TBOX_FONTCONFIG_FOUND)
-    list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/app/tbox_app.c)
+    list(REMOVE_ITEM TBOX_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/app/tbox_app.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/app/tbox_app_events.c)
 else()
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/app/tbox_app_unavailable.c)
 endif()

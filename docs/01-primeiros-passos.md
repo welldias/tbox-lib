@@ -48,7 +48,8 @@ Esc fecha as janelas.
 ```c
 #include <tbox/tbox.h>
 
-static bool on_click(tbox_context *ctx, tbox_html_node *button, void *ud) {
+static bool on_click(tbox_app *app, tbox_html_node *button, void *ud) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)ud;
     tbox_html_node_set_text_content(tbox_context_document(ctx), button,
                                     tbox_string_view_make("Obrigado!", 9));
@@ -61,7 +62,7 @@ int main(void) {
         "button { padding: 8px 16px; }", 480, 240);
     if (app == NULL) return 1;
 
-    tbox_context_on_click(tbox_app_context(app), "button", 6, on_click, NULL, NULL);
+    tbox_app_on_click(app, "button", 6, on_click, NULL, NULL);
     tbox_app_run(app);
     tbox_app_close(app);
     return 0;

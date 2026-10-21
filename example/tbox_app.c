@@ -23,7 +23,7 @@
  *   tbox_app_step / tbox_app_should_close / tbox_app_close handle (v0's
  *   blocking tbox_app_open() is gone -- see docs/dev/historico.md's Application
  *   section: a breaking change, accepted since example/ was its only real
- *   consumer) plus a tbox_context_on_click handler registered before the
+ *   consumer) plus a tbox_app_on_click handler registered before the
  *   loop starts.
  * - v2 ("v2 -- Fidelidade Visual" -> "Fatia vertical v2 -- critério de
  *   'pronto'"): <h1>..<h6> headings that get real, visibly-different
@@ -49,7 +49,7 @@
  *   firing nearest-first on one click), a stopPropagation demo
  *   (on_stop_inner_click returns false, so on_stop_outer_click -- which
  *   would otherwise match a farther ancestor -- never fires), a
- *   tbox_context_unbind_click demo (on_unbind_target_click unbinds its own
+ *   tbox_app_unbind_click demo (on_unbind_target_click unbinds its own
  *   registration after the first click, proven by the fact that its text
  *   never changes again after that), and a tbox_html_node_set_text_content
  *   demo (on_rename_target_click swaps its element's text on every click).
@@ -165,7 +165,7 @@
 #error "TBOX_APP_DEMO_CSS_PATH must be defined by the build (see example/CMakeLists.txt)"
 #endif
 
-/* Registered below via tbox_context_on_click(ctx, ".box", ...): fires on any
+/* Registered below via tbox_app_on_click(app, ".box", ...): fires on any
  * click that lands inside the box's border box (tbox_context_dispatch_click's
  * ancestor walk from the hit-tested node). Reads the node's current `class`
  * via tbox_html_node_get_attribute and flips it between "box off" and
@@ -176,12 +176,13 @@
  * visibly changes color (example/tbox_app_demo.css gives .off/.on different
  * background-color) without the window closing.
  *
- * returns bool, not void (tbox_context_click_handler's signature
- * changed -- see <tbox/context.h>); true means "keep propagating", and
+ * returns bool, not void (tbox_app_click_handler's signature
+ * changed -- see <tbox/app.h>); true means "keep propagating", and
  * nothing else in the tree matches ".box" at a farther ancestor anyway, so
  * the return value has no observable effect here beyond satisfying the new
  * signature. */
-static bool on_box_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool on_box_click(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
 
     tbox_string_view class_name           = tbox_string_view_make("class", strlen("class"));
@@ -213,7 +214,8 @@ static bool on_box_click(tbox_context *ctx, tbox_html_node *node, void *userdata
  * it. Returns true so propagation continues up to .bubble-outer's
  * handler below -- this pair is what actually proves real bubbling, as
  * opposed to the separate stopPropagation pair further down. */
-static bool on_bubble_inner_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool on_bubble_inner_click(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     tbox_log("[bubbling] .bubble-inner handler fired (nearest ancestor) -- propagation continues");
 
@@ -229,7 +231,8 @@ static bool on_bubble_inner_click(tbox_context *ctx, tbox_html_node *node, void 
  * to farthest and tests every registration at each level (real bubbling
  * order), not "per-registration, first-match-wins independently of other
  * registrations" like v1 used to. */
-static bool on_bubble_outer_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool on_bubble_outer_click(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     tbox_log("[bubbling] .bubble-outer handler fired (farther ancestor) -- confirms real bubbling order");
 
@@ -247,7 +250,8 @@ static bool on_bubble_outer_click(tbox_context *ctx, tbox_html_node *node, void 
  * propagation immediately, so on_stop_outer_click below must never run
  * for this click, no matter how far up the ancestor chain ".stop-outer"
  * would otherwise have matched. */
-static bool on_stop_inner_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool on_stop_inner_click(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     tbox_log("[stopPropagation] .stop-inner handler fired -- returning false, .stop-outer must NOT fire");
 
@@ -264,7 +268,8 @@ static bool on_stop_inner_click(tbox_context *ctx, tbox_html_node *node, void *u
  * registration. Kept registered (rather than omitted entirely) precisely
  * so its silence is itself the proof: example/tbox_app_demo.css's
  * .stop-outer-fired rule is documented there as "should never appear". */
-static bool on_stop_outer_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool on_stop_outer_click(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     tbox_log("[stopPropagation] BUG: .stop-outer handler fired -- this must never happen while stopPropagation works");
 
@@ -274,8 +279,8 @@ static bool on_stop_outer_click(tbox_context *ctx, tbox_html_node *node, void *u
     return true;
 }
 
-/* tbox_context_unbind_click demo. `userdata` points at a plain
- * int living in main()'s stack frame (see below) -- tbox_context_on_click
+/* tbox_app_unbind_click demo. `userdata` points at a plain
+ * int living in main()'s stack frame (see below) -- tbox_app_on_click
  * hands back this handler's own binding handle, which main() stores into
  * that int immediately after registering, before the loop (hence before
  * any click) can run. On the first click, this handler reads that handle
@@ -286,11 +291,12 @@ static bool on_stop_outer_click(tbox_context *ctx, tbox_html_node *node, void *u
  * its own text via tbox_html_node_set_text_content, and the fact that text
  * never changes again after the first click is the visible proof the
  * unbind took effect. */
-static bool on_unbind_target_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool on_unbind_target_click(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     int binding = *(int *)userdata;
     tbox_log("[unbind] .unbind-target clicked -- unbinding this handler now (binding=%d); a second click will do nothing", binding);
 
-    tbox_context_unbind_click(ctx, binding);
+    tbox_app_unbind_click(app, binding);
 
     const char *new_text = "Unbound: further clicks do nothing now";
     tbox_html_node_set_text_content(tbox_context_document(ctx), node, tbox_string_view_make(new_text, strlen(new_text)));
@@ -305,7 +311,8 @@ static bool on_unbind_target_click(tbox_context *ctx, tbox_html_node *node, void
  * tbox_html_node_set_text_content's own doc comment in <tbox/html_parser.h>:
  * h1-h6/p already re-read their text by walking direct children on every
  * relayout). */
-static bool on_rename_target_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool on_rename_target_click(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     tbox_log("[text] .rename-target clicked -- swapping text via tbox_html_node_set_text_content");
 
@@ -326,7 +333,8 @@ static bool on_rename_target_click(tbox_context *ctx, tbox_html_node *node, void
  * as on_bubble_inner_click above), the fix works end to end through the
  * real Style -> Layout -> Orchestration pipeline, not just at the unit
  * level tests/context/test_context.c already covers. */
-static bool on_v5_escaped_click(tbox_context *ctx, tbox_html_node *node, void *userdata) {
+static bool on_v5_escaped_click(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     tbox_log("[v5 hit-test] .v5-escaped-child clicked outside its parent's border_box -- hit-test fix confirmed");
 
@@ -347,13 +355,13 @@ static long tbox_app_demo_elapsed_ms(const struct timespec *start) {
 }
 
 /* Registers `selector`'s handler and bails out (closing `app` and printing
- * to stderr) if tbox_context_on_click failed (-1: bad selector syntax, or
+ * to stderr) if tbox_app_on_click failed (-1: bad selector syntax, or
  * ctx/handler NULL). Small helper shared by every registration in main()
  * below purely to avoid repeating this same six-line check seven times. */
-static bool tbox_app_demo_register(tbox_app *app, const char *selector, tbox_context_click_handler handler, void *userdata, int *out_binding) {
-    int binding = tbox_context_on_click(tbox_app_context(app), selector, strlen(selector), handler, userdata, NULL);
+static bool tbox_app_demo_register(tbox_app *app, const char *selector, tbox_app_click_handler handler, void *userdata, int *out_binding) {
+    int binding = tbox_app_on_click(app, selector, strlen(selector), handler, userdata, NULL);
     if (binding < 0) {
-        fprintf(stderr, "tbox_context_on_click failed to register the \"%s\" handler\n", selector);
+        fprintf(stderr, "tbox_app_on_click failed to register the \"%s\" handler\n", selector);
         return false;
     }
     if (out_binding != NULL) {

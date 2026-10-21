@@ -2,9 +2,10 @@
 #define TBOX_CONTEXT_INTERNAL_H
 
 /* Estado e contratos compartilhados apenas pelos módulos de src/context/.
- * A interface para aplicações permanece em <tbox/context.h>. */
+ * Registros públicos de eventos pertencem a <tbox/app.h>. */
 
 #include <tbox/context.h>
+#include "tbox_context_callbacks.h"
 #include <tbox/css_parser.h>
 #include <tbox/css_selector.h>
 #include <tbox/html_parser.h>
@@ -31,12 +32,12 @@
 #include "layout/tbox_layout_bidi.h"
 #include "layout/tbox_layout_password.h"
 
-/* One tbox_context_on_click registration: a compiled selector-group plus
+/* One tbox_context_bind_click registration: a compiled selector-group plus
  * the handler/userdata to fire when some ancestor of a clicked node
  * matches it. Lives in ctx->handlers (see below).
  *
  * Interatividade Avançada: `id` is the opaque handle
- * tbox_context_on_click hands back (see ctx->next_handler_id below); `active`
+ * tbox_context_bind_click hands back (see ctx->next_handler_id below); `active`
  * is a tombstone flag -- tbox_context_unbind_click sets it to false and
  * destroys `query` (setting it to NULL) rather than physically removing the
  * slot from ctx->handlers, since tbox_vector has no removal primitive and
@@ -185,9 +186,9 @@ struct tbox_context {
     tbox_image_cache *images;                 /* borrowed, same lifecycle stance as `fonts` above -- may be NULL ("no images", see <tbox/image.h>) */
     tbox_layout_box *root;                    /* last computed layout tree (lives in frame_arena); NULL until the first run_frame */
     tbox_arena frame_arena;                   /* backing for tbox_style_table + tbox_layout_box + tbox_display_list; reset at the start of every run_frame */
-    tbox_arena handler_arena;                 /* backing for `handlers` below -- deliberately NOT frame_arena: a tbox_context_on_click registration must survive every tbox_context_run_frame's arena reset */
+    tbox_arena handler_arena;                 /* backing for `handlers` below -- deliberately NOT frame_arena: a tbox_context_bind_click registration must survive every tbox_context_run_frame's arena reset */
     tbox_vector handlers;                     /* tbox_context_click_binding elements, arena-backed by handler_arena; array + linear scan on dispatch, same shape as tbox_style_table */
-    int next_handler_id;                      /* monotonic counter for tbox_context_on_click's returned handle -- never reused, even after tbox_context_unbind_click removes a binding */
+    int next_handler_id;                      /* monotonic counter for tbox_context_bind_click's returned handle -- never reused, even after tbox_context_unbind_click removes a binding */
     const tbox_html_node *hovered_node;       /* the node currently under the pointer, or NULL -- a plain struct field with its own lifetime, deliberately NOT part of frame_arena (must survive every tbox_context_run_frame's arena reset so tbox_context_update_hover can compare across frames; see <tbox/context.h>) */
     const tbox_html_node *active_node;        /* pointer-pressed node, retained until release for :active */
     const tbox_html_node *focused_node;

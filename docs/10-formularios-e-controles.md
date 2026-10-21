@@ -14,7 +14,7 @@ O estado de cada controle fica nos atributos do nó: `value` em campos de
 texto, data, cor, range, arquivo; presença de `checked` em checkbox e
 radio. A aplicação lê com `tbox_html_node_get_attribute` e altera com
 `tbox_html_node_set_attribute`/`_remove_attribute`. Mudanças feitas pelo
-usuário disparam `tbox_context_on_input` (ou `on_select` para `<select>`).
+usuário disparam `tbox_app_on_input` (ou `on_select` para `<select>`).
 
 ## Controles disponíveis
 
@@ -76,7 +76,7 @@ aplicação decide no handler de submit.
 
 ## Envio
 
-`tbox_context_on_submit(ctx, handler, ud, destroy)` recebe o `<form>` e o botão que
+`tbox_app_on_submit(app, handler, ud, destroy)` recebe o `<form>` e o botão que
 enviou (`NULL` quando foi Enter num campo). O tbox não navega nem faz
 requisição: leia os campos (por seletor dentro do form) e aja.
 

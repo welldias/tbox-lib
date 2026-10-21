@@ -18,6 +18,18 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Eventos do ciclo de vida da aplicação (2026-10-21)
+
+Acrescentados `tbox_app_on_load`, `on_unload`, `on_pagehide`, `on_pageshow`,
+`on_resize` e `on_error`. Load espera o primeiro frame, unload é único antes
+da destruição, pagehide/pageshow representam foco da janela e resize
+informa dimensões anterior/nova. Error tem registro e limpeza, sem emissão.
+Callbacks sobrevivem à recarga e podem substituir registros, recarregar ou
+fechar a aplicação com destruição adiada. Wayland entrega transições de
+foco de teclado; builds sem backend preservam símbolos no-op. Incluídos
+testes do loop com backend simulado e `example/lifecycle_demo.c`, sem novo
+estado global mutável.
+
 ## Após v20 — SVG inline básico (2026-10-21)
 
 Implementados os ícones e o medidor SVG do file explorer: formas básicas,
@@ -1269,3 +1281,22 @@ Defeitos apontados pela comparação de todos os fixtures com o Firefox
   ~32 ms em Debug. Screenshots idênticos byte a byte; testes ajustados aos
   acessores. Os arquivos de teste que resolvem estilos guardam os grupos
   numa arena própria do arquivo.
+
+## 2026-10-21 — Registros de controles na API app
+
+- `tbox_context_on_click/input/submit/select` e o unbind de clique deixam
+  a API pública; os equivalentes `tbox_app_*` recebem o app, assim como os
+  novos tipos de callback. O contexto é resolvido internamente.
+- Despacho e armazenamento por documento continuam privados no contexto,
+  com liberação adiada de userdata em callbacks e limpeza no reload.
+- Exemplos e documentação migrados; testes exercitam eventos de controles
+  pelo loop real com backend simulado, além da suíte do contexto.
+
+## 2026-10-21 — Arquivo próprio para eventos da aplicação
+
+- Registros `tbox_app_on_*`, unbind de clique, adaptadores, notificações e
+  liberação dos handlers extraídos para `src/app/tbox_app_events.c`.
+- Helpers entre loop e eventos declarados apenas em `tbox_app_internal.h`;
+  API pública e comportamento preservados.
+- Teste de integração compila ambos os arquivos de produção; builds sem
+  Wayland/Fontconfig mantêm os stubs correspondentes.

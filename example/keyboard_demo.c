@@ -10,7 +10,8 @@
 #error "TBOX_KEYBOARD_CSS_PATH is required"
 #endif
 
-static bool on_button(tbox_context *ctx, tbox_html_node *button, void *userdata) {
+static bool on_button(tbox_app *app, tbox_html_node *button, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     const tbox_html_attribute *id = tbox_html_node_get_attribute(button, tbox_string_view_make("id", 2));
     const char *message = id != NULL && id->value.size == 6 && memcmp(id->value.data, "second", 6) == 0
@@ -32,7 +33,8 @@ static bool on_button(tbox_context *ctx, tbox_html_node *button, void *userdata)
     return true;
 }
 
-static void on_input(tbox_context *ctx, tbox_html_node *input, const char *value, size_t value_length, void *userdata) {
+static void on_input(tbox_app *app, tbox_html_node *input, const char *value, size_t value_length, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     const tbox_html_attribute *id = tbox_html_node_get_attribute(input, tbox_string_view_make("id", 2));
     if (id != NULL && id->value.size == 16 && memcmp(id->value.data, "account-password", 16) == 0) {
@@ -155,7 +157,8 @@ static void on_input(tbox_context *ctx, tbox_html_node *input, const char *value
     fputc('\n', stdout);
 }
 
-static bool on_checkbox(tbox_context *ctx, tbox_html_node *checkbox, void *userdata) {
+static bool on_checkbox(tbox_app *app, tbox_html_node *checkbox, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     const bool checked = tbox_html_node_get_attribute(checkbox, tbox_string_view_make("checked", 7)) != NULL;
     const char *message = checked ? "Checkbox: checked" : "Checkbox: unchecked";
@@ -168,7 +171,8 @@ static bool on_checkbox(tbox_context *ctx, tbox_html_node *checkbox, void *userd
     return true;
 }
 
-static bool on_radio(tbox_context *ctx, tbox_html_node *radio, void *userdata) {
+static bool on_radio(tbox_app *app, tbox_html_node *radio, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     const tbox_html_attribute *value = tbox_html_node_get_attribute(radio, tbox_string_view_make("value", 5));
     char message[40];
@@ -185,7 +189,8 @@ static bool on_radio(tbox_context *ctx, tbox_html_node *radio, void *userdata) {
     return true;
 }
 
-static void on_select(tbox_context *ctx, tbox_html_node *select, const char *value, size_t value_length, void *userdata) {
+static void on_select(tbox_app *app, tbox_html_node *select, const char *value, size_t value_length, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)select;
     (void)userdata;
     char message[128];
@@ -202,7 +207,8 @@ static void on_select(tbox_context *ctx, tbox_html_node *select, const char *val
     tbox_css_selector_node_set_destroy(&matches);
 }
 
-static void on_submit(tbox_context *ctx, tbox_html_node *form, tbox_html_node *submitter, void *userdata) {
+static void on_submit(tbox_app *app, tbox_html_node *form, tbox_html_node *submitter, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)form;
     (void)userdata;
     const char *message = submitter != NULL ? "Submitted with button." : "Submitted with Enter.";
@@ -224,14 +230,14 @@ int main(void) {
         fputs("Could not create the window\n", stderr);
         return 1;
     }
-    tbox_context_on_click(tbox_app_context(app), "button", 6, on_button, NULL, NULL);
-    tbox_context_on_click(tbox_app_context(app), "input[type=button]", 18, on_button, NULL, NULL);
-    tbox_context_on_click(tbox_app_context(app), "input[type=image]", 17, on_button, NULL, NULL);
-    tbox_context_on_click(tbox_app_context(app), "input[type=checkbox]", 20, on_checkbox, NULL, NULL);
-    tbox_context_on_click(tbox_app_context(app), "input[type=radio]", 17, on_radio, NULL, NULL);
-    tbox_context_on_input(tbox_app_context(app), on_input, NULL, NULL);
-    tbox_context_on_submit(tbox_app_context(app), on_submit, NULL, NULL);
-    tbox_context_on_select(tbox_app_context(app), on_select, NULL, NULL);
+    tbox_app_on_click(app, "button", 6, on_button, NULL, NULL);
+    tbox_app_on_click(app, "input[type=button]", 18, on_button, NULL, NULL);
+    tbox_app_on_click(app, "input[type=image]", 17, on_button, NULL, NULL);
+    tbox_app_on_click(app, "input[type=checkbox]", 20, on_checkbox, NULL, NULL);
+    tbox_app_on_click(app, "input[type=radio]", 17, on_radio, NULL, NULL);
+    tbox_app_on_input(app, on_input, NULL, NULL);
+    tbox_app_on_submit(app, on_submit, NULL, NULL);
+    tbox_app_on_select(app, on_select, NULL, NULL);
     tbox_app_run(app);
     tbox_app_close(app);
     return 0;

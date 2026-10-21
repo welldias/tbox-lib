@@ -123,6 +123,18 @@ contexto não guarda flag de "sujo"; o retorno é o sinal.
 Os raios explícitos dos gradientes radiais também entram no hash da display
 list; mudar apenas um raio já invalida a área pintada pelo gradiente.
 
+### Callbacks de ciclo de vida
+
+Load espera o primeiro frame do documento ser aceito pelo backend; se não
+houver buffer livre, continua pendente. Ele não espera confirmação de que o
+compositor mostrou os pixels. Alterar o DOM em load solicita outro frame.
+Trocar o documento dentro de load agenda o load do novo documento na volta
+seguinte. Resize roda antes do recálculo, para que suas alterações entrem no
+frame novo. Pagehide/pageshow também marcam o frame sujo quando há callback.
+Fechamento interrompe o despacho normal e emite unload uma única vez; não
+faz outro frame. Tarefas já postadas ainda podem ser drenadas por step/wait
+após fechamento, até a destruição explícita da aplicação.
+
 ## O que um frame recalcula
 
 `tbox_context_run_frame(ctx, largura, altura, &lista)`:

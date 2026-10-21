@@ -16,7 +16,7 @@ formulário, salvar um arquivo — fica em funções C que você registra.
 tbox_app *app = tbox_app_create(
     "<body><h1>Contador</h1><p id='n'>0</p><button>+1</button></body>",
     "button { padding: 6px 14px }", 320, 200);
-tbox_context_on_click(tbox_app_context(app), "button", 6, on_plus, NULL, NULL);
+tbox_app_on_click(app, "button", 6, on_plus, NULL, NULL);
 tbox_app_run(app); /* dorme até algo acontecer; volta quando a janela fecha */
 tbox_app_close(app);
 ```

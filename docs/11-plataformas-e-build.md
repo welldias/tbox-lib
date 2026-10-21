@@ -13,6 +13,19 @@
 | X11 | Sem backend: numa sessão X11 pura (sem compositor Wayland) a janela não abre. |
 | Windows, macOS, Android | Sem backend ainda. O núcleo (parser, estilo, layout, render, raster) é C portável; faltam o backend de janela e a descoberta de fontes do SO. |
 
+### Foco e ciclo de vida
+
+Wayland traduz `wl_keyboard.enter/leave` em `TBOX_INPUT_WINDOW_FOCUS` na
+fila privada do backend. A aplicação os entrega como pageshow/pagehide;
+entrada/saída do ponteiro não altera foco de janela. Redimensionamento usa
+as dimensões negociadas por configure, observadas pelo loop. Fechamento
+nativo, Escape não consumido e desconexão notificam unload.
+Os novos símbolos de registro continuam linkáveis em builds sem Wayland
+ou Fontconfig; nesses builds sem janela eles são no-ops. O teste
+`app_lifecycle` usa o loop de produção com um backend simulado, sem abrir
+janela nem depender de fontes instaladas (requer build estático e Fontconfig
+para compilar o mesmo arquivo de aplicação).
+
 ## Dependências
 
 | Dependência | Obrigatória? | Para quê | Sem ela |

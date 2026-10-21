@@ -192,3 +192,6 @@ if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
 
     set_target_properties(tbox_app_demo PROPERTIES OUTPUT_NAME tbox_app_demo)
 endif()
+
+add_executable(tbox_lifecycle_demo lifecycle_demo.c)
+target_link_libraries(tbox_lifecycle_demo PRIVATE tbox tbox_warnings tbox_sanitizers)

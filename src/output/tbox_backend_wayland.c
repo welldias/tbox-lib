@@ -146,6 +146,7 @@ struct tbox_backend_wayland {
 
     /* Events are queued in compositor delivery order. Pointer position is
      * tracked separately for hover and click coordinates. */
+    bool keyboard_has_focus;
     bool pointer_has_focus;
     uint32_t pointer_enter_serial; /* wl_pointer.set_cursor needs the latest enter serial */
     tbox_style_cursor cursor;
@@ -659,16 +660,22 @@ static void tbox_backend_wayland_keyboard_enter(void *data, struct wl_keyboard *
     tbox_backend_wayland *backend = data;
     (void)keyboard;
     (void)serial;
-    (void)surface;
     (void)keys;
     backend->repeat_active = false;
+    if (surface == backend->surface && !backend->keyboard_has_focus) {
+        backend->keyboard_has_focus = true;
+        tbox_backend_wayland_push_event(backend, (tbox_input_event){ .kind = TBOX_INPUT_WINDOW_FOCUS, .data.window_focus = { true } });
+    }
 }
 
 static void tbox_backend_wayland_keyboard_leave(void *data, struct wl_keyboard *keyboard, uint32_t serial, struct wl_surface *surface) {
     tbox_backend_wayland *backend = data;
     (void)keyboard;
     (void)serial;
-    (void)surface;
+    if (surface == backend->surface && backend->keyboard_has_focus) {
+        backend->keyboard_has_focus = false;
+        tbox_backend_wayland_push_event(backend, (tbox_input_event){ .kind = TBOX_INPUT_WINDOW_FOCUS, .data.window_focus = { false } });
+    }
     backend->repeat_active = false;
     if (backend->data_device != NULL)
         tbox_backend_wayland_clipboard_selection(backend, backend->data_device, NULL);

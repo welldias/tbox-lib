@@ -471,10 +471,13 @@ bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *sele
     return false;
 }
 
-void tbox_context_on_select(tbox_context *ctx, tbox_context_select_handler handler, void *userdata, tbox_destroy_notify destroy) {
-    if (ctx == NULL) return;
-    tbox_release_add(&ctx->releases, ctx->select_destroy, ctx->select_userdata);
-    ctx->select_handler  = handler;
-    ctx->select_userdata = userdata;
-    ctx->select_destroy  = destroy;
+void tbox_context_set_select_handler(tbox_context *ctx, tbox_context_select_handler handler, void *userdata, tbox_destroy_notify destroy) {
+    if (ctx == NULL)
+        return;
+    tbox_destroy_notify previous_destroy = ctx->select_destroy;
+    void *previous_userdata              = ctx->select_userdata;
+    ctx->select_handler                  = handler;
+    ctx->select_userdata                 = userdata;
+    ctx->select_destroy                  = destroy;
+    tbox_release_add(&ctx->releases, previous_destroy, previous_userdata);
 }

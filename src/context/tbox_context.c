@@ -684,22 +684,26 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     tbox_context_append_control_paint(ctx, out_list);
 }
 
-void tbox_context_on_input(tbox_context *ctx, tbox_context_input_handler handler, void *userdata, tbox_destroy_notify destroy) {
+void tbox_context_set_input_handler(tbox_context *ctx, tbox_context_input_handler handler, void *userdata, tbox_destroy_notify destroy) {
     if (ctx == NULL)
         return;
-    tbox_release_add(&ctx->releases, ctx->input_destroy, ctx->input_userdata);
-    ctx->input_handler  = handler;
-    ctx->input_userdata = userdata;
-    ctx->input_destroy  = destroy;
+    tbox_destroy_notify previous_destroy = ctx->input_destroy;
+    void *previous_userdata              = ctx->input_userdata;
+    ctx->input_handler                   = handler;
+    ctx->input_userdata                  = userdata;
+    ctx->input_destroy                   = destroy;
+    tbox_release_add(&ctx->releases, previous_destroy, previous_userdata);
 }
 
-void tbox_context_on_submit(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata, tbox_destroy_notify destroy) {
+void tbox_context_set_submit_handler(tbox_context *ctx, tbox_context_submit_handler handler, void *userdata, tbox_destroy_notify destroy) {
     if (ctx == NULL)
         return;
-    tbox_release_add(&ctx->releases, ctx->submit_destroy, ctx->submit_userdata);
-    ctx->submit_handler  = handler;
-    ctx->submit_userdata = userdata;
-    ctx->submit_destroy  = destroy;
+    tbox_destroy_notify previous_destroy = ctx->submit_destroy;
+    void *previous_userdata              = ctx->submit_userdata;
+    ctx->submit_handler                  = handler;
+    ctx->submit_userdata                 = userdata;
+    ctx->submit_destroy                  = destroy;
+    tbox_release_add(&ctx->releases, previous_destroy, previous_userdata);
 }
 
 // Hands out the mutable document, so ctx stays non-const on purpose.

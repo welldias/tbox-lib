@@ -2,7 +2,7 @@
 
 static bool tbox_context_dispatch_click_node(tbox_context *ctx, const tbox_html_node *node);
 
-int tbox_context_on_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata, tbox_destroy_notify destroy) {
+int tbox_context_bind_click(tbox_context *ctx, const char *selector, size_t selector_length, tbox_context_click_handler handler, void *userdata, tbox_destroy_notify destroy) {
     if (ctx == NULL || handler == NULL) {
         return -1;
     }

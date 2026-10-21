@@ -33,8 +33,9 @@ static char *read_theme(const char *path, size_t *length) {
     return buffer;
 }
 
-static void on_input(tbox_context *ctx, tbox_html_node *input,
+static void on_input(tbox_app *app, tbox_html_node *input,
                      const char *value, size_t value_length, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)ctx;
     (void)userdata;
     const tbox_html_attribute *id = tbox_html_node_get_attribute(input,
@@ -78,7 +79,7 @@ int main(int argc, char **argv) {
         fputs("Could not create the example window.\n", stderr);
         return 1;
     }
-    tbox_context_on_input(tbox_app_context(app), on_input, NULL, NULL);
+    tbox_app_on_input(app, on_input, NULL, NULL);
     tbox_app_run(app);
     tbox_app_close(app);
     return 0;

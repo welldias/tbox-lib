@@ -54,6 +54,30 @@ cria seu estado FreeType sob demanda na chamada de pintura e o destrói antes
 de retornar. Stroking usa memória temporária explícita; não há cache global
 novo nem necessidade de um font face para rasterizar SVG.
 
+## Callbacks da aplicação
+
+Os registros de load, unload, pagehide, pageshow, resize e error pertencem
+à aplicação, sobrevivendo à troca de contexto. Cada slot possui seu
+userdata/destroy; a substituição libera o anterior, a destruição libera os
+que restam, inclusive error mesmo que nunca dispare. Dados de resize/error
+são emprestados apenas durante a chamada.
+
+Os registros públicos `tbox_app_on_click`, `on_input`, `on_select` e
+`on_submit` recebem o app, mas seu adaptador pertence ao contexto do
+documento atual. Troca bem-sucedida de documento libera os registros;
+falha preserva os anteriores. Unbind, substituição e limpeza durante o
+próprio callback adiam a liberação até seu retorno. `NULL` app, clique
+inválido e falha ao alocar o adaptador não transferem posse de userdata;
+limpar um slot com handler `NULL` também não assume o novo userdata.
+
+A operação externa de despacho mantém a aplicação e os userdata em uso
+vivos até retornar. Close durante um callback emite unload uma única vez
+e adia a destruição; unload ainda acessa o contexto. Não use o handle após
+o retorno dessa operação caso tenha solicitado close dentro dela. O loop
+não é reentrante. A fila de tarefas usa o mutex já existente e deixa de
+aceitar tarefas durante a destruição; as threads produtoras ainda precisam
+ser encerradas antes de close. Nenhum global mutável ou lock novo.
+
 ## Threads
 
 **Afinidade de thread, com uma única porta thread-safe.** Regras:

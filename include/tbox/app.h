@@ -79,10 +79,47 @@ bool tbox_app_screenshot_from_files(const char *html_path, const char *css_path,
 /* Offscreen counterpart taking context options (NULL: defaults). */
 bool tbox_app_screenshot_from_files_with_options(const char *html_path, const char *css_path, int32_t width, int32_t height, const char *png_path, const tbox_context_options *options);
 
-/* Access to the internal tbox_context -- for registering click handlers via
- * tbox_context_on_click, at any point before or after the first
- * tbox_app_step. Returns NULL if app == NULL. */
+/* Access to the internal context for DOM access, layout and control state.
+ * Event registrations use tbox_app_on_*. Returns NULL if app == NULL. */
 tbox_context *tbox_app_context(tbox_app *app);
+
+/* Document event callbacks run on the UI thread and receive this app.
+ * The app looks up its current context internally when registering. Use
+ * tbox_app_context(app) inside a handler for DOM/control operations.
+ * Registrations belong to the current document: successful load_from_files
+ * removes them and releases their userdata. Register again in on_load for
+ * the new document. NULL app is a no-op and never transfers ownership.
+ * destroy (optional) releases accepted userdata exactly once, after an
+ * active handler returns. These callbacks must not synchronously replace
+ * the document; use tbox_app_post to schedule load_from_files instead. */
+typedef bool (*tbox_app_click_handler)(tbox_app *app, tbox_html_node *node, void *userdata);
+typedef void (*tbox_app_input_handler)(tbox_app *app, tbox_html_node *input, const char *value, size_t value_length, void *userdata);
+typedef void (*tbox_app_select_handler)(tbox_app *app, tbox_html_node *select, const char *value, size_t value_length, void *userdata);
+typedef void (*tbox_app_submit_handler)(tbox_app *app, tbox_html_node *form, tbox_html_node *submitter, void *userdata);
+
+/* Delegated click: each matching ancestor receives the handler, in binding
+ * order at each level. true continues bubbling; false stops propagation.
+ * Returns a document-scoped id, never reused within that document, or -1
+ * for invalid selector, NULL app/handler, or allocation failure (userdata
+ * remains the caller's). Enabled buttons also activate by Enter/Space. */
+int tbox_app_on_click(tbox_app *app, const char *selector, size_t selector_length, tbox_app_click_handler handler, void *userdata, tbox_destroy_notify destroy);
+/* Removes an active binding and releases userdata after a running handler
+ * returns. false for NULL app or unknown/inactive id. */
+bool tbox_app_unbind_click(tbox_app *app, int binding);
+
+/* Single slots: replace the old handler or clear with NULL. Clearing does
+ * not take ownership of the new userdata. If allocating the adapter fails,
+ * the old handler remains and ownership of the new userdata stays with
+ * the caller. Values/nodes are borrowed for the duration of the callback. */
+/* User editing or a picker changed an input/textarea (file: file name).
+ * value_length bytes, not necessarily NUL-terminated. */
+void tbox_app_on_input(tbox_app *app, tbox_app_input_handler handler, void *userdata, tbox_destroy_notify destroy);
+/* User selected another option. value is its value attribute, or collapsed
+ * text when no attribute exists. Programmatic changes do not emit select. */
+void tbox_app_on_select(tbox_app *app, tbox_app_select_handler handler, void *userdata, tbox_destroy_notify destroy);
+/* A submit control or Enter submitted the form. submitter is NULL for
+ * Enter in a field. No automatic navigation/network request occurs. */
+void tbox_app_on_submit(tbox_app *app, tbox_app_submit_handler handler, void *userdata, tbox_destroy_notify destroy);
 
 /* Called for each translated key event before the context handles it.
  * Return true to consume the key. The handler may load another document.
@@ -92,6 +129,51 @@ tbox_context *tbox_app_context(tbox_app *app);
  * tbox_app_close (see <tbox/callback.h>). */
 typedef bool (*tbox_app_key_handler)(tbox_app *app, const tbox_key_event *event, void *userdata);
 void tbox_app_on_key(tbox_app *app, tbox_app_key_handler handler, void *userdata, tbox_destroy_notify destroy);
+
+/* Window/document lifecycle callbacks, on the UI thread. Each registration
+ * is a single slot: replace it or pass NULL to clear it. destroy releases
+ * the previous userdata after any callback using it returns, and the last
+ * userdata when the app closes. NULL app is a no-op (ownership unchanged).
+ * These app-level registrations survive tbox_app_load_from_files.
+ * They register C callbacks; HTML onload="..." etc. do not execute script. */
+typedef void (*tbox_app_event_handler)(tbox_app *app, void *userdata);
+
+/* Once per document, after its first computed frame is accepted by the
+ * backend. Deferred to step/wait/run, so register after create and before
+ * entering the loop. Registering after load does not replay it. Successful
+ * document replacement schedules another load; failures do not. */
+void tbox_app_on_load(tbox_app *app, tbox_app_event_handler handler, void *userdata, tbox_destroy_notify destroy);
+
+/* Once when closing the window: native request, unconsumed Escape, backend
+ * disconnection or explicit close. Context/resources are still available.
+ * Notification only: cannot cancel closing. Replacing a document is not
+ * a window close and does not emit unload. */
+void tbox_app_on_unload(tbox_app *app, tbox_app_event_handler handler, void *userdata, tbox_destroy_notify destroy);
+
+/* In tbox these names mean window keyboard focus loss/gain, independently
+ * of pointer hover. They do not model browser navigation/page caching.
+ * Initial focus is delivered after load; duplicate states are ignored. */
+void tbox_app_on_pagehide(tbox_app *app, tbox_app_event_handler handler, void *userdata, tbox_destroy_notify destroy);
+void tbox_app_on_pageshow(tbox_app *app, tbox_app_event_handler handler, void *userdata, tbox_destroy_notify destroy);
+
+typedef struct tbox_app_resize_event {
+    int32_t previous_width, previous_height;
+    int32_t width, height; /* window content dimensions in layout pixels */
+} tbox_app_resize_event;
+typedef void (*tbox_app_resize_handler)(tbox_app *app, const tbox_app_resize_event *event, void *userdata);
+/* After a change to an already observed window size, before rebuilding the
+ * frame. Initial size is not a resize. Changes within one backend poll may
+ * coalesce to its final size. event is borrowed for the callback only. */
+void tbox_app_on_resize(tbox_app *app, tbox_app_resize_handler handler, void *userdata, tbox_destroy_notify destroy);
+
+typedef struct tbox_app_error_event {
+    tbox_string_view message; /* borrowed for the callback only */
+} tbox_app_error_event;
+typedef void (*tbox_app_error_handler)(tbox_app *app, const tbox_app_error_event *event, void *userdata);
+/* Reserved notification: registration/cleanup work, but NO error is emitted
+ * yet (including invalid markup, load failures and backend disconnection).
+ * Existing error returns remain the way to detect failures. */
+void tbox_app_on_error(tbox_app *app, tbox_app_error_handler handler, void *userdata, tbox_destroy_notify destroy);
 
 /* Replaces the current document in the existing window. NULL css_path uses
  * only the document's embedded styles and the user-agent stylesheet. On
@@ -156,6 +238,12 @@ bool tbox_app_should_close(const tbox_app *app);
 /* Destroys the backend, closes the context, destroys the font cache (NOVO
  * v2: was a single tbox_font_face; same order tbox_app_open used internally
  * before returning), and frees `app` itself. A no-op if app == NULL. */
+/* During a callback, teardown waits until the enclosing loop operation
+ * returns. unload runs once while the context is valid. Calling close
+ * recursively from unload is safe. The handle must not be used after the
+ * outer operation returns if a callback requested its destruction. Nested
+ * step/wait/run calls during callbacks are ignored. Join posting threads
+ * before calling close, including from a callback. */
 void tbox_app_close(tbox_app *app);
 
 #ifdef __cplusplus

@@ -90,7 +90,7 @@ body {
     background-color: seagreen;
 }
 
-/* v3: tbox_context_unbind_click demo. Must be a <p> (not a <div>) so its
+/* v3: tbox_app_unbind_click demo. Must be a <p> (not a <div>) so its
  * text -- rewritten by on_unbind_target_click via
  * tbox_html_node_set_text_content -- actually renders (see the note at
  * the top of this file). on_unbind_target_click unbinds its own

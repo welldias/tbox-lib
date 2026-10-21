@@ -5,6 +5,8 @@
 # file.
 file(GLOB_RECURSE TBOX_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
 
+# The app integration test has its own main and simulated backend.
+list(REMOVE_ITEM TBOX_TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test_app_lifecycle.c)
 add_executable(tbox_tests ${TBOX_TEST_SOURCES})
 
 # The parser/tree-builder test groups exercise internals that aren't part of
@@ -80,4 +82,18 @@ if(TBOX_OPENCV_FOUND AND TBOX_FONTCONFIG_FOUND)
     # exercise HTML/CSS tbox doesn't implement yet (see docs/dev/historico.md's
     # v10 "Escopo") and are expected to report DIFERENTE today, which is
     # exactly the kind of result that shouldn't silently gate CI.
+endif()
+
+# Exercise the production event loop without Wayland or installed fonts.
+# The explicit app objects supply their public symbols; the static archive
+# supplies the rest of tbox, without extracting its real backend/app objects.
+if(TBOX_FONTCONFIG_FOUND AND TBOX_BUILD_STATIC)
+    add_executable(tbox_app_lifecycle_tests test_app_lifecycle.c
+        ${CMAKE_SOURCE_DIR}/src/app/tbox_app.c
+        ${CMAKE_SOURCE_DIR}/src/app/tbox_app_events.c)
+    target_compile_definitions(tbox_app_lifecycle_tests PRIVATE
+        TBOX_HAS_WINDOW_BACKEND=1 TBOX_TEST_ASSETS_DIR="${CMAKE_SOURCE_DIR}/tests/assets")
+    target_include_directories(tbox_app_lifecycle_tests PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(tbox_app_lifecycle_tests PRIVATE tbox_static tbox_warnings tbox_sanitizers)
+    add_test(NAME app_lifecycle COMMAND tbox_app_lifecycle_tests)
 endif()

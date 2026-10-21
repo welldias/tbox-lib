@@ -117,9 +117,15 @@ altera o tamanho de `tbox_html_node`: recompile consumidores.
 | `tbox_app_post(app, fn, userdata, destroy)` | **Única função thread-safe.** Executa `fn(app, userdata)` na thread de UI, na próxima volta, e marca o frame como sujo; depois chama `destroy(userdata)`. |
 | `tbox_app_should_close(app)` | `true` quando a janela pediu fechamento ou a conexão caiu. Esc também fecha (se nenhum controle consumir a tecla). |
 | `tbox_app_close(app)` | Libera tudo. |
-| `tbox_app_context(app)` | O `tbox_context` interno, para registrar handlers e acessar o DOM. |
+| `tbox_app_context(app)` | O `tbox_context` interno, para acessar o DOM e os controles. |
 | `tbox_app_on_key(app, handler, userdata, destroy)` | Handler de tecla (recebe `const tbox_key_event *`) chamado antes do contexto; retorne `true` para consumir. |
-| `tbox_app_load_from_files(app, html, css)` | Troca o documento na mesma janela (cria um contexto novo). Em falha, o atual continua. Handlers do contexto antigo não são levados: registre de novo. |
+| `tbox_app_on_load(app, handler, ud, destroy)` | Uma vez por documento, após o primeiro frame aceito pelo backend. |
+| `tbox_app_on_unload(app, handler, ud, destroy)` | Uma vez ao fechar a janela, com o contexto ainda válido; não cancela fechamento. |
+| `tbox_app_on_pagehide(app, handler, ud, destroy)` | A janela perde foco de teclado. |
+| `tbox_app_on_pageshow(app, handler, ud, destroy)` | A janela ganha foco de teclado; foco inicial vem após load. |
+| `tbox_app_on_resize(app, handler, ud, destroy)` | Recebe `const tbox_app_resize_event *` com dimensões anterior/nova. Não inclui tamanho inicial. |
+| `tbox_app_on_error(app, handler, ud, destroy)` | Registro reservado com `const tbox_app_error_event *`; ainda não dispara. |
+| `tbox_app_load_from_files(app, html, css)` | Troca o documento na mesma janela (cria um contexto novo). Em falha, o atual continua. Registros de clique/input/select/submit do documento antigo são liberados: registre de novo. |
 | `tbox_app_request_redraw(app)` | Peça um frame depois de mudar o DOM fora de um handler. |
 | `tbox_app_set_debug_damage(app, on)` | Contorna as regiões repintadas (depuração). |
 | `tbox_app_screenshot_from_files(html, css, w, h, png)` | Renderiza um frame num PNG sem abrir janela. |
@@ -133,6 +139,45 @@ if (app == NULL) return 1;
 tbox_app_run(app);
 tbox_app_close(app);
 ```
+
+Os seis registros de ciclo de vida pertencem ao `tbox_app`, sobrevivem à
+recarga de HTML e têm um callback por evento. Registrar NULL limpa o slot.
+Load não é emitido dentro de create: registre antes de step/wait/run.
+Pagehide/pageshow seguem o contrato de foco da janela da tbox. Não há
+execução de código dos atributos HTML `onload="..."` etc.
+
+Callbacks de ciclo de vida e teclado podem carregar outro documento e
+substituir registros. Se um callback chamar `tbox_app_close`, a destruição aguarda a operação externa
+terminar; o chamador não deve reutilizar o handle nem fechá-lo novamente
+após esse retorno. Unload pode chamar close recursivamente com segurança.
+Chamadas aninhadas de step/wait/run não entram novamente no loop. Exemplo
+completo em `example/lifecycle_demo.c`.
+
+### Eventos do documento
+
+| Registro | Chamado quando |
+|---|---|
+| `tbox_app_on_click(app, "seletor", len, handler, ud, destroy)` → `int` | Um clique (ou Enter/Espaço num botão focado) atinge um elemento que casa com o seletor, ou um descendente dele. Retorna um id; `-1` em seletor inválido. |
+| `tbox_app_unbind_click(app, id)` | Remove o registro. |
+| `tbox_app_on_input(app, handler, ud, destroy)` | O valor de um `input`/`textarea` muda por edição ou por um popup. O handler recebe `(const char *value, size_t value_length)`. |
+| `tbox_app_on_select(app, handler, ud, destroy)` | O usuário escolhe outra opção num `<select>`. Valor como em `on_input`. |
+| `tbox_app_on_submit(app, handler, ud, destroy)` | Um formulário é enviado (botão submit ou Enter num campo). |
+
+O handler de clique retorna `bool`: `true` continua a propagação para
+ancestrais, `false` para (`stopPropagation`). Detalhes em
+[Eventos e interatividade](06-eventos-e-interatividade.md).
+
+`destroy` (`tbox_destroy_notify` em `callback.h`, pode ser `NULL`) libera o
+`ud` uma única vez, quando a biblioteca deixa de usá-lo: `unbind`, troca do
+handler, `close`. Nenhum callback recebe struct por valor. Ver
+[Exemplos](04-exemplos.md#11-userdata-com-dono).
+
+Os callbacks usam os tipos `tbox_app_click_handler`, `tbox_app_input_handler`,
+`tbox_app_select_handler` e `tbox_app_submit_handler`; o primeiro parâmetro é
+sempre `tbox_app *`. Os registros pertencem ao documento atual e são
+liberados no reload ou close. Para mantê-los em novas páginas, registre no
+`on_load`. Dentro de um callback de controle, agende a troca de documento
+com `tbox_app_post` para ela acontecer depois do despacho atual.
 
 ## 2. Documento e eventos — `context.h`
 
@@ -168,25 +213,6 @@ frame é necessário.
 | `tbox_context_dispatch_text(ctx, utf8)` | Texto já composto (digitação, colar) |
 | `tbox_context_hit_test(ctx, x, y)` | Caixa mais profunda sob o ponto (último frame) |
 | `tbox_context_cursor_at(ctx, x, y)` | Cursor CSS a mostrar |
-
-### Handlers
-
-| Registro | Chamado quando |
-|---|---|
-| `tbox_context_on_click(ctx, "seletor", len, handler, ud, destroy)` → `int` | Um clique (ou Enter/Espaço num botão focado) atinge um elemento que casa com o seletor, ou um descendente dele. Retorna um id; `-1` em seletor inválido. |
-| `tbox_context_unbind_click(ctx, id)` | Remove o registro. |
-| `tbox_context_on_input(ctx, handler, ud, destroy)` | O valor de um `input`/`textarea` muda por edição ou por um popup. O handler recebe `(const char *value, size_t value_length)`. |
-| `tbox_context_on_select(ctx, handler, ud, destroy)` | O usuário escolhe outra opção num `<select>`. Valor como em `on_input`. |
-| `tbox_context_on_submit(ctx, handler, ud, destroy)` | Um formulário é enviado (botão submit ou Enter num campo). |
-
-O handler de clique retorna `bool`: `true` continua a propagação para
-ancestrais, `false` para (`stopPropagation`). Detalhes em
-[Eventos e interatividade](06-eventos-e-interatividade.md).
-
-`destroy` (`tbox_destroy_notify` em `callback.h`, pode ser `NULL`) libera o
-`ud` uma única vez, quando a biblioteca deixa de usá-lo: `unbind`, troca do
-handler, `close`. Nenhum callback recebe struct por valor. Ver
-[Exemplos](04-exemplos.md#11-userdata-com-dono).
 
 ### Formulários
 

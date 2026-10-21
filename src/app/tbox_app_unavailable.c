@@ -53,3 +53,28 @@ void tbox_app_run(tbox_app *app) { (void)app; }
 bool tbox_app_post(tbox_app *app, tbox_app_task task, void *userdata, tbox_destroy_notify destroy) { (void)app; (void)task; (void)userdata; (void)destroy; return false; }
 bool tbox_app_should_close(const tbox_app *app) { (void)app; return true; }
 void tbox_app_close(tbox_app *app) { (void)app; }
+
+void tbox_app_on_load(tbox_app *app, tbox_app_event_handler handler, void *userdata, tbox_destroy_notify destroy) { (void)app; (void)handler; (void)userdata; (void)destroy; }
+void tbox_app_on_unload(tbox_app *app, tbox_app_event_handler handler, void *userdata, tbox_destroy_notify destroy) { (void)app; (void)handler; (void)userdata; (void)destroy; }
+void tbox_app_on_pagehide(tbox_app *app, tbox_app_event_handler handler, void *userdata, tbox_destroy_notify destroy) { (void)app; (void)handler; (void)userdata; (void)destroy; }
+void tbox_app_on_pageshow(tbox_app *app, tbox_app_event_handler handler, void *userdata, tbox_destroy_notify destroy) { (void)app; (void)handler; (void)userdata; (void)destroy; }
+void tbox_app_on_resize(tbox_app *app, tbox_app_resize_handler handler, void *userdata, tbox_destroy_notify destroy) { (void)app; (void)handler; (void)userdata; (void)destroy; }
+void tbox_app_on_error(tbox_app *app, tbox_app_error_handler handler, void *userdata, tbox_destroy_notify destroy) { (void)app; (void)handler; (void)userdata; (void)destroy; }
+
+int tbox_app_on_click(tbox_app *app, const char *selector, size_t selector_length, tbox_app_click_handler handler, void *userdata, tbox_destroy_notify destroy) {
+    (void)app; (void)selector; (void)selector_length; (void)handler; (void)userdata; (void)destroy;
+    return -1;
+}
+bool tbox_app_unbind_click(tbox_app *app, int binding) {
+    (void)app; (void)binding;
+    return false;
+}
+void tbox_app_on_input(tbox_app *app, tbox_app_input_handler handler, void *userdata, tbox_destroy_notify destroy) {
+    (void)app; (void)handler; (void)userdata; (void)destroy;
+}
+void tbox_app_on_select(tbox_app *app, tbox_app_select_handler handler, void *userdata, tbox_destroy_notify destroy) {
+    (void)app; (void)handler; (void)userdata; (void)destroy;
+}
+void tbox_app_on_submit(tbox_app *app, tbox_app_submit_handler handler, void *userdata, tbox_destroy_notify destroy) {
+    (void)app; (void)handler; (void)userdata; (void)destroy;
+}

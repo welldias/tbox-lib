@@ -1,7 +1,7 @@
 # 4. Exemplos
 
 > - **Escopo:** receitas curtas para as tarefas mais comuns, do "olá mundo" ao render headless.
-> - **Código relacionado:** `example/tbox_app.c`, `example/keyboard_demo.c`, `example/control_theme_demo.c`, `example/assets_showrun.c`, `example/worker_post_demo.c`
+> - **Código relacionado:** `example/tbox_app.c`, `example/keyboard_demo.c`, `example/control_theme_demo.c`, `example/assets_showrun.c`, `example/worker_post_demo.c`, `example/lifecycle_demo.c`
 > - **Veja também:** [Guia da API](03-guia-da-api.md), [Eventos e interatividade](06-eventos-e-interatividade.md), [Primeiros passos](01-primeiros-passos.md)
 
 Todos os trechos usam só a API pública (`#include <tbox/tbox.h>`). Os
@@ -51,7 +51,8 @@ ou um `<div>`): só o primeiro elemento do nível raiz é desenhado.
 ```c
 /* <button class="toggle">Ligar</button> <div id="lamp" class="off"></div>
    CSS: #lamp.off { background: #333 } #lamp.on { background: gold } */
-static bool on_toggle(tbox_context *ctx, tbox_html_node *button, void *userdata) {
+static bool on_toggle(tbox_app *app, tbox_html_node *button, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)button; (void)userdata;
     tbox_html_document *doc = tbox_context_document(ctx);
     tbox_css_selector_node_set lamp =
@@ -70,7 +71,7 @@ static bool on_toggle(tbox_context *ctx, tbox_html_node *button, void *userdata)
 }
 
 /* depois de criar o app: */
-tbox_context_on_click(tbox_app_context(app), "button.toggle", 13, on_toggle, NULL, NULL);
+tbox_app_on_click(app, "button.toggle", 13, on_toggle, NULL, NULL);
 ```
 
 O handler é registrado por **seletor**, não por nó: vale também para
@@ -81,8 +82,9 @@ clique já suja o frame.
 
 ```c
 /* <input id="nome"> <p id="saudacao"></p> */
-static void on_input(tbox_context *ctx, tbox_html_node *input,
+static void on_input(tbox_app *app, tbox_html_node *input,
                      const char *value, size_t value_length, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     const tbox_html_attribute *id =
         tbox_html_node_get_attribute(input, tbox_string_view_make("id", 2));
@@ -93,10 +95,10 @@ static void on_input(tbox_context *ctx, tbox_html_node *input,
     set_text(ctx, "#saudacao", message);
 }
 
-tbox_context_on_input(tbox_app_context(app), on_input, NULL, NULL);
+tbox_app_on_input(app, on_input, NULL, NULL);
 ```
 
-Há um único handler de input por contexto; distinga os campos pelo `id`
+Há um único handler de input por documento; distinga os campos pelo `id`
 (ou outro atributo). `value` não termina em `\0` (use `value_length`) e só
 vale durante a chamada — copie se precisar guardar. O último argumento de
 todo registro é o `destroy` do `userdata` (aqui `NULL`; ver
@@ -107,8 +109,9 @@ todo registro é o `destroy` do `userdata` (aqui `NULL`; ver
 ```c
 /* <form><input name="email" type="email" required>
          <input type="submit" value="Cadastrar"></form> <p id="msg"></p> */
-static void on_submit(tbox_context *ctx, tbox_html_node *form,
+static void on_submit(tbox_app *app, tbox_html_node *form,
                       tbox_html_node *submitter, void *userdata) {
+    tbox_context *ctx = tbox_app_context(app);
     (void)submitter; (void)userdata;
     tbox_css_selector_node_set fields =
         tbox_css_selector_select(form, "input[name=email]", 17);
@@ -121,7 +124,7 @@ static void on_submit(tbox_context *ctx, tbox_html_node *form,
     tbox_css_selector_node_set_destroy(&fields);
 }
 
-tbox_context_on_submit(tbox_app_context(app), on_submit, NULL, NULL);
+tbox_app_on_submit(app, on_submit, NULL, NULL);
 ```
 
 O valor atual de cada campo está no atributo `value` do nó (para checkbox e
@@ -145,7 +148,7 @@ tbox_app_on_key(app, on_key, NULL, NULL);
 
 As teclas disponíveis são as de `tbox_key` em `input.h` (Tab, Enter, Espaço,
 Esc, setas, Home/End, Backspace/Delete, A/C/V/X). Texto digitado chega
-separado, por `tbox_context_on_input` no campo focado.
+separado, por `tbox_app_on_input` no campo focado.
 
 ## 6. Atualizar a tela a partir do seu próprio código
 
@@ -308,16 +311,16 @@ e no `close`. Assim o estado de um handler pode pertencer a ele:
 ```c
 typedef struct contador { int cliques; } contador;
 
-static bool contar(tbox_context *ctx, tbox_html_node *node, void *userdata) {
-    (void)ctx; (void)node;
+static bool contar(tbox_app *app, tbox_html_node *node, void *userdata) {
+    (void)app; (void)node;
     ((contador *)userdata)->cliques++;
     return true;
 }
 
 contador *c = calloc(1, sizeof *c);
-int id = tbox_context_on_click(ctx, "button", 6, contar, c, free);
+int id = tbox_app_on_click(app, "button", 6, contar, c, free);
 /* ... */
-tbox_context_unbind_click(ctx, id);   /* chama free(c) */
+tbox_app_unbind_click(app, id);   /* chama free(c) */
 ```
 
 Um handler que remove o próprio registro (ou troca o próprio `on_input`)
@@ -325,6 +328,28 @@ continua podendo usar o `userdata` até retornar; a liberação acontece
 depois. Se o registro falhar (`-1`/`false`), o `destroy` não é chamado e o
 `userdata` continua seu. É isso que um binding para outra linguagem usa
 para soltar a closure que entregou ao C.
+
+## 12. Eventos de ciclo de vida
+
+```c
+static void loaded(tbox_app *app, void *userdata) {
+    /* O DOM e o primeiro layout já estão disponíveis. */
+    (void)app;
+    (void)userdata;
+}
+
+/* Após create, antes de run: */
+tbox_app_on_load(app, loaded, NULL, NULL);
+```
+
+O mesmo formato serve para `on_unload`, `on_pagehide` e `on_pageshow`.
+`on_resize` recebe `const tbox_app_resize_event *`, com `previous_width`,
+`previous_height`, `width` e `height`; `on_error` recebe um evento com
+`message`, mas nenhum erro é emitido nesta etapa. Todos aceitam `userdata`
+e `destroy`. Não use o mesmo ponteiro com free em vários registros: cada
+registro tem posse independente. Veja o programa completo
+[`lifecycle_demo.c`](../example/lifecycle_demo.c): imprime o ciclo no terminal
+e atualiza um texto na tela ao ganhar/perder foco ou redimensionar.
 
 ## Exemplos executáveis no repositório
 
@@ -334,6 +359,7 @@ para soltar a closure que entregou ao C.
 | `tbox_keyboard_demo` | Formulário completo: foco por Tab, edição, seleção, clipboard, todos os tipos de input, lista rolável. |
 | `tbox_control_theme_demo` | Popups de cor/data/arquivo com tema próprio (`--default` compara com o tema embutido). |
 | `tbox_assets_showrun` | Navega pelos fixtures de `tests/assets` com as setas. |
+| `tbox_lifecycle_demo` | Registros de load/unload, foco da janela, resize e error reservado; execução com `build/example/tbox_lifecycle_demo`. |
 | `tbox_worker_post_demo` | Uma thread de trabalho atualiza uma barra de progresso via `tbox_app_post`; o loop dorme entre as tarefas. |
 | `html_parser`, `html_xpath`, `css_parser`, `css_selector`, `css_cascade`, `css_cascade_origins`, `css_style_by_node` | Uso isolado de cada camada, sem janela. |
 
