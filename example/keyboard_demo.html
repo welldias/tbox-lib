@@ -2,93 +2,98 @@
 <html>
 
 <body>
-  <h1>Keyboard and text input</h1>
-  <p>Use Tab and Shift+Tab to move focus. In the field, drag to select or double click to select all. Ctrl+C, Ctrl+X and
-    Ctrl+V use the clipboard. Hold a key to repeat it. A long value scrolls to keep the cursor visible.</p>
-  <input id="name" type="text" value="This long value stays inside its text field">
-  <p>Enter a password:</p>
-  <input id="account-password" type="password" value="">
-  <p id="password-status">Password length: 0</p>
-  <p>Write several lines below. Enter adds a line; drag or double click to select text:</p>
-  <textarea id="notes" rows="4" cols="30">First line
-Second line</textarea>
+  <header>
+    <h1>Controls</h1>
+    <p class="hint">Every control below uses the default tbox look. Tab and Shift+Tab move focus; Esc closes the
+      window.</p>
+    <p id="log">Interact with a control to see its event here.</p>
+  </header>
 
-  <p>Choose a mode with the mouse or keyboard:</p>
-  <select id="mode">
-    <option value="basic">Basic</option>
-    <option value="balanced" selected>Balanced</option>
-    <option value="offline" disabled>Offline (unavailable)</option>
-    <option value="advanced">Advanced</option>
-  </select>
-  <p id="choice">Selected: balanced</p>
-  <button id="first">First button</button>
-  <button id="second">Second button</button>
-  <input id="input-button" type="button" value="Input button">
-  <input id="image-button" type="image" src="../tests/assets/yellow.png" alt="Image button" width="48" height="28">
-  <input id="toggle" type="checkbox" checked>
-  <p id="toggle-status">Checkbox: checked</p>
-  <p>Choose one radio option:</p>
-  <input id="radio-a" type="radio" name="plan" value="basic" checked>
-  <input id="radio-b" type="radio" name="plan" value="advanced">
-  <p id="radio-status">Radio: basic</p>
-  <p>Adjust a range:</p>
-  <input id="volume-range" type="range" min="0" max="100" step="5" value="50">
-  <p id="range-status">Range: 50</p>
-  <p>Pick a color with the mouse or keyboard:</p>
-  <input id="favorite-color" type="color" value="#3366cc">
-  <p id="color-status">Color: #3366cc</p>
-  <p>Pick a date with the mouse or keyboard:</p>
-  <input id="meeting-date" type="date" value="2026-09-24" min="2026-01-01" max="2027-12-31">
-  <p id="date-status">Date: 2026-09-24</p>
-  <p>Pick a local date and time:</p>
-  <input id="meeting-time" type="datetime-local" value="2026-09-24T14:30"
-         min="2026-09-24T09:00" max="2026-09-25T18:00">
-  <p id="time-status">Date and time: 2026-09-24T14:30</p>
-  <p>Choose a month:</p>
-  <input id="billing-month" type="month" value="2026-09" min="2026-01" max="2027-12">
-  <p id="month-status">Month: 2026-09</p>
-  <p>Choose a time:</p>
-  <input id="clock-time" type="time" value="14:30" min="09:00" max="18:00">
-  <p>Choose an ISO week:</p>
-  <input id="work-week" type="week" value="2026-W39" min="2026-W01" max="2027-W52">
-  <p>Enter an email address:</p>
-  <input id="contact-email" type="email" value="person@example.com" required>
-  <p id="email-status">Email: valid</p>
-  <p>Enter a quantity or use Up/Down to change it:</p>
-  <input id="quantity" type="number" value="2" min="0" max="10" step="0.5">
-  <p id="number-status">Number: valid</p>
-  <p>Enter a phone number and a URL:</p>
-  <input id="contact-tel" type="tel" value="+55 85 1234-5678">
-  <input id="contact-url" type="url" value="https://example.org" required>
-  <p id="url-status">URL: valid</p>
-  <p>Choose a local file:</p>
-  <input id="attachment" type="file">
-  <input id="form-token" type="hidden" value="demo-token">
-  <p id="file-status">No file chosen</p>
-  <p id="status">No button activated yet.</p>
-  <form>
-    <p>Change these controls, then restore them:</p>
-    <input id="reset-field" type="text" value="Original text">
-    <input id="reset-check" type="checkbox" checked>
-    <input id="reset-control" type="reset" value="Restore form">
-  </form>
-  <form>
-    <p>Search and submit with Enter or the button:</p>
-    <input id="search-query" type="search" value="tbox">
-    <input id="search-submit" type="submit" value="Search">
-  </form>
-  <p id="submit-status">No form submitted yet.</p>
-  <p>Use Tab and Shift+Tab to move through the list; use the wheel or scrollbar too:</p>
-  <div id="scroll-list">
-    <button id="row-1">Row 1: first item</button>
-    <button id="row-2">Row 2: second item</button>
-    <button id="row-3">Row 3: third item</button>
-    <button id="row-4">Row 4: fourth item</button>
-    <button id="row-5">Row 5: fifth item</button>
-    <button id="row-6">Row 6: sixth item</button>
-    <button id="row-7">Row 7: seventh item</button>
-    <button id="row-8">Row 8: eighth item</button>
-  </div>
+  <main>
+    <section>
+      <h2>Text</h2>
+      <div class="row"><label for="name">Text</label><input id="name" value="A long value scrolls to keep the cursor visible"></div>
+      <div class="row"><label for="password">Password</label><input id="password" type="password"></div>
+      <div class="row"><label for="search">Search</label><input id="search" type="search" value="tbox"></div>
+      <div class="row"><label for="email">Email</label><input id="email" type="email" value="person@example.com" required></div>
+      <div class="row"><label for="url">URL</label><input id="url" type="url" value="https://example.org" required></div>
+      <div class="row"><label for="phone">Phone</label><input id="phone" type="tel" value="+55 85 1234-5678"></div>
+      <div class="row"><label for="quantity">Number</label><input id="quantity" type="number" value="2" min="0" max="10" step="0.5"></div>
+      <div class="row"><label for="notes">Text area</label><textarea id="notes" rows="3">First line
+Second line</textarea></div>
+      <p class="hint">Drag or double click to select; Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V work as usual. Up and Down
+        step the number.</p>
+    </section>
+
+    <section>
+      <h2>Choices</h2>
+      <div class="row"><label for="mode">Select</label>
+        <select id="mode">
+          <option value="basic">Basic</option>
+          <option value="balanced" selected>Balanced</option>
+          <option value="offline" disabled>Offline (unavailable)</option>
+          <option value="advanced">Advanced</option>
+        </select>
+      </div>
+      <div class="row"><label for="updates">Checkbox</label><input id="updates" type="checkbox" checked></div>
+      <div class="row"><label>Radio</label>
+        <div class="options">
+          <input id="plan-basic" type="radio" name="plan" value="basic" checked> Basic
+          <input id="plan-pro" type="radio" name="plan" value="pro"> Pro
+        </div>
+      </div>
+      <div class="row"><label for="volume">Range</label><input id="volume" type="range" min="0" max="100" step="5" value="50"></div>
+      <div class="row"><label for="progress">Progress</label><progress id="progress" value="0.6"></progress></div>
+      <div class="row"><label for="meter">Meter</label><meter id="meter" min="0" max="100" low="30" high="80" optimum="90" value="72"></meter></div>
+    </section>
+
+    <section>
+      <h2>Pickers</h2>
+      <div class="row"><label for="color">Color</label><input id="color" type="color" value="#3366cc"></div>
+      <div class="row"><label for="date">Date</label><input id="date" type="date" value="2026-09-24" min="2026-01-01" max="2027-12-31"></div>
+      <div class="row"><label for="datetime">Date and time</label><input id="datetime" type="datetime-local" value="2026-09-24T14:30"></div>
+      <div class="row"><label for="month">Month</label><input id="month" type="month" value="2026-09"></div>
+      <div class="row"><label for="week">Week</label><input id="week" type="week" value="2026-W39"></div>
+      <div class="row"><label for="time">Time</label><input id="time" type="time" value="14:30"></div>
+      <div class="row"><label for="file">File</label><input id="file" type="file"></div>
+    </section>
+
+    <section>
+      <h2>Buttons and forms</h2>
+      <div class="row"><label>Buttons</label>
+        <div class="options">
+          <button id="button">Button</button>
+          <input id="input-button" type="button" value="Input button">
+          <input id="image-button" type="image" src="../tests/assets/yellow.png" alt="Image button" width="48" height="28">
+        </div>
+      </div>
+      <form id="search-form">
+        <div class="row"><label for="query">Search form</label>
+          <div class="options">
+            <input id="query" type="search" value="controls">
+            <input type="submit" value="Search">
+            <input type="reset" value="Reset">
+          </div>
+        </div>
+      </form>
+      <p class="hint">Enter submits the form; Reset restores the initial value.</p>
+    </section>
+
+    <section>
+      <h2>Scrolling</h2>
+      <div id="list">
+        <button>Row 1</button>
+        <button>Row 2</button>
+        <button>Row 3</button>
+        <button>Row 4</button>
+        <button>Row 5</button>
+        <button>Row 6</button>
+        <button>Row 7</button>
+        <button>Row 8</button>
+      </div>
+      <p class="hint">Focus follows Tab inside the list; the wheel and the scrollbar scroll it too.</p>
+    </section>
+  </main>
 </body>
 
 </html>

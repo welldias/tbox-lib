@@ -18,6 +18,27 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Cantos arredondados nos controles (2026-10-22)
+
+A folha UA passa a dar `border-radius: 4px` a `button`, `input`, `select` e
+`textarea`; checkbox 2px, botão interno do `type=file` 3px; `range` e
+`type=image` (sem borda) ficam com 0 para não recortar trilha e imagem;
+radio continua redondo. Conferido por screenshot antes/depois em todos os
+fixtures `forms-*` e no `keyboard_demo`: só mudam os cantos; partes
+internas (setas do number, limpar do search) e anel de foco seguem
+corretos; `forms-progress-and-output` idêntico.
+
+## Após v20 — `keyboard_demo` reescrito (2026-10-22)
+
+O exemplo volta ao propósito de mostrar os controles no visual padrão: o CSS
+estiliza só a página (cabeçalho, cartões, grade rótulo + controle, lista
+rolável) e nenhum controle. O C caiu de 166 para ~100 linhas: um único log
+do último evento (click, input com validade de email/url/number, caminho
+do arquivo, select, submit) substitui um parágrafo de status por controle.
+Entraram `<progress>` e `<meter>`; saiu o `input type=hidden` (invisível).
+O exemplo expôs que `input type=button/submit/reset` não têm largura
+intrínseca (ver [débito](debito-tecnico.md#largura-dos-botões-input)).
+
 ## Após v20 — Busca de elementos no módulo app (2026-10-22)
 
 `tbox_context_get_element_by_id/_query/_query_all` saem de `context.h` e

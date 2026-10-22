@@ -6,7 +6,9 @@
 
 Os controles são desenhados e operados pelo próprio tbox (não usam widgets
 do sistema). São `inline-block` por padrão e aceitam CSS como qualquer
-elemento.
+elemento. A folha UA dá a `button`, `input`, `select` e `textarea` borda
+cinza de 1px com cantos levemente arredondados (`border-radius: 4px`;
+checkbox 2px, radio redondo, `range` e `type=image` sem raio).
 
 ## Princípio: o valor vive no DOM
 
@@ -127,7 +129,7 @@ casa com os seletores do controle (`input:focus::slider-thumb`,
 | `::picker-icon` | select | `width`, `height`, `color` da seta; fundo, borda | 10×6px, `color` do select |
 | `::picker(select)` | select | fundo, borda, raio da caixa da lista aberta (ver "Lista do select") | fundo branco, borda `#69707a` |
 | `::checkmark` | checkbox, radio | `color` da marca; `width` do ponto do radio | `accent-color` (ou `color`) |
-| `::file-selector-button` | file | `width`, fundo, borda, raio, `color` do texto | 88px, `#f0f2f6`, borda `#767c86`; cinza quando `disabled` |
+| `::file-selector-button` | file | `width`, fundo, borda, raio, `color` do texto | 88px, `#f0f2f6`, borda `#767c86`, raio 3px; cinza quando `disabled` |
 | `::clear-icon` | search | `width`, fundo, borda, `color` do X | 16px, `#f5f6f8` |
 | `::step-control` | number | `width`, fundo, borda; a borda esquerda também desenha a divisória | 16px, `#eef0f3`, `border-left` `#afb4bc` |
 | `::step-up`, `::step-down` | number | fundo, borda, `color` da seta | `color` do input |

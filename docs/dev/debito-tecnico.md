@@ -144,6 +144,17 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 - **Toca:** `include/tbox/controls.h`, `src/app/tbox_app_controls.c`, `src/context/`, `src/html_parser/`,
   `src/app/`.
 
+### Largura dos botões `input`
+
+- **O que é:** `input type=button/submit/reset` herdam a largura fixa de
+  240px da regra UA de `input` e alinham o texto à esquerda; nos
+  navegadores, ajustam-se ao `value` e centralizam. `width: auto` não
+  resolve: o layout não usa o `value` como conteúdo intrínseco e o botão
+  colapsa para largura zero. `<button>` não tem o problema.
+- **Quando revisitar:** quando um exemplo ou fixture precisar de botões
+  `input` lado a lado (o `keyboard_demo` usa `flex-wrap` para acomodar).
+- **Toca:** `src/context/tbox_ua_style.c`, `src/layout/tbox_layout_input.c`.
+
 ### Um documento por janela
 
 - **O que é:** `tbox_context` assume um documento, uma árvore de layout e uma

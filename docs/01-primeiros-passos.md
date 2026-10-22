@@ -34,7 +34,7 @@ O build padrão é Debug. Para medir desempenho use
 ```sh
 build/example/tbox_app_demo                          # demo geral (Wayland)
 build/example/tbox_app_demo --screenshot demo.png    # mesmo demo, sem janela
-build/example/tbox_keyboard_demo                     # formulário completo
+build/example/tbox_keyboard_demo                     # todos os controles, visual padrão
 build/example/tbox_assets_showrun                    # navega pelos fixtures com ← →
 TBOX_DEBUG_DAMAGE=1 build/example/tbox_app_demo      # mostra o que é repintado
 ```

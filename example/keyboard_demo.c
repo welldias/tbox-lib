@@ -10,136 +10,73 @@
 #error "TBOX_KEYBOARD_CSS_PATH is required"
 #endif
 
-/* Replaces the text of the element matching `selector`, if any. */
-static void set_text(tbox_app *app, const char *selector, tbox_string_view text) {
-    tbox_html_node *node = tbox_app_query(app, selector, strlen(selector));
-    if (node != NULL) tbox_html_node_set_text_content(node->owner_document, node, text);
+/* Every control in keyboard_demo.html with its default look; the only
+ * application code is a log line showing the last event. */
+
+static tbox_string_view text(const char *cstr) {
+    return tbox_string_view_make(cstr, strlen(cstr));
 }
 
-static bool on_button(tbox_app *app, tbox_html_node *button, void *userdata) {
+static tbox_string_view attribute(const tbox_html_node *node, const char *name) {
+    const tbox_html_attribute *found = tbox_html_node_get_attribute(node, text(name));
+    return found != NULL ? found->value : tbox_string_view_make("", 0);
+}
+
+/* Writes "event #id: detail" (or "event: detail" without an id) into #log. */
+static void log_event(tbox_app *app, const char *event, const tbox_html_node *node, tbox_string_view detail) {
+    tbox_string_view id = attribute(node, "id");
+    char line[200];
+    int length = snprintf(line, sizeof(line), "%s%s%.*s: %.*s", event, id.size > 0 ? " #" : "", (int)id.size, id.data,
+                          (int)(detail.size < 120 ? detail.size : 120), detail.data);
+    if (length < 0) return;
+    size_t size = (size_t)length < sizeof(line) ? (size_t)length : sizeof(line) - 1;
+    tbox_control_set_label(app, tbox_app_query(app, "#log", 4), tbox_string_view_make(line, size));
+}
+
+static bool on_click(tbox_app *app, tbox_html_node *node, void *userdata) {
     (void)userdata;
-    const tbox_html_attribute *id = tbox_html_node_get_attribute(button, tbox_string_view_make("id", 2));
-    const char *message = id != NULL && id->value.size == 6 && memcmp(id->value.data, "second", 6) == 0
-                              ? "Second button activated"
-                              : id != NULL && id->value.size == 12 && memcmp(id->value.data, "input-button", 12) == 0
-                                  ? "Input button activated"
-                              : id != NULL && id->value.size == 12 && memcmp(id->value.data, "image-button", 12) == 0
-                                  ? "Image button activated"
-                              : id != NULL && id->value.size >= 4 && memcmp(id->value.data, "row-", 4) == 0
-                                  ? "List item activated"
-                                  : "First button activated";
-    set_text(app, "#status", tbox_string_view_make(message, strlen(message)));
+    tbox_string_view type = attribute(node, "type");
+    if (tbox_string_view_equal_cstr(type, "checkbox"))
+        log_event(app, "click", node, text(tbox_control_checked(node) ? "checked" : "unchecked"));
+    else if (tbox_string_view_equal_cstr(type, "radio"))
+        log_event(app, "click", node, tbox_control_value(app, node));
+    else
+        log_event(app, "click", node, tbox_control_label(app, node));
+    return true;
+}
+
+static bool is_valid(const tbox_html_node *input, tbox_string_view type) {
+    if (tbox_string_view_equal_cstr(type, "email")) return tbox_context_email_valid(input);
+    if (tbox_string_view_equal_cstr(type, "url")) return tbox_context_url_valid(input);
+    if (tbox_string_view_equal_cstr(type, "number")) return tbox_context_number_valid(input);
     return true;
 }
 
 static void on_input(tbox_app *app, tbox_html_node *input, const char *value, size_t value_length, void *userdata) {
-    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
-    const tbox_html_attribute *id = tbox_html_node_get_attribute(input, tbox_string_view_make("id", 2));
-    if (id != NULL && id->value.size == 16 && memcmp(id->value.data, "account-password", 16) == 0) {
-        char message[40];
-        int written = snprintf(message, sizeof(message), "Password length: %zu", value_length);
-        if (written > 0 && (size_t)written < sizeof(message)) {
-            set_text(app, "#password-status", tbox_string_view_make(message, (size_t)written));
-        }
+    tbox_string_view type = attribute(input, "type");
+    if (tbox_string_view_equal_cstr(type, "password")) {
+        log_event(app, "input", input, text("(hidden)"));
         return;
     }
-    if (id != NULL && id->value.size == 14 && memcmp(id->value.data, "favorite-color", 14) == 0) {
-        char message[32];
-        int written = snprintf(message, sizeof(message), "Color: %.*s", (int)value_length, value);
-        if (written > 0 && (size_t)written < sizeof(message)) {
-            set_text(app, "#color-status", tbox_string_view_make(message, (size_t)written));
-        }
+    if (tbox_string_view_equal_cstr(type, "file")) {
+        log_event(app, "input", input, tbox_context_file_path(tbox_app_context(app), input));
+        return;
     }
-    if (id != NULL && id->value.size == 12 && memcmp(id->value.data, "meeting-date", 12) == 0) {
-        char message[32];
-        int written = snprintf(message, sizeof(message), "Date: %.*s", (int)value_length, value);
-        if (written > 0 && (size_t)written < sizeof(message)) {
-            set_text(app, "#date-status", tbox_string_view_make(message, (size_t)written));
-        }
-    }
-    if (id != NULL && id->value.size == 12 && memcmp(id->value.data, "meeting-time", 12) == 0) {
-        char message[40];
-        int written = snprintf(message, sizeof(message), "Date and time: %.*s", (int)value_length, value);
-        if (written > 0 && (size_t)written < sizeof(message)) {
-            set_text(app, "#time-status", tbox_string_view_make(message, (size_t)written));
-        }
-    }
-    if (id != NULL && id->value.size == 13 && memcmp(id->value.data, "billing-month", 13) == 0) {
-        char message[32];
-        int written = snprintf(message, sizeof(message), "Month: %.*s", (int)value_length, value);
-        if (written > 0 && (size_t)written < sizeof(message)) {
-            set_text(app, "#month-status", tbox_string_view_make(message, (size_t)written));
-        }
-    }
-    if (id != NULL && id->value.size == 13 && memcmp(id->value.data, "contact-email", 13) == 0) {
-        const char *message = tbox_context_email_valid(input) ? "Email: valid" : "Email: invalid";
-        set_text(app, "#email-status", tbox_string_view_make(message, strlen(message)));
-    }
-    if (id != NULL && id->value.size == 8 && memcmp(id->value.data, "quantity", 8) == 0) {
-        const char *message = tbox_context_number_valid(input) ? "Number: valid" : "Number: invalid";
-        set_text(app, "#number-status", tbox_string_view_make(message, strlen(message)));
-    }
-    if (id != NULL && id->value.size == 11 && memcmp(id->value.data, "contact-url", 11) == 0) {
-        const char *message = tbox_context_url_valid(input) ? "URL: valid" : "URL: invalid";
-        set_text(app, "#url-status", tbox_string_view_make(message, strlen(message)));
-    }
-    if (id != NULL && id->value.size == 12 && memcmp(id->value.data, "volume-range", 12) == 0) {
-        char message[32];
-        int written = snprintf(message, sizeof(message), "Range: %.*s", (int)value_length, value);
-        if (written > 0 && (size_t)written < sizeof(message)) {
-            set_text(app, "#range-status", tbox_string_view_make(message, (size_t)written));
-        }
-    }
-    if (id != NULL && id->value.size == 10 && memcmp(id->value.data, "attachment", 10) == 0) {
-        char message[160];
-        int written = snprintf(message, sizeof(message), "File: %.*s",
-            (int)(value_length < 140 ? value_length : 140), value);
-        if (written > 0 && (size_t)written < sizeof(message)) {
-            set_text(app, "#file-status", tbox_string_view_make(message, (size_t)written));
-        }
-        tbox_string_view path = tbox_context_file_path(ctx, input);
-        if (path.size > 0) printf("Selected path: %.*s\n", (int)path.size, path.data);
-    }
-    fputs("Input: ", stdout);
-    fwrite(value, 1, value_length, stdout);
-    fputc('\n', stdout);
-}
-
-static bool on_checkbox(tbox_app *app, tbox_html_node *checkbox, void *userdata) {
-    (void)userdata;
-    const char *message = tbox_control_checked(checkbox) ? "Checkbox: checked" : "Checkbox: unchecked";
-    set_text(app, "#toggle-status", tbox_string_view_make(message, strlen(message)));
-    return true;
-}
-
-static bool on_radio(tbox_app *app, tbox_html_node *radio, void *userdata) {
-    (void)userdata;
-    tbox_string_view value = tbox_control_value(app, radio);
-    char message[40];
-    int written = snprintf(message, sizeof(message), "Radio: %.*s", (int)value.size, value.size > 0 ? value.data : "");
-    if (written > 0 && (size_t)written < sizeof(message)) {
-        set_text(app, "#radio-status", tbox_string_view_make(message, (size_t)written));
-    }
-    return true;
+    char detail[160];
+    int length = snprintf(detail, sizeof(detail), "%.*s%s", (int)(value_length < 120 ? value_length : 120), value,
+                          is_valid(input, type) ? "" : "  (invalid)");
+    if (length > 0) log_event(app, "input", input, text(detail));
 }
 
 static void on_select(tbox_app *app, tbox_html_node *select, const char *value, size_t value_length, void *userdata) {
-    (void)select;
     (void)userdata;
-    char message[128];
-    int written = snprintf(message, sizeof(message), "Selected: %.*s",
-                           (int)(value_length < 100 ? value_length : 100), value != NULL ? value : "");
-    if (written < 0) return;
-    size_t length = (size_t)written < sizeof(message) ? (size_t)written : sizeof(message) - 1;
-    set_text(app, "#choice", tbox_string_view_make(message, length));
+    log_event(app, "select", select, tbox_string_view_make(value, value_length));
 }
 
 static void on_submit(tbox_app *app, tbox_html_node *form, tbox_html_node *submitter, void *userdata) {
-    (void)form;
     (void)userdata;
-    const char *message = submitter != NULL ? "Submitted with button." : "Submitted with Enter.";
-    set_text(app, "#submit-status", tbox_string_view_make(message, strlen(message)));
+    log_event(app, "submit", form, text(submitter != NULL ? "with the button" : "with Enter"));
 }
 
 int main(void) {
@@ -147,19 +84,16 @@ int main(void) {
         fputs("No interactive window backend in this build\n", stderr);
         return 1;
     }
-    tbox_app *app = tbox_app_create_from_files(TBOX_KEYBOARD_HTML_PATH, TBOX_KEYBOARD_CSS_PATH, 460, 800);
+    tbox_app *app = tbox_app_create_from_files(TBOX_KEYBOARD_HTML_PATH, TBOX_KEYBOARD_CSS_PATH, 640, 760);
     if (app == NULL) {
         fputs("Could not create the window\n", stderr);
         return 1;
     }
-    tbox_app_on_click(app, "button", 6, on_button, NULL, NULL);
-    tbox_app_on_click(app, "input[type=button]", 18, on_button, NULL, NULL);
-    tbox_app_on_click(app, "input[type=image]", 17, on_button, NULL, NULL);
-    tbox_app_on_click(app, "input[type=checkbox]", 20, on_checkbox, NULL, NULL);
-    tbox_app_on_click(app, "input[type=radio]", 17, on_radio, NULL, NULL);
+    const char *clickable = "button, input[type=button], input[type=image], input[type=checkbox], input[type=radio]";
+    tbox_app_on_click(app, clickable, strlen(clickable), on_click, NULL, NULL);
     tbox_app_on_input(app, on_input, NULL, NULL);
-    tbox_app_on_submit(app, on_submit, NULL, NULL);
     tbox_app_on_select(app, on_select, NULL, NULL);
+    tbox_app_on_submit(app, on_submit, NULL, NULL);
     tbox_app_run(app);
     tbox_app_close(app);
     return 0;
