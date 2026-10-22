@@ -144,6 +144,7 @@ bool tbox_context_set_focus(tbox_context *ctx, const tbox_html_node *node) {
     if (ctx->focused_node != NULL)
         ((tbox_html_node *)ctx->focused_node)->element.focus_visible = false;
     ctx->focused_node = node;
+    tbox_html_document_touch(ctx->document);
     tbox_context_focus_visibility(ctx, ctx->focus_keyboard);
     if (ctx->open_select != node) {
         ctx->open_select = NULL;

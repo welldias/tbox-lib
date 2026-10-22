@@ -868,3 +868,39 @@ recarga, loop e destruição da aplicação ficam em `tbox_app.c`. O header
 interno compartilha apenas as operações de emissão, limpeza e proteção da
 vida do app. Essa separação mantém o registro e o tratamento de callbacks
 juntos sem alterar a API ou introduzir estado global.
+
+## Camada de controles separada do DOM — 2026-10-22
+
+O estado dos controles está em lugares diferentes: atributo `value`
+(inputs), texto (textarea, output), escolha no contexto (`<select>`),
+atributo `checked`. Em vez de mover tudo para um só lugar, uma camada
+fina em `controls.h` despacha por tipo. A implementação fica no contexto
+(que sabe onde cada estado vive e mantém caret, popup e foco coerentes),
+mas a API pública pertence ao módulo app e recebe o `tbox_app`, como os
+registros de eventos: o adaptador obtém o contexto por `tbox_app_context`.
+Funções que só leem o nó (`checked`, `disabled`, contagem de opções) não
+recebem o app. A busca de elementos (`tbox_app_query`, `_get_element_by_id`)
+segue o mesmo caminho, para o código de aplicação não precisar do
+`tbox_context`. O DOM
+(`html_parser.h`) continua genérico, recebendo só o documento.
+Alternativas descartadas: funções por controle no DOM (o DOM não conhece o
+contexto, então não sincroniza caret/popup), e um "valor" sempre em
+atributo (o `<select>` perderia a distinção entre escolha atual e
+`selected` inicial, que o reset precisa). Mudanças por código não chamam
+`on_input`/`on_select`, como no DOM do navegador. Índices de opção usam
+`size_t` com `SIZE_MAX` = fim; o índice escolhido usa `ptrdiff_t` com `-1`
+= nenhum, como `selectedIndex`.
+
+## Revisão do documento para redesenhar — 2026-10-22
+
+Para desenhar mutações feitas fora de handlers sem `tbox_app_request_redraw`,
+o documento conta as mutações e o `tbox_app` compara com a contagem do
+último frame. Como várias funções de mutação recebem só o nó, cada
+`tbox_html_node` ganhou `owner_document` (+8 bytes por nó), aceito pelo
+mantenedor. Alternativas descartadas: marcar sujo a cada volta do loop
+(redesenho contínuo), comparar a árvore (caro) e um contador global (estado
+global, e misturaria janelas). A revisão é lida depois do `run_frame`
+porque o frame normaliza valores no DOM (sanitização de inputs, ligação do
+buffer de edição); essas escritas acomodam em um frame, sem laço.
+Escrita direta nos campos da struct não é vista: continua exigindo
+`tbox_app_request_redraw`.

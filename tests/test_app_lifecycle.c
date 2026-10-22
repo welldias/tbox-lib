@@ -501,7 +501,7 @@ static int test_document_events(void) {
     document_key(app, TBOX_KEY_TAB);
     document_key(app, TBOX_KEY_DOWN);
     TBOX_TEST_ASSERT(select.selects == 1 && select.value_length == 1 && select.value[0] == 'b' && !select.wrong_app);
-    TBOX_TEST_ASSERT(tbox_context_select_set_value(tbox_app_context(app), select.node, tbox_string_view_make("a", 1)));
+    TBOX_TEST_ASSERT(tbox_control_set_value(app, (tbox_html_node *)select.node, tbox_string_view_make("a", 1)));
     TBOX_TEST_ASSERT(select.selects == 1);
     document_key(app, TBOX_KEY_TAB);
     document_key(app, TBOX_KEY_ENTER);
@@ -566,6 +566,55 @@ static int test_document_registration_lifetime(void) {
     TBOX_TEST_ASSERT(p.destroys == 1);
     return failures;
 }
+/* A DOM change made outside any handler needs no request_redraw: the loop
+ * neither sleeps nor skips the frame. An idle loop stays idle. */
+static int test_dom_change_redraws(void) {
+    int failures  = 0;
+    tbox_app *app = tbox_test_app_with_html("<body><p id='label'>a</p><input id='field'></body>");
+    TBOX_TEST_REQUIRE(app != NULL);
+    tbox_app_step(app);
+    tbox_app_step(app);
+    unsigned presents = app->backend->presents;
+    tbox_app_wait(app, -1);
+    TBOX_TEST_ASSERT(app->backend->presents == presents && app->backend->last_timeout == -1);
+
+    tbox_context *ctx = tbox_app_context(app);
+    tbox_html_node *label = tbox_app_get_element_by_id(app, tbox_string_view_make("label", 5));
+    TBOX_TEST_REQUIRE(label != NULL);
+    TBOX_TEST_ASSERT(tbox_app_query(app, "p", 1) == label && tbox_app_query(app, "[", 1) == NULL);
+    TBOX_TEST_ASSERT(tbox_app_query(NULL, "p", 1) == NULL);
+    TBOX_TEST_ASSERT(tbox_app_get_element_by_id(NULL, tbox_string_view_make("label", 5)) == NULL);
+    tbox_css_selector_node_set all = tbox_app_query_all(app, "p, input", 8);
+    TBOX_TEST_ASSERT(all.count == 2 && all.items[0] == label);
+    tbox_css_selector_node_set_destroy(&all);
+    tbox_html_node_set_text_content(tbox_context_document(ctx), label, tbox_string_view_make("b", 1));
+    tbox_app_wait(app, -1);
+    TBOX_TEST_ASSERT(app->backend->last_timeout == 0 && app->backend->presents == presents + 1);
+    tbox_app_wait(app, -1); /* the post-present hover recheck */
+    tbox_app_wait(app, -1);
+    TBOX_TEST_ASSERT(app->backend->presents == presents + 1 && app->backend->last_timeout == -1);
+
+    /* Controls the frame normalizes or binds to editing buffers settle
+     * after one frame instead of bumping the revision every time. */
+    tbox_app_close(app);
+    app = tbox_test_app_with_html("<body><form><input id='field' value='x'><input type='number' value='zz'>"
+        "<input type='range' value='500'><input type='date' value='bad'><input type='file' value='f'>"
+        "<input type='checkbox' checked><textarea>t</textarea><select><option>1</option></select>"
+        "<progress value='1'></progress></form></body>");
+    TBOX_TEST_REQUIRE(app != NULL);
+    for (int i = 0; i < 4; i++) tbox_app_wait(app, -1);
+    presents = app->backend->presents;
+    tbox_app_wait(app, -1);
+    TBOX_TEST_ASSERT(app->backend->presents == presents && app->backend->last_timeout == -1);
+    ctx = tbox_app_context(app);
+
+    /* Control state outside the DOM (focus) counts too. */
+    TBOX_TEST_ASSERT(tbox_control_focus(app, tbox_app_get_element_by_id(app, tbox_string_view_make("field", 5))));
+    tbox_app_wait(app, -1);
+    TBOX_TEST_ASSERT(app->backend->presents == presents + 1);
+    tbox_app_close(app);
+    return failures;
+}
 int main(void) {
-    return test_document_events() + test_document_registration_lifetime() + test_lifecycle() + test_reentrancy() + test_close_paths() + test_cleanup() + test_existing_callbacks() + test_independent_windows() == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return test_dom_change_redraws() + test_document_events() + test_document_registration_lifetime() + test_lifecycle() + test_reentrancy() + test_close_paths() + test_cleanup() + test_existing_callbacks() + test_independent_windows() == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

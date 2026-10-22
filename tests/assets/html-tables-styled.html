@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Styled table — order summary</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 28px;
+            background: #f1f5f9;
+            color: #1e293b;
+            font: 14px sans-serif;
+            line-height: 1.4;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 26px;
+        }
+
+        p {
+            margin: 0 0 20px;
+            color: #475569;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #ffffff;
+        }
+
+        caption {
+            caption-side: top;
+            padding: 12px;
+            background: #e2e8f0;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        th,
+        td {
+            border: 1px solid #cbd5e1;
+            padding: 12px;
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        thead th {
+            background: #1e3a5f;
+            color: #ffffff;
+        }
+
+        tbody th {
+            font-weight: normal;
+        }
+
+        /* Style the cells so the alternating color covers the entire row. */
+        tbody tr:nth-child(even) th,
+        tbody tr:nth-child(even) td {
+            background: #f1f5f9;
+        }
+
+        tbody tr:hover th,
+        tbody tr:hover td {
+            background: #dbeafe;
+        }
+
+        .quantity {
+            text-align: center;
+        }
+
+        .amount {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .paid {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        tfoot th,
+        tfoot td {
+            border-top: 2px solid #1e3a5f;
+            background: #e2e8f0;
+            font-weight: bold;
+        }
+
+        .note {
+            margin-top: 14px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Order summary</h1>
+    <p>A formatted HTML table with alternating rows, aligned values and status labels.</p>
+
+    <table>
+        <caption>Office supplies — October 2026</caption>
+        <thead>
+            <tr>
+                <th scope="col">Product</th>
+                <th scope="col" class="quantity">Quantity</th>
+                <th scope="col" class="amount">Unit price</th>
+                <th scope="col" class="amount">Subtotal</th>
+                <th scope="col">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <th scope="row">Notebook</th>
+                <td class="quantity">3</td>
+                <td class="amount">$12.00</td>
+                <td class="amount">$36.00</td>
+                <td><span class="status paid">Paid</span></td>
+            </tr>
+            <tr>
+                <th scope="row">Desk lamp</th>
+                <td class="quantity">2</td>
+                <td class="amount">$35.00</td>
+                <td class="amount">$70.00</td>
+                <td><span class="status paid">Paid</span></td>
+            </tr>
+            <tr>
+                <th scope="row">Pen set</th>
+                <td class="quantity">4</td>
+                <td class="amount">$8.50</td>
+                <td class="amount">$34.00</td>
+                <td><span class="status pending">Pending</span></td>
+            </tr>
+            <tr>
+                <th scope="row">Desk organizer</th>
+                <td class="quantity">1</td>
+                <td class="amount">$24.00</td>
+                <td class="amount">$24.00</td>
+                <td><span class="status paid">Paid</span></td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr>
+                <th scope="row" colspan="3">Total — 10 items</th>
+                <td class="amount">$164.00</td>
+                <td>4 products</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <p class="note">Hover over a row to highlight it. The total label spans three columns.</p>
+</body>
+
+</html>

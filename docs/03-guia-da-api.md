@@ -117,7 +117,7 @@ altera o tamanho de `tbox_html_node`: recompile consumidores.
 | `tbox_app_post(app, fn, userdata, destroy)` | **Única função thread-safe.** Executa `fn(app, userdata)` na thread de UI, na próxima volta, e marca o frame como sujo; depois chama `destroy(userdata)`. |
 | `tbox_app_should_close(app)` | `true` quando a janela pediu fechamento ou a conexão caiu. Esc também fecha (se nenhum controle consumir a tecla). |
 | `tbox_app_close(app)` | Libera tudo. |
-| `tbox_app_context(app)` | O `tbox_context` interno, para acessar o DOM e os controles. |
+| `tbox_app_context(app)` | O `tbox_context` interno (pipeline, foco, validação). Para buscar nós e controlar controles, use `tbox_app_query` e `controls.h`. |
 | `tbox_app_on_key(app, handler, userdata, destroy)` | Handler de tecla (recebe `const tbox_key_event *`) chamado antes do contexto; retorne `true` para consumir. |
 | `tbox_app_on_load(app, handler, ud, destroy)` | Uma vez por documento, após o primeiro frame aceito pelo backend. |
 | `tbox_app_on_unload(app, handler, ud, destroy)` | Uma vez ao fechar a janela, com o contexto ainda válido; não cancela fechamento. |
@@ -126,7 +126,7 @@ altera o tamanho de `tbox_html_node`: recompile consumidores.
 | `tbox_app_on_resize(app, handler, ud, destroy)` | Recebe `const tbox_app_resize_event *` com dimensões anterior/nova. Não inclui tamanho inicial. |
 | `tbox_app_on_error(app, handler, ud, destroy)` | Registro reservado com `const tbox_app_error_event *`; ainda não dispara. |
 | `tbox_app_load_from_files(app, html, css)` | Troca o documento na mesma janela (cria um contexto novo). Em falha, o atual continua. Registros de clique/input/select/submit do documento antigo são liberados: registre de novo. |
-| `tbox_app_request_redraw(app)` | Peça um frame depois de mudar o DOM fora de um handler. |
+| `tbox_app_request_redraw(app)` | Peça um frame. Desnecessário depois de mudar o DOM pelas funções da API (ver abaixo); só depois de escrever direto nos campos de um `tbox_html_node`. |
 | `tbox_app_set_debug_damage(app, on)` | Contorna as regiões repintadas (depuração). |
 | `tbox_app_screenshot_from_files(html, css, w, h, png)` | Renderiza um frame num PNG sem abrir janela. |
 
@@ -179,6 +179,51 @@ liberados no reload ou close. Para mantê-los em novas páginas, registre no
 `on_load`. Dentro de um callback de controle, agende a troca de documento
 com `tbox_app_post` para ela acontecer depois do despacho atual.
 
+### Busca
+
+| Função | Uso |
+|---|---|
+| `tbox_app_get_element_by_id(app, id)` | Primeiro elemento com esse `id`. |
+| `tbox_app_query(app, "seletor", len)` | Primeiro elemento que casa (`querySelector`); `NULL` também em erro de sintaxe. |
+| `tbox_app_query_all(app, "seletor", len)` | Todos (`querySelectorAll`); libere com `tbox_css_selector_node_set_destroy`. |
+
+Os nós voltam não-`const` e pertencem ao documento atual do app: podem ir
+direto para `controls.h` ou para as funções de mutação do DOM (o documento
+de um nó está em `node->owner_document`).
+
+### Controles — `controls.h`
+
+Cada controle guarda o estado num lugar (atributo `value`, texto do
+`<textarea>`, escolha do `<select>` no contexto, atributo `checked`). Estas
+funções escondem onde e mantêm caret, popup e foco coerentes. Recebem o
+`tbox_app` e agem no documento atual dele (o contexto é obtido por dentro);
+as que só leem o nó (`tbox_control_checked`, `_disabled`,
+`tbox_select_option_count`, `_option_at`) não precisam dele. Mudanças por
+código não disparam `on_input`/`on_select`.
+
+| Função | Uso |
+|---|---|
+| `tbox_control_value(app, c)` / `_set_value(app, c, v)` | Valor de input, textarea, select, output, progress, meter, button, option. `set_value` normaliza como o controle (número, data, range com clamp); em `file` só aceita `""`. |
+| `tbox_control_label(app, c)` / `_set_label(app, c, t)` | Texto visível: `value` de `input type=button/submit/reset`; `label` ou texto de `<option>`; texto de qualquer outro elemento (`<button>`, `<label>`, `<p>`…). |
+| `tbox_control_checked(c)` / `_set_checked(app, c, on)` | Checkbox e radio; marcar um radio desmarca o grupo. |
+| `tbox_control_radio_checked(app, radio)` | O radio marcado do grupo, ou `NULL`. |
+| `tbox_control_disabled(c)` / `_set_disabled(app, c, on)` | Semântica de `:disabled`; desabilitar o focado tira o foco. |
+| `tbox_control_focus(app, c)` / `tbox_control_blur(app)` | Foco por código (rola até o controle no próximo frame). |
+| `tbox_select_option_count(s)` / `_option_at(s, i)` | Opções em ordem, atravessando `<optgroup>`. |
+| `tbox_select_selected_index(app, s)` / `_set_selected_index(app, s, i)` | Índice escolhido (`-1` = nenhum). |
+| `tbox_select_add_option(app, s, valor, rótulo, antes_de)` | Cria e insere uma `<option>`; `SIZE_MAX` = no fim. |
+| `tbox_select_remove_option(app, s, i)` / `tbox_select_clear(app, s)` | Remove uma opção / todas (e os grupos). |
+
+```c
+tbox_html_node *botao = tbox_app_get_element_by_id(app, tbox_string_view_make("salvar", 6));
+tbox_control_set_label(app, botao, tbox_string_view_make("Salvando…", 12));
+tbox_html_node *lista = tbox_app_query(app, "#frutas", 7);
+tbox_select_add_option(app, lista, tbox_string_view_make("uva", 3), tbox_string_view_make("Uva", 3), SIZE_MAX);
+bool aceito = tbox_control_checked(tbox_app_query(app, "#termos", 7));
+```
+
+Exemplo completo em `example/controls_demo.c`.
+
 ## 2. Documento e eventos — `context.h`
 
 O `tbox_context` é o documento vivo mais o pipeline. Com `tbox_app` você o
@@ -214,19 +259,17 @@ frame é necessário.
 | `tbox_context_hit_test(ctx, x, y)` | Caixa mais profunda sob o ponto (último frame) |
 | `tbox_context_cursor_at(ctx, x, y)` | Cursor CSS a mostrar |
 
-### Formulários
+### Outros auxiliares de formulário
 
 | Função | Uso |
 |---|---|
 | `tbox_context_focused_node(ctx)` | Elemento com foco. |
-| `tbox_context_select_value(ctx, select)` / `_select_set_value` | Ler e escolher a opção de um `<select>`. |
 | `tbox_context_selected_text(ctx)` | Texto selecionado no campo focado. |
 | `tbox_context_file_path(ctx, input)` | Caminho absoluto escolhido num `input type=file`. |
 | `tbox_context_email_valid`, `_url_valid`, `_number_valid` | Validação no formato do HTML. |
 
-O valor dos campos vive no DOM: leia o atributo `value` (ou `checked`) do
-nó. O tbox não envia formulários pela rede; o handler de submit lê os
-campos e decide.
+O tbox não envia formulários pela rede; o handler de submit lê os campos
+e decide.
 
 ## 3. O DOM — `html_parser.h`
 
@@ -243,18 +286,27 @@ atributo estão em minúsculas.
 | `tbox_html_node_remove_attribute(node, nome)` | `true` se existia. |
 | `tbox_html_node_set_text_content(doc, node, texto)` | Troca todos os filhos por um nó de texto (`textContent =`). |
 | `tbox_html_node_text_content(arena, node)` | Lê o texto concatenado (`textContent`). |
-| `tbox_html_node_create(doc, tipo)` + `_append_child(pai, filho)` | Cria e insere nós. |
-| `tbox_html_node_remove(node)` | Desconecta (a memória continua na arena do documento). |
+| `tbox_html_element_create(doc, "tag")` / `tbox_html_text_create(doc, texto)` | Cria nós soltos; as strings são copiadas. |
+| `tbox_html_node_clone(doc, node, deep)` | Cópia solta (com a subárvore se `deep`). |
+| `tbox_html_node_append_child`, `_prepend_child`, `_insert_before(pai, filho, ref)` | Insere; um nó já na árvore é movido. Ciclos são recusados (no-op). |
+| `tbox_html_node_replace(velho, novo)` | Troca um nó por outro. |
+| `tbox_html_node_remove(node)` / `_remove_children(node)` | Desconecta (a memória continua na arena do documento). |
+| `tbox_html_node_first_element_child`, `_next_element_sibling`, `_element_child_count` | Navegação só por elementos. |
+| `tbox_html_node_has_attribute`, `_set_bool_attribute(doc, node, nome, on)` | Atributos booleanos (`hidden`, `disabled`…). |
+| `tbox_html_node_has_class`, `_add_class`, `_remove_class`, `_toggle_class` | `classList`. |
 | `tbox_html_parse` / `tbox_html_document_destroy` | Parser avulso, sem pipeline. |
 
-Mutar o DOM não redesenha sozinho: dentro de handlers o frame já fica sujo;
-fora deles, chame `tbox_app_request_redraw`. Veja
-[Atualização da tela](05-atualizacao-da-tela.md).
+Toda mutação feita por estas funções (ou por `controls.h`) avança
+`tbox_html_document_revision(doc)`, e o `tbox_app` desenha um frame quando
+ela muda — dentro ou fora de handlers, sem `tbox_app_request_redraw`.
+Escrever direto nos campos da struct (`node->text.text = …`) não é visto:
+nesse caso peça o frame. Cada nó aponta para o seu documento em
+`owner_document`. Veja [Atualização da tela](05-atualizacao-da-tela.md).
 
-> **Nota sobre `const`.** Consultas (`tbox_css_selector_select`,
-> `tbox_html_document_root`) devolvem ponteiros `const`. Para mutar um nó
-> encontrado assim, os exemplos do repositório fazem cast para
-> `tbox_html_node *`; os handlers recebem o nó já não-`const`.
+> **Nota sobre `const`.** Consultas de baixo nível (`tbox_css_selector_select`,
+> `tbox_html_document_root`) devolvem ponteiros `const`. Prefira
+> `tbox_app_get_element_by_id`/`tbox_app_query`, que devolvem nós
+> mutáveis; os handlers também recebem o nó já não-`const`.
 
 ## 4. Consultas — `css_selector.h` e `html_xpath.h`
 
@@ -267,8 +319,10 @@ tbox_css_selector_node_set_destroy(&set);
 
 - `tbox_css_selector_select` — compila, avalia e destrói; erro de sintaxe vira
   conjunto vazio. Semântica de `querySelectorAll` (a raiz não entra).
-- `tbox_css_selector_compile` / `_query_evaluate` / `_query_matches` — para
-  reutilizar uma consulta e obter o offset do erro.
+- `tbox_css_selector_compile` / `_query_evaluate` / `_query_matches` /
+  `_query_first` — para reutilizar uma consulta e obter o offset do erro.
+- `tbox_css_selector_closest(node, "seletor", len)` — o próprio nó ou o
+  ancestral mais próximo que casa (`Element.closest`).
 - `tbox_xpath_select` / `tbox_xpath_compile` — subconjunto prático de XPath
   1.0 (`//a`, `a/b`, `@nome`, `text()`, `[n]`, `[@nome='v']`; sem funções nem
   eixos nomeados).

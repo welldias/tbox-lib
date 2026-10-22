@@ -71,56 +71,62 @@ bool tbox_context_is_file_input(const tbox_html_node *node) {
     return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("file", 4));
 }
 
+/* Drops a value the control can't hold (bad date/number, file name with
+ * no chosen path), clamps range, and notes which control kinds exist. */
+void tbox_context_sanitize_input(tbox_context *ctx, tbox_html_node *node) {
+    if (node->type == TBOX_HTML_NODE_ELEMENT &&
+        (tbox_string_view_equal_cstr(node->element.tag_name, "progress") ||
+         tbox_string_view_equal_cstr(node->element.tag_name, "meter")))
+        ctx->has_gauge = true;
+    if (tbox_context_is_calendar_input(node)) {
+        const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+        tbox_date date;
+        int hour, minute;
+        bool valid = value != NULL && (tbox_context_is_datetime_input(node) ?
+            tbox_context_datetime_parse(value->value, &date, &hour, &minute) :
+            tbox_context_is_time_input(node) ? tbox_context_time_parse(value->value, &hour, &minute) :
+            tbox_context_is_week_input(node) ? tbox_context_week_parse(value->value, &date) :
+            tbox_context_is_month_input(node) ? tbox_context_month_parse(value->value, &date) :
+            tbox_context_date_parse(value->value, &date));
+        if (value != NULL && value->value.size > 0 && !valid)
+            tbox_html_node_set_attribute(ctx->document, node, tbox_string_view_make("value", 5),
+                tbox_string_view_make("", 0));
+    }
+    if (tbox_context_is_number_input(node)) {
+        ctx->has_number_input = true;
+        const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+        double parsed;
+        if (value != NULL && value->value.size > 0 &&
+            !tbox_context_number_parse(value->value, &parsed))
+            tbox_html_node_set_attribute(ctx->document, node, tbox_string_view_make("value", 5),
+                tbox_string_view_make("", 0));
+    }
+    if (tbox_context_is_range_input(node)) {
+        ctx->has_range_input = true;
+        tbox_context_range_normalize(ctx, node);
+    }
+    if (tbox_context_is_search_input(node)) ctx->has_search_input = true;
+    if (tbox_context_is_file_input(node)) {
+        ctx->has_file_input = true;
+        const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
+        tbox_file_field *field = tbox_context_file_field(ctx, node, false);
+        const char *name = field != NULL && field->path != NULL ? strrchr(field->path, '/') : NULL;
+        if (name != NULL) name++;
+        if (field != NULL && field->path != NULL &&
+            (value == NULL || name == NULL || !tbox_string_view_equal(value->value,
+                tbox_string_view_from_cstr(name)))) {
+            free(field->path);
+            field->path = NULL;
+        }
+        if (value != NULL && value->value.size > 0 && (field == NULL || field->path == NULL))
+            tbox_html_node_set_attribute(ctx->document, node, tbox_string_view_make("value", 5),
+                tbox_string_view_make("", 0));
+    }
+}
+
 void tbox_context_sanitize_inputs(tbox_context *ctx, tbox_html_node *node) {
     for (; node != NULL; node = node->next_sibling) {
-        if (node->type == TBOX_HTML_NODE_ELEMENT &&
-            (tbox_string_view_equal_cstr(node->element.tag_name, "progress") ||
-             tbox_string_view_equal_cstr(node->element.tag_name, "meter")))
-            ctx->has_gauge = true;
-        if (tbox_context_is_calendar_input(node)) {
-            const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-            tbox_date date;
-            int hour, minute;
-            bool valid = value != NULL && (tbox_context_is_datetime_input(node) ?
-                tbox_context_datetime_parse(value->value, &date, &hour, &minute) :
-                tbox_context_is_time_input(node) ? tbox_context_time_parse(value->value, &hour, &minute) :
-                tbox_context_is_week_input(node) ? tbox_context_week_parse(value->value, &date) :
-                tbox_context_is_month_input(node) ? tbox_context_month_parse(value->value, &date) :
-                tbox_context_date_parse(value->value, &date));
-            if (value != NULL && value->value.size > 0 && !valid)
-                tbox_html_node_set_attribute(ctx->document, node, tbox_string_view_make("value", 5),
-                    tbox_string_view_make("", 0));
-        }
-        if (tbox_context_is_number_input(node)) {
-            ctx->has_number_input = true;
-            const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-            double parsed;
-            if (value != NULL && value->value.size > 0 &&
-                !tbox_context_number_parse(value->value, &parsed))
-                tbox_html_node_set_attribute(ctx->document, node, tbox_string_view_make("value", 5),
-                    tbox_string_view_make("", 0));
-        }
-        if (tbox_context_is_range_input(node)) {
-            ctx->has_range_input = true;
-            tbox_context_range_normalize(ctx, node);
-        }
-        if (tbox_context_is_search_input(node)) ctx->has_search_input = true;
-        if (tbox_context_is_file_input(node)) {
-            ctx->has_file_input = true;
-            const tbox_html_attribute *value = tbox_html_node_get_attribute(node, tbox_string_view_make("value", 5));
-            tbox_file_field *field = tbox_context_file_field(ctx, node, false);
-            const char *name = field != NULL && field->path != NULL ? strrchr(field->path, '/') : NULL;
-            if (name != NULL) name++;
-            if (field != NULL && field->path != NULL &&
-                (value == NULL || name == NULL || !tbox_string_view_equal(value->value,
-                    tbox_string_view_from_cstr(name)))) {
-                free(field->path);
-                field->path = NULL;
-            }
-            if (value != NULL && value->value.size > 0 && (field == NULL || field->path == NULL))
-                tbox_html_node_set_attribute(ctx->document, node, tbox_string_view_make("value", 5),
-                    tbox_string_view_make("", 0));
-        }
+        tbox_context_sanitize_input(ctx, node);
         tbox_context_sanitize_inputs(ctx, node->first_child);
     }
 }

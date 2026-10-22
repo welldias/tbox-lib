@@ -18,6 +18,65 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Busca de elementos no módulo app (2026-10-22)
+
+`tbox_context_get_element_by_id/_query/_query_all` saem de `context.h` e
+viram privadas (`src/context/tbox_context_controls.h`); a API pública é
+`tbox_app_get_element_by_id`, `tbox_app_query` e `tbox_app_query_all`
+(`app.h`, adaptadores em `src/app/tbox_app_controls.c`). Com
+`node->owner_document`, os exemplos deixam de precisar de `tbox_context`.
+
+## Após v20 — API de controles no módulo app (2026-10-22)
+
+As funções de `controls.h` passam a receber `tbox_app *` em vez de
+`tbox_context *`, como os registros de eventos. Adaptadores em
+`src/app/tbox_app_controls.c` obtêm o contexto por `tbox_app_context`, por
+isso também compilam com `tbox_app_unavailable.c` (sem backend, tudo vira
+no-op). A implementação fica privada no contexto (`tbox_context_control_*`,
+`tbox_context_select_*`, em `src/context/tbox_context_controls.h`), usada
+pelos testes do contexto. As funções que só leem o nó continuam sem app.
+
+## Após v20 — Redesenho automático após mutação do DOM (2026-10-22)
+
+`tbox_html_node.owner_document` liga cada nó ao seu documento, e
+`tbox_html_document_revision` conta as mutações (inserir, remover,
+atributos, texto; também escolha de `<select>` e foco, por
+`tbox_html_document_touch` interno). `tbox_app` guarda a revisão lida logo
+após cada `run_frame` e redesenha (e não dorme) quando ela muda, então
+mutação fora de handler dispensa `tbox_app_request_redraw` — que fica para
+escrita direta em campos da struct. Teste em `test_app_lifecycle.c` cobre
+mudança fora de handler e loop ocioso com controles que o frame normaliza.
+
+## Após v20 — API de controles e DOM (2026-10-22)
+
+Camada para controlar o conteúdo dos controles por código, sem saber onde
+cada um guarda o estado. Novo `include/tbox/controls.h`
+(`src/context/tbox_context_controls.c` e funções de `<select>` em
+`tbox_context_select.c`): `tbox_control_value/_set_value`, `_label/_set_label`,
+`_disabled/_set_disabled`, `_focus/_blur`, `_checked/_set_checked` (radio
+desmarca o grupo), `_radio_checked`, e `tbox_select_option_count/_at`,
+`_selected_index/_set_selected_index`, `_add_option`, `_remove_option`,
+`_clear`. `tbox_context_select_value/_set_value` saíram da API pública
+(absorvidas por `tbox_control_value/_set_value`).
+
+DOM (`html_parser.h`): `tbox_html_element_create`/`_text_create` (copiam),
+`_node_clone`, `_insert_before`, `_prepend_child`, `_replace`,
+`_remove_children`, navegação só por elementos, `_has_attribute`,
+`_set_bool_attribute` e classes (`_has/_add/_remove/_toggle_class`).
+`append_child` passou a mover um nó já inserido e a recusar ciclos;
+`set_text_content` desliga os filhos antigos um a um (sem ponteiros
+velhos). Busca: `tbox_context_get_element_by_id`, `tbox_context_query`,
+`tbox_context_query_all` (nós mutáveis, sem cast),
+`tbox_css_selector_query_first` e `tbox_css_selector_closest`.
+Exemplo `example/controls_demo.c`; demais exemplos migrados.
+
+## Após v20 — Exemplo de tabela formatada (2026-10-21)
+
+Adicionado `tests/assets/html-tables-styled.html`: resumo de pedidos com
+legenda, cabeçalho, linhas alternadas e hover, valores alinhados, status
+coloridos e rodapé de total com `colspan`. Exemplo autocontido em 800x600,
+catalogado na referência de fixtures.
+
 ## Após v20 — Eventos do ciclo de vida da aplicação (2026-10-21)
 
 Acrescentados `tbox_app_on_load`, `on_unload`, `on_pagehide`, `on_pageshow`,

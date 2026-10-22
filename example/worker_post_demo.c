@@ -28,20 +28,11 @@ typedef struct worker {
     atomic_bool stop;
 } worker;
 
-static tbox_html_node *find_node(tbox_context *ctx, const char *selector) {
-    tbox_css_selector_node_set set = tbox_css_selector_select(tbox_html_document_root(tbox_context_document(ctx)), selector, strlen(selector));
-    tbox_html_node *node           = set.count > 0 ? (tbox_html_node *)set.items[0] : NULL;
-    tbox_css_selector_node_set_destroy(&set);
-    return node;
-}
-
 /* Runs on the UI thread, inside tbox_app_run. */
 static void show_progress(tbox_app *app, void *userdata) {
-    const int *percent        = userdata;
-    tbox_context *ctx         = tbox_app_context(app);
-    tbox_html_document *doc   = tbox_context_document(ctx);
-    tbox_html_node *bar       = find_node(ctx, "#bar");
-    tbox_html_node *label     = find_node(ctx, "#label");
+    const int *percent    = userdata;
+    tbox_html_node *bar   = tbox_app_query(app, "#bar", 4);
+    tbox_html_node *label = tbox_app_query(app, "#label", 6);
     char style[48], text[48];
     snprintf(style, sizeof(style), "width: %dpx", *percent * 3);
     if (*percent < 100)
@@ -49,9 +40,9 @@ static void show_progress(tbox_app *app, void *userdata) {
     else
         snprintf(text, sizeof(text), "done");
     if (bar != NULL)
-        tbox_html_node_set_attribute(doc, bar, tbox_string_view_make("style", 5), tbox_string_view_make(style, strlen(style)));
+        tbox_html_node_set_attribute(bar->owner_document, bar, tbox_string_view_make("style", 5), tbox_string_view_make(style, strlen(style)));
     if (label != NULL)
-        tbox_html_node_set_text_content(doc, label, tbox_string_view_make(text, strlen(text)));
+        tbox_html_node_set_text_content(label->owner_document, label, tbox_string_view_make(text, strlen(text)));
 }
 
 static void *work(void *arg) {

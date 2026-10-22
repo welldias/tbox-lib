@@ -45,6 +45,7 @@ sem esperar) processa todos os eventos pendentes e acumula uma decisão
 
 | Origem | Condição |
 |---|---|
+| Mutação do DOM | se `tbox_html_document_revision` mudou desde o último frame (qualquer função de mutação de `html_parser.h` ou `controls.h`, em handler ou não) |
 | `tbox_app_request_redraw(app)` | sempre (pedidos antes da próxima volta se juntam em um) |
 | `tbox_app_post(app, fn, …)` | sempre que alguma tarefa rodou (uma tarefa costuma mudar o DOM) |
 | Clique | sempre — pode mover o cursor de um campo, abrir um popup, mudar foco ou disparar handlers |
@@ -60,11 +61,13 @@ sem esperar) processa todos os eventos pendentes e acumula uma decisão
 O cursor do mouse (`cursor`) é atualizado a cada volta, mas não suja o frame.
 
 **Mutação do DOM fora de um handler** (um timer seu, um arquivo que
-terminou de carregar) não é detectada automaticamente. Depois de mudar o
-documento, chame `tbox_app_request_redraw(app)`. Dentro de um handler de
-clique, tecla ou input, ou de uma tarefa entregue por `tbox_app_post`, isso
-não é necessário — o próprio evento ou a tarefa já suja o frame. **De outra
-thread**, nunca mude o DOM diretamente: poste uma tarefa (ver
+terminou de carregar) é detectada pela revisão do documento: cada função
+de mutação a avança, e o loop compara com a do último frame (lida logo
+depois do `run_frame`, que também normaliza valores no DOM). O loop não
+dorme enquanto houver mudança não desenhada. A exceção é escrever direto nos
+campos de um `tbox_html_node` (`node->text.text = …`): a revisão não vê, e
+é preciso `tbox_app_request_redraw(app)`. **De outra thread**, nunca mude o
+DOM diretamente: poste uma tarefa (ver
 [Memória e concorrência](13-memoria-e-concorrencia.md#threads)).
 
 ## Quando o loop dorme

@@ -341,14 +341,6 @@ bool tbox_context_number_valid(const tbox_html_node *input);
  * closing the context. */
 tbox_string_view tbox_context_file_path(tbox_context *ctx, const tbox_html_node *input);
 
-/* Single-choice <select> controls. The value is the selected <option>'s
- * value attribute, or its collapsed text if no value attribute exists.
- * Borrowed until the next frame or document mutation. */
-tbox_string_view tbox_context_select_value(tbox_context *ctx, const tbox_html_node *select);
-/* Chooses the first option with `value`; returns true only if selection
- * changed. Programmatic changes do not call the selection handler. */
-bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *select, tbox_string_view value);
-
 const tbox_html_node *tbox_context_focused_node(const tbox_context *ctx);
 
 /* Access to the internal document -- needed for a handler's body to call

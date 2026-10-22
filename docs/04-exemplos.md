@@ -15,14 +15,10 @@ Trocar o texto do primeiro elemento que casa com um seletor:
 #include <tbox/tbox.h>
 #include <string.h>
 
-static void set_text(tbox_context *ctx, const char *selector, const char *text) {
-    tbox_html_document *doc = tbox_context_document(ctx);
-    tbox_css_selector_node_set found =
-        tbox_css_selector_select(tbox_html_document_root(doc), selector, strlen(selector));
-    if (found.count > 0)
-        tbox_html_node_set_text_content(doc, (tbox_html_node *)found.items[0],
-                                        tbox_string_view_make(text, strlen(text)));
-    tbox_css_selector_node_set_destroy(&found);
+static void set_text(tbox_app *app, const char *selector, const char *text) {
+    tbox_html_node *node = tbox_app_query(app, selector, strlen(selector));
+    if (node != NULL)
+        tbox_control_set_label(app, node, tbox_string_view_make(text, strlen(text)));
 }
 ```
 
@@ -49,24 +45,17 @@ ou um `<div>`): só o primeiro elemento do nível raiz é desenhado.
 ## 2. Reagir a um clique
 
 ```c
-/* <button class="toggle">Ligar</button> <div id="lamp" class="off"></div>
-   CSS: #lamp.off { background: #333 } #lamp.on { background: gold } */
+/* <button class="toggle">Ligar</button> <div id="lamp"></div>
+   CSS: #lamp { background: #333 } #lamp.on { background: gold } */
 static bool on_toggle(tbox_app *app, tbox_html_node *button, void *userdata) {
-    tbox_context *ctx = tbox_app_context(app);
-    (void)button; (void)userdata;
-    tbox_html_document *doc = tbox_context_document(ctx);
-    tbox_css_selector_node_set lamp =
-        tbox_css_selector_select(tbox_html_document_root(doc), "#lamp", 5);
-    if (lamp.count > 0) {
-        tbox_html_node *node = (tbox_html_node *)lamp.items[0];
-        const tbox_html_attribute *cls =
-            tbox_html_node_get_attribute(node, tbox_string_view_make("class", 5));
-        bool on = cls != NULL && tbox_string_view_equal_cstr(cls->value, "on");
-        const char *next = on ? "off" : "on";
-        tbox_html_node_set_attribute(doc, node, tbox_string_view_make("class", 5),
-                                     tbox_string_view_make(next, strlen(next)));
+    (void)userdata;
+    tbox_html_node *lamp = tbox_app_query(app, "#lamp", 5);
+    if (lamp != NULL) {
+        tbox_html_document *doc = lamp->owner_document;
+        bool on = tbox_html_node_toggle_class(doc, lamp, tbox_string_view_make("on", 2));
+        tbox_control_set_label(app, button, on ? tbox_string_view_make("Desligar", 8)
+                                               : tbox_string_view_make("Ligar", 5));
     }
-    tbox_css_selector_node_set_destroy(&lamp);
     return true; /* deixa o clique continuar subindo para outros handlers */
 }
 
@@ -84,7 +73,6 @@ clique já suja o frame.
 /* <input id="nome"> <p id="saudacao"></p> */
 static void on_input(tbox_app *app, tbox_html_node *input,
                      const char *value, size_t value_length, void *userdata) {
-    tbox_context *ctx = tbox_app_context(app);
     (void)userdata;
     const tbox_html_attribute *id =
         tbox_html_node_get_attribute(input, tbox_string_view_make("id", 2));
@@ -92,7 +80,7 @@ static void on_input(tbox_app *app, tbox_html_node *input,
 
     char message[128];
     snprintf(message, sizeof message, "Olá, %.*s!", (int)value_length, value);
-    set_text(ctx, "#saudacao", message);
+    set_text(app, "#saudacao", message);
 }
 
 tbox_app_on_input(app, on_input, NULL, NULL);
@@ -111,13 +99,12 @@ todo registro é o `destroy` do `userdata` (aqui `NULL`; ver
          <input type="submit" value="Cadastrar"></form> <p id="msg"></p> */
 static void on_submit(tbox_app *app, tbox_html_node *form,
                       tbox_html_node *submitter, void *userdata) {
-    tbox_context *ctx = tbox_app_context(app);
     (void)submitter; (void)userdata;
     tbox_css_selector_node_set fields =
         tbox_css_selector_select(form, "input[name=email]", 17);
     if (fields.count > 0) {
         const tbox_html_node *email = fields.items[0];
-        set_text(ctx, "#msg", tbox_context_email_valid(email)
+        set_text(app, "#msg", tbox_context_email_valid(email)
                                   ? "Cadastro recebido."
                                   : "E-mail inválido.");
     }
@@ -137,7 +124,7 @@ rede: o que fazer com os dados é decisão da aplicação.
 static bool on_key(tbox_app *app, const tbox_key_event *event, void *userdata) {
     (void)userdata;
     if (event->pressed && event->control && event->key == TBOX_KEY_A) {
-        set_text(tbox_app_context(app), "#status", "Ctrl+A interceptado");
+        set_text(app, "#status", "Ctrl+A interceptado");
         return true;  /* consumido: o contexto não vê a tecla */
     }
     return false;     /* segue para foco, edição, Esc etc. */
@@ -152,9 +139,10 @@ separado, por `tbox_app_on_input` no campo focado.
 
 ## 6. Atualizar a tela a partir do seu próprio código
 
-Mutações feitas no seu próprio loop, fora de um handler, precisam de um
-pedido explícito. O prazo do relógio é seu: passe-o a `tbox_app_wait`, que
-dorme até ele (ou até um evento antes):
+Mutações feitas no seu próprio loop, fora de um handler, são desenhadas
+na próxima volta sem pedido explícito (o loop acompanha a revisão do
+documento). O prazo do relógio é seu: passe-o a `tbox_app_wait`, que dorme
+até ele (ou até um evento antes):
 
 ```c
 #include <time.h>
@@ -172,19 +160,18 @@ while (!tbox_app_should_close(app)) {
         next_tick = seconds + 1.0;
         char text[32];
         snprintf(text, sizeof text, "%.0f s", seconds);
-        set_text(tbox_app_context(app), "#relogio", text);
-        tbox_app_request_redraw(app);     /* sem isto, nada muda na tela */
+        set_text(app, "#relogio", text); /* o loop vê a mudança */
     }
     tbox_app_wait(app, (int32_t)((next_tick - now_seconds()) * 1000.0) + 1);
 }
 ```
 
 Trabalho em outra thread entrega o resultado com `tbox_app_post`; a função
-roda na thread de UI e o frame já fica sujo, sem `request_redraw`:
+roda na thread de UI, onde pode mudar o DOM:
 
 ```c
 static void mostrar(tbox_app *app, void *userdata) {   /* thread de UI */
-    set_text(tbox_app_context(app), "#status", userdata);
+    set_text(app, "#status", userdata);
 }
 
 static void *trabalho(void *arg) {                     /* outra thread */
@@ -204,23 +191,27 @@ completo: `example/worker_post_demo.c` (`tbox_worker_post_demo`).
 ## 7. Criar elementos dinamicamente
 
 ```c
-static void add_item(tbox_context *ctx, const char *text) {
-    tbox_html_document *doc = tbox_context_document(ctx);
-    tbox_css_selector_node_set list =
-        tbox_css_selector_select(tbox_html_document_root(doc), "ul#itens", 8);
-    if (list.count > 0) {
-        tbox_html_node *li = tbox_html_node_create(doc, TBOX_HTML_NODE_ELEMENT);
-        li->element.tag_name = tbox_string_view_make("li", 2); /* minúsculo, memória estática */
-        tbox_html_node_append_child((tbox_html_node *)list.items[0], li);
-        tbox_html_node_set_text_content(doc, li, tbox_string_view_make(text, strlen(text)));
-    }
-    tbox_css_selector_node_set_destroy(&list);
+static void add_item(tbox_app *app, const char *text) {
+    tbox_html_node *list = tbox_app_query(app, "ul#itens", 8);
+    if (list == NULL) return;
+    tbox_html_document *doc = list->owner_document;
+    tbox_html_node *li = tbox_html_element_create(doc, tbox_string_view_make("li", 2));
+    tbox_html_node_append_child(li, tbox_html_text_create(doc, tbox_string_view_make(text, strlen(text))));
+    tbox_html_node_append_child(list, li);
+}
+
+/* Opções de um <select id="frutas">: */
+static void add_fruit(tbox_app *app, const char *name) {
+    tbox_html_node *select = tbox_app_query(app, "#frutas", 7);
+    tbox_select_add_option(app, select, tbox_string_view_make(NULL, 0),
+                           tbox_string_view_make(name, strlen(name)), SIZE_MAX);
 }
 ```
 
-`tag_name` não é copiado: aponte para uma string que viva tanto quanto o
-documento (um literal serve). Remover um nó (`tbox_html_node_remove`) o
+As strings são copiadas. Remover um nó (`tbox_html_node_remove`) o
 desconecta, mas a memória só é liberada quando o documento for destruído.
+Não é preciso pedir redesenho: a mudança avança a revisão do documento.
+Exemplo completo: `example/controls_demo.c`.
 
 ## 8. Screenshot sem janela (CI)
 

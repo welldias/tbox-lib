@@ -89,6 +89,15 @@ tbox_css_selector_node_set tbox_css_selector_select(const tbox_html_node *root, 
 
 void tbox_css_selector_node_set_destroy(tbox_css_selector_node_set *set);
 
+/* querySelector: the first ELEMENT descendant of `root` (root excluded), in
+ * document order, that satisfies the group; stops at the first match. NULL
+ * when nothing matches or either argument is NULL. */
+const tbox_html_node *tbox_css_selector_query_first(const tbox_css_selector_query *query, const tbox_html_node *root);
+
+/* Element.closest: `node` itself or its nearest ancestor ELEMENT satisfying
+ * the selector text. NULL on no match or a syntax error. */
+const tbox_html_node *tbox_css_selector_closest(const tbox_html_node *node, const char *text, size_t length);
+
 /* One (ruleset, matching selector branch, matching element) triple produced
  * by tbox_css_selector_match_stylesheet. `ruleset` and `selector` point
  * into the stylesheet that was matched (selector is the specific

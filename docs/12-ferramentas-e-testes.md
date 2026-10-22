@@ -52,6 +52,11 @@ fixture no Firefox a cada execução. Os PNGs que ficam em `tests/assets/`
 (`bird.png`, `mask-star.png`...) são imagens usadas pelos próprios
 fixtures.
 
+O exemplo `tests/assets/html-tables-styled.html` reúne uma tabela de pedidos
+com legenda, cabeçalho, corpo e rodapé de totais. Demonstra bordas colapsadas,
+linhas alternadas, destaque ao passar o mouse, alinhamento de valores,
+status coloridos e uma célula de total com `colspan`, em 800x600.
+
 ```sh
 build/example/tbox_assets_showrun            # abre o primeiro; ← → navegam, Esc fecha
 build/example/tbox_assets_showrun --list     # só lista a ordem

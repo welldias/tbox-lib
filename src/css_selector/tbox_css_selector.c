@@ -65,6 +65,30 @@ tbox_css_selector_node_set tbox_css_selector_select(const tbox_html_node *root, 
     return result;
 }
 
+const tbox_html_node *tbox_css_selector_query_first(const tbox_css_selector_query *query, const tbox_html_node *root) {
+    if (query == NULL || root == NULL) return NULL;
+    const tbox_html_node *node = root->first_child;
+    while (node != NULL) {
+        if (node->type == TBOX_HTML_NODE_ELEMENT && tbox_css_selector_query_matches(query, node)) return node;
+        if (node->first_child != NULL) {
+            node = node->first_child;
+            continue;
+        }
+        while (node != root && node->next_sibling == NULL) node = node->parent;
+        node = node == root ? NULL : node->next_sibling;
+    }
+    return NULL;
+}
+
+const tbox_html_node *tbox_css_selector_closest(const tbox_html_node *node, const char *text, size_t length) {
+    tbox_css_selector_query *query = tbox_css_selector_compile(text, length, NULL);
+    const tbox_html_node *found    = NULL;
+    for (const tbox_html_node *at = query != NULL ? node : NULL; at != NULL && found == NULL; at = at->parent)
+        if (at->type == TBOX_HTML_NODE_ELEMENT && tbox_css_selector_query_matches(query, at)) found = at;
+    tbox_css_selector_query_destroy(query);
+    return found;
+}
+
 void tbox_css_selector_node_set_destroy(tbox_css_selector_node_set *set) {
     if (set == NULL || set->reserved_ == NULL) {
         return;

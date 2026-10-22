@@ -12,11 +12,9 @@ static bool tbox_context_is_option(const tbox_html_node *node);
 static bool tbox_context_is_optgroup(const tbox_html_node *node);
 static const tbox_html_node *tbox_context_select_row_at(const tbox_html_node *select, size_t index);
 static size_t tbox_context_select_row_count(const tbox_html_node *select);
-static const tbox_html_node *tbox_context_option_at(const tbox_html_node *select, size_t index);
 static size_t tbox_context_select_row_index(const tbox_html_node *select, const tbox_html_node *row);
 static size_t tbox_context_option_position(const tbox_html_node *select, const tbox_html_node *option);
 static tbox_string_view tbox_context_option_text(tbox_context *ctx, const tbox_html_node *option);
-static tbox_string_view tbox_context_option_label(tbox_context *ctx, const tbox_html_node *option);
 static tbox_string_view tbox_context_option_value(tbox_context *ctx, const tbox_html_node *option);
 static bool tbox_context_select_commit(tbox_context *ctx, const tbox_html_node *select,
                                        const tbox_html_node *option);
@@ -78,7 +76,7 @@ size_t tbox_context_option_count(const tbox_html_node *select) {
     return count;
 }
 
-static const tbox_html_node *tbox_context_option_at(const tbox_html_node *select, size_t index) {
+const tbox_html_node *tbox_context_option_at(const tbox_html_node *select, size_t index) {
     for (const tbox_html_node *child = select->first_child; child != NULL; child = child->next_sibling) {
         if (tbox_context_is_option(child)) {
             if (index-- == 0) return child;
@@ -112,7 +110,7 @@ static tbox_string_view tbox_context_option_text(tbox_context *ctx, const tbox_h
     return tbox_string_collapse_whitespace(&ctx->frame_arena, text);
 }
 
-static tbox_string_view tbox_context_option_label(tbox_context *ctx, const tbox_html_node *option) {
+tbox_string_view tbox_context_option_label(tbox_context *ctx, const tbox_html_node *option) {
     const tbox_html_attribute *label = tbox_html_node_get_attribute(option, tbox_string_view_make("label", 5));
     return label != NULL && label->value.size > 0 ? label->value : tbox_context_option_text(ctx, option);
 }
@@ -184,6 +182,7 @@ static bool tbox_context_select_commit(tbox_context *ctx, const tbox_html_node *
     if (field == NULL || field->selected == option) return false;
     field->selected = option;
     field->dirty = true;
+    tbox_html_document_touch(ctx->document);
     if (ctx->select_handler != NULL) {
         tbox_string_view value = tbox_context_option_value(ctx, option);
         tbox_context_emit_select(ctx, select, value);
@@ -459,9 +458,9 @@ bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *sele
         const tbox_html_node *option = tbox_context_option_at(select, i);
         if (tbox_context_option_disabled(option) ||
             !tbox_string_view_equal(tbox_context_option_value(ctx, option), value)) continue;
-        if (field->selected == option) return false;
         field->selected = option;
         field->dirty = true;
+        tbox_html_document_touch(ctx->document);
         if (ctx->open_select == select) {
             ctx->popup_highlight = option;
             tbox_context_popup_reveal_highlight(ctx);
@@ -469,6 +468,78 @@ bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *sele
         return true;
     }
     return false;
+}
+
+size_t tbox_context_select_option_count(const tbox_html_node *select) {
+    return tbox_context_is_select(select) ? tbox_context_option_count(select) : 0;
+}
+
+tbox_html_node *tbox_context_select_option_at(const tbox_html_node *select, size_t index) {
+    return tbox_context_is_select(select) ? (tbox_html_node *)tbox_context_option_at(select, index) : NULL;
+}
+
+ptrdiff_t tbox_context_select_selected_index(tbox_context *ctx, const tbox_html_node *select) {
+    if (ctx == NULL || !tbox_context_is_select(select)) return -1;
+    const tbox_select_field *field = tbox_context_select_field(ctx, select);
+    if (field == NULL || field->selected == NULL) return -1;
+    size_t position = tbox_context_option_position(select, field->selected);
+    return position < tbox_context_option_count(select) ? (ptrdiff_t)position : -1;
+}
+
+bool tbox_context_select_set_selected_index(tbox_context *ctx, tbox_html_node *select, size_t index) {
+    if (ctx == NULL || !tbox_context_is_select(select)) return false;
+    const tbox_html_node *option = tbox_context_option_at(select, index);
+    tbox_select_field *field     = tbox_context_select_field(ctx, select);
+    if (option == NULL || field == NULL || tbox_context_option_disabled(option)) return false;
+    field->selected = option;
+    field->dirty    = true;
+    tbox_html_document_touch(ctx->document);
+    if (ctx->open_select == select) {
+        ctx->popup_highlight = option;
+        tbox_context_popup_reveal_highlight(ctx);
+    }
+    return true;
+}
+
+/* After options leave or arrive: the field re-derives its choice when the
+ * chosen option is gone (tbox_context_select_field), and an open popup must
+ * not keep highlighting a detached row. */
+static void tbox_context_select_options_changed(tbox_context *ctx, const tbox_html_node *select) {
+    const tbox_select_field *field = tbox_context_select_field(ctx, select);
+    if (ctx->open_select != select) return;
+    const tbox_html_node *highlight = ctx->popup_highlight;
+    if (highlight == NULL || tbox_context_option_position(select, highlight) >= tbox_context_option_count(select))
+        ctx->popup_highlight = field != NULL ? field->selected : NULL;
+    ctx->popup_first = 0;
+    tbox_context_popup_reveal_highlight(ctx);
+}
+
+tbox_html_node *tbox_context_select_add_option(tbox_context *ctx, tbox_html_node *select, tbox_string_view value,
+                                               tbox_string_view label, size_t before_index) {
+    if (ctx == NULL || !tbox_context_is_select(select)) return NULL;
+    tbox_html_node *option = tbox_html_element_create(ctx->document, tbox_string_view_make("option", 6));
+    if (option == NULL) return NULL;
+    if (value.data != NULL) tbox_html_node_set_attribute(ctx->document, option, tbox_string_view_make("value", 5), value);
+    tbox_html_node_append_child(option, tbox_html_text_create(ctx->document, label));
+    tbox_html_node *before = (tbox_html_node *)tbox_context_option_at(select, before_index);
+    tbox_html_node_insert_before(before != NULL ? before->parent : select, option, before);
+    tbox_context_select_options_changed(ctx, select);
+    return option;
+}
+
+bool tbox_context_select_remove_option(tbox_context *ctx, tbox_html_node *select, size_t index) {
+    if (ctx == NULL || !tbox_context_is_select(select)) return false;
+    tbox_html_node *option = (tbox_html_node *)tbox_context_option_at(select, index);
+    if (option == NULL) return false;
+    tbox_html_node_remove(option);
+    tbox_context_select_options_changed(ctx, select);
+    return true;
+}
+
+void tbox_context_select_clear(tbox_context *ctx, tbox_html_node *select) {
+    if (ctx == NULL || !tbox_context_is_select(select)) return;
+    tbox_html_node_remove_children(select);
+    tbox_context_select_options_changed(ctx, select);
 }
 
 void tbox_context_set_select_handler(tbox_context *ctx, tbox_context_select_handler handler, void *userdata, tbox_destroy_notify destroy) {

@@ -33,20 +33,121 @@ bool tbox_html_is_void_element(tbox_string_view tag_name) {
 tbox_html_node *tbox_html_node_create(tbox_html_document *document, tbox_html_node_type type) {
     tbox_html_node *node = tbox_arena_alloc_zero(&document->arena, sizeof(tbox_html_node));
     node->type           = type;
+    node->owner_document = document;
     return node;
 }
 
-void tbox_html_node_append_child(tbox_html_node *parent, tbox_html_node *child) {
-    child->parent       = parent;
-    child->next_sibling = NULL;
-    child->prev_sibling = parent->last_child;
+static tbox_string_view tbox_html_node_copy_string(tbox_arena *arena, tbox_string_view view);
 
-    if (parent->last_child != NULL) {
-        parent->last_child->next_sibling = child;
+tbox_html_node *tbox_html_element_create(tbox_html_document *document, tbox_string_view tag_name) {
+    if (document == NULL || tag_name.size == 0) return NULL;
+    tbox_html_node *node   = tbox_html_node_create(document, TBOX_HTML_NODE_ELEMENT);
+    node->element.tag_name = tbox_string_copy_lower_ascii(&document->arena, tag_name);
+    node->element.self_closing = tbox_html_is_void_element(node->element.tag_name);
+    return node;
+}
+
+tbox_html_node *tbox_html_text_create(tbox_html_document *document, tbox_string_view text) {
+    if (document == NULL) return NULL;
+    tbox_html_node *node = tbox_html_node_create(document, TBOX_HTML_NODE_TEXT);
+    node->text.text      = tbox_html_node_copy_string(&document->arena, text);
+    return node;
+}
+
+/* Strings are copied, not shared: a text field binds its node's `value`
+ * attribute to its own editing buffer (src/context/tbox_context_text.c),
+ * which a clone must not alias. */
+tbox_html_node *tbox_html_node_clone(tbox_html_document *document, const tbox_html_node *node, bool deep) {
+    if (document == NULL || node == NULL || node->type == TBOX_HTML_NODE_DOCUMENT) return NULL;
+    tbox_html_node *copy = tbox_html_node_create(document, node->type);
+    if (node->type == TBOX_HTML_NODE_ELEMENT) {
+        copy->element.tag_name     = tbox_html_node_copy_string(&document->arena, node->element.tag_name);
+        copy->element.self_closing = node->element.self_closing;
+        size_t count               = node->element.attribute_count;
+        if (count > 0) {
+            copy->element.attributes = tbox_arena_alloc(&document->arena, count * sizeof(tbox_html_attribute));
+            for (size_t i = 0; i < count; i++) {
+                copy->element.attributes[i].name  = tbox_html_node_copy_string(&document->arena, node->element.attributes[i].name);
+                copy->element.attributes[i].value = tbox_html_node_copy_string(&document->arena, node->element.attributes[i].value);
+            }
+            copy->element.attribute_count = count;
+        }
     } else {
-        parent->first_child = child;
+        copy->text.text = tbox_html_node_copy_string(&document->arena, node->text.text);
     }
-    parent->last_child = child;
+    if (deep)
+        for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling)
+            tbox_html_node_insert_before(copy, tbox_html_node_clone(document, child, true), NULL);
+    return copy;
+}
+
+/* True when `child` may be inserted under `parent`: both exist, and `child`
+ * is neither `parent` nor one of its ancestors (that would make a cycle). */
+static bool tbox_html_node_can_insert(const tbox_html_node *parent, const tbox_html_node *child) {
+    if (parent == NULL || child == NULL) return false;
+    for (const tbox_html_node *at = parent; at != NULL; at = at->parent)
+        if (at == child) return false;
+    return true;
+}
+
+void tbox_html_node_append_child(tbox_html_node *parent, tbox_html_node *child) {
+    tbox_html_node_insert_before(parent, child, NULL);
+}
+
+void tbox_html_node_insert_before(tbox_html_node *parent, tbox_html_node *child, tbox_html_node *reference) {
+    if (!tbox_html_node_can_insert(parent, child) || child == reference) return;
+    if (reference != NULL && reference->parent != parent) return;
+    tbox_html_node_remove(child);
+
+    tbox_html_node *prev = reference != NULL ? reference->prev_sibling : parent->last_child;
+    child->parent        = parent;
+    child->prev_sibling  = prev;
+    child->next_sibling  = reference;
+    if (prev != NULL) prev->next_sibling = child;
+    else parent->first_child = child;
+    if (reference != NULL) reference->prev_sibling = child;
+    else parent->last_child = child;
+    tbox_html_document_touch(parent->owner_document);
+}
+
+void tbox_html_node_prepend_child(tbox_html_node *parent, tbox_html_node *child) {
+    if (parent == NULL) return;
+    tbox_html_node_insert_before(parent, child, parent->first_child);
+}
+
+void tbox_html_node_replace(tbox_html_node *old_node, tbox_html_node *new_node) {
+    if (old_node == NULL || old_node == new_node || old_node->parent == NULL) return;
+    tbox_html_node *parent = old_node->parent;
+    if (!tbox_html_node_can_insert(parent, new_node)) return;
+    tbox_html_node_insert_before(parent, new_node, old_node);
+    tbox_html_node_remove(old_node);
+}
+
+void tbox_html_node_remove_children(tbox_html_node *node) {
+    if (node == NULL) return;
+    while (node->first_child != NULL) tbox_html_node_remove(node->first_child);
+}
+
+tbox_html_node *tbox_html_node_first_element_child(const tbox_html_node *node) {
+    if (node == NULL) return NULL;
+    tbox_html_node *child = node->first_child;
+    while (child != NULL && child->type != TBOX_HTML_NODE_ELEMENT) child = child->next_sibling;
+    return child;
+}
+
+tbox_html_node *tbox_html_node_next_element_sibling(const tbox_html_node *node) {
+    if (node == NULL) return NULL;
+    tbox_html_node *sibling = node->next_sibling;
+    while (sibling != NULL && sibling->type != TBOX_HTML_NODE_ELEMENT) sibling = sibling->next_sibling;
+    return sibling;
+}
+
+size_t tbox_html_node_element_child_count(const tbox_html_node *node) {
+    size_t count = 0;
+    for (const tbox_html_node *child = tbox_html_node_first_element_child(node); child != NULL;
+         child = tbox_html_node_next_element_sibling(child))
+        count++;
+    return count;
 }
 
 void tbox_html_node_remove(tbox_html_node *node) {
@@ -70,6 +171,7 @@ void tbox_html_node_remove(tbox_html_node *node) {
         parent->last_child = prev;
     }
 
+    if (parent != NULL) tbox_html_document_touch(parent->owner_document);
     node->parent       = NULL;
     node->prev_sibling = NULL;
     node->next_sibling = NULL;
@@ -134,6 +236,7 @@ void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *
         tbox_html_attribute *existing = &node->element.attributes[i];
         if (tbox_string_view_equal_ascii_ci(existing->name, name)) {
             existing->value = tbox_html_node_copy_string(&document->arena, value);
+            tbox_html_document_touch(node->owner_document);
             return;
         }
     }
@@ -150,6 +253,7 @@ void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *
 
     node->element.attributes      = attributes;
     node->element.attribute_count = new_count;
+    tbox_html_document_touch(node->owner_document);
 }
 
 bool tbox_html_node_remove_attribute(tbox_html_node *node, tbox_string_view name) {
@@ -159,6 +263,7 @@ bool tbox_html_node_remove_attribute(tbox_html_node *node, tbox_string_view name
         for (size_t j = i + 1; j < node->element.attribute_count; j++)
             node->element.attributes[j - 1] = node->element.attributes[j];
         node->element.attribute_count--;
+        tbox_html_document_touch(node->owner_document);
         return true;
     }
     return false;
@@ -169,19 +274,10 @@ void tbox_html_node_set_text_content(tbox_html_document *document, tbox_html_nod
         return;
     }
 
-    /* Detach all current children in one shot rather than looping
-     * tbox_html_node_remove per child: remove() exists to relink siblings
-     * around a single detached node, but here every child is leaving at
-     * once, so there's no sibling chain left to maintain afterwards --
-     * zeroing first_child/last_child directly is equivalent and avoids the
-     * O(n) sibling-relinking work remove() would otherwise do for nothing.
-     * The detached children's own parent/sibling pointers are left as-is;
-     * they're unreachable from `node` either way and become orphaned
-     * garbage in the document's arena (no individual free), same trade-off
-     * tbox_html_node_set_attribute already accepts for its old attributes
-     * array. */
-    node->first_child = NULL;
-    node->last_child  = NULL;
+    /* Detached one by one (not by zeroing first_child/last_child) so each
+     * old child has no stale parent/sibling pointers: the application may
+     * keep and re-insert it. */
+    tbox_html_node_remove_children(node);
 
     tbox_html_node *text_node = tbox_html_node_create(document, TBOX_HTML_NODE_TEXT);
     text_node->text.text      = tbox_html_node_copy_string(&document->arena, text);
@@ -200,4 +296,87 @@ const tbox_html_attribute *tbox_html_node_get_attribute(const tbox_html_node *no
         }
     }
     return NULL;
+}
+
+bool tbox_html_node_has_attribute(const tbox_html_node *node, tbox_string_view name) {
+    return node != NULL && tbox_html_node_get_attribute(node, name) != NULL;
+}
+
+void tbox_html_node_set_bool_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, bool on) {
+    if (document == NULL || node == NULL) return;
+    if (!on) tbox_html_node_remove_attribute(node, name);
+    else if (!tbox_html_node_has_attribute(node, name)) tbox_html_node_set_attribute(document, node, name, tbox_string_view_make(NULL, 0));
+}
+
+/* Byte offset of the whitespace-separated token `name` inside `list`, or
+ * list.size when absent. Class names compare case-sensitively, like the
+ * class selector does. */
+static size_t tbox_html_class_find(tbox_string_view list, tbox_string_view name) {
+    size_t at = 0;
+    while (at < list.size) {
+        while (at < list.size && tbox_ascii_is_space(list.data[at])) at++;
+        size_t start = at;
+        while (at < list.size && !tbox_ascii_is_space(list.data[at])) at++;
+        if (at > start && tbox_string_view_equal(tbox_string_view_make(list.data + start, at - start), name)) return start;
+    }
+    return list.size;
+}
+
+static bool tbox_html_class_valid(tbox_string_view name) {
+    if (name.size == 0) return false;
+    for (size_t i = 0; i < name.size; i++)
+        if (tbox_ascii_is_space(name.data[i])) return false;
+    return true;
+}
+
+static tbox_string_view tbox_html_node_class_list(const tbox_html_node *node) {
+    const tbox_html_attribute *attribute = tbox_html_node_get_attribute(node, tbox_string_view_make("class", 5));
+    return attribute != NULL ? attribute->value : tbox_string_view_make(NULL, 0);
+}
+
+bool tbox_html_node_has_class(const tbox_html_node *node, tbox_string_view name) {
+    if (node == NULL || !tbox_html_class_valid(name)) return false;
+    tbox_string_view list = tbox_html_node_class_list(node);
+    return tbox_html_class_find(list, name) < list.size;
+}
+
+void tbox_html_node_add_class(tbox_html_document *document, tbox_html_node *node, tbox_string_view name) {
+    if (document == NULL || node == NULL || node->type != TBOX_HTML_NODE_ELEMENT || !tbox_html_class_valid(name)) return;
+    tbox_string_view list = tbox_html_node_class_list(node);
+    if (tbox_html_class_find(list, name) < list.size) return;
+    tbox_string_view trimmed = tbox_string_view_trim_ascii_space(list);
+    tbox_string_builder builder;
+    tbox_string_builder_init(&builder, &document->arena, trimmed.size + 1 + name.size);
+    tbox_string_builder_append_view(&builder, trimmed);
+    if (trimmed.size > 0) tbox_string_builder_append_byte(&builder, ' ');
+    tbox_string_builder_append_view(&builder, name);
+    tbox_html_node_set_attribute(document, node, tbox_string_view_make("class", 5), tbox_string_builder_finish(&builder));
+}
+
+void tbox_html_node_remove_class(tbox_html_document *document, tbox_html_node *node, tbox_string_view name) {
+    if (document == NULL || node == NULL || !tbox_html_class_valid(name)) return;
+    tbox_string_view list = tbox_html_node_class_list(node);
+    if (tbox_html_class_find(list, name) == list.size) return;
+    tbox_string_builder builder;
+    tbox_string_builder_init(&builder, &document->arena, list.size);
+    size_t at = 0;
+    while (at < list.size) {
+        while (at < list.size && tbox_ascii_is_space(list.data[at])) at++;
+        size_t start = at;
+        while (at < list.size && !tbox_ascii_is_space(list.data[at])) at++;
+        tbox_string_view token = tbox_string_view_make(list.data + start, at - start);
+        if (token.size == 0 || tbox_string_view_equal(token, name)) continue;
+        if (builder.length > 0) tbox_string_builder_append_byte(&builder, ' ');
+        tbox_string_builder_append_view(&builder, token);
+    }
+    tbox_html_node_set_attribute(document, node, tbox_string_view_make("class", 5), tbox_string_builder_finish(&builder));
+}
+
+bool tbox_html_node_toggle_class(tbox_html_document *document, tbox_html_node *node, tbox_string_view name) {
+    if (tbox_html_node_has_class(node, name)) {
+        tbox_html_node_remove_class(document, node, name);
+        return false;
+    }
+    tbox_html_node_add_class(document, node, name);
+    return tbox_html_node_has_class(node, name);
 }

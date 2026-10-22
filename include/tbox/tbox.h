@@ -8,6 +8,7 @@ extern "C" {
 #include <tbox/app.h>
 #include <tbox/callback.h>
 #include <tbox/context.h>
+#include <tbox/controls.h>
 #include <tbox/css_cascade.h>
 #include <tbox/css_parser.h>
 #include <tbox/css_selector.h>

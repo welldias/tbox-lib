@@ -65,6 +65,9 @@ struct tbox_app {
     bool focused, reported_focus;
     tbox_app_event_binding events[TBOX_APP_EVENT_COUNT];
     bool redraw_requested;
+    /* tbox_html_document_revision right after the last run_frame: a
+     * different value means the DOM changed and needs a frame. */
+    uint64_t drawn_revision;
     const tbox_html_node *paste_target;
     tbox_context_options options;
     char *control_css_copy;

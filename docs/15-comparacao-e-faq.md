@@ -51,8 +51,9 @@ contém. Dê `display: inline-block` ao elemento. Ver
 [Eventos](06-eventos-e-interatividade.md#hit-test).
 
 **Mudei o DOM e a tela não atualizou.**
-Fora de um handler, chame `tbox_app_request_redraw(app)`; de outra thread,
-mude o DOM dentro de uma função entregue por `tbox_app_post`. Ver
+Mudanças pelas funções da API são vistas sozinhas. Se você escreveu direto
+num campo de `tbox_html_node`, chame `tbox_app_request_redraw(app)`; de
+outra thread, mude o DOM dentro de uma função entregue por `tbox_app_post`. Ver
 [Atualização da tela](05-atualizacao-da-tela.md#quando-um-frame-fica-sujo).
 
 **Só parte do meu HTML aparece.**

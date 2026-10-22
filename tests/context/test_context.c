@@ -443,6 +443,7 @@ static bool resolve_first_child_style(const char *html, tbox_style *out_style) {
 
 int tbox_test_svg_run(tbox_font_face_cache *fonts);
 int tbox_test_placeholder_run(tbox_font_face_cache *fonts);
+int tbox_test_controls_api_run(tbox_font_face_cache *fonts);
 int tbox_test_inline_positioned_run(tbox_font_face_cache *fonts);
 int tbox_test_focus_visible_run(tbox_font_face_cache *fonts);
 
@@ -469,6 +470,7 @@ int tbox_test_context_run(void) {
 
     failures += tbox_test_svg_run(fonts);
     failures += tbox_test_placeholder_run(fonts);
+    failures += tbox_test_controls_api_run(fonts);
     failures += tbox_test_inline_positioned_run(fonts);
     failures += tbox_test_focus_visible_run(fonts);
 
@@ -2053,28 +2055,28 @@ int tbox_test_context_run(void) {
             if (select_box != NULL && select_box->text_run_count == 1)
                 TBOX_TEST_ASSERT(string_view_equal_cstr(select_box->text_runs[0].text, "Bee"));
             TBOX_TEST_ASSERT(find_layout_box(root_box, select->first_child) == NULL);
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "b"));
             select_capture capture = { 0 };
             tbox_context_set_select_handler(ctx, record_select, &capture, NULL);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == select);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Gamma"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "Gamma"));
             TBOX_TEST_ASSERT(capture.count == 1 && strcmp(capture.value, "Gamma") == 0);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "b"));
             TBOX_TEST_ASSERT(capture.count == 2);
             tbox_context_run_frame(ctx, 160.0, 220.0, &list);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "b"));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ESCAPE, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 2);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             TBOX_TEST_ASSERT(capture.count == 3 && strcmp(capture.value, "Gamma") == 0);
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Gamma"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "Gamma"));
             tbox_context_run_frame(ctx, 160.0, 220.0, &list);
             root_box = tbox_context_hit_test(ctx, 10.0, 10.0);
             while (root_box != NULL && root_box->parent != NULL)
@@ -2094,17 +2096,17 @@ int tbox_test_context_run(void) {
                 if (popup.height > 0.0) {
                     double row_height = popup.height / 4.0;
                     tbox_context_dispatch_click(ctx, popup.x + 10.0, popup.y + row_height * 2.5);
-                    TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Gamma"));
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "Gamma"));
                     TBOX_TEST_ASSERT(capture.count == 3);
                     tbox_context_dispatch_click(ctx, popup.x + 10.0, popup.y + row_height * 0.5);
-                    TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "a"));
+                    TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "a"));
                     TBOX_TEST_ASSERT(capture.count == 4 && strcmp(capture.value, "a") == 0);
                 }
             }
-            TBOX_TEST_ASSERT(tbox_context_select_set_value(ctx, select, tbox_string_view_make("b", 1)));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "b"));
+            TBOX_TEST_ASSERT(tbox_context_control_set_value(ctx, (tbox_html_node *)select, tbox_string_view_make("b", 1)));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "b"));
             TBOX_TEST_ASSERT(capture.count == 4);
-            TBOX_TEST_ASSERT(!tbox_context_select_set_value(ctx, select, tbox_string_view_make("missing", 7)));
+            TBOX_TEST_ASSERT(!tbox_context_control_set_value(ctx, (tbox_html_node *)select, tbox_string_view_make("missing", 7)));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == button);
             tbox_context_close(ctx);
@@ -2146,9 +2148,9 @@ int tbox_test_context_run(void) {
                 TBOX_TEST_ASSERT(saw_two_first);
             }
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_END, true, false, false }));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "1"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "1"));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "8"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "8"));
             tbox_context_close(ctx);
         }
     }
@@ -2165,11 +2167,11 @@ int tbox_test_context_run(void) {
             tbox_display_list list;
             tbox_context_run_frame(ctx, 250.0, 300.0, &list);
             const tbox_html_node *select = tbox_html_document_root(tbox_context_document(ctx))->first_child;
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "a"));
-            TBOX_TEST_ASSERT(!tbox_context_select_set_value(ctx, select, tbox_string_view_make("b", 1)));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "a"));
+            TBOX_TEST_ASSERT(!tbox_context_control_set_value(ctx, (tbox_html_node *)select, tbox_string_view_make("b", 1)));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false }));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "c"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "c"));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
             tbox_context_run_frame(ctx, 250.0, 300.0, &list);
             bool group_label = false, disabled_label = false;
@@ -2182,7 +2184,7 @@ int tbox_test_context_run(void) {
             TBOX_TEST_ASSERT(group_label && disabled_label);
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_END, true, false, false }));
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "d"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "d"));
             tbox_context_close(ctx);
         }
     }
@@ -2568,7 +2570,7 @@ int tbox_test_context_run(void) {
             tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)radio_b, tbox_string_view_make("checked", 7), tbox_string_view_make(NULL, 0));
             tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)slider, tbox_string_view_make("value", 5), tbox_string_view_make("80", 2));
             tbox_html_node_set_text_content(tbox_context_document(ctx), (tbox_html_node *)textarea, tbox_string_view_make("Changed", 7));
-            TBOX_TEST_ASSERT(tbox_context_select_set_value(ctx, select, tbox_string_view_make("two", 3)));
+            TBOX_TEST_ASSERT(tbox_context_control_set_value(ctx, (tbox_html_node *)select, tbox_string_view_make("two", 3)));
             tbox_html_node_set_attribute(tbox_context_document(ctx), (tbox_html_node *)other, tbox_string_view_make("value", 5), tbox_string_view_make("outside", 7));
             tbox_context_run_frame(ctx, 320.0, 500.0, &list);
             const tbox_layout_box *reset_box = find_context_box(ctx, reset);
@@ -2583,7 +2585,7 @@ int tbox_test_context_run(void) {
             value = tbox_html_node_get_attribute(slider, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "20"));
             TBOX_TEST_ASSERT(textarea->first_child != NULL && string_view_equal_cstr(textarea->first_child->text.text, "Initial"));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "one"));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "one"));
             value = tbox_html_node_get_attribute(other, tbox_string_view_make("value", 5));
             TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "outside"));
             tbox_context_close(ctx);
@@ -3955,7 +3957,7 @@ int tbox_test_context_run(void) {
                 /* Choosing Um moves :checked to it; the `selected` attribute stays on Dois. */
                 TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, x, picker_y + row_height / 2.0));
                 tbox_context_run_frame(ctx, 400.0, 400.0, &list);
-                TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Um"));
+                TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "Um"));
                 TBOX_TEST_ASSERT(one->element.selectedness && !two->element.selectedness);
                 TBOX_TEST_ASSERT(tbox_html_node_get_attribute(two, tbox_string_view_make("selected", 8)) != NULL);
             }
@@ -4172,11 +4174,11 @@ int tbox_test_context_run(void) {
             for (int i = 0; i < downs; i++)
                 tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_DOWN, true, false, false });
             TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
-            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), expected[downs - 1]));
+            TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), expected[downs - 1]));
             if (downs == 2) {
                 /* Up from Tres on the closed select goes back to Dois. */
                 TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_UP, true, false, false }));
-                TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_select_value(ctx, select), "Dois"));
+                TBOX_TEST_ASSERT(string_view_equal_cstr(tbox_context_control_value(ctx, select), "Dois"));
             }
             tbox_context_close(ctx);
         }

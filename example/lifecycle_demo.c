@@ -5,11 +5,9 @@
 /* Lifecycle handlers are owned by the application and survive document
  * replacement. Register them before entering the loop to receive load. */
 static void show_status(tbox_app *app, const char *text) {
-    tbox_html_document *doc          = tbox_context_document(tbox_app_context(app));
-    tbox_css_selector_node_set nodes = tbox_css_selector_select(tbox_html_document_root(doc), "#status", 7);
-    if (nodes.count > 0)
-        tbox_html_node_set_text_content(doc, (tbox_html_node *)nodes.items[0], tbox_string_view_make(text, strlen(text)));
-    tbox_css_selector_node_set_destroy(&nodes);
+    tbox_html_node *node = tbox_app_get_element_by_id(app, tbox_string_view_make("status", 6));
+    if (node != NULL)
+        tbox_html_node_set_text_content(node->owner_document, node, tbox_string_view_make(text, strlen(text)));
 }
 static void loaded(tbox_app *app, void *userdata) {
     (void)userdata;

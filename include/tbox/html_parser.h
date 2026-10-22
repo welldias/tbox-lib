@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <tbox/string_view.h>
 
@@ -32,8 +33,14 @@ typedef struct tbox_html_attribute {
     tbox_string_view value;
 } tbox_html_attribute;
 
+typedef struct tbox_html_document tbox_html_document;
+
 typedef struct tbox_html_node {
     tbox_html_node_type type;
+
+    /* The document whose arena holds this node (set at creation, never
+     * changes, also while detached). */
+    tbox_html_document *owner_document;
 
     struct tbox_html_node *parent;
     struct tbox_html_node *first_child;
@@ -65,8 +72,8 @@ typedef struct tbox_html_node {
     };
 } tbox_html_node;
 
-/* Opaque: owns the arena backing every node/string reachable from its root. */
-typedef struct tbox_html_document tbox_html_document;
+/* Opaque: owns the arena backing every node/string reachable from its
+ * root. Declared above, before tbox_html_node. */
 
 /* Parses `length` bytes of UTF-8 HTML5 starting at `input` (need not be
  * NUL-terminated) and returns a document tree allocated entirely inside an
@@ -78,6 +85,13 @@ tbox_html_document *tbox_html_parse(const char *input, size_t length);
 
 const tbox_html_node *tbox_html_document_root(const tbox_html_document *document);
 
+/* Grows by one or more on every change to the tree, attributes or text
+ * made through this header's mutation functions (and on control state
+ * changed through <tbox/controls.h>). Never decreases. tbox_app compares it
+ * with the revision of its last drawn frame, so a DOM mutation needs no
+ * tbox_app_request_redraw. 0 for NULL. */
+uint64_t tbox_html_document_revision(const tbox_html_document *document);
+
 /* Frees the document's arena and everything allocated from it. */
 void tbox_html_document_destroy(tbox_html_document *document);
 
@@ -85,9 +99,49 @@ void tbox_html_document_destroy(tbox_html_document *document);
  * arena. */
 tbox_html_node *tbox_html_node_create(tbox_html_document *document, tbox_html_node_type type);
 
+/* A detached ELEMENT named `tag_name` (copied, ASCII-lowercased), with no
+ * attributes or children. NULL when `document` is NULL or the name is
+ * empty. */
+tbox_html_node *tbox_html_element_create(tbox_html_document *document, tbox_string_view tag_name);
+
+/* A detached TEXT node holding a copy of `text` (malformed UTF-8 becomes
+ * U+FFFD). NULL when `document` is NULL. */
+tbox_html_node *tbox_html_text_create(tbox_html_document *document, tbox_string_view text);
+
+/* A detached copy of `node` allocated in `document`: tag, attributes and
+ * text are copied; with `deep`, the whole subtree too. Runtime state
+ * (selectedness, focus_visible) is not copied. NULL for a DOCUMENT node. */
+tbox_html_node *tbox_html_node_clone(tbox_html_document *document, const tbox_html_node *node, bool deep);
+
 /* Appends `child` as the new last child of `parent`, wiring up
- * parent/first_child/last_child/next_sibling/prev_sibling. */
+ * parent/first_child/last_child/next_sibling/prev_sibling. Same rules as
+ * tbox_html_node_insert_before with a NULL reference. */
 void tbox_html_node_append_child(tbox_html_node *parent, tbox_html_node *child);
+
+/* Inserts `child` into `parent` right before `reference` (a child of
+ * `parent`), or last when `reference` is NULL. A `child` that is already in
+ * a tree is moved (detached first), like the DOM's insertBefore. No-op when
+ * either pointer is NULL, `reference` isn't a child of `parent`, or `child`
+ * is `parent` or one of its ancestors. */
+void tbox_html_node_insert_before(tbox_html_node *parent, tbox_html_node *child, tbox_html_node *reference);
+
+/* Inserts `child` as the first child of `parent`; same rules as
+ * tbox_html_node_insert_before. */
+void tbox_html_node_prepend_child(tbox_html_node *parent, tbox_html_node *child);
+
+/* Puts `new_node` where `old_node` is and detaches `old_node`. No-op when
+ * `old_node` has no parent or the insertion would be invalid. */
+void tbox_html_node_replace(tbox_html_node *old_node, tbox_html_node *new_node);
+
+/* Detaches every child of `node` (each keeps its own subtree and can be
+ * re-inserted). The memory stays in the document's arena. */
+void tbox_html_node_remove_children(tbox_html_node *node);
+
+/* Element-only navigation: skip TEXT/COMMENT/DOCTYPE siblings. NULL/0 for a
+ * NULL node. */
+tbox_html_node *tbox_html_node_first_element_child(const tbox_html_node *node);
+tbox_html_node *tbox_html_node_next_element_sibling(const tbox_html_node *node);
+size_t tbox_html_node_element_child_count(const tbox_html_node *node);
 
 /* Detaches `node` from its tree, relinking parent/sibling pointers around it.
  * `node` itself keeps its own subtree intact (its first_child/last_child are
@@ -134,16 +188,34 @@ void tbox_html_node_set_attribute(tbox_html_document *document, tbox_html_node *
  * document is destroyed, as with other DOM mutations. */
 bool tbox_html_node_remove_attribute(tbox_html_node *node, tbox_string_view name);
 
+/* True when `node` has attribute `name` (case-insensitive). */
+bool tbox_html_node_has_attribute(const tbox_html_node *node, tbox_string_view name);
+
+/* Boolean attributes (`checked`, `disabled`, `hidden`...): `on` adds the
+ * attribute with an empty value if missing, `!on` removes it. */
+void tbox_html_node_set_bool_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, bool on);
+
+/* The `class` attribute as a token list (classList). Names compare
+ * case-sensitively, as in `.name` selectors; a name that is empty or
+ * contains ASCII whitespace is rejected (false / no-op). add keeps the
+ * existing order and appends; remove drops every occurrence; toggle
+ * returns whether the class is present afterwards. */
+bool tbox_html_node_has_class(const tbox_html_node *node, tbox_string_view name);
+void tbox_html_node_add_class(tbox_html_document *document, tbox_html_node *node, tbox_string_view name);
+void tbox_html_node_remove_class(tbox_html_document *document, tbox_html_node *node, tbox_string_view name);
+bool tbox_html_node_toggle_class(tbox_html_document *document, tbox_html_node *node, tbox_string_view name);
+
 /* Linear search over node->element.attributes for `name`
  * (case-insensitive). Returns NULL if `node` isn't an ELEMENT or the
  * attribute doesn't exist -- same return pattern as
  * tbox_style_table_find/tbox_context_hit_test. */
 const tbox_html_attribute *tbox_html_node_get_attribute(const tbox_html_node *node, tbox_string_view name);
 
-/* Equivalent to DOM's `textContent` setter: removes ALL of `node`'s current
- * children (they become orphaned garbage in `document`'s arena -- no
- * individual free, same trade-off tbox_html_node_set_attribute already
- * accepts for its old attributes array), then creates exactly one new
+/* Equivalent to DOM's `textContent` setter: detaches ALL of `node`'s current
+ * children (as tbox_html_node_remove_children; their memory stays in
+ * `document`'s arena -- no individual free, same trade-off
+ * tbox_html_node_set_attribute already accepts for its old attributes
+ * array), then creates exactly one new
  * TEXT-type child (tbox_html_node_create with TBOX_HTML_NODE_TEXT) whose
  * text is `text` copied into `document`'s arena -- the caller doesn't need
  * to keep the original buffer alive after the call returns; malformed UTF-8

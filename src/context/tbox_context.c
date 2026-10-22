@@ -714,3 +714,41 @@ tbox_html_document *tbox_context_document(tbox_context *ctx) {
     }
     return ctx->document;
 }
+
+static tbox_html_node *tbox_context_find_id(tbox_html_node *node, tbox_string_view id) {
+    for (tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
+        if (child->type != TBOX_HTML_NODE_ELEMENT) continue;
+        const tbox_html_attribute *attribute = tbox_html_node_get_attribute(child, tbox_string_view_make("id", 2));
+        if (attribute != NULL && tbox_string_view_equal(attribute->value, id)) return child;
+        tbox_html_node *found = tbox_context_find_id(child, id);
+        if (found != NULL) return found;
+    }
+    return NULL;
+}
+
+/* The document root is reachable only as const through the public parser
+ * API, but the context owns the document: handing out mutable nodes here
+ * is what spares applications the cast. */
+static tbox_html_node *tbox_context_root(tbox_context *ctx) {
+    return ctx != NULL ? (tbox_html_node *)tbox_html_document_root(ctx->document) : NULL;
+}
+
+tbox_html_node *tbox_context_get_element_by_id(tbox_context *ctx, tbox_string_view id) {
+    tbox_html_node *root = tbox_context_root(ctx);
+    return root != NULL && id.size > 0 ? tbox_context_find_id(root, id) : NULL;
+}
+
+tbox_html_node *tbox_context_query(tbox_context *ctx, const char *selector, size_t length) {
+    tbox_html_node *root = tbox_context_root(ctx);
+    if (root == NULL) return NULL;
+    tbox_css_selector_query *query = tbox_css_selector_compile(selector, length, NULL);
+    tbox_html_node *found          = (tbox_html_node *)tbox_css_selector_query_first(query, root);
+    tbox_css_selector_query_destroy(query);
+    return found;
+}
+
+tbox_css_selector_node_set tbox_context_query_all(tbox_context *ctx, const char *selector, size_t length) {
+    tbox_html_node *root = tbox_context_root(ctx);
+    if (root == NULL) return (tbox_css_selector_node_set){ .items = NULL, .count = 0, .reserved_ = NULL };
+    return tbox_css_selector_select(root, selector, length);
+}

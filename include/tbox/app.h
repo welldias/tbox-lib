@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include <tbox/context.h>
+#include <tbox/css_selector.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -83,9 +84,25 @@ bool tbox_app_screenshot_from_files_with_options(const char *html_path, const ch
  * Event registrations use tbox_app_on_*. Returns NULL if app == NULL. */
 tbox_context *tbox_app_context(tbox_app *app);
 
+/* Lookups over the app's current document that return mutable nodes (no
+ * cast needed before a DOM mutation or a <tbox/controls.h> call). Nodes
+ * stay valid until that document is replaced (tbox_app_load_from_files) or
+ * the app is closed, even after they are removed from the tree. NULL app
+ * (or a build without a window backend): NULL / an empty set.
+ *
+ * get_element_by_id: the first element whose `id` equals `id` exactly.
+ * query: querySelector -- the first match in document order; NULL also on a
+ * selector syntax error. query_all: querySelectorAll, same result and
+ * ownership as tbox_css_selector_select (free with
+ * tbox_css_selector_node_set_destroy; items are const, but belong to this
+ * app's document and may be cast for mutation). */
+tbox_html_node *tbox_app_get_element_by_id(tbox_app *app, tbox_string_view id);
+tbox_html_node *tbox_app_query(tbox_app *app, const char *selector, size_t length);
+tbox_css_selector_node_set tbox_app_query_all(tbox_app *app, const char *selector, size_t length);
+
 /* Document event callbacks run on the UI thread and receive this app.
  * The app looks up its current context internally when registering. Use
- * tbox_app_context(app) inside a handler for DOM/control operations.
+ * tbox_app_query/<tbox/controls.h> inside a handler for DOM/control operations.
  * Registrations belong to the current document: successful load_from_files
  * removes them and releases their userdata. Register again in on_load for
  * the new document. NULL app is a no-op and never transfers ownership.
@@ -181,9 +198,12 @@ void tbox_app_on_error(tbox_app *app, tbox_app_error_handler handler, void *user
  * new HTML file's directory. */
 bool tbox_app_load_from_files(tbox_app *app, const char *html_path, const char *css_path);
 
-/* Request a frame after the caller mutates the document or application
- * state outside an input handler. The next tbox_app_step recomputes styles,
- * layout and painting. Multiple requests before a step coalesce. */
+/* Request a frame. Not needed after DOM changes made through the
+ * <tbox/html_parser.h> mutation functions or <tbox/controls.h>: the loop
+ * notices them by tbox_html_document_revision. Needed after writing a
+ * tbox_html_node's fields directly (e.g. `text.text`), which the revision
+ * can't see. The next tbox_app_step recomputes styles, layout and
+ * painting. Multiple requests before a step coalesce. */
 void tbox_app_request_redraw(tbox_app *app);
 
 /* Debug aid: outlines, in magenta, every region repainted by each frame
@@ -195,8 +215,8 @@ void tbox_app_set_debug_damage(tbox_app *app, bool enabled);
 /* One round of the loop: waits up to `max_wait_ms` for something to do
  * (-1: as long as it takes; 0: never blocks), then dispatches pointer and
  * keyboard input to the context, runs the tasks posted with tbox_app_post,
- * and recomputes a frame when input, resize, a task, an animation or
- * tbox_app_request_redraw changes visible state. It returns early, without
+ * and recomputes a frame when input, resize, a task, an animation, a DOM
+ * change or tbox_app_request_redraw changes visible state. It returns early, without
  * waiting the whole `max_wait_ms`, as soon as an event arrives, a task is
  * posted, or the library itself needs to run (an animation frame, the end
  * of a transition-delay, a scroll snap, a key repeat). Frames are paced by

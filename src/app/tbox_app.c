@@ -603,13 +603,17 @@ static double tbox_app_now(void) {
  * capped by `max_wait_ms` (-1: no cap). A frame already due but not
  * allowed yet (pending frame callback or no free buffer) waits for the
  * backend event that allows it. Posted tasks wake the poll by themselves. */
+static bool tbox_app_dom_changed(const tbox_app *app) {
+    return tbox_html_document_revision(tbox_context_document(app->ctx)) != app->drawn_revision;
+}
+
 static int tbox_app_timeout(const tbox_app *app, int32_t max_wait_ms) {
     if (max_wait_ms == 0 || app->hover_recheck)
         return 0;
     int32_t width  = 0;
     int32_t height = 0;
     tbox_window_backend_size(app->backend, &width, &height);
-    double next = app->redraw_requested || width != app->last_width || height != app->last_height ? -INFINITY : tbox_context_next_frame_time(app->ctx);
+    double next = app->redraw_requested || tbox_app_dom_changed(app) || width != app->last_width || height != app->last_height ? -INFINITY : tbox_context_next_frame_time(app->ctx);
     if (next == INFINITY || !tbox_window_backend_frame_ready(app->backend))
         return max_wait_ms < 0 ? -1 : max_wait_ms;
     double wait_ms = ceil((next - tbox_app_now()) * 1000.0);
@@ -661,7 +665,7 @@ static void tbox_app_wait_impl(tbox_app *app, int32_t max_wait_ms) {
 
     if (tbox_app_should_close(app)) return;
 
-    bool dirty            = app->redraw_requested;
+    bool dirty            = app->redraw_requested || tbox_app_dom_changed(app);
     app->redraw_requested = false;
 
     tbox_input_event event;
@@ -808,7 +812,7 @@ static void tbox_app_wait_impl(tbox_app *app, int32_t max_wait_ms) {
     }
 
     double now = tbox_app_now();
-    if (tbox_context_next_frame_time(app->ctx) <= now)
+    if (tbox_context_next_frame_time(app->ctx) <= now || tbox_app_dom_changed(app))
         dirty = true;
     if (!dirty)
         return;
@@ -820,6 +824,8 @@ static void tbox_app_wait_impl(tbox_app *app, int32_t max_wait_ms) {
     tbox_context_set_animation_time(app->ctx, now);
     tbox_display_list list;
     tbox_context_run_frame(app->ctx, (double)app->last_width, (double)app->last_height, &list);
+    /* Read after the frame: run_frame itself normalizes values in the DOM. */
+    app->drawn_revision = tbox_html_document_revision(tbox_context_document(app->ctx));
     if (tbox_window_backend_present(app->backend, &list)) {
         app->hover_recheck = true;
         if (app->load_pending) {

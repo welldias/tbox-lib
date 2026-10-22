@@ -6,6 +6,8 @@
 
 #include <tbox/context.h>
 #include "tbox_context_callbacks.h"
+#include "tbox_context_controls.h"
+#include "html_parser/tbox_html_document.h"
 #include <tbox/css_parser.h>
 #include <tbox/css_selector.h>
 #include <tbox/html_parser.h>
@@ -299,12 +301,22 @@ int tbox_context_date_compare(tbox_date a, tbox_date b);
 bool tbox_context_calendar_selection_allowed(const tbox_context *ctx);
 void tbox_context_date_open(tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_date_commit(tbox_context *ctx, const tbox_html_node *node, tbox_date date);
+void tbox_context_sanitize_input(tbox_context *ctx, tbox_html_node *node);
 void tbox_context_sanitize_inputs(tbox_context *ctx, tbox_html_node *node);
 void tbox_context_capture_form_defaults(tbox_context *ctx, const tbox_html_node *node);
 bool tbox_context_reset_form(tbox_context *ctx, const tbox_html_node *reset);
 bool tbox_context_submit_form(tbox_context *ctx, const tbox_html_node *activator, const tbox_html_node *submitter);
 bool tbox_context_option_disabled(const tbox_html_node *option);
 size_t tbox_context_option_count(const tbox_html_node *select);
+const tbox_html_node *tbox_context_option_at(const tbox_html_node *select, size_t index);
+/* The `label` attribute when non-empty, else the collapsed text; views
+ * live in the frame arena. */
+tbox_string_view tbox_context_option_label(tbox_context *ctx, const tbox_html_node *option);
+/* The chosen option's value (empty when none); applying a value returns
+ * whether an enabled option holds it (then it is chosen). The handler is
+ * not called. Backs tbox_control_value/_set_value. */
+tbox_string_view tbox_context_select_value(tbox_context *ctx, const tbox_html_node *select);
+bool tbox_context_select_set_value(tbox_context *ctx, const tbox_html_node *select, tbox_string_view value);
 tbox_select_field *tbox_context_select_field(tbox_context *ctx, const tbox_html_node *node);
 /* Marks each <option> under `node` (and its siblings) with whether its
  * select has it chosen now (tbox_html_node.selectedness, `option:checked`). */
@@ -397,6 +409,8 @@ bool tbox_context_is_image_input(const tbox_html_node *node);
 bool tbox_context_is_checkbox_input(const tbox_html_node *node);
 bool tbox_context_is_radio_input(const tbox_html_node *node);
 bool tbox_context_radio_select(tbox_context *ctx, const tbox_html_node *node);
+/* The checked radio in `node`'s group other than `node`, or NULL. */
+const tbox_html_node *tbox_context_radio_checked_peer(tbox_context *ctx, const tbox_html_node *node);
 void tbox_context_toggle_checkbox(tbox_context *ctx, const tbox_html_node *node);
 tbox_text_field *tbox_context_text_field(tbox_context *ctx, const tbox_html_node *node);
 void tbox_context_sync_text_value(tbox_context *ctx, tbox_text_field *field);

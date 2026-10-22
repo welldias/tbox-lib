@@ -50,6 +50,7 @@ mostra para onde foi cada um.
 | `html-base-href` | `<base href>` para CSS e imagens locais (`base-demo/`) |
 | `html-tables` | tabela básica, bordas colapsadas invisíveis, largura percentual de coluna |
 | `html-tables-layout` | `empty-cells: hide`, `table-layout: fixed`, linha `visibility: collapse`, `max-width`/`min-width`, `rules` |
+| `html-tables-styled` | exemplo de pedidos formatado: `caption`, `thead`/`tbody`/`tfoot`, total com `colspan`, linhas alternadas e hover, alinhamento numérico e status coloridos |
 | `css-style-attribute` | atributo `style`: cor de texto e de fundo, tamanho de fonte |
 
 ## Cores

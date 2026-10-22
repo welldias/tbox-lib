@@ -14,6 +14,7 @@ tbox_html_document *tbox_html_parse(const char *input, size_t length) {
 
     document->arena = tbox_arena_create(0);
     document->root  = NULL;
+    document->revision = 0;
 
     /* Malformed UTF-8 becomes U+FFFD once, here, so every later stage
      * (layout, measurement, editing) sees valid text. */
@@ -27,6 +28,10 @@ tbox_html_document *tbox_html_parse(const char *input, size_t length) {
 
 const tbox_html_node *tbox_html_document_root(const tbox_html_document *document) {
     return document->root;
+}
+
+uint64_t tbox_html_document_revision(const tbox_html_document *document) {
+    return document != NULL ? document->revision : 0;
 }
 
 void tbox_html_document_destroy(tbox_html_document *document) {

@@ -1,8 +1,8 @@
 # 10. Formulários e controles
 
 > - **Escopo:** os controles de formulário nativos do tbox, como se comportam com mouse e teclado, como ler valores e como estilizar os popups.
-> - **Código relacionado:** `include/tbox/context.h`, `src/context/tbox_context_{input,text,textarea,range,select,color,calendar,file,forms,control_theme}.c`, `src/layout/tbox_layout_{input,select,textarea}.c`
-> - **Veja também:** [Eventos e interatividade](06-eventos-e-interatividade.md), [Exemplos](04-exemplos.md), `example/keyboard_demo.c`, `example/control_theme_demo.c`
+> - **Código relacionado:** `include/tbox/context.h`, `include/tbox/controls.h`, `src/app/tbox_app_controls.c`, `src/context/tbox_context_{controls,input,text,textarea,range,select,color,calendar,file,forms,control_theme}.c`, `src/layout/tbox_layout_{input,select,textarea}.c`
+> - **Veja também:** [Eventos e interatividade](06-eventos-e-interatividade.md), [Exemplos](04-exemplos.md), `example/keyboard_demo.c`, `example/controls_demo.c`, `example/control_theme_demo.c`
 
 Os controles são desenhados e operados pelo próprio tbox (não usam widgets
 do sistema). São `inline-block` por padrão e aceitam CSS como qualquer
@@ -12,9 +12,15 @@ elemento.
 
 O estado de cada controle fica nos atributos do nó: `value` em campos de
 texto, data, cor, range, arquivo; presença de `checked` em checkbox e
-radio. A aplicação lê com `tbox_html_node_get_attribute` e altera com
-`tbox_html_node_set_attribute`/`_remove_attribute`. Mudanças feitas pelo
-usuário disparam `tbox_app_on_input` (ou `on_select` para `<select>`).
+radio. Exceções: o valor do `<textarea>` é o seu texto, e a escolha atual
+do `<select>` fica no contexto (o atributo `selected` é só a inicial).
+A aplicação lê e altera tudo pela mesma API de `include/tbox/controls.h`,
+que recebe o `tbox_app` (`tbox_control_value/_set_value`, `_checked/_set_checked`,
+`tbox_select_add_option`… — ver [Guia da API](03-guia-da-api.md#controles--controlsh)),
+que também mantém caret, popup e grupo de radios coerentes; mexer direto
+nos atributos continua valendo. Mudanças feitas pelo usuário disparam
+`tbox_app_on_input` (ou `on_select` para `<select>`); as feitas por código,
+não.
 
 ## Controles disponíveis
 
@@ -31,11 +37,11 @@ usuário disparam `tbox_app_on_input` (ou `on_select` para `<select>`).
 | `input type=date`, `datetime-local`, `month`, `week`, `time` | Abrem calendário / grade de meses / barras de hora. `min`/`max` respeitados. Valores em formato ISO, sem fuso. |
 | `input type=file` | Seletor de arquivos interno (a partir do diretório atual). `value` = nome; `tbox_context_file_path` = caminho absoluto. Um arquivo por vez. |
 | `input type=hidden` | Guarda `value`, não aparece nem recebe foco. |
-| `<select>` | Escolha única com `<option>` diretos ou dentro de `<optgroup>`; mouse, setas, Home/End, Enter/Espaço, Esc. `tbox_context_select_value` / `_select_set_value`. |
+| `<select>` | Escolha única com `<option>` diretos ou dentro de `<optgroup>`; mouse, setas, Home/End, Enter/Espaço, Esc. `tbox_control_value`/`_set_value`, `tbox_select_*` para opções. |
 
 `<optgroup label="…">` acrescenta um título não selecionável ao popup.
 As opções dentro de um grupo `disabled` aparecem desabilitadas e são
-ignoradas pela navegação e por `_select_set_value`. Feche explicitamente
+ignoradas pela navegação e por `tbox_control_set_value`. Feche explicitamente
 `<optgroup>` e `<option>`: o parser ainda não faz o fechamento implícito.
 Veja `tests/assets/forms-grouping.html`.
 

@@ -898,5 +898,109 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* DOM building API: creation copies its strings, insert_before moves an
+     * attached node, cycles and foreign references are rejected. */
+    {
+        tbox_html_document *doc = parse_cstr("<ul><li>b</li></ul><p></p>");
+        tbox_html_node *ul      = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        tbox_html_node *p       = ul->next_sibling;
+        tbox_html_node *b       = ul->first_child;
+        char tag[]              = "LI";
+        char text[]             = "a";
+        tbox_html_node *a       = tbox_html_element_create(doc, tbox_string_view_make(tag, 2));
+        tbox_html_node_append_child(a, tbox_html_text_create(doc, tbox_string_view_make(text, 1)));
+        tag[0] = text[0] = 'x';
+        TBOX_TEST_REQUIRE(a != NULL && a->first_child != NULL);
+        TBOX_TEST_ASSERT(text_eq(a->element.tag_name, "li"));
+        TBOX_TEST_ASSERT(text_eq(a->first_child->text.text, "a"));
+
+        tbox_html_node_prepend_child(ul, a);
+        TBOX_TEST_ASSERT(ul->first_child == a && a->next_sibling == b && b->prev_sibling == a && ul->last_child == b);
+        TBOX_TEST_ASSERT(tbox_html_node_element_child_count(ul) == 2);
+
+        tbox_html_node *c = tbox_html_node_clone(doc, b, true);
+        TBOX_TEST_REQUIRE(c != NULL && c->first_child != NULL);
+        TBOX_TEST_ASSERT(c->parent == NULL && text_eq(c->first_child->text.text, "b"));
+        TBOX_TEST_ASSERT(c->first_child->text.text.data != b->first_child->text.text.data);
+        tbox_html_node_insert_before(ul, c, b);
+        TBOX_TEST_ASSERT(a->next_sibling == c && c->next_sibling == b && b->prev_sibling == c);
+
+        tbox_html_node_insert_before(p, a, NULL); /* moves */
+        TBOX_TEST_ASSERT(a->parent == p && ul->first_child == c && c->prev_sibling == NULL);
+        tbox_html_node_insert_before(ul, p, b);   /* fine: p is not an ancestor of ul */
+        tbox_html_node_insert_before(a, ul, NULL); /* cycle: ul is an ancestor of a */
+        TBOX_TEST_ASSERT(ul->parent != a);
+        tbox_html_node_insert_before(ul, c, a); /* a is not a child of ul */
+        TBOX_TEST_ASSERT(ul->first_child == c && c->next_sibling == p);
+
+        tbox_html_node *d = tbox_html_element_create(doc, tbox_string_view_make("li", 2));
+        tbox_html_node_replace(b, d);
+        TBOX_TEST_ASSERT(ul->last_child == d && b->parent == NULL && p->next_sibling == d);
+        tbox_html_node_remove_children(ul);
+        TBOX_TEST_ASSERT(ul->first_child == NULL && ul->last_child == NULL && c->parent == NULL && p->parent == NULL);
+        tbox_html_node_append_child(ul, c); /* a detached ex-child can come back */
+        TBOX_TEST_ASSERT(ul->first_child == c && c->next_sibling == NULL);
+
+        tbox_html_node_set_text_content(doc, ul, tbox_string_view_make("t", 1));
+        TBOX_TEST_ASSERT(c->parent == NULL && c->prev_sibling == NULL && c->next_sibling == NULL);
+        TBOX_TEST_ASSERT(tbox_html_node_first_element_child(ul) == NULL);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* classList-style helpers and boolean attributes. */
+    {
+        tbox_html_document *doc = parse_cstr("<div class=\"  a  bb a \"></div>");
+        tbox_html_node *div     = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        tbox_string_view a      = tbox_string_view_make("a", 1);
+        tbox_string_view bb     = tbox_string_view_make("bb", 2);
+        tbox_string_view b      = tbox_string_view_make("b", 1);
+        TBOX_TEST_ASSERT(tbox_html_node_has_class(div, a) && tbox_html_node_has_class(div, bb));
+        TBOX_TEST_ASSERT(!tbox_html_node_has_class(div, b) && !tbox_html_node_has_class(div, tbox_string_view_make("a b", 3)));
+        tbox_html_node_remove_class(doc, div, a);
+        TBOX_TEST_ASSERT(text_eq(tbox_html_node_get_attribute(div, tbox_string_view_make("class", 5))->value, "bb"));
+        tbox_html_node_add_class(doc, div, b);
+        tbox_html_node_add_class(doc, div, b);
+        TBOX_TEST_ASSERT(text_eq(tbox_html_node_get_attribute(div, tbox_string_view_make("class", 5))->value, "bb b"));
+        TBOX_TEST_ASSERT(!tbox_html_node_toggle_class(doc, div, bb));
+        TBOX_TEST_ASSERT(tbox_html_node_toggle_class(doc, div, a));
+        TBOX_TEST_ASSERT(text_eq(tbox_html_node_get_attribute(div, tbox_string_view_make("class", 5))->value, "b a"));
+
+        tbox_string_view hidden = tbox_string_view_make("hidden", 6);
+        tbox_html_node_set_bool_attribute(doc, div, hidden, true);
+        tbox_html_node_set_bool_attribute(doc, div, hidden, true);
+        TBOX_TEST_ASSERT(tbox_html_node_has_attribute(div, hidden) && div->element.attribute_count == 2);
+        tbox_html_node_set_bool_attribute(doc, div, hidden, false);
+        TBOX_TEST_ASSERT(!tbox_html_node_has_attribute(div, hidden));
+        tbox_html_document_destroy(doc);
+    }
+
+    /* The revision moves on every mutation, not on reads or creation, and
+     * nodes know their document. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>a</p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        TBOX_TEST_ASSERT(p->owner_document == doc && tbox_html_document_revision(NULL) == 0);
+        uint64_t revision = tbox_html_document_revision(doc);
+        tbox_html_node *li = tbox_html_element_create(doc, tbox_string_view_make("b", 1));
+        (void)tbox_html_node_get_attribute(p, tbox_string_view_make("id", 2));
+        (void)tbox_html_node_has_class(p, tbox_string_view_make("x", 1));
+        tbox_html_node_remove(li); /* detached: nothing changes */
+        TBOX_TEST_ASSERT(li->owner_document == doc && tbox_html_document_revision(doc) == revision);
+        tbox_html_node_append_child(p, li);
+        TBOX_TEST_ASSERT(tbox_html_document_revision(doc) > revision);
+        revision = tbox_html_document_revision(doc);
+        tbox_html_node_set_attribute(doc, p, tbox_string_view_make("id", 2), tbox_string_view_make("x", 1));
+        TBOX_TEST_ASSERT(tbox_html_document_revision(doc) > revision);
+        revision = tbox_html_document_revision(doc);
+        TBOX_TEST_ASSERT(tbox_html_node_remove_attribute(p, tbox_string_view_make("id", 2)));
+        TBOX_TEST_ASSERT(tbox_html_document_revision(doc) > revision);
+        revision = tbox_html_document_revision(doc);
+        TBOX_TEST_ASSERT(!tbox_html_node_remove_attribute(p, tbox_string_view_make("id", 2)));
+        TBOX_TEST_ASSERT(tbox_html_document_revision(doc) == revision);
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_make("c", 1));
+        TBOX_TEST_ASSERT(tbox_html_document_revision(doc) > revision);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

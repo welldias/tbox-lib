@@ -85,6 +85,7 @@ pertencem a `app.h`/`src/app/tbox_app_events.c`.
 | `tbox_context_input.c`, `tbox_context_range.c`, `tbox_context_text.c`, `tbox_context_textarea.c` | controles de entrada e edição de texto |
 | `tbox_context_select.c`, `tbox_context_color.c`, `tbox_context_calendar.c`, `tbox_context_file.c` | controles com popup próprio |
 | `tbox_context_forms.c` | valores iniciais, submit e reset de formulários |
+| `tbox_context_controls.c` | implementação privada de `controls.h` (`tbox_context_control_*`; as buscas `tbox_context_query*` ficam em `tbox_context.c`, declarada em `tbox_context_controls.h`); as `tbox_context_select_*` de opções ficam em `tbox_context_select.c`. Os adaptadores públicos, que recebem o `tbox_app`, ficam em `src/app/tbox_app_controls.c` |
 | `tbox_context_control_theme.c` | CSS dos popups (`tbox-popup`/`tbox-part`) |
 | `tbox_context_transition.c` | `transition` (toda propriedade animável, `@starting-style`) |
 | `tbox_context_animation.c` | `animation` + `@keyframes` |

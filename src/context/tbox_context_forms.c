@@ -164,6 +164,20 @@ static bool tbox_context_radio_clear_peers(tbox_html_node *node, const tbox_html
     return changed;
 }
 
+static const tbox_html_node *tbox_context_radio_find_checked(const tbox_html_node *node, const tbox_html_node *chosen) {
+    for (; node != NULL; node = node->next_sibling) {
+        if (tbox_context_radio_same_group(node, chosen) &&
+            tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL) return node;
+        const tbox_html_node *found = tbox_context_radio_find_checked(node->first_child, chosen);
+        if (found != NULL) return found;
+    }
+    return NULL;
+}
+
+const tbox_html_node *tbox_context_radio_checked_peer(tbox_context *ctx, const tbox_html_node *node) {
+    return tbox_context_radio_find_checked(tbox_html_document_root(ctx->document), node);
+}
+
 bool tbox_context_radio_select(tbox_context *ctx, const tbox_html_node *node) {
     bool changed = tbox_context_radio_clear_peers(
         (tbox_html_node *)tbox_html_document_root(ctx->document), node);

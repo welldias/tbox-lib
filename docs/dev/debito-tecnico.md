@@ -128,6 +128,22 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   preventivamente.
 - **Toca:** `src/html_parser/`, `tbox_context`.
 
+### Restante da API de controles
+
+- **O que é:** a proposta de API de controles (ver
+  [Decisões](decisoes.md#camada-de-controles-separada-do-dom--2026-10-22))
+  foi entregue em parte (busca, DOM, valor/rótulo/checked/disabled/foco,
+  opções de `<select>`). Faltam: `innerHTML`/`insertAdjacentHTML` (exige
+  parser de fragmento), seleção e inserção em campos de texto por código,
+  `tbox_control_number/_set_number`, reset/submit/validação de formulário
+  por código (absorvendo `tbox_context_*_valid`), `<details open>`,
+  eventos por seletor para input/select, `on_change`, `on_focus/on_blur`.
+- **Também:** controles criados por código depois da abertura não têm
+  valor inicial registrado: o reset do formulário não os restaura
+  (`tbox_context_capture_form_defaults` só roda no `open`).
+- **Toca:** `include/tbox/controls.h`, `src/app/tbox_app_controls.c`, `src/context/`, `src/html_parser/`,
+  `src/app/`.
+
 ### Um documento por janela
 
 - **O que é:** `tbox_context` assume um documento, uma árvore de layout e uma
