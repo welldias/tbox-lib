@@ -337,6 +337,14 @@ void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node,
             baseline = box->content_box.y + (tbox_layout_style_line_height(node_style, face) - tbox_font_face_line_height(face)) / 2.0 +
                        tbox_font_face_ascent(face);
     }
+    /* A color input aligns like a button with one line of its text
+     * centered over the swatch, not by its bottom border edge. */
+    if (tbox_layout_is_color_input(node)) {
+        const tbox_font_face *face = tbox_layout_style_face(fonts, node_style);
+        if (face != NULL)
+            baseline = box->content_box.y + (box->content_box.height - tbox_font_face_line_height(face)) / 2.0 +
+                       tbox_font_face_ascent(face);
+    }
     word->atomic                  = box;
     word->atomic_node             = node;
     word->atomic_containing_width = containing_width;

@@ -3873,6 +3873,51 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* A block legend (the UA display) shrinks to its content, and inline
+     * content after it starts on a line of its own below it. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<fieldset id='f'><legend id='l'>Legend</legend><span id='s'>x</span></fieldset>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("#f { display: block; border: 2px solid black; padding: 6px; margin: 0; } #l { display: block; padding: 0 2px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table resolved      = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *f = find_box_for_node(layout, find_html_id(root, "f"));
+        const tbox_layout_box *l = find_box_for_node(layout, find_html_id(root, "l"));
+        TBOX_TEST_REQUIRE(f != NULL && l != NULL);
+        TBOX_TEST_ASSERT(l->border_box.width < 200.0 && l->border_box.width > 4.0);
+        double text_top = 1e300;
+        for (const tbox_layout_box *box = f->first_child; box != NULL; box = box->next_sibling)
+            for (size_t i = 0; i < box->text_run_count; i++)
+                if (box != l && box->text_runs[i].rect.y < text_top) text_top = box->text_runs[i].rect.y;
+        TBOX_TEST_ASSERT(text_top >= l->margin_box.y + l->margin_box.height);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* A color input sits on its line like one centered line of text: its
+     * middle matches a text field's whatever their heights. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<p><input id='c' type='color'><input id='t' value='x'></p>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr("input { display: inline-block; border: 1px solid black; } #c { width: 48px; height: 30px; padding: 2px; } #t { width: 100px; padding: 4px; }");
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table resolved      = tbox_style_resolve_tree(&arena, root, &source, 1);
+        const tbox_layout_box *layout  = tbox_layout_build(&arena, root, &resolved, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *c = find_box_for_node(layout, find_html_id(root, "c"));
+        const tbox_layout_box *t = find_box_for_node(layout, find_html_id(root, "t"));
+        TBOX_TEST_REQUIRE(c != NULL && t != NULL);
+        double c_middle = c->border_box.y + c->border_box.height / 2.0;
+        double t_middle = t->border_box.y + t->border_box.height / 2.0;
+        TBOX_TEST_ASSERT(fabs(c_middle - t_middle) < 1.0);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* Automatic table layout: an auto-width table shrinks to its content,
      * a percentage column takes its share, the UA spacing is 2px, and a
      * collapsed row still sizes the columns. */

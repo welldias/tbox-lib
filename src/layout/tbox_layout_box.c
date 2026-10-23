@@ -11,6 +11,14 @@ static tbox_layout_box *tbox_layout_legend_box(tbox_layout_box *box, const tbox_
     return NULL;
 }
 
+/* The first element child of a <fieldset>, when it is a <legend>. */
+static const tbox_html_node *tbox_layout_rendered_legend(const tbox_html_node *fieldset) {
+    if (!tbox_layout_tag(fieldset, "fieldset")) return NULL;
+    const tbox_html_node *first = fieldset->first_child;
+    while (first != NULL && first->type != TBOX_HTML_NODE_ELEMENT) first = first->next_sibling;
+    return tbox_layout_tag(first, "legend") ? first : NULL;
+}
+
 /* Builds and positions the box for one ELEMENT `node` (already known to not
  * be display:none -- the caller checks that before recursing, see
  * tbox_layout_build_children and tbox_layout_build) against `container`
@@ -113,6 +121,15 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
             double available            = content_width - offset;
             double minimum = outer.min - outside, maximum = outer.max - outside;
             content_width = available > maximum ? maximum : available < minimum ? minimum : available;
+        }
+        /* The rendered legend is block-level but shrink-to-fit (HTML's
+         * rendering rules), so it never shares a line with the content. */
+        if (!is_out_of_flow && style->width_keyword == TBOX_STYLE_SIZE_KEYWORD_NONE && node->parent != NULL &&
+            tbox_layout_rendered_legend(node->parent) == node) {
+            tbox_layout_intrinsic outer = tbox_layout_intrinsic_outer(arena, node, styles, fonts, images);
+            double outside              = margin_left + margin_right + horizontal_edges;
+            double minimum = outer.min - outside, maximum = outer.max - outside;
+            content_width = content_width > maximum ? maximum : content_width < minimum ? minimum : content_width;
         }
         if (is_svg)
             content_width = tbox_layout_svg_auto_width(node, style, vertical_edges);
@@ -546,32 +563,29 @@ tbox_layout_box *tbox_layout_build_element_sized(tbox_arena *arena, const tbox_h
 
     tbox_layout_build_checkbox_checkmark(arena, node, style, fonts, box);
 
-    if (tbox_layout_tag(node, "fieldset")) {
-        const tbox_html_node *first = node->first_child;
-        while (first != NULL && first->type != TBOX_HTML_NODE_ELEMENT) first = first->next_sibling;
-        if (tbox_layout_tag(first, "legend")) {
-            tbox_layout_box *legend = tbox_layout_legend_box(box->first_child, first);
-            if (legend != NULL) {
-                /* The rendered legend (HTML's rendering rules): its margin box
-                 * starts at the fieldset's top, the top border runs through
-                 * its middle, and the content follows it after padding-top.
-                 * It was laid out in the flow below the border and padding,
-                 * so every child moves up by the border, the legend further up
-                 * to the top; the box loses the border's height. */
-                double top    = box->border_box.y;
-                double height = legend->margin_box.height;
-                for (tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
-                    tbox_layout_translate(child, 0.0, -border_top);
-                /* (the legend may sit inside an anonymous line box) */
-                tbox_layout_translate(legend, 0.0, top - legend->margin_box.y);
-                double band = height > border_top ? (height - border_top) / 2.0 : 0.0;
-                box->border_box.y += band;
-                box->border_box.height -= band + border_top;
-                box->padding_box.y += band;
-                box->padding_box.height -= band + border_top;
-                box->content_box.y -= border_top;
-                box->margin_box.height -= border_top;
-            }
+    const tbox_html_node *rendered_legend = tbox_layout_rendered_legend(node);
+    if (rendered_legend != NULL) {
+        tbox_layout_box *legend = tbox_layout_legend_box(box->first_child, rendered_legend);
+        if (legend != NULL) {
+            /* The rendered legend (HTML's rendering rules): its margin box
+             * starts at the fieldset's top, the top border runs through
+             * its middle, and the content follows it after padding-top.
+             * It was laid out in the flow below the border and padding,
+             * so every child moves up by the border, the legend further up
+             * to the top; the box loses the border's height. */
+            double top    = box->border_box.y;
+            double height = legend->margin_box.height;
+            for (tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
+                tbox_layout_translate(child, 0.0, -border_top);
+            /* (the legend may sit inside an anonymous line box) */
+            tbox_layout_translate(legend, 0.0, top - legend->margin_box.y);
+            double band = height > border_top ? (height - border_top) / 2.0 : 0.0;
+            box->border_box.y += band;
+            box->border_box.height -= band + border_top;
+            box->padding_box.y += band;
+            box->padding_box.height -= band + border_top;
+            box->content_box.y -= border_top;
+            box->margin_box.height -= border_top;
         }
     }
 

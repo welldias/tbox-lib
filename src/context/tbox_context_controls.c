@@ -100,9 +100,7 @@ bool tbox_context_control_set_label(tbox_context *ctx, tbox_html_node *control, 
 }
 
 bool tbox_context_control_disabled(const tbox_html_node *control) {
-    if (control == NULL || control->type != TBOX_HTML_NODE_ELEMENT) return false;
-    if (tbox_context_is_element(control, "option")) return tbox_context_option_disabled(control);
-    return tbox_html_node_has_attribute(control, tbox_string_view_make("disabled", 8));
+    return tbox_html_node_disabled(control);
 }
 
 void tbox_context_control_set_disabled(tbox_context *ctx, tbox_html_node *control, bool disabled) {

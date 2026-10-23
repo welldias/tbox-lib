@@ -266,8 +266,9 @@ bool tbox_context_set_active_at(tbox_context *ctx, bool pressed, double x, doubl
  * desregistro de handler" for the full rationale.
  *
  * A click on an enabled input type=checkbox toggles its `checked` attribute
- * before handlers run. A disabled input does not dispatch
- * click handlers. A color input opens its RGB picker; clicks inside the
+ * before handlers run. A disabled control (input, button, select,
+ * textarea -- also inside a disabled fieldset) does not dispatch click
+ * handlers, including for clicks on its content. A color input opens its RGB picker; clicks inside the
  * picker adjust a channel. Date, datetime-local, and month inputs open a picker;
  * choosing a day or month, or confirming date and time, updates the value.
  * A reset input restores the initial values of controls in its form.

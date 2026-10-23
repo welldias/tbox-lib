@@ -4,6 +4,15 @@
 > - **Código relacionado:** `tests/assets/`, `tests/tbox_cmp.cpp`
 > - **Veja também:** [Fixtures](fixtures.md), [Ferramentas e testes](../12-ferramentas-e-testes.md), [Débito técnico](../dev/debito-tecnico.md)
 
+## Verificação dirigida de controles desativados — 2026-10-23
+
+`forms-disabled`, Build Debug, Firefox 158.0 headless, 800×600: DIFFERENT,
+SSIM 0,7345 (depois das correções de `legend` e `color`). As cores de desativado vêm do
+Firefox (texto `#6d6d6d`, borda `#dcdde1`, fundo branco a 50%, trilho e
+polegar do range cinza) e batem; a diferença vem do tema geral dos controles
+(altura, fonte, botão `Submit` com 240px, checkbox preenchido no Firefox,
+fundo do `body` não propagado).
+
 ## Verificação dirigida de SVG — 2026-10-21
 
 Complemento ao levantamento histórico abaixo, sem reexecutar os outros

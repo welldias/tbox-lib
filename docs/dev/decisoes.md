@@ -9,6 +9,22 @@ Cada item: **decisão** — motivo (versão em que foi tomada). Itens marcados
 formato atual do código. O texto integral original de cada versão está em
 `git show fe51140:ARCHITECTURE.md`.
 
+## Controles desativados (2026-10-23)
+
+- **Uma regra de "desativado" em `tbox_html_node_disabled`:** o seletor
+  `:disabled` e o contexto (foco, clique, popups, API) consultam a mesma
+  função, que inclui `<fieldset disabled>`. Antes cada lugar lia o atributo
+  por conta própria, e as respostas divergiam.
+- **Aparência só pela folha UA, não nos pintores:** regras `:disabled` em
+  vez de os pintores testarem o estado. Assim o CSS do autor substitui as
+  cores pela cascata normal, e a marca do checkbox/radio fica cinza de
+  graça por seguir `color`. Cores tiradas da captura do Firefox.
+- **Linha de base do `input type=color` centralizada, não a do Firefox:**
+  o Firefox usa o fim da área de conteúdo, o que só alinha porque o padding
+  dele é maior. Com o padding da tbox isso deixava a amostra deslocada; a
+  linha de texto centralizada alinha o centro com campos e botões
+  independentemente das alturas.
+
 ## Eventos de ciclo de vida (2026-10-21)
 
 - **Registros por aplicação, um slot por evento:** seguem on_key e sobrevivem

@@ -164,9 +164,17 @@ static bool tbox_context_dispatch_click_impl(tbox_context *ctx, double x, double
         return false;
     }
 
-    if (box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(box->node->element.tag_name, "input") && tbox_html_node_get_attribute(box->node, tbox_string_view_make("disabled", 8)) != NULL) {
-        tbox_context_set_focus(ctx, NULL);
-        return false;
+    /* A disabled control swallows the click, also on its content. */
+    for (const tbox_html_node *node = box->node; node != NULL; node = node->parent) {
+        if (node->type != TBOX_HTML_NODE_ELEMENT) continue;
+        tbox_string_view tag = node->element.tag_name;
+        if (!tbox_string_view_equal_cstr(tag, "button") && !tbox_string_view_equal_cstr(tag, "input") &&
+            !tbox_string_view_equal_cstr(tag, "select") && !tbox_string_view_equal_cstr(tag, "textarea")) continue;
+        if (tbox_html_node_disabled(node)) {
+            tbox_context_set_focus(ctx, NULL);
+            return false;
+        }
+        break;
     }
 
     const tbox_html_node *area = tbox_context_image_area_at(ctx, box, x, y);
@@ -218,7 +226,7 @@ static bool tbox_context_dispatch_click_impl(tbox_context *ctx, double x, double
     if (toggled)
         tbox_context_toggle_checkbox(ctx, box->node);
     bool selected_radio = tbox_context_is_radio_input(box->node) && tbox_context_radio_select(ctx, box->node);
-    bool reset_form     = tbox_context_is_reset_input(box->node) && tbox_context_reset_form(ctx, box->node);
+    bool reset_form     = tbox_context_is_reset_button(focus) && tbox_context_reset_form(ctx, focus);
     bool toggled_details = tbox_context_toggle_details(ctx, focus);
     bool cleared_search = false;
     if (tbox_context_is_search_input(focus)) {
@@ -240,7 +248,7 @@ static bool tbox_context_dispatch_click_impl(tbox_context *ctx, double x, double
             stepped = tbox_context_number_step(ctx, focus, y < column.y + column.height / 2.0 ? 1 : -1, false);
     }
     bool clicked   = tbox_context_dispatch_click_node(ctx, target);
-    bool submitted = tbox_context_is_submit_input(box->node) && tbox_context_submit_form(ctx, box->node, box->node);
+    bool submitted = tbox_context_is_submit_button(focus) && tbox_context_submit_form(ctx, focus, focus);
     return clicked || submitted || toggled || toggled_details || selected_radio || reset_form || cleared_search || changed_range || opened_color || (clicked_color && focus == previous_color) || clicked_date || opened_file || (clicked_file && focus == previous_file) || stepped;
 }
 
@@ -584,12 +592,12 @@ static bool tbox_context_dispatch_key_event(tbox_context *ctx, tbox_key_event ev
     }
     if ((event.key == TBOX_KEY_ENTER || event.key == TBOX_KEY_SPACE) && ctx->focused_node != NULL && tbox_context_node_attached(ctx, ctx->focused_node) && tbox_context_focusable(ctx, ctx->focused_node)) {
         tbox_string_view tag = ctx->focused_node->element.tag_name;
-        if (tbox_context_is_reset_input(ctx->focused_node)) {
+        if (tbox_context_is_reset_button(ctx->focused_node)) {
             bool reset   = tbox_context_reset_form(ctx, ctx->focused_node);
             bool clicked = tbox_context_dispatch_click_node(ctx, ctx->focused_node);
             return reset || clicked;
         }
-        if (tbox_context_is_submit_input(ctx->focused_node)) {
+        if (tbox_context_is_submit_button(ctx->focused_node)) {
             bool clicked   = tbox_context_dispatch_click_node(ctx, ctx->focused_node);
             bool submitted = tbox_context_submit_form(ctx, ctx->focused_node, ctx->focused_node);
             return clicked || submitted;

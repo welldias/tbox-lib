@@ -60,7 +60,8 @@ tbox_string_view tbox_control_label(tbox_app *app, const tbox_html_node *control
  * caption (text, checkbox...). */
 bool tbox_control_set_label(tbox_app *app, tbox_html_node *control, tbox_string_view text);
 
-/* `:disabled` semantics: the `disabled` attribute, or an option inside a
+/* `:disabled` semantics: the `disabled` attribute, a control inside a
+ * disabled fieldset (outside its first legend), or an option inside a
  * disabled optgroup. */
 bool tbox_control_disabled(const tbox_html_node *control);
 

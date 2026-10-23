@@ -212,6 +212,7 @@ mostra para onde foi cada um.
 | Fixture | Recurso |
 |---|---|
 | `forms-grouping` | `<fieldset>`/`<legend>`, `<details>`/`<summary>`, `<optgroup>` habilitado e desabilitado |
+| `forms-disabled` | aparência de cada controle ativo e `disabled`, e `<fieldset disabled>` (exceto o primeiro `<legend>`) |
 | `forms-progress-and-output` | `<output>`, `<progress>` determinado e indeterminado, `<meter>` |
 | `forms-accent-and-caret` | `accent-color` (padrão, herdado, por controle com `var()`, `meter` sem mudança), `caret-color` |
 | `forms-control-parts` | partes dos controles (`::slider-*`, `::picker-icon`, `::checkmark`, `::file-selector-button`, `::step-*`, `::clear-icon`, `::color-swatch`, `::selection`) |

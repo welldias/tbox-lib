@@ -594,11 +594,11 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
         ctx->open_select     = NULL;
         ctx->popup_highlight = NULL;
     }
-    if (ctx->open_color != NULL && (!tbox_context_node_attached(ctx, ctx->open_color) || !tbox_context_is_color_input(ctx->open_color) || tbox_html_node_get_attribute(ctx->open_color, tbox_string_view_make("disabled", 8)) != NULL))
+    if (ctx->open_color != NULL && (!tbox_context_node_attached(ctx, ctx->open_color) || !tbox_context_is_color_input(ctx->open_color) || tbox_html_node_disabled(ctx->open_color)))
         ctx->open_color = NULL;
-    if (ctx->open_date != NULL && (!tbox_context_node_attached(ctx, ctx->open_date) || !tbox_context_is_calendar_input(ctx->open_date) || tbox_html_node_get_attribute(ctx->open_date, tbox_string_view_make("disabled", 8)) != NULL))
+    if (ctx->open_date != NULL && (!tbox_context_node_attached(ctx, ctx->open_date) || !tbox_context_is_calendar_input(ctx->open_date) || tbox_html_node_disabled(ctx->open_date)))
         ctx->open_date = NULL;
-    if (ctx->open_file != NULL && (!tbox_context_node_attached(ctx, ctx->open_file) || !tbox_context_is_file_input(ctx->open_file) || tbox_html_node_get_attribute(ctx->open_file, tbox_string_view_make("disabled", 8)) != NULL))
+    if (ctx->open_file != NULL && (!tbox_context_node_attached(ctx, ctx->open_file) || !tbox_context_is_file_input(ctx->open_file) || tbox_html_node_disabled(ctx->open_file)))
         tbox_context_file_close(ctx);
 
     const tbox_html_node *root = tbox_html_document_root(ctx->document);
@@ -715,7 +715,7 @@ tbox_html_document *tbox_context_document(tbox_context *ctx) {
     return ctx->document;
 }
 
-static tbox_html_node *tbox_context_find_id(tbox_html_node *node, tbox_string_view id) {
+tbox_html_node *tbox_context_find_id(tbox_html_node *node, tbox_string_view id) {
     for (tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
         if (child->type != TBOX_HTML_NODE_ELEMENT) continue;
         const tbox_html_attribute *attribute = tbox_html_node_get_attribute(child, tbox_string_view_make("id", 2));

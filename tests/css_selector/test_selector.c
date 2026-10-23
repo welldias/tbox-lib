@@ -390,6 +390,23 @@ int tbox_test_css_selector_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* A disabled fieldset disables its controls and nested fieldsets,
+     * except inside its first legend (a later legend does not count). */
+    {
+        tbox_html_document *doc = parse_html_cstr("<fieldset disabled><legend><input id='free'></legend>"
+                                                 "<legend><input id='second'></legend><input id='in'>"
+                                                 "<fieldset><select id='deep'></select></fieldset></fieldset>"
+                                                 "<fieldset><input id='on'></fieldset>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_selector_node_set set = select_cstr(root, "#second:disabled, #in:disabled, #deep:disabled, fieldset fieldset:disabled");
+        TBOX_TEST_ASSERT(set.count == 4);
+        tbox_css_selector_node_set_destroy(&set);
+        set = select_cstr(root, "#free:enabled, #on:enabled");
+        TBOX_TEST_ASSERT(set.count == 2);
+        tbox_css_selector_node_set_destroy(&set);
+        tbox_html_document_destroy(doc);
+    }
+
     /* Required and optional apply only to supported input, select, and
      * textarea controls. The input type comparison is ASCII insensitive. */
     {

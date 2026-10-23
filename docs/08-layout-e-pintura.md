@@ -109,7 +109,13 @@ Regras que explicam a maior parte do comportamento:
   pinta.
 - Em `<details>` fechado, somente o primeiro `<summary>` gera caixa. Em
   `<fieldset>`, o primeiro `<legend>` começa no topo da caixa. A borda
-  superior passa pelo meio dela, e o conteúdo vem depois da legenda.
+  superior passa pelo meio dela, e o conteúdo vem depois da legenda. Ela é
+  `display: block` na folha UA, mas com largura automática encolhe até o
+  conteúdo (regra de renderização do HTML), e nunca divide linha com o
+  conteúdo que vem depois.
+- Um `input type=color` se alinha na linha como uma linha de texto
+  centralizada sobre a amostra, e não pela borda de baixo; assim fica
+  alinhado com campos de texto e botões de outra altura.
 - Em `<picture>`, o primeiro `<source>` anterior ao `<img>` com `srcset` e
   tipo de imagem aceito fornece o arquivo desenhado. Usa a primeira URL do
   `srcset`; fontes com `media` são ignoradas e o `<img src>` serve de fallback.

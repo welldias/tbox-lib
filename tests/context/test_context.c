@@ -2636,6 +2636,191 @@ int tbox_test_context_run(void) {
         }
     }
 
+    /* A <button> submits by default (also with an unknown type, and when the
+     * click lands on its content), resets with type=reset and only clicks
+     * with type=button. */
+    {
+        tbox_context *ctx = open_cstr("<div><form><input id='name' value='initial'>"
+                                      "<button id='go'><b>Go</b></button><button id='odd' type='bogus'>Odd</button>"
+                                      "<button id='plain' type='BUTTON'>Plain</button><button id='undo' type='reset'>Undo</button>"
+                                      "<button id='off' disabled>Off</button></form><button id='outside'>Out</button></div>",
+            "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 480.0, 200.0, &list);
+            const tbox_html_node *form    = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            tbox_html_node *name          = form->first_child;
+            const tbox_html_node *go      = name->next_sibling;
+            const tbox_html_node *odd     = go->next_sibling;
+            const tbox_html_node *plain   = odd->next_sibling;
+            const tbox_html_node *undo    = plain->next_sibling;
+            const tbox_html_node *off     = undo->next_sibling;
+            const tbox_html_node *outside = form->next_sibling;
+            submit_capture capture = { 0 };
+            tbox_context_set_submit_handler(ctx, record_submit, &capture, NULL);
+            const tbox_layout_box *box = find_context_box(ctx, go);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + box->border_box.width / 2.0,
+                    box->border_box.y + box->border_box.height / 2.0));
+            TBOX_TEST_ASSERT(capture.count == 1 && capture.form == form && capture.submitter == go);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == odd);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(capture.count == 2 && capture.submitter == odd);
+            box = find_context_box(ctx, plain);
+            if (box != NULL)
+                tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0);
+            box = find_context_box(ctx, off);
+            if (box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
+            box = find_context_box(ctx, outside);
+            if (box != NULL)
+                tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0);
+            TBOX_TEST_ASSERT(capture.count == 2);
+            tbox_html_node_set_attribute(tbox_context_document(ctx), name, tbox_string_view_make("value", 5),
+                tbox_string_view_make("changed", 7));
+            tbox_context_run_frame(ctx, 480.0, 200.0, &list);
+            box = find_context_box(ctx, undo);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(name, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "initial"));
+            TBOX_TEST_ASSERT(capture.count == 2);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Disabled controls look disabled (UA sheet): gray text, faint border,
+     * half-alpha white background; toggling `disabled` on an ancestor
+     * fieldset restyles the control on the next frame. */
+    {
+        tbox_context *ctx = open_cstr("<div><fieldset><input id='n' type='number' value='4'></fieldset></div>", "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 320.0, 120.0, &list);
+            tbox_html_node *fieldset    = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            const tbox_html_node *input = fieldset->first_child;
+            const tbox_layout_box *box  = find_context_box(ctx, input);
+            TBOX_TEST_ASSERT(box != NULL && box->style->color.r == 0 && box->style->background_color.a == 255 &&
+                             box->style->border_color.r == 128);
+            tbox_html_node_set_attribute(tbox_context_document(ctx), fieldset, tbox_string_view_make("disabled", 8),
+                tbox_string_view_make(NULL, 0));
+            tbox_context_run_frame(ctx, 320.0, 120.0, &list);
+            box = find_context_box(ctx, input);
+            TBOX_TEST_ASSERT(box != NULL && box->style->color.r == 109 && box->style->background_color.a == 128 &&
+                             box->style->border_color.r == 220);
+            tbox_html_node_remove_attribute(fieldset, tbox_string_view_make("disabled", 8));
+            tbox_context_run_frame(ctx, 320.0, 120.0, &list);
+            box = find_context_box(ctx, input);
+            TBOX_TEST_ASSERT(box != NULL && box->style->color.r == 0 && box->style->background_color.a == 255);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* Controls inside a disabled fieldset are disabled: not focusable, a
+     * checkbox does not toggle and a submit button does not submit. */
+    {
+        tbox_context *ctx = open_cstr("<div><form><fieldset disabled><legend><input id='free'></legend>"
+                                      "<input id='box' type='checkbox'><button id='go'>Go</button></fieldset>"
+                                      "<input id='after'></form></div>",
+            "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 480.0, 200.0, &list);
+            const tbox_html_node *fieldset = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child->first_child;
+            const tbox_html_node *free     = fieldset->first_child->first_child;
+            const tbox_html_node *box_node = fieldset->first_child->next_sibling;
+            const tbox_html_node *go       = box_node->next_sibling;
+            const tbox_html_node *after    = fieldset->next_sibling;
+            submit_capture capture = { 0 };
+            tbox_context_set_submit_handler(ctx, record_submit, &capture, NULL);
+            TBOX_TEST_ASSERT(tbox_context_control_disabled(box_node) && tbox_context_control_disabled(go) &&
+                             !tbox_context_control_disabled(free));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == free);
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_TAB, true, false, false }));
+            TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == after);
+            const tbox_layout_box *box = find_context_box(ctx, box_node);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
+            TBOX_TEST_ASSERT(!tbox_html_node_has_attribute(box_node, tbox_string_view_make("checked", 7)));
+            box = find_context_box(ctx, go);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL)
+                TBOX_TEST_ASSERT(!tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
+            TBOX_TEST_ASSERT(capture.count == 0 && tbox_context_focused_node(ctx) == NULL);
+            tbox_context_close(ctx);
+        }
+    }
+
+    /* The form attribute moves a control to the <form> with that id; an id
+     * that is missing or not a form leaves it without a form. */
+    {
+        tbox_context *ctx = open_cstr("<div><form id='f'><input id='inner' value='a'><input id='lost' form='nope'>"
+                                      "<input type='radio' name='r' checked></form>"
+                                      "<form id='g'><input id='moved' form='f' value='b'><button id='go' form='f'>Go</button>"
+                                      "<button id='undo' type='reset' form='f'>Undo</button>"
+                                      "<input type='radio' name='r' form='f'><input type='radio' name='r' checked></form></div>",
+            "", fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_display_list list;
+            tbox_context_run_frame(ctx, 640.0, 200.0, &list);
+            const tbox_html_node *f   = tbox_html_document_root(tbox_context_document(ctx))->first_child->first_child;
+            tbox_html_node *inner     = f->first_child;
+            const tbox_html_node *lost = inner->next_sibling;
+            const tbox_html_node *radio_f = lost->next_sibling;
+            const tbox_html_node *g   = f->next_sibling;
+            tbox_html_node *moved     = g->first_child;
+            const tbox_html_node *go  = moved->next_sibling;
+            const tbox_html_node *undo = go->next_sibling;
+            const tbox_html_node *radio_moved = undo->next_sibling;
+            const tbox_html_node *radio_g = radio_moved->next_sibling;
+            submit_capture capture = { 0 };
+            tbox_context_set_submit_handler(ctx, record_submit, &capture, NULL);
+            TBOX_TEST_ASSERT(tbox_context_control_focus(ctx, moved));
+            TBOX_TEST_ASSERT(tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false }));
+            TBOX_TEST_ASSERT(capture.count == 1 && capture.form == f && capture.submitter == NULL);
+            TBOX_TEST_ASSERT(tbox_context_control_focus(ctx, (tbox_html_node *)lost));
+            tbox_context_dispatch_key(ctx, &(tbox_key_event){ TBOX_KEY_ENTER, true, false, false });
+            TBOX_TEST_ASSERT(capture.count == 1);
+            const tbox_layout_box *box = find_context_box(ctx, go);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
+            TBOX_TEST_ASSERT(capture.count == 2 && capture.form == f && capture.submitter == go);
+            /* Checking the moved radio unchecks its peer in f, not the one in g. */
+            box = find_context_box(ctx, radio_moved);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
+            TBOX_TEST_ASSERT(!tbox_html_node_has_attribute(radio_f, tbox_string_view_make("checked", 7)) &&
+                             tbox_html_node_has_attribute(radio_g, tbox_string_view_make("checked", 7)));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), inner, tbox_string_view_make("value", 5),
+                tbox_string_view_make("x", 1));
+            tbox_html_node_set_attribute(tbox_context_document(ctx), moved, tbox_string_view_make("value", 5),
+                tbox_string_view_make("y", 1));
+            tbox_context_run_frame(ctx, 640.0, 200.0, &list);
+            box = find_context_box(ctx, undo);
+            TBOX_TEST_ASSERT(box != NULL);
+            if (box != NULL)
+                TBOX_TEST_ASSERT(tbox_context_dispatch_click(ctx, box->border_box.x + 2.0, box->border_box.y + 2.0));
+            const tbox_html_attribute *value = tbox_html_node_get_attribute(inner, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "a"));
+            value = tbox_html_node_get_attribute(moved, tbox_string_view_make("value", 5));
+            TBOX_TEST_ASSERT(value != NULL && string_view_equal_cstr(value->value, "b"));
+            TBOX_TEST_ASSERT(tbox_html_node_has_attribute(radio_f, tbox_string_view_make("checked", 7)) &&
+                             !tbox_html_node_has_attribute(radio_moved, tbox_string_view_make("checked", 7)));
+            tbox_context_close(ctx);
+        }
+    }
+
     /* Search inputs edit like text fields and expose a pointer/Escape clear. */
     {
         tbox_context *ctx = open_cstr("<div><input id='query' type='SEARCH' value='find me'>"

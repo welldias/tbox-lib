@@ -1380,3 +1380,45 @@ Defeitos apontados pela comparação de todos os fixtures com o Firefox
   API pública e comportamento preservados.
 - Teste de integração compila ambos os arquivos de produção; builds sem
   Wayland/Fontconfig mantêm os stubs correspondentes.
+
+## 2026-10-23 — `<button>` envia e reseta o form
+
+- `<button>` sem `type`, com `type=submit` ou com valor desconhecido envia o
+  `<form>` ancestral (clique ou Enter/Espaço), com o botão como `submitter`;
+  `type=reset` restaura o form; `type=button` só dispara clique, como no HTML.
+- No clique, envio e reset agora partem do controle focável atingido, não da
+  caixa sob o ponteiro: clicar no conteúdo do botão funciona, e um controle
+  que não pode receber foco (desativado, oculto) não envia nem reseta.
+
+## 2026-10-23 — `fieldset disabled` e atributo `form`
+
+- `<fieldset disabled>` desativa os controles descendentes (exceto dentro do
+  primeiro `<legend>`), como no HTML. A regra "está desativado" ficou numa
+  função só, `tbox_html_node_disabled`, usada por `:disabled`/`:enabled`,
+  foco, clique, popups, pintura do `input type=file` e
+  `tbox_control_disabled`.
+- Clicar num controle desativado (ou no conteúdo dele) não dispara mais
+  `on_click`; antes isso só valia para `<input>`.
+- O form de um controle passou a ser o "form owner" do HTML: o atributo
+  `form="id"` liga o controle a um `<form>` em qualquer lugar do documento,
+  para envio, reset e grupos de radio. `<option>` segue o seu `<select>`.
+
+## 2026-10-23 — Aparência de controles desativados
+
+- Regras `:disabled` na folha UA (`tbox_ua_style.c`) para `input`,
+  `button`, `select` e `textarea`: texto `#6d6d6d`, borda `#dcdde1`, fundo
+  branco a 50% onde havia branco, e partes do range em cinza. Cores medidas
+  na captura do Firefox. Valem também dentro de `<fieldset disabled>`.
+- A folha UA ganhou `border-color` e cores com alfa.
+- Fixture novo `forms-disabled`.
+
+## 2026-10-23 — Alinhamento de `legend` e `input type=color`
+
+- `<legend>` passou de `inline-block` a `display: block` na folha UA (o
+  valor calculado do Firefox); o legend renderizado com largura automática
+  encolhe até o conteúdo. Antes, conteúdo inline depois dele (sem `<p>`)
+  subia para a linha do legend.
+- `input type=color` não tem texto, então se alinhava pela borda de baixo e
+  ficava mais alto que o `date` ao lado. Agora a linha de base é a de uma
+  linha de texto centralizada na área de conteúdo, como num botão.
+

@@ -15,6 +15,12 @@ extern "C" {
  * pushed onto the tree builder's open-elements stack. */
 bool tbox_html_is_void_element(tbox_string_view tag_name);
 
+/* HTML's disabled state: button, input, select, textarea and fieldset
+ * with `disabled` or inside a disabled <fieldset> (except within its first
+ * <legend>); optgroup with `disabled`; option with `disabled` or in a
+ * disabled optgroup. False for every other node. */
+bool tbox_html_node_disabled(const tbox_html_node *node);
+
 #ifdef __cplusplus
 }
 #endif

@@ -28,14 +28,14 @@ não.
 
 | Elemento | Comportamento |
 |---|---|
-| `<button>`, `input type=button` | Clique, Enter ou Espaço disparam `on_click`. `disabled` não ativa. |
+| `<button>`, `input type=button` | Clique, Enter ou Espaço disparam `on_click`. `disabled` não ativa. Dentro de um `<form>`, `<button>` sem `type` (ou com `type=submit` ou valor desconhecido) também envia e `type=reset` restaura; só `type=button` não mexe no form. |
 | `input type=submit` / `reset` | Envia (`on_submit`) ou restaura os valores iniciais do `<form>`. |
 | `input type=image` | Botão com imagem (`src`, `width`/`height`); mostra `alt` se a imagem falhar. |
 | `input type=checkbox` / `radio` | Clique ou Espaço. Radios com o mesmo `name` no mesmo form se excluem. `:checked` reflete o estado. |
 | `input` de texto: `text`, `search`, `email`, `url`, `tel`, `password`, `number` | Edição UTF-8 com cursor, seleção (Shift+setas, arrasto, duplo clique, Ctrl+A), clipboard, rolagem horizontal. `search` tem botão de limpar e Esc limpa. `password` mascara e não copia. `number` aceita setas/botões e `step`/`min`/`max`. |
 | `<textarea>` | Multilinha, quebra e rolagem internas; `rows`/`cols` definem o tamanho inicial (CSS vence). Quebra depois dos espaços (que ficam pendurados no fim da linha); só uma palavra mais larga que a linha é cortada. Usa espaço e tab como oportunidades de quebra; ainda não aproveita hífen e barra como o texto comum (ver [débito técnico](dev/debito-tecnico.md#quebra-de-linha-do-textarea)). Veja `tests/assets/forms-textarea-wrapping.html`. |
 | `input type=range` | Slider; clique, arrasto, setas por `step`, Home/End. Padrão 0–100. |
-| `input type=color` | Amostra; abre um seletor RGB (clique/arrasto nos canais, teclado). Valor `#rrggbb`. |
+| `input type=color` | Amostra; abre um seletor RGB (clique/arrasto nos canais, teclado). Valor `#rrggbb`. Na linha, centraliza-se como uma linha de texto (alinha com campos e botões). |
 | `input type=date`, `datetime-local`, `month`, `week`, `time` | Abrem calendário / grade de meses / barras de hora. `min`/`max` respeitados. Valores em formato ISO, sem fuso. |
 | `input type=file` | Seletor de arquivos interno (a partir do diretório atual). `value` = nome; `tbox_context_file_path` = caminho absoluto. Um arquivo por vez. |
 | `input type=hidden` | Guarda `value`, não aparece nem recebe foco. |
@@ -54,6 +54,30 @@ Quando `<legend>` é o primeiro elemento filho, ela começa no topo do
 interrompida exatamente na largura da legenda. O conteúdo segue logo abaixo
 da legenda mais o padding. A interrupção acompanha bordas retas; bordas
 arredondadas e estilos de borda complexos não têm tratamento especial.
+
+`<fieldset disabled>` desativa todos os controles dentro dele (inclusive
+fieldsets aninhados), exceto os que estão no seu primeiro `<legend>`: eles
+casam com `:disabled`, não recebem foco nem clique, não enviam e
+`tbox_control_disabled` devolve true. O atributo `disabled` dos próprios
+controles continua igual; a regra fica em `tbox_html_node_disabled`
+(`src/html_parser/`), usada pelo seletor e pelo contexto.
+
+### Aparência de desativado
+
+A folha UA desenha os controles desativados como o Firefox, só com regras
+`:disabled` (o CSS do autor as substitui normalmente):
+
+- `input`, `button`, `select`, `textarea`: `color: #6d6d6d` e
+  `border-color: #dcdde1`. A cor do texto também acinzenta as marcas do
+  checkbox e do radio (com `accent-color: auto`), a seta do select e os
+  ícones do number e da busca.
+- Os controles que têm fundo branco passam a branco com 50% de opacidade.
+- Range: trilho `#e8eaee`, preenchimento `#c1c3cc`, polegar `#8f8f9d`.
+- `::file-selector-button`, `option` e `optgroup` mantêm as cores de
+  desativado que já tinham.
+
+O mesmo vale para os controles dentro de um `<fieldset disabled>`. Veja
+`tests/assets/forms-disabled.html`.
 Veja `tests/assets/forms-grouping.html`.
 
 ## Indicadores e resultado
@@ -85,8 +109,15 @@ aplicação decide no handler de submit.
 ## Envio
 
 `tbox_app_on_submit(app, handler, ud, destroy)` recebe o `<form>` e o botão que
-enviou (`NULL` quando foi Enter num campo). O tbox não navega nem faz
-requisição: leia os campos (por seletor dentro do form) e aja.
+enviou — `input type=submit` ou `<button>` de envio — (`NULL` quando foi Enter
+num campo). O tbox não navega nem faz requisição: leia os campos e aja.
+
+O form de um controle (envio, reset e grupo de radios) é o `<form>`
+ancestral, ou o indicado pelo atributo `form="id"`, que vale mesmo com o
+controle fora dele (ou dentro de outro form). Se o id não existe ou não é
+um `<form>`, o controle fica sem form. Uma `<option>` segue o form do seu
+`<select>`. Com `form=`, o controle não está dentro do form: ler os campos
+"por seletor dentro do form" não o encontra; use `[form=id]` também.
 
 ## Cor de destaque
 

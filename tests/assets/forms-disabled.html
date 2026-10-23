@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <style>
+    body {
+      margin: 20px;
+      background: #f4f7fb;
+      color: #263548;
+      font-size: 15px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 24px;
+    }
+
+    table {
+      border-spacing: 12px 6px;
+    }
+
+    th {
+      text-align: left;
+    }
+
+    td:first-child {
+      width: 110px;
+    }
+
+    input:not([type]),
+    input[type=search],
+    input[type=number],
+    select {
+      width: 170px;
+    }
+
+    textarea {
+      width: 170px;
+      height: 36px;
+    }
+
+    fieldset {
+      background: white;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Disabled controls</h1>
+  <table>
+    <tr>
+      <th>Control</th>
+      <th>Enabled</th>
+      <th>Disabled</th>
+    </tr>
+    <tr>
+      <td>text</td>
+      <td><input value="Text"></td>
+      <td><input value="Text" disabled></td>
+    </tr>
+    <tr>
+      <td>search, number</td>
+      <td><input type="search" value="Find"></td>
+      <td><input type="number" value="42" disabled></td>
+    </tr>
+    <tr>
+      <td>select</td>
+      <td><select>
+          <option>Option</option>
+        </select></td>
+      <td><select disabled>
+          <option>Option</option>
+        </select></td>
+    </tr>
+    <tr>
+      <td>textarea</td>
+      <td><textarea>Text</textarea></td>
+      <td><textarea disabled>Text</textarea></td>
+    </tr>
+    <tr>
+      <td>buttons</td>
+      <td><button>Button</button> <input type="submit"></td>
+      <td><button disabled>Button</button> <input type="submit" disabled></td>
+    </tr>
+    <tr>
+      <td>check, radio</td>
+      <td><input type="checkbox" checked> <input type="checkbox"> <input type="radio" checked></td>
+      <td><input type="checkbox" checked disabled> <input type="checkbox" disabled> <input type="radio" checked
+          disabled></td>
+    </tr>
+    <tr>
+      <td>range</td>
+      <td><input type="range" value="60"></td>
+      <td><input type="range" value="60" disabled></td>
+    </tr>
+    <tr>
+      <td>color, date</td>
+      <td><input type="color" value="#52709a"> <input type="date" value="2026-10-23"></td>
+      <td><input type="color" value="#52709a" disabled> <input type="date" value="2026-10-23" disabled></td>
+    </tr>
+  </table>
+  <fieldset disabled>
+    <legend>Disabled fieldset <input type="checkbox" checked></legend>
+    <input value="Inside"> <button>Inside</button> <input type="checkbox" checked>
+  </fieldset>
+</body>
+
+</html>

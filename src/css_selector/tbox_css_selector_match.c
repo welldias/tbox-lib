@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "base/tbox_string.h"
+#include "html_parser/tbox_html_node.h"
 
 /* Current hover target for the "hover" PSEUDO, set by
  * tbox_css_selector_set_hover_context. The one global/static mutable state
@@ -318,12 +319,7 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
                            tbox_string_view_equal_cstr(tag, "option") || tbox_string_view_equal_cstr(tag, "optgroup") ||
                            tbox_string_view_equal_cstr(tag, "fieldset");
             if (!control) return false;
-            bool disabled = tbox_css_selector_find_attribute(node, tbox_string_view_make("disabled", 8)) != NULL;
-            /* An option in a disabled optgroup is disabled too (HTML). */
-            const tbox_html_node *group = node->parent;
-            if (!disabled && tbox_string_view_equal_cstr(tag, "option") && group != NULL && group->type == TBOX_HTML_NODE_ELEMENT &&
-                tbox_string_view_equal_cstr(group->element.tag_name, "optgroup"))
-                disabled = tbox_css_selector_find_attribute(group, tbox_string_view_make("disabled", 8)) != NULL;
+            bool disabled = tbox_html_node_disabled(node);
             return tbox_string_view_equal_cstr(item->name, "disabled") ? disabled : !disabled;
         }
         if (tbox_string_view_equal_cstr(item->name, "required") || tbox_string_view_equal_cstr(item->name, "optional")) {

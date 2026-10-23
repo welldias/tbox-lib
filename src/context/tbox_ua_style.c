@@ -94,6 +94,7 @@ typedef enum tbox_ua_property {
     TBOX_UA_PROP_MARGIN_INLINE,
     TBOX_UA_PROP_CONTENT,
     TBOX_UA_PROP_BORDER_SPACING,
+    TBOX_UA_PROP_BORDER_COLOR,
 } tbox_ua_property;
 
 typedef enum tbox_ua_value_kind {
@@ -197,6 +198,8 @@ static const char *tbox_ua_property_name(tbox_ua_property property) {
         return "min-height";
     case TBOX_UA_PROP_SCROLLBAR_WIDTH:
         return "scrollbar-width";
+    case TBOX_UA_PROP_BORDER_COLOR:
+        return "border-color";
     }
     return NULL;
 }
@@ -271,6 +274,7 @@ static tbox_ua_value_kind tbox_ua_expected_kind(tbox_ua_property property) {
         return TBOX_UA_VALUE_BORDER;
     case TBOX_UA_PROP_COLOR:
     case TBOX_UA_PROP_BACKGROUND_COLOR:
+    case TBOX_UA_PROP_BORDER_COLOR:
         return TBOX_UA_VALUE_COLOR;
     default:
         return TBOX_UA_VALUE_KEYWORD;
@@ -635,6 +639,10 @@ tbox_ua_style_config tbox_ua_style_config_default(void) {
 #define UA_SEL_ATTR(tag, attribute) { (tag), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL, (attribute), NULL }
 #define UA_SEL_DESC(ancestors, tag) { (tag), TBOX_UA_QUALIFIER_NONE, NULL, NULL, NULL, NULL, (ancestors) }
 #define UA_SEL_PART(tag, part) { (tag), TBOX_UA_QUALIFIER_NONE, NULL, NULL, (part), NULL, NULL }
+/* `tag:state` and `input[type=t]:state`. */
+#define UA_SEL_STATE(tag, state) { (tag), TBOX_UA_QUALIFIER_NONE, NULL, (state), NULL, NULL, NULL }
+#define UA_SEL_INPUT_STATE(input_type, state) { "input", TBOX_UA_QUALIFIER_INPUT_TYPE, (input_type), (state), NULL, NULL, NULL }
+#define UA_COLOR_A(property, red, green, blue, alpha) { (property), TBOX_UA_VALUE_COLOR, { .color = { (red), (green), (blue), (alpha) } } }
 #define UA_RULE_SELECTORS(count, selectors, ...) { (selectors), (count), UA_DECLARATIONS(__VA_ARGS__), UA_DECLARATION_COUNT(__VA_ARGS__) }
 #define UA_BORDER_SIDE(property, width, red, green, blue)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      \
     {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          \
@@ -665,7 +673,7 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         /* As browsers: padding 0.35em 0.75em 0.625em at 16px, 2px inline
          * margins, a 2px inline padding around the legend. */
         UA_RULE_1("fieldset", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_BORDER(1, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_PADDING, 6, 12, 10, 12), UA_QUAD(TBOX_UA_PROP_MARGIN, 0, 2, 0, 2)),
-        UA_RULE_1("legend", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 2, 0, 2)),
+        UA_RULE_1("legend", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_QUAD(TBOX_UA_PROP_PADDING, 0, 2, 0, 2)),
         UA_RULE_1("ruby", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK)),
         UA_RULE_1("rt", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE), UA_LEN(TBOX_UA_PROP_FONT_SIZE, 50, TBOX_UA_UNIT_PERCENT)),
         UA_RULE_1("rp", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_NONE)),
@@ -711,6 +719,11 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         UA_RULE_FOCUS("select", UA_FOCUS_RING),
         UA_RULE_1("textarea", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_BORDER(1, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_PADDING, 4, 4, 4, 4), UA_LEN(TBOX_UA_PROP_BORDER_RADIUS, 4, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255)),
         UA_RULE_FOCUS("textarea", UA_FOCUS_RING),
+        /* Disabled controls (as Firefox draws them): gray text, which also
+         * grays checkbox/radio marks, the select arrow and the number and
+         * search icons; a faint border; white backgrounds at half alpha. */
+        UA_RULE_SELECTORS(4, ((const tbox_ua_selector[]){ UA_SEL_STATE("input", "disabled"), UA_SEL_STATE("button", "disabled"), UA_SEL_STATE("select", "disabled"), UA_SEL_STATE("textarea", "disabled") }), UA_COLOR(TBOX_UA_PROP_COLOR, 109, 109, 109), UA_COLOR(TBOX_UA_PROP_BORDER_COLOR, 220, 221, 225)),
+        UA_RULE_SELECTORS(15, ((const tbox_ua_selector[]){ UA_SEL_STATE("select", "disabled"), UA_SEL_STATE("textarea", "disabled"), UA_SEL_INPUT_STATE("checkbox", "disabled"), UA_SEL_INPUT_STATE("color", "disabled"), UA_SEL_INPUT_STATE("date", "disabled"), UA_SEL_INPUT_STATE("datetime-local", "disabled"), UA_SEL_INPUT_STATE("time", "disabled"), UA_SEL_INPUT_STATE("week", "disabled"), UA_SEL_INPUT_STATE("file", "disabled"), UA_SEL_INPUT_STATE("month", "disabled"), UA_SEL_INPUT_STATE("number", "disabled"), UA_SEL_INPUT_STATE("radio", "disabled"), UA_SEL_INPUT_STATE("reset", "disabled"), UA_SEL_INPUT_STATE("search", "disabled"), UA_SEL_INPUT_STATE("submit", "disabled") }), UA_COLOR_A(TBOX_UA_PROP_BACKGROUND_COLOR, 255, 255, 255, 128)),
         UA_RULE_2("progress", "meter", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE_BLOCK), UA_LEN(TBOX_UA_PROP_WIDTH, 160, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 16, TBOX_UA_UNIT_PX)),
         UA_RULE_1("hr", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_LEN(TBOX_UA_PROP_HEIGHT, config.hr_height_px, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 128, 128, 128), UA_QUAD(TBOX_UA_PROP_MARGIN, config.margin.hr_px, 0, config.margin.hr_px, 0)),
         UA_RULE_1("pre", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK), UA_KW(TBOX_UA_PROP_FONT_FAMILY, TBOX_UA_KW_MONOSPACE), UA_KW(TBOX_UA_PROP_WHITE_SPACE, TBOX_UA_KW_PRE), UA_LEN(TBOX_UA_PROP_MARGIN_BLOCK, config.margin.paragraph_px, TBOX_UA_UNIT_PX)),
@@ -752,6 +765,9 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
          * default to accent-color in the painters. */
         UA_RULE_INPUT_PART("range", NULL, "slider-track", UA_LEN(TBOX_UA_PROP_HEIGHT, 4, TBOX_UA_UNIT_PX), UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 205, 210, 216)),
         UA_RULE_INPUT_PART("range", NULL, "slider-thumb", UA_LEN(TBOX_UA_PROP_WIDTH, 14, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_HEIGHT, 14, TBOX_UA_UNIT_PX), UA_LEN(TBOX_UA_PROP_BORDER_RADIUS, 50, TBOX_UA_UNIT_PERCENT)),
+        UA_RULE_INPUT_PART("range", "disabled", "slider-track", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 232, 234, 238)),
+        UA_RULE_INPUT_PART("range", "disabled", "slider-fill", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 193, 195, 204)),
+        UA_RULE_INPUT_PART("range", "disabled", "slider-thumb", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 143, 143, 157)),
         UA_RULE_TAG_PART("progress", "slider-track", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 205, 210, 216)),
         UA_RULE_TAG_PART("meter", "slider-track", UA_COLOR(TBOX_UA_PROP_BACKGROUND_COLOR, 205, 210, 216)),
         /* The open <select> list (docs/10-formularios-e-controles.md,
@@ -803,5 +819,8 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
 #undef UA_SEL_ATTR
 #undef UA_SEL_DESC
 #undef UA_SEL_PART
+#undef UA_SEL_STATE
+#undef UA_SEL_INPUT_STATE
+#undef UA_COLOR_A
 #undef UA_RULE_SELECTORS
 #undef UA_FOCUS_RING

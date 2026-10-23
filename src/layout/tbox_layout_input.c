@@ -52,6 +52,13 @@ bool tbox_layout_is_checkbox(const tbox_html_node *node) {
     return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("checkbox", 8));
 }
 
+bool tbox_layout_is_color_input(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT ||
+        !tbox_string_view_equal_cstr(node->element.tag_name, "input")) return false;
+    const tbox_html_attribute *type = tbox_html_node_get_attribute(node, tbox_string_view_make("type", 4));
+    return type != NULL && tbox_string_view_equal_ascii_ci(type->value, tbox_string_view_make("color", 5));
+}
+
 static bool tbox_layout_is_checked_checkbox(const tbox_html_node *node) {
     return tbox_layout_is_checkbox(node) &&
            tbox_html_node_get_attribute(node, tbox_string_view_make("checked", 7)) != NULL;

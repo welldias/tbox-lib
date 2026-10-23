@@ -273,7 +273,7 @@ void tbox_context_paint_file_controls(tbox_context *ctx, const tbox_layout_box *
                     clip = tbox_context_rect_intersection(clip, ancestor->padding_box);
             const tbox_font_face *face = tbox_font_face_cache_get(ctx->fonts,
                 tbox_string_view_from_cstr(box->style->font_family), false, false, 13.0);
-            bool disabled = tbox_html_node_get_attribute(box->node, tbox_string_view_make("disabled", 8)) != NULL;
+            bool disabled = tbox_html_node_disabled(box->node);
             /* ::file-selector-button: width, background, border, radius and
              * text color (the UA sheet has the disabled colors). */
             const tbox_style_part_style *part = tbox_context_part(box->style, TBOX_STYLE_PART_FILE_SELECTOR_BUTTON);

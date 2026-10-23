@@ -8,6 +8,7 @@
 #include "tbox_context_callbacks.h"
 #include "tbox_context_controls.h"
 #include "html_parser/tbox_html_document.h"
+#include "html_parser/tbox_html_node.h"
 #include <tbox/css_parser.h>
 #include <tbox/css_selector.h>
 #include <tbox/html_parser.h>
@@ -404,7 +405,12 @@ bool tbox_context_range_commit(tbox_context *ctx, const tbox_html_node *node, do
 bool tbox_context_range_choose_x(tbox_context *ctx, const tbox_html_node *node, double x);
 bool tbox_context_is_button_input(const tbox_html_node *node);
 bool tbox_context_is_reset_input(const tbox_html_node *node);
+/* The first element below `node` (exclusive) whose id is `id`. */
+tbox_html_node *tbox_context_find_id(tbox_html_node *node, tbox_string_view id);
 bool tbox_context_is_submit_input(const tbox_html_node *node);
+/* input type=submit/reset, or a <button> of that type (submit by default). */
+bool tbox_context_is_submit_button(const tbox_html_node *node);
+bool tbox_context_is_reset_button(const tbox_html_node *node);
 bool tbox_context_is_image_input(const tbox_html_node *node);
 bool tbox_context_is_checkbox_input(const tbox_html_node *node);
 bool tbox_context_is_radio_input(const tbox_html_node *node);

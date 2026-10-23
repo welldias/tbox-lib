@@ -302,6 +302,38 @@ bool tbox_html_node_has_attribute(const tbox_html_node *node, tbox_string_view n
     return node != NULL && tbox_html_node_get_attribute(node, name) != NULL;
 }
 
+static bool tbox_html_node_is_tag(const tbox_html_node *node, const char *tag) {
+    return node != NULL && node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(node->element.tag_name, tag);
+}
+
+static bool tbox_html_node_has_disabled(const tbox_html_node *node) {
+    return tbox_html_node_get_attribute(node, tbox_string_view_make("disabled", 8)) != NULL;
+}
+
+/* True when `child` is the first <legend> element child of `fieldset`. */
+static bool tbox_html_node_is_first_legend(const tbox_html_node *fieldset, const tbox_html_node *child) {
+    for (const tbox_html_node *at = fieldset->first_child; at != NULL; at = at->next_sibling)
+        if (tbox_html_node_is_tag(at, "legend")) return at == child;
+    return false;
+}
+
+bool tbox_html_node_disabled(const tbox_html_node *node) {
+    if (node == NULL || node->type != TBOX_HTML_NODE_ELEMENT) return false;
+    if (tbox_html_node_is_tag(node, "optgroup")) return tbox_html_node_has_disabled(node);
+    if (tbox_html_node_is_tag(node, "option"))
+        return tbox_html_node_has_disabled(node) ||
+            (tbox_html_node_is_tag(node->parent, "optgroup") && tbox_html_node_has_disabled(node->parent));
+    if (!tbox_html_node_is_tag(node, "button") && !tbox_html_node_is_tag(node, "input") &&
+        !tbox_html_node_is_tag(node, "select") && !tbox_html_node_is_tag(node, "textarea") &&
+        !tbox_html_node_is_tag(node, "fieldset")) return false;
+    if (tbox_html_node_has_disabled(node)) return true;
+    for (const tbox_html_node *child = node, *ancestor = node->parent; ancestor != NULL;
+         child = ancestor, ancestor = ancestor->parent)
+        if (tbox_html_node_is_tag(ancestor, "fieldset") && tbox_html_node_has_disabled(ancestor) &&
+            !tbox_html_node_is_first_legend(ancestor, child)) return true;
+    return false;
+}
+
 void tbox_html_node_set_bool_attribute(tbox_html_document *document, tbox_html_node *node, tbox_string_view name, bool on) {
     if (document == NULL || node == NULL) return;
     if (!on) tbox_html_node_remove_attribute(node, name);

@@ -60,9 +60,7 @@ static size_t tbox_context_select_row_count(const tbox_html_node *select) {
 }
 
 bool tbox_context_option_disabled(const tbox_html_node *option) {
-    return tbox_html_node_get_attribute(option, tbox_string_view_make("disabled", 8)) != NULL ||
-        (tbox_context_is_optgroup(option->parent) &&
-         tbox_html_node_get_attribute(option->parent, tbox_string_view_make("disabled", 8)) != NULL);
+    return tbox_html_node_disabled(option);
 }
 
 size_t tbox_context_option_count(const tbox_html_node *select) {
