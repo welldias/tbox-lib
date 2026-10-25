@@ -198,3 +198,6 @@ target_link_libraries(tbox_lifecycle_demo PRIVATE tbox tbox_warnings tbox_saniti
 
 add_executable(tbox_controls_demo controls_demo.c)
 target_link_libraries(tbox_controls_demo PRIVATE tbox tbox_warnings tbox_sanitizers)
+
+add_executable(tbox_table_demo table_demo.c)
+target_link_libraries(tbox_table_demo PRIVATE tbox tbox_warnings tbox_sanitizers)

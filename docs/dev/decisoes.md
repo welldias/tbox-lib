@@ -920,3 +920,16 @@ porque o frame normaliza valores no DOM (sanitização de inputs, ligação do
 buffer de edição); essas escritas acomodam em um frame, sem laço.
 Escrita direta nos campos da struct não é vista: continua exigindo
 `tbox_app_request_redraw`.
+
+## API de tabelas segue o DOM — 2026-10-24
+
+As `tbox_table_*` copiam a semântica de `HTMLTableElement.rows`/`insertRow`
+e `HTMLTableRowElement.cells`/`rowIndex`/`cellIndex`, para a futura camada
+de script só expor o que já existe. Por isso a linha do `<thead>` conta como
+linha `0`; a alternativa de numerar só as linhas do corpo foi descartada
+por fugir do DOM. O índice de célula é a posição no DOM, não a coluna da
+grade: resolver `colspan`/`rowspan` fica para uma função separada, se
+aparecer o caso. As funções ficam em `controls.h`, ao lado das
+`tbox_select_*`, em vez de um header próprio. Diferente do `<select>`, a
+tabela não tem estado no contexto, então nada novo foi guardado. Ordenação
+ficou para outro momento.

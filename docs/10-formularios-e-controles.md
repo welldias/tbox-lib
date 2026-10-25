@@ -2,7 +2,7 @@
 
 > - **Escopo:** os controles de formulário nativos do tbox, como se comportam com mouse e teclado, como ler valores e como estilizar os popups.
 > - **Código relacionado:** `include/tbox/context.h`, `include/tbox/controls.h`, `src/app/tbox_app_controls.c`, `src/context/tbox_context_{controls,input,text,textarea,range,select,color,calendar,file,forms,control_theme}.c`, `src/layout/tbox_layout_{input,select,textarea}.c`
-> - **Veja também:** [Eventos e interatividade](06-eventos-e-interatividade.md), [Exemplos](04-exemplos.md), `example/keyboard_demo.c`, `example/controls_demo.c`, `example/control_theme_demo.c`
+> - **Veja também:** [Eventos e interatividade](06-eventos-e-interatividade.md), [Exemplos](04-exemplos.md), `example/keyboard_demo.c`, `example/controls_demo.c`, `example/table_demo.c`, `example/control_theme_demo.c`
 
 Os controles são desenhados e operados pelo próprio tbox (não usam widgets
 do sistema). São `inline-block` por padrão e aceitam CSS como qualquer
@@ -18,7 +18,8 @@ radio. Exceções: o valor do `<textarea>` é o seu texto, e a escolha atual
 do `<select>` fica no contexto (o atributo `selected` é só a inicial).
 A aplicação lê e altera tudo pela mesma API de `include/tbox/controls.h`,
 que recebe o `tbox_app` (`tbox_control_value/_set_value`, `_checked/_set_checked`,
-`tbox_select_add_option`… — ver [Guia da API](03-guia-da-api.md#controles--controlsh)),
+`tbox_select_add_option`… — ver [Guia da API](03-guia-da-api.md#controles--controlsh);
+para `<table>` há as `tbox_table_*`, ver [Tabelas](03-guia-da-api.md#tabelas--controlsh)),
 que também mantém caret, popup e grupo de radios coerentes; mexer direto
 nos atributos continua valendo. Mudanças feitas pelo usuário disparam
 `tbox_app_on_input` (ou `on_select` para `<select>`); as feitas por código,

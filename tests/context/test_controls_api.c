@@ -205,11 +205,108 @@ static int tbox_test_select_options(tbox_font_face_cache *fonts) {
     return failures;
 }
 
+static int tbox_test_table_api(tbox_font_face_cache *fonts) {
+    int failures      = 0;
+    /* Out of order on purpose: rows count thead first and tfoot last. */
+    tbox_context *ctx = open_html("<body><table id='t'><caption>c</caption>"
+        "<tfoot><tr id='f'><td>F</td></tr></tfoot>"
+        "<tr id='d'><td>D</td></tr>"
+        "<tbody id='b1'><tr id='r1'><th>Ana</th><td><b id='bold'>x</b>y</td></tr></tbody>"
+        "<thead><tr id='h'><th>Name</th><th>Info</th></tr></thead>"
+        "<tbody id='b2'><tr id='r2'><td>Bia</td><td><table id='inner'><tr id='ir'><td id='ic'>i</td></tr></table></td></tr></tbody>"
+        "</table><p id='p'>p</p></body>", fonts);
+    TBOX_TEST_REQUIRE(ctx != NULL);
+    tbox_html_node *t     = by_id(ctx, "t");
+    tbox_html_node *inner = by_id(ctx, "inner");
+
+    const char *order[] = {"h", "d", "r1", "r2", "f"};
+    TBOX_TEST_ASSERT(tbox_context_table_row_count(t) == 5);
+    for (size_t i = 0; i < 5; i++) {
+        TBOX_TEST_ASSERT(tbox_context_table_row_at(t, i) == by_id(ctx, order[i]));
+        TBOX_TEST_ASSERT(tbox_context_table_row_index(by_id(ctx, order[i])) == (ptrdiff_t)i);
+    }
+    TBOX_TEST_ASSERT(tbox_context_table_row_at(t, 5) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_table_row_count(inner) == 1);
+    TBOX_TEST_ASSERT(tbox_context_table_row_index(by_id(ctx, "ir")) == 0);
+    TBOX_TEST_ASSERT(tbox_context_table_head(t) == by_id(ctx, "h")->parent);
+    TBOX_TEST_ASSERT(tbox_context_table_foot(t) == by_id(ctx, "f")->parent);
+    TBOX_TEST_ASSERT(tbox_context_table_row_count(by_id(ctx, "p")) == 0 && tbox_context_table_head(by_id(ctx, "p")) == NULL);
+
+    /* Cells, text, and from a node back to its place. */
+    tbox_html_node *r1 = by_id(ctx, "r1");
+    TBOX_TEST_ASSERT(tbox_context_table_cell_count(r1) == 2);
+    TBOX_TEST_ASSERT(text_eq(tbox_context_table_cell_text(ctx, t, 2, 0), "Ana"));
+    TBOX_TEST_ASSERT(text_eq(tbox_context_table_cell_text(ctx, t, 2, 1), "xy"));
+    TBOX_TEST_ASSERT(text_eq(tbox_context_table_cell_text(ctx, t, 2, 2), ""));
+    TBOX_TEST_ASSERT(text_eq(tbox_context_table_cell_text(ctx, t, 9, 0), ""));
+    tbox_html_node *bold = by_id(ctx, "bold");
+    TBOX_TEST_ASSERT(tbox_context_table_row_of(bold) == r1);
+    TBOX_TEST_ASSERT(tbox_context_table_cell_of(bold) == tbox_context_table_cell_at(r1, 1));
+    TBOX_TEST_ASSERT(tbox_context_table_cell_index(tbox_context_table_cell_of(bold)) == 1);
+    TBOX_TEST_ASSERT(tbox_context_table_row_of(by_id(ctx, "ic")) == by_id(ctx, "ir")); /* innermost */
+    TBOX_TEST_ASSERT(tbox_context_table_cell_of(by_id(ctx, "ic")) == by_id(ctx, "ic"));
+    TBOX_TEST_ASSERT(tbox_context_table_row_of(by_id(ctx, "p")) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_table_cell_of(r1) == NULL && tbox_context_table_cell_of(t) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_table_row_index(by_id(ctx, "p")) == -1 && tbox_context_table_cell_index(r1) == -1);
+
+    uint64_t revision = tbox_html_document_revision(tbox_context_document(ctx));
+    TBOX_TEST_ASSERT(tbox_context_table_set_cell_text(ctx, t, 2, 1, sv("new")));
+    TBOX_TEST_ASSERT(text_eq(tbox_context_table_cell_text(ctx, t, 2, 1), "new"));
+    TBOX_TEST_ASSERT(tbox_html_document_revision(tbox_context_document(ctx)) > revision);
+    TBOX_TEST_ASSERT(!tbox_context_table_set_cell_text(ctx, t, 2, 5, sv("no")));
+
+    /* Insert before a row lands in its section; past the end, in the last tbody. */
+    tbox_string_view cells[] = {sv("Caio"), sv("")};
+    tbox_html_node *before_r2 = tbox_context_table_insert_row(ctx, t, 3, cells, 2);
+    TBOX_TEST_REQUIRE(before_r2 != NULL);
+    TBOX_TEST_ASSERT(before_r2->parent == by_id(ctx, "b2") && tbox_context_table_row_at(t, 3) == before_r2);
+    TBOX_TEST_ASSERT(tbox_context_table_cell_count(before_r2) == 2 && text_eq(tbox_context_table_cell_text(ctx, t, 3, 0), "Caio"));
+    TBOX_TEST_ASSERT(tbox_context_table_cell_at(before_r2, 1)->first_child == NULL);
+    tbox_html_node *last = tbox_context_table_insert_row(ctx, t, SIZE_MAX, NULL, 0);
+    TBOX_TEST_ASSERT(last != NULL && last->parent == by_id(ctx, "b2") && tbox_context_table_row_index(last) == 5);
+    TBOX_TEST_ASSERT(tbox_context_table_row_count(t) == 7 && tbox_context_table_row_index(by_id(ctx, "f")) == 6);
+
+    /* Cells inside a row. */
+    tbox_html_node *first = tbox_context_table_insert_cell(ctx, last, 0, sv("b"));
+    tbox_html_node *front = tbox_context_table_insert_cell(ctx, last, 0, sv("a"));
+    TBOX_TEST_ASSERT(first != NULL && front != NULL && tbox_context_table_cell_at(last, 0) == front);
+    TBOX_TEST_ASSERT(tbox_context_table_insert_cell(ctx, last, SIZE_MAX, sv("c")) == tbox_context_table_cell_at(last, 2));
+    TBOX_TEST_ASSERT(tbox_context_table_remove_cell(ctx, last, 1) && tbox_context_table_cell_count(last) == 2);
+    TBOX_TEST_ASSERT(!tbox_context_table_remove_cell(ctx, last, 2));
+    TBOX_TEST_ASSERT(text_eq(tbox_context_table_cell_text(ctx, t, 5, 1), "c"));
+
+    TBOX_TEST_ASSERT(tbox_context_table_remove_row(ctx, t, 0) && tbox_context_table_head(t)->first_child == NULL);
+    TBOX_TEST_ASSERT(!tbox_context_table_remove_row(ctx, t, 6));
+
+    /* clear_body keeps head, foot and the tbody elements. */
+    tbox_context_table_clear_body(ctx, t);
+    TBOX_TEST_ASSERT(tbox_context_table_row_count(t) == 1 && tbox_context_table_row_at(t, 0) == by_id(ctx, "f"));
+    TBOX_TEST_ASSERT(by_id(ctx, "b1") != NULL && by_id(ctx, "b2") != NULL && tbox_context_table_head(t) != NULL);
+    tbox_html_node *again = tbox_context_table_insert_row(ctx, t, SIZE_MAX, cells, 1);
+    TBOX_TEST_ASSERT(again != NULL && again->parent == by_id(ctx, "b2") && tbox_context_table_row_index(again) == 0);
+
+    /* A table without tbody takes appended rows directly (inner left the
+     * document with its row, which still works on the detached tree). */
+    tbox_html_node *direct = tbox_context_table_insert_row(ctx, inner, SIZE_MAX, cells, 1);
+    TBOX_TEST_ASSERT(direct != NULL && direct->parent == inner && tbox_context_table_row_index(direct) == 1);
+
+    TBOX_TEST_ASSERT(tbox_context_table_insert_row(NULL, t, 0, cells, 1) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_table_insert_row(ctx, by_id(ctx, "p"), 0, cells, 1) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_table_row_count(NULL) == 0 && tbox_context_table_cell_at(NULL, 0) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_table_row_of(NULL) == NULL && tbox_context_table_row_index(NULL) == -1);
+
+    tbox_display_list list;
+    tbox_context_run_frame(ctx, 300.0, 200.0, &list);
+    tbox_context_close(ctx);
+    return failures;
+}
+
 int tbox_test_controls_api_run(tbox_font_face_cache *fonts) {
     int failures = 0;
     failures += tbox_test_context_lookup(fonts);
     failures += tbox_test_control_values(fonts);
     failures += tbox_test_control_checked(fonts);
     failures += tbox_test_select_options(fonts);
+    failures += tbox_test_table_api(fonts);
     return failures;
 }

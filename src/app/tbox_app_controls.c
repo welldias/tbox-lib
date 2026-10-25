@@ -92,3 +92,74 @@ bool tbox_select_remove_option(tbox_app *app, tbox_html_node *select, size_t ind
 void tbox_select_clear(tbox_app *app, tbox_html_node *select) {
     tbox_context_select_clear(tbox_app_context(app), select);
 }
+
+size_t tbox_table_row_count(const tbox_html_node *table) {
+    return tbox_context_table_row_count(table);
+}
+
+tbox_html_node *tbox_table_row_at(const tbox_html_node *table, size_t index) {
+    return tbox_context_table_row_at(table, index);
+}
+
+tbox_html_node *tbox_table_insert_row(tbox_app *app, tbox_html_node *table, size_t before_index,
+                                      const tbox_string_view *cells, size_t count) {
+    return tbox_context_table_insert_row(tbox_app_context(app), table, before_index, cells, count);
+}
+
+bool tbox_table_remove_row(tbox_app *app, tbox_html_node *table, size_t index) {
+    return tbox_context_table_remove_row(tbox_app_context(app), table, index);
+}
+
+void tbox_table_clear_body(tbox_app *app, tbox_html_node *table) {
+    tbox_context_table_clear_body(tbox_app_context(app), table);
+}
+
+tbox_html_node *tbox_table_head(const tbox_html_node *table) {
+    return tbox_context_table_head(table);
+}
+
+tbox_html_node *tbox_table_foot(const tbox_html_node *table) {
+    return tbox_context_table_foot(table);
+}
+
+size_t tbox_table_cell_count(const tbox_html_node *row) {
+    return tbox_context_table_cell_count(row);
+}
+
+tbox_html_node *tbox_table_cell_at(const tbox_html_node *row, size_t index) {
+    return tbox_context_table_cell_at(row, index);
+}
+
+tbox_html_node *tbox_table_insert_cell(tbox_app *app, tbox_html_node *row, size_t before_index,
+                                       tbox_string_view text) {
+    return tbox_context_table_insert_cell(tbox_app_context(app), row, before_index, text);
+}
+
+bool tbox_table_remove_cell(tbox_app *app, tbox_html_node *row, size_t index) {
+    return tbox_context_table_remove_cell(tbox_app_context(app), row, index);
+}
+
+tbox_string_view tbox_table_cell_text(tbox_app *app, const tbox_html_node *table, size_t row, size_t column) {
+    return tbox_context_table_cell_text(tbox_app_context(app), table, row, column);
+}
+
+bool tbox_table_set_cell_text(tbox_app *app, tbox_html_node *table, size_t row, size_t column,
+                              tbox_string_view text) {
+    return tbox_context_table_set_cell_text(tbox_app_context(app), table, row, column, text);
+}
+
+tbox_html_node *tbox_table_row_of(const tbox_html_node *node) {
+    return tbox_context_table_row_of(node);
+}
+
+tbox_html_node *tbox_table_cell_of(const tbox_html_node *node) {
+    return tbox_context_table_cell_of(node);
+}
+
+ptrdiff_t tbox_table_row_index(const tbox_html_node *row) {
+    return tbox_context_table_row_index(row);
+}
+
+ptrdiff_t tbox_table_cell_index(const tbox_html_node *cell) {
+    return tbox_context_table_cell_index(cell);
+}

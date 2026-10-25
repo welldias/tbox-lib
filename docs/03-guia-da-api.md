@@ -224,6 +224,51 @@ bool aceito = tbox_control_checked(tbox_app_query(app, "#termos", 7));
 
 Exemplo completo em `example/controls_demo.c`.
 
+### Tabelas — `controls.h`
+
+Funções `tbox_table_*` para ler e editar `<table>` sem andar na árvore à
+mão. Seguem `HTMLTableElement`/`HTMLTableRowElement` do DOM: as linhas são
+contadas como `table.rows` (linhas do `<thead>` primeiro, depois as de
+`<tbody>` e os `<tr>` filhos diretos da tabela em ordem, depois as do
+`<tfoot>`; tabelas aninhadas ficam de fora), então a linha do cabeçalho é a
+`0`. O índice de célula é a posição entre os `<td>`/`<th>` da linha, não a
+coluna da grade (`colspan`/`rowspan` não são resolvidos). Não há estado
+guardado: as funções só leem e editam a árvore, então misturam-se
+livremente com as de `html_parser.h`. As que só leem não recebem o app.
+
+| Função | Uso |
+|---|---|
+| `tbox_table_row_count(t)` / `_row_at(t, i)` | Linhas na ordem de `rows`. |
+| `tbox_table_insert_row(app, t, antes_de, células, n)` | Cria um `<tr>` com `n` `<td>` de texto e insere antes da linha `antes_de`, na seção dela; `SIZE_MAX` = no fim do último `<tbody>` (ou da própria tabela, se não houver). |
+| `tbox_table_remove_row(app, t, i)` / `tbox_table_clear_body(app, t)` | Remove uma linha / todas as do corpo (mantém caption, thead, tfoot e os `<tbody>`). |
+| `tbox_table_head(t)` / `_foot(t)` | Primeiro `<thead>`/`<tfoot>`, ou `NULL`. |
+| `tbox_table_cell_count(r)` / `_cell_at(r, i)` | Células (`<td>`/`<th>`) da linha. |
+| `tbox_table_insert_cell(app, r, antes_de, texto)` / `_remove_cell(app, r, i)` | Insere um `<td>` / remove uma célula. |
+| `tbox_table_cell_text(app, t, linha, coluna)` / `_set_cell_text(…, texto)` | Texto da célula (`textContent`) / troca o conteúdo por um texto. |
+| `tbox_table_row_of(nó)` / `_cell_of(nó)` | O `<tr>` / `<td>`/`<th>` mais próximo acima do nó (a tabela mais interna vence). |
+| `tbox_table_row_index(r)` / `_cell_index(c)` | `rowIndex` / `cellIndex`; `-1` fora de tabela/linha. |
+
+```c
+static bool on_linha(tbox_app *app, tbox_html_node *node, void *userdata) {
+    tbox_html_node *t = userdata;
+    ptrdiff_t linha = tbox_table_row_index(tbox_table_row_of(node));
+    tbox_string_view nome = tbox_table_cell_text(app, t, (size_t)linha, 0);
+    ...
+    return true;
+}
+
+tbox_html_node *t = tbox_app_query(app, "#clientes", 9);
+tbox_table_clear_body(app, t);
+tbox_string_view celulas[] = { tbox_string_view_make("Ana", 3), tbox_string_view_make("ativo", 5) };
+tbox_table_insert_row(app, t, SIZE_MAX, celulas, 2);
+tbox_app_on_click(app, "#clientes tbody td", 18, on_linha, t, NULL);
+```
+
+Exemplo completo em `example/table_demo.c`.
+
+Ordenação de linhas e seleção gerenciada pela biblioteca ficaram de fora;
+seleção se faz com `tbox_html_node_add_class`/`_toggle_class` e CSS.
+
 ## 2. Documento e eventos — `context.h`
 
 O `tbox_context` é o documento vivo mais o pipeline. Com `tbox_app` você o

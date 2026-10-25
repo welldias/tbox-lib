@@ -35,4 +35,25 @@ tbox_html_node *tbox_context_select_add_option(tbox_context *ctx, tbox_html_node
 bool tbox_context_select_remove_option(tbox_context *ctx, tbox_html_node *select, size_t index);
 void tbox_context_select_clear(tbox_context *ctx, tbox_html_node *select);
 
+size_t tbox_context_table_row_count(const tbox_html_node *table);
+tbox_html_node *tbox_context_table_row_at(const tbox_html_node *table, size_t index);
+tbox_html_node *tbox_context_table_insert_row(tbox_context *ctx, tbox_html_node *table, size_t before_index,
+                                              const tbox_string_view *cells, size_t count);
+bool tbox_context_table_remove_row(tbox_context *ctx, tbox_html_node *table, size_t index);
+void tbox_context_table_clear_body(tbox_context *ctx, tbox_html_node *table);
+tbox_html_node *tbox_context_table_head(const tbox_html_node *table);
+tbox_html_node *tbox_context_table_foot(const tbox_html_node *table);
+size_t tbox_context_table_cell_count(const tbox_html_node *row);
+tbox_html_node *tbox_context_table_cell_at(const tbox_html_node *row, size_t index);
+tbox_html_node *tbox_context_table_insert_cell(tbox_context *ctx, tbox_html_node *row, size_t before_index,
+                                               tbox_string_view text);
+bool tbox_context_table_remove_cell(tbox_context *ctx, tbox_html_node *row, size_t index);
+tbox_string_view tbox_context_table_cell_text(tbox_context *ctx, const tbox_html_node *table, size_t row, size_t column);
+bool tbox_context_table_set_cell_text(tbox_context *ctx, tbox_html_node *table, size_t row, size_t column,
+                                      tbox_string_view text);
+tbox_html_node *tbox_context_table_row_of(const tbox_html_node *node);
+tbox_html_node *tbox_context_table_cell_of(const tbox_html_node *node);
+ptrdiff_t tbox_context_table_row_index(const tbox_html_node *row);
+ptrdiff_t tbox_context_table_cell_index(const tbox_html_node *cell);
+
 #endif

@@ -349,6 +349,7 @@ e atualiza um texto na tela ao ganhar/perder foco ou redimensionar.
 | `tbox_app_demo` | Demo geral de renderização, cliques, hover, bubbling, `stopPropagation`, desregistro, troca de texto. `--screenshot <png>` gera imagem; `TBOX_DEBUG_DAMAGE=1` mostra a repintura. |
 | `tbox_keyboard_demo` | Todos os controles no visual padrão (só a página tem CSS), em cartões: texto, escolhas, seletores, botões/formulário e lista rolável. Uma linha mostra o último evento (click, input com validade, select, submit). |
 | `tbox_controls_demo` | Controles por código: lista de `<option>` que cresce e diminui, checkbox que desabilita, botão que muda de texto. |
+| `tbox_table_demo` | Tabela por código (`tbox_table_*`): adicionar linha no fim ou no topo, clicar numa célula para selecionar a linha, clicar no status para alterná-lo, remover, limpar o corpo e ligar/desligar uma coluna de numeração; o rodapé mostra a contagem. |
 | `tbox_control_theme_demo` | Popups de cor/data/arquivo com tema próprio (`--default` compara com o tema embutido). |
 | `tbox_assets_showrun` | Navega pelos fixtures de `tests/assets` com as setas. |
 | `tbox_lifecycle_demo` | Registros de load/unload, foco da janela, resize e error reservado; execução com `build/example/tbox_lifecycle_demo`. |

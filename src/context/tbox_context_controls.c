@@ -147,3 +147,214 @@ tbox_html_node *tbox_context_control_radio_checked(tbox_context *ctx, const tbox
     if (tbox_context_control_checked(radio)) return (tbox_html_node *)radio;
     return (tbox_html_node *)tbox_context_radio_checked_peer(ctx, radio);
 }
+
+/* Tables: plain tree walks in HTMLTableElement.rows order (see
+ * <tbox/controls.h>), nothing kept in the context. */
+
+static bool tbox_context_is_cell(const tbox_html_node *node) {
+    return tbox_context_is_element(node, "td") || tbox_context_is_element(node, "th");
+}
+
+/* Where a child of the table puts its rows: 0 <thead>, 1 <tbody> or a
+ * direct <tr>, 2 <tfoot>, -1 none. */
+static int tbox_context_table_section_order(const tbox_html_node *child) {
+    if (tbox_context_is_element(child, "thead")) return 0;
+    if (tbox_context_is_element(child, "tbody") || tbox_context_is_element(child, "tr")) return 1;
+    if (tbox_context_is_element(child, "tfoot")) return 2;
+    return -1;
+}
+
+static tbox_html_node *tbox_context_first_child_element(const tbox_html_node *parent, const char *tag) {
+    for (tbox_html_node *child = parent->first_child; child != NULL; child = child->next_sibling)
+        if (tbox_context_is_element(child, tag)) return child;
+    return NULL;
+}
+
+/* The first row of a section of `order`, scanning the table's children
+ * from `child` on. */
+static tbox_html_node *tbox_context_table_first_row_from(tbox_html_node *child, int order) {
+    for (; child != NULL; child = child->next_sibling) {
+        if (tbox_context_table_section_order(child) != order) continue;
+        if (tbox_context_is_element(child, "tr")) return child;
+        tbox_html_node *row = tbox_context_first_child_element(child, "tr");
+        if (row != NULL) return row;
+    }
+    return NULL;
+}
+
+/* The row after `row` (NULL: the first row), or NULL after the last. */
+static tbox_html_node *tbox_context_table_next_row(const tbox_html_node *table, const tbox_html_node *row) {
+    int order = 0;
+    if (row != NULL) {
+        if (row->parent != table)
+            for (tbox_html_node *next = row->next_sibling; next != NULL; next = next->next_sibling)
+                if (tbox_context_is_element(next, "tr")) return next;
+        const tbox_html_node *child = row->parent != table ? row->parent : row;
+        order                       = tbox_context_table_section_order(child);
+        tbox_html_node *next        = tbox_context_table_first_row_from(child->next_sibling, order);
+        if (next != NULL) return next;
+        order++;
+    }
+    for (; order <= 2; order++) {
+        tbox_html_node *next = tbox_context_table_first_row_from(table->first_child, order);
+        if (next != NULL) return next;
+    }
+    return NULL;
+}
+
+/* The table a row belongs to, or NULL. */
+static tbox_html_node *tbox_context_row_table(const tbox_html_node *row) {
+    if (!tbox_context_is_element(row, "tr") || row->parent == NULL) return NULL;
+    tbox_html_node *parent = row->parent;
+    if (tbox_context_is_element(parent, "table")) return parent;
+    int order = tbox_context_table_section_order(parent);
+    if (order < 0 || tbox_context_is_element(parent, "tr")) return NULL;
+    return tbox_context_is_element(parent->parent, "table") ? parent->parent : NULL;
+}
+
+size_t tbox_context_table_row_count(const tbox_html_node *table) {
+    if (!tbox_context_is_element(table, "table")) return 0;
+    size_t count = 0;
+    for (const tbox_html_node *row = tbox_context_table_next_row(table, NULL); row != NULL;
+         row = tbox_context_table_next_row(table, row))
+        count++;
+    return count;
+}
+
+tbox_html_node *tbox_context_table_row_at(const tbox_html_node *table, size_t index) {
+    if (!tbox_context_is_element(table, "table")) return NULL;
+    tbox_html_node *row = tbox_context_table_next_row(table, NULL);
+    for (size_t i = 0; row != NULL && i < index; i++) row = tbox_context_table_next_row(table, row);
+    return row;
+}
+
+static tbox_html_node *tbox_context_table_new_cell(tbox_context *ctx, tbox_string_view text) {
+    tbox_html_node *cell = tbox_html_element_create(ctx->document, tbox_string_view_make("td", 2));
+    if (cell != NULL && text.size > 0) tbox_html_node_append_child(cell, tbox_html_text_create(ctx->document, text));
+    return cell;
+}
+
+tbox_html_node *tbox_context_table_insert_row(tbox_context *ctx, tbox_html_node *table, size_t before_index,
+                                              const tbox_string_view *cells, size_t count) {
+    if (ctx == NULL || !tbox_context_is_element(table, "table")) return NULL;
+    tbox_html_node *row = tbox_html_element_create(ctx->document, tbox_string_view_make("tr", 2));
+    if (row == NULL) return NULL;
+    for (size_t i = 0; cells != NULL && i < count; i++)
+        tbox_html_node_append_child(row, tbox_context_table_new_cell(ctx, cells[i]));
+    tbox_html_node *before = tbox_context_table_row_at(table, before_index);
+    if (before != NULL) {
+        tbox_html_node_insert_before(before->parent, row, before);
+        return row;
+    }
+    tbox_html_node *body = NULL;
+    for (tbox_html_node *child = table->first_child; child != NULL; child = child->next_sibling)
+        if (tbox_context_is_element(child, "tbody")) body = child;
+    tbox_html_node_append_child(body != NULL ? body : table, row);
+    return row;
+}
+
+bool tbox_context_table_remove_row(tbox_context *ctx, tbox_html_node *table, size_t index) {
+    if (ctx == NULL) return false;
+    tbox_html_node *row = tbox_context_table_row_at(table, index);
+    if (row == NULL) return false;
+    tbox_html_node_remove(row);
+    return true;
+}
+
+static void tbox_context_remove_rows(tbox_html_node *parent) {
+    for (tbox_html_node *child = parent->first_child, *next; child != NULL; child = next) {
+        next = child->next_sibling;
+        if (tbox_context_is_element(child, "tr")) tbox_html_node_remove(child);
+    }
+}
+
+void tbox_context_table_clear_body(tbox_context *ctx, tbox_html_node *table) {
+    if (ctx == NULL || !tbox_context_is_element(table, "table")) return;
+    tbox_context_remove_rows(table);
+    for (tbox_html_node *child = table->first_child; child != NULL; child = child->next_sibling)
+        if (tbox_context_is_element(child, "tbody")) tbox_context_remove_rows(child);
+}
+
+tbox_html_node *tbox_context_table_head(const tbox_html_node *table) {
+    return tbox_context_is_element(table, "table") ? tbox_context_first_child_element(table, "thead") : NULL;
+}
+
+tbox_html_node *tbox_context_table_foot(const tbox_html_node *table) {
+    return tbox_context_is_element(table, "table") ? tbox_context_first_child_element(table, "tfoot") : NULL;
+}
+
+size_t tbox_context_table_cell_count(const tbox_html_node *row) {
+    if (!tbox_context_is_element(row, "tr")) return 0;
+    size_t count = 0;
+    for (const tbox_html_node *child = row->first_child; child != NULL; child = child->next_sibling)
+        if (tbox_context_is_cell(child)) count++;
+    return count;
+}
+
+tbox_html_node *tbox_context_table_cell_at(const tbox_html_node *row, size_t index) {
+    if (!tbox_context_is_element(row, "tr")) return NULL;
+    for (tbox_html_node *child = row->first_child; child != NULL; child = child->next_sibling)
+        if (tbox_context_is_cell(child) && index-- == 0) return child;
+    return NULL;
+}
+
+tbox_html_node *tbox_context_table_insert_cell(tbox_context *ctx, tbox_html_node *row, size_t before_index,
+                                               tbox_string_view text) {
+    if (ctx == NULL || !tbox_context_is_element(row, "tr")) return NULL;
+    tbox_html_node *cell = tbox_context_table_new_cell(ctx, text);
+    if (cell == NULL) return NULL;
+    tbox_html_node_insert_before(row, cell, tbox_context_table_cell_at(row, before_index));
+    return cell;
+}
+
+bool tbox_context_table_remove_cell(tbox_context *ctx, tbox_html_node *row, size_t index) {
+    if (ctx == NULL) return false;
+    tbox_html_node *cell = tbox_context_table_cell_at(row, index);
+    if (cell == NULL) return false;
+    tbox_html_node_remove(cell);
+    return true;
+}
+
+tbox_string_view tbox_context_table_cell_text(tbox_context *ctx, const tbox_html_node *table, size_t row, size_t column) {
+    const tbox_html_node *cell = tbox_context_table_cell_at(tbox_context_table_row_at(table, row), column);
+    return ctx != NULL && cell != NULL ? tbox_context_node_text(ctx, cell) : tbox_string_view_make(NULL, 0);
+}
+
+bool tbox_context_table_set_cell_text(tbox_context *ctx, tbox_html_node *table, size_t row, size_t column,
+                                      tbox_string_view text) {
+    tbox_html_node *cell = tbox_context_table_cell_at(tbox_context_table_row_at(table, row), column);
+    if (ctx == NULL || cell == NULL) return false;
+    tbox_html_node_set_text_content(ctx->document, cell, text);
+    return true;
+}
+
+tbox_html_node *tbox_context_table_row_of(const tbox_html_node *node) {
+    for (; node != NULL && !tbox_context_is_element(node, "table"); node = node->parent)
+        if (tbox_context_is_element(node, "tr")) return (tbox_html_node *)node;
+    return NULL;
+}
+
+tbox_html_node *tbox_context_table_cell_of(const tbox_html_node *node) {
+    for (; node != NULL && !tbox_context_is_element(node, "tr") && !tbox_context_is_element(node, "table");
+         node = node->parent)
+        if (tbox_context_is_cell(node)) return (tbox_html_node *)node;
+    return NULL;
+}
+
+ptrdiff_t tbox_context_table_row_index(const tbox_html_node *row) {
+    const tbox_html_node *table = tbox_context_row_table(row);
+    if (table == NULL) return -1;
+    ptrdiff_t index = 0;
+    for (const tbox_html_node *it = tbox_context_table_next_row(table, NULL); it != NULL;
+         it = tbox_context_table_next_row(table, it), index++)
+        if (it == row) return index;
+    return -1;
+}
+
+ptrdiff_t tbox_context_table_cell_index(const tbox_html_node *cell) {
+    if (!tbox_context_is_cell(cell) || !tbox_context_is_element(cell->parent, "tr")) return -1;
+    ptrdiff_t index = 0;
+    for (const tbox_html_node *child = cell->parent->first_child; child != cell; child = child->next_sibling)
+        if (tbox_context_is_cell(child)) index++;
+    return index;
+}

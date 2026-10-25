@@ -113,6 +113,66 @@ bool tbox_select_remove_option(tbox_app *app, tbox_html_node *select, size_t ind
 /* Removes every option and optgroup. */
 void tbox_select_clear(tbox_app *app, tbox_html_node *select);
 
+/* Tables. Rows are counted as HTMLTableElement.rows does: <thead> rows
+ * first, then <tbody> rows and <tr> children of the table itself in tree
+ * order, then <tfoot> rows; nested tables are not looked into. Cell
+ * indices are positions among the row's <td>/<th> children -- DOM order,
+ * not grid columns (colspan/rowspan are not resolved). The functions keep
+ * no state of their own: they read and edit the tree, so plain DOM
+ * mutations mix freely with them. */
+size_t tbox_table_row_count(const tbox_html_node *table);
+tbox_html_node *tbox_table_row_at(const tbox_html_node *table, size_t index);
+
+/* Creates a <tr> with one <td> per entry of `cells` (count 0: an empty
+ * row) and inserts it before row `before_index`, in that row's section.
+ * Out of range (pass SIZE_MAX): appended to the last <tbody>, or to the
+ * table itself when it has none. Returns the new row. */
+tbox_html_node *tbox_table_insert_row(tbox_app *app, tbox_html_node *table, size_t before_index,
+                                      const tbox_string_view *cells, size_t count);
+
+/* Removes row `index`; false when out of range. */
+bool tbox_table_remove_row(tbox_app *app, tbox_html_node *table, size_t index);
+
+/* Removes every body row (<tr> children of <tbody> or of the table),
+ * keeping <caption>, <colgroup>, <thead>, <tfoot> and the <tbody>
+ * elements themselves. */
+void tbox_table_clear_body(tbox_app *app, tbox_html_node *table);
+
+/* The table's first <thead>/<tfoot>, or NULL. */
+tbox_html_node *tbox_table_head(const tbox_html_node *table);
+tbox_html_node *tbox_table_foot(const tbox_html_node *table);
+
+size_t tbox_table_cell_count(const tbox_html_node *row);
+tbox_html_node *tbox_table_cell_at(const tbox_html_node *row, size_t index);
+
+/* Creates `<td>text</td>` before cell `before_index` (SIZE_MAX: last).
+ * Returns the new cell. */
+tbox_html_node *tbox_table_insert_cell(tbox_app *app, tbox_html_node *row, size_t before_index,
+                                       tbox_string_view text);
+
+/* Removes cell `index`; false when out of range. */
+bool tbox_table_remove_cell(tbox_app *app, tbox_html_node *row, size_t index);
+
+/* Text of cell (row, column), as textContent; an empty view when either
+ * index is out of range. */
+tbox_string_view tbox_table_cell_text(tbox_app *app, const tbox_html_node *table, size_t row, size_t column);
+
+/* Replaces the cell's children with one text node; false when either
+ * index is out of range. */
+bool tbox_table_set_cell_text(tbox_app *app, tbox_html_node *table, size_t row, size_t column,
+                              tbox_string_view text);
+
+/* The nearest <tr> / <td> or <th> at or above `node` (the innermost table
+ * wins), or NULL outside one -- for click handlers, which receive the
+ * node their selector matched. */
+tbox_html_node *tbox_table_row_of(const tbox_html_node *node);
+tbox_html_node *tbox_table_cell_of(const tbox_html_node *node);
+
+/* rowIndex (in tbox_table_row_at's numbering) / cellIndex; -1 when the
+ * row is not in a table, or the cell not in a row. */
+ptrdiff_t tbox_table_row_index(const tbox_html_node *row);
+ptrdiff_t tbox_table_cell_index(const tbox_html_node *cell);
+
 #ifdef __cplusplus
 }
 #endif

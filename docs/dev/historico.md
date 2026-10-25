@@ -1422,3 +1422,11 @@ Defeitos apontados pela comparação de todos os fixtures com o Firefox
   ficava mais alto que o `date` ao lado. Agora a linha de base é a de uma
   linha de texto centralizada na área de conteúdo, como num botão.
 
+## 2026-10-24 — API de tabelas
+
+- `controls.h` ganhou as `tbox_table_*`: contar e pegar linhas e células,
+  inserir/remover linha e célula, esvaziar o corpo, ler/trocar o texto de
+  uma célula, achar `<thead>`/`<tfoot>` e ir de um nó qualquer (o de um
+  `on_click`) para a sua linha, célula e índices. Sem estado no contexto;
+  implementação em `tbox_context_controls.c`. Exemplo
+  `example/table_demo.c`.

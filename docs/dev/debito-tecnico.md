@@ -450,7 +450,10 @@ tabela sobreposta copia os estilos da subárvore a cada frame.
   abrangem colunas dividem o excesso igualmente. `min-width` em célula é
   respeitado, enquanto o Firefox o ignora. Tabelas sem espaçamento nem
   outros recursos ainda passam pelo caminho simples
-  (`tbox_layout_table.c`), sem shrink-to-fit.
+  (`tbox_layout_table.c`), sem shrink-to-fit. `min-width` na própria
+  `<table>` é ignorado, e um elemento com `display: table` ocupa a largura
+  toda em vez de encolher até o conteúdo; o Firefox respeita os dois
+  (visto em 2026-10-24, ao montar `example/table_demo.c`).
 - **Quando revisitar:** uma tabela real com larguras visivelmente diferentes
   das do navegador, ou para unificar os dois caminhos.
 - **Toca:** `src/layout/tbox_layout_table_grid.c`, `tbox_layout_table.c`.
