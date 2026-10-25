@@ -88,6 +88,45 @@ bool tbox_control_set_checked(tbox_app *app, tbox_html_node *control, bool check
  * itself), or NULL when none is checked. */
 tbox_html_node *tbox_control_radio_checked(tbox_app *app, const tbox_html_node *radio);
 
+/* Classes, for state the stylesheet shows (a selected row, the active
+ * entry of a menu, a file vs. a folder). `name` is one class: false for an
+ * empty name or one with whitespace, a NULL app/node, or a node of another
+ * document. Adding a present class or removing an absent one is a no-op
+ * that still returns true. */
+bool tbox_control_has_class(const tbox_html_node *node, tbox_string_view name);
+bool tbox_control_set_class(tbox_app *app, tbox_html_node *node, tbox_string_view name, bool on);
+
+/* The `hidden` attribute; the user-agent stylesheet gives `[hidden]`
+ * `display: none`, which author CSS that sets `display` on the element
+ * overrides (as in browsers). Hiding the focused control, or an element
+ * containing it, moves focus away like tbox_control_set_disabled. */
+bool tbox_control_hidden(const tbox_html_node *node);
+void tbox_control_set_hidden(tbox_app *app, tbox_html_node *node, bool hidden);
+
+/* Items built from markup: a list entry, a card, a table row with icons
+ * and buttons. The HTML declares the item once inside a <template>
+ * (display: none, its children are ordinary nodes); instantiate deep-copies
+ * each of its element children and inserts the copies into `parent`
+ * before the element child `before_index` (SIZE_MAX: at the end). Returns
+ * the first copy -- fill it with tbox_app_query_in and the functions above
+ * -- or NULL when `templ` isn't a <template>, `parent` is inside `templ`,
+ * either belongs to another document, or `parent` is a <select>/<optgroup>
+ * (use tbox_select_add_option). Ids are copied as they are: keep them out
+ * of templates. For a table, pass a <tbody> as `parent` (a <tr> in a
+ * template stays a <tr>); tbox_table_row_of/_row_index see the new rows. */
+tbox_html_node *tbox_control_instantiate(tbox_app *app, const tbox_html_node *templ, tbox_html_node *parent,
+                                         size_t before_index);
+
+/* Detaches `node` (an instantiated item or any other element) / every
+ * child of `container`, moving focus away first when it is inside. The
+ * memory stays in the document's arena until the document is replaced.
+ * False for the root element, a node with no parent, another document's node,
+ * and <option>/<optgroup> or a <select>/<optgroup> container (use
+ * tbox_select_remove_option / tbox_select_clear). On a <table>, clear also
+ * drops <thead>/<tfoot>: use tbox_table_clear_body for rows. */
+bool tbox_control_remove(tbox_app *app, tbox_html_node *node);
+bool tbox_control_clear(tbox_app *app, tbox_html_node *container);
+
 /* <select> options, counted in list order across <optgroup>s (group
  * labels are not options). Indices are positions in that list. */
 size_t tbox_select_option_count(const tbox_html_node *select);

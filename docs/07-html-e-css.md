@@ -25,6 +25,10 @@
   Não são decodificadas dentro de `<script>`/`<style>`.
 - **`<script>` não é executado.** O conteúdo é guardado como texto, mas não
   há motor de JavaScript.
+- **`<template>`** não é desenhado (`display: none`), e o conteúdo dele fica
+  como filhos comuns, não num fragmento à parte (inclusive `<tr>`/`<td>` fora
+  de `<table>`). É o modelo de `tbox_control_instantiate` (ver
+  [Guia da API](03-guia-da-api.md#itens-classes-e-visibilidade--controlsh)).
 
 ## SVG inline
 
@@ -127,6 +131,8 @@ Também seguem os navegadores:
 - **Recuo de bloco:** `blockquote` e `figure` têm 40px de recuo lateral, e `pre` tem margem de bloco.
 - **Texto:** `address` sai em itálico, `abbr[title]` com sublinhado pontilhado e `q` com aspas (`open-quote`/`close-quote` em `::before`/`::after`).
 - **Links:** só `a:any-link` (com `href`) fica azul e sublinhado.
+- **`hidden`:** `[hidden]` tem `display: none`. Como é uma regra da UA, um
+  `display` do autor no mesmo elemento a vence.
 
 A folha aceita, além de tag, estado e parte, um atributo presente e uma
 cadeia de ancestrais (`UA_SEL_ATTR`, `UA_SEL_DESC`).

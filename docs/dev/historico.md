@@ -18,6 +18,21 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Itens de `<template>`, classes e `hidden` em `controls.h` (2026-10-25)
+
+Pedido do t-explorer, que só mexe na tela por `controls.h`: faltava como
+montar listas, cards e linhas com ícone e botão, e como marcar estado
+visual. Entraram `tbox_control_instantiate` (copia os filhos de um
+`<template>` para um contêiner), `tbox_control_remove`/`_clear`,
+`tbox_control_has_class`/`_set_class`, `tbox_control_hidden`/`_set_hidden`
+e, em `app.h`, `tbox_app_query_in` (busca dentro de um item). A folha UA
+ganhou `[hidden] { display: none }`; até então só o foco ignorava elementos
+`hidden`, mas eles continuavam no layout. Remover, limpar e esconder tiram
+o foco de dentro do que sai, como `set_disabled` já fazia (lógica
+compartilhada em `tbox_context_blur_within`). Testes em
+`tests/context/test_controls_api.c` (`tbox_test_generic_items`), conferidos
+sem a regra `[hidden]` (falham) e com ASan+UBSan.
+
 ## Após v20 — tbox como subprojeto CMake e pacote instalável (2026-10-25)
 
 O tbox passa a poder ser incluído por outro projeto com `add_subdirectory`

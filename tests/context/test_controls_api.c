@@ -301,6 +301,131 @@ static int tbox_test_table_api(tbox_font_face_cache *fonts) {
     return failures;
 }
 
+static int tbox_test_generic_items(tbox_font_face_cache *fonts) {
+    int failures      = 0;
+    tbox_context *ctx = open_html("<body><ul id='list'><li id='keep'>k</li></ul>"
+        "<template id='item'><li class='item'><span class='name'>?</span><button class='more'>...</button></li></template>"
+        "<template id='pair'><p class='a'>a</p> <p class='b'>b</p></template>"
+        "<template id='row'><tr class='file'><td><span class='name'></span></td><td>size</td></tr></template>"
+        "<table id='t'><thead><tr><th>Name</th><th>Size</th></tr></thead><tbody id='tb'></tbody></table>"
+        "<div id='box'><button id='inner'>in</button><p>text</p></div><button id='out'>out</button>"
+        "<select id='s'><option>x</option></select><p id='plain'>p</p></body>", fonts);
+    TBOX_TEST_REQUIRE(ctx != NULL);
+    tbox_display_list list;
+    tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+
+    tbox_html_node *ul = by_id(ctx, "list"), *item = by_id(ctx, "item");
+    /* Instantiate: deep copies, inserted before an element index, the
+     * template itself untouched. */
+    tbox_html_node *last = tbox_context_control_instantiate(ctx, item, ul, SIZE_MAX);
+    TBOX_TEST_REQUIRE(last != NULL);
+    TBOX_TEST_ASSERT(last->parent == ul && by_id(ctx, "keep")->next_sibling == last);
+    TBOX_TEST_ASSERT(tbox_context_control_has_class(last, sv("item")));
+    tbox_html_node *first = tbox_context_control_instantiate(ctx, item, ul, 0);
+    TBOX_TEST_ASSERT(first != NULL && ul->first_child == first && first != last);
+    TBOX_TEST_ASSERT(tbox_html_node_element_child_count(ul) == 3);
+    TBOX_TEST_ASSERT(tbox_html_node_element_child_count(item) == 1);
+
+    /* Lookup inside the new item: descendants only. */
+    tbox_html_node *name = tbox_context_query_in(ctx, last, ".name", 5);
+    TBOX_TEST_REQUIRE(name != NULL);
+    TBOX_TEST_ASSERT(name->parent == last && name != tbox_context_query_in(ctx, first, ".name", 5));
+    TBOX_TEST_ASSERT(tbox_context_control_set_label(ctx, name, sv("report.txt")));
+    TBOX_TEST_ASSERT(text_eq(tbox_context_control_label(ctx, tbox_context_query_in(ctx, item, ".name", 5)), "?"));
+    TBOX_TEST_ASSERT(tbox_context_query_in(ctx, last, ".item", 5) == NULL); /* root excluded */
+    TBOX_TEST_ASSERT(tbox_context_query_in(ctx, last, "[", 1) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_query_in(ctx, NULL, "li", 2) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_query_in(NULL, last, "span", 4) == NULL);
+
+    /* Every element child of the template is copied; the first returns. */
+    tbox_html_node *box = by_id(ctx, "box");
+    tbox_html_node *a   = tbox_context_control_instantiate(ctx, by_id(ctx, "pair"), box, 1);
+    TBOX_TEST_ASSERT(a != NULL && tbox_context_control_has_class(a, sv("a")));
+    TBOX_TEST_ASSERT(tbox_context_control_has_class(tbox_html_node_next_element_sibling(a), sv("b")));
+    TBOX_TEST_ASSERT(tbox_html_node_first_element_child(box) == by_id(ctx, "inner"));
+
+    /* Table rows from a template are rows for the tbox_table_* functions. */
+    tbox_html_node *t   = by_id(ctx, "t");
+    tbox_html_node *row = tbox_context_control_instantiate(ctx, by_id(ctx, "row"), by_id(ctx, "tb"), SIZE_MAX);
+    TBOX_TEST_ASSERT(row != NULL && tbox_context_table_row_count(t) == 2 && tbox_context_table_row_index(row) == 1);
+    TBOX_TEST_ASSERT(tbox_context_table_row_of(tbox_context_query_in(ctx, row, ".name", 5)) == row);
+    TBOX_TEST_ASSERT(text_eq(tbox_context_table_cell_text(ctx, t, 1, 1), "size"));
+
+    /* Refused: not a template, parent inside the template, option lists. */
+    TBOX_TEST_ASSERT(tbox_context_control_instantiate(ctx, ul, box, 0) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_control_instantiate(ctx, item, tbox_html_node_first_element_child(item), 0) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_control_instantiate(ctx, item, by_id(ctx, "s"), 0) == NULL);
+    TBOX_TEST_ASSERT(tbox_context_control_instantiate(NULL, item, ul, 0) == NULL);
+
+    /* Classes. */
+    tbox_html_node *plain = by_id(ctx, "plain");
+    TBOX_TEST_ASSERT(tbox_context_control_set_class(ctx, plain, sv("active"), true));
+    TBOX_TEST_ASSERT(tbox_context_control_set_class(ctx, plain, sv("active"), true));
+    TBOX_TEST_ASSERT(tbox_context_control_has_class(plain, sv("active")));
+    TBOX_TEST_ASSERT(tbox_context_control_set_class(ctx, plain, sv("active"), false));
+    TBOX_TEST_ASSERT(!tbox_context_control_has_class(plain, sv("active")));
+    TBOX_TEST_ASSERT(tbox_context_control_set_class(ctx, plain, sv("absent"), false));
+    TBOX_TEST_ASSERT(!tbox_context_control_set_class(ctx, plain, sv("two words"), true));
+    TBOX_TEST_ASSERT(!tbox_context_control_set_class(ctx, plain, sv(""), true));
+    TBOX_TEST_ASSERT(!tbox_context_control_set_class(NULL, plain, sv("x"), true));
+
+    /* Hidden: [hidden] takes the element out of layout, and focus leaves
+     * a hidden element or one inside it. */
+    tbox_html_node *out = by_id(ctx, "out"), *inner = by_id(ctx, "inner");
+    TBOX_TEST_ASSERT(tbox_context_control_focus(ctx, out));
+    tbox_context_control_set_hidden(ctx, out, true);
+    TBOX_TEST_ASSERT(tbox_context_control_hidden(out) && tbox_context_focused_node(ctx) == NULL);
+    tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+    TBOX_TEST_ASSERT(!tbox_context_control_focus(ctx, out));
+    tbox_context_control_set_hidden(ctx, out, false);
+    TBOX_TEST_ASSERT(!tbox_context_control_hidden(out));
+    tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+    TBOX_TEST_ASSERT(tbox_context_control_focus(ctx, out));
+    TBOX_TEST_ASSERT(tbox_context_control_focus(ctx, inner));
+    tbox_context_control_set_hidden(ctx, box, true);
+    TBOX_TEST_ASSERT(tbox_context_focused_node(ctx) == NULL);
+    tbox_context_control_set_hidden(ctx, box, false);
+    tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+
+    /* Remove and clear, with focus leaving what goes away. */
+    TBOX_TEST_ASSERT(tbox_context_control_focus(ctx, tbox_context_query_in(ctx, last, ".more", 5)));
+    TBOX_TEST_ASSERT(tbox_context_control_remove(ctx, last));
+    TBOX_TEST_ASSERT(last->parent == NULL && tbox_context_focused_node(ctx) == NULL);
+    TBOX_TEST_ASSERT(!tbox_context_control_remove(ctx, last)); /* no parent any more */
+    TBOX_TEST_ASSERT(tbox_html_node_element_child_count(ul) == 2);
+    TBOX_TEST_ASSERT(tbox_context_control_focus(ctx, inner));
+    TBOX_TEST_ASSERT(tbox_context_control_clear(ctx, box));
+    TBOX_TEST_ASSERT(box->first_child == NULL && tbox_context_focused_node(ctx) == NULL);
+    TBOX_TEST_ASSERT(!tbox_context_control_remove(ctx, tbox_html_node_first_element_child(by_id(ctx, "s"))));
+    TBOX_TEST_ASSERT(!tbox_context_control_clear(ctx, by_id(ctx, "s")));
+    tbox_html_node *html = tbox_html_node_first_element_child(tbox_html_document_root(tbox_context_document(ctx)));
+    TBOX_TEST_ASSERT(html != NULL && !tbox_context_control_remove(ctx, html));
+    TBOX_TEST_ASSERT(!tbox_context_control_remove(NULL, ul));
+
+    tbox_context_run_frame(ctx, 400.0, 300.0, &list);
+    tbox_context_close(ctx);
+
+    /* The UA [hidden] rule takes the box out of layout: the block below
+     * moves up to the point. Author `display` wins over it, as in browsers. */
+    const char *css = "body { margin: 0; } div { height: 50px; } #shown { display: block; }";
+    const char *markup = "<body><div id='top'></div><div id='below'></div><div id='shown' hidden></div></body>";
+    ctx                = tbox_context_open(markup, strlen(markup), css, strlen(css), fonts, NULL);
+    TBOX_TEST_REQUIRE(ctx != NULL);
+    tbox_html_node *top = by_id(ctx, "top");
+    tbox_context_control_set_hidden(ctx, top, true);
+    tbox_context_run_frame(ctx, 200.0, 200.0, &list);
+    const tbox_layout_box *hit = tbox_context_hit_test(ctx, 5.0, 5.0);
+    TBOX_TEST_ASSERT(hit != NULL && hit->node == by_id(ctx, "below"));
+    hit = tbox_context_hit_test(ctx, 5.0, 55.0);
+    TBOX_TEST_ASSERT(hit != NULL && hit->node == by_id(ctx, "shown"));
+    tbox_context_control_set_hidden(ctx, top, false);
+    tbox_context_run_frame(ctx, 200.0, 200.0, &list);
+    hit = tbox_context_hit_test(ctx, 5.0, 5.0);
+    TBOX_TEST_ASSERT(hit != NULL && hit->node == top);
+    tbox_context_close(ctx);
+    return failures;
+}
+
 int tbox_test_controls_api_run(tbox_font_face_cache *fonts) {
     int failures = 0;
     failures += tbox_test_context_lookup(fonts);
@@ -308,5 +433,6 @@ int tbox_test_controls_api_run(tbox_font_face_cache *fonts) {
     failures += tbox_test_control_checked(fonts);
     failures += tbox_test_select_options(fonts);
     failures += tbox_test_table_api(fonts);
+    failures += tbox_test_generic_items(fonts);
     return failures;
 }

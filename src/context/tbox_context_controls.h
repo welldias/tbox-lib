@@ -14,6 +14,7 @@
 tbox_html_node *tbox_context_get_element_by_id(tbox_context *ctx, tbox_string_view id);
 tbox_html_node *tbox_context_query(tbox_context *ctx, const char *selector, size_t length);
 tbox_css_selector_node_set tbox_context_query_all(tbox_context *ctx, const char *selector, size_t length);
+tbox_html_node *tbox_context_query_in(const tbox_context *ctx, const tbox_html_node *root, const char *selector, size_t length);
 
 tbox_string_view tbox_context_control_value(tbox_context *ctx, const tbox_html_node *control);
 bool tbox_context_control_set_value(tbox_context *ctx, tbox_html_node *control, tbox_string_view value);
@@ -26,6 +27,14 @@ void tbox_context_control_blur(tbox_context *ctx);
 bool tbox_context_control_checked(const tbox_html_node *control);
 bool tbox_context_control_set_checked(tbox_context *ctx, tbox_html_node *control, bool checked);
 tbox_html_node *tbox_context_control_radio_checked(tbox_context *ctx, const tbox_html_node *radio);
+bool tbox_context_control_has_class(const tbox_html_node *node, tbox_string_view name);
+bool tbox_context_control_set_class(tbox_context *ctx, tbox_html_node *node, tbox_string_view name, bool on);
+bool tbox_context_control_hidden(const tbox_html_node *node);
+void tbox_context_control_set_hidden(tbox_context *ctx, tbox_html_node *node, bool hidden);
+tbox_html_node *tbox_context_control_instantiate(tbox_context *ctx, const tbox_html_node *templ, tbox_html_node *parent,
+                                                 size_t before_index);
+bool tbox_context_control_remove(tbox_context *ctx, tbox_html_node *node);
+bool tbox_context_control_clear(tbox_context *ctx, tbox_html_node *container);
 size_t tbox_context_select_option_count(const tbox_html_node *select);
 tbox_html_node *tbox_context_select_option_at(const tbox_html_node *select, size_t index);
 ptrdiff_t tbox_context_select_selected_index(tbox_context *ctx, const tbox_html_node *select);

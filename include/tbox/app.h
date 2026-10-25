@@ -100,6 +100,12 @@ tbox_html_node *tbox_app_get_element_by_id(tbox_app *app, tbox_string_view id);
 tbox_html_node *tbox_app_query(tbox_app *app, const char *selector, size_t length);
 tbox_css_selector_node_set tbox_app_query_all(tbox_app *app, const char *selector, size_t length);
 
+/* Element.querySelector: the first descendant of `root` (root excluded) in
+ * document order that matches, or NULL -- also for a syntax error, or a
+ * root that isn't an element of the app's current document. For filling an
+ * item made by tbox_control_instantiate (<tbox/controls.h>). */
+tbox_html_node *tbox_app_query_in(tbox_app *app, const tbox_html_node *root, const char *selector, size_t length);
+
 /* Document event callbacks run on the UI thread and receive this app.
  * The app looks up its current context internally when registering. Use
  * tbox_app_query/<tbox/controls.h> inside a handler for DOM/control operations.

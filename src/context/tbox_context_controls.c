@@ -103,15 +103,19 @@ bool tbox_context_control_disabled(const tbox_html_node *control) {
     return tbox_html_node_disabled(control);
 }
 
-void tbox_context_control_set_disabled(tbox_context *ctx, tbox_html_node *control, bool disabled) {
-    if (ctx == NULL || control == NULL) return;
-    tbox_html_node_set_bool_attribute(ctx->document, control, tbox_string_view_make("disabled", 8), disabled);
-    if (!disabled || ctx->focused_node == NULL) return;
+/* Moves focus away (closing its popup) when it is on `node` or inside it. */
+static void tbox_context_blur_within(tbox_context *ctx, const tbox_html_node *node) {
     for (const tbox_html_node *at = ctx->focused_node; at != NULL; at = at->parent)
-        if (at == control) {
+        if (at == node) {
             tbox_context_set_focus(ctx, NULL);
             return;
         }
+}
+
+void tbox_context_control_set_disabled(tbox_context *ctx, tbox_html_node *control, bool disabled) {
+    if (ctx == NULL || control == NULL) return;
+    tbox_html_node_set_bool_attribute(ctx->document, control, tbox_string_view_make("disabled", 8), disabled);
+    if (disabled) tbox_context_blur_within(ctx, control);
 }
 
 bool tbox_context_control_focus(tbox_context *ctx, tbox_html_node *control) {
@@ -146,6 +150,101 @@ tbox_html_node *tbox_context_control_radio_checked(tbox_context *ctx, const tbox
     if (ctx == NULL || !tbox_context_is_radio_input(radio)) return NULL;
     if (tbox_context_control_checked(radio)) return (tbox_html_node *)radio;
     return (tbox_html_node *)tbox_context_radio_checked_peer(ctx, radio);
+}
+
+/* Generic elements: classes, `hidden`, and items instantiated from a
+ * <template>. Options keep their choice in the context, so <select> and
+ * <optgroup> are left to the tbox_context_select_* functions. */
+
+static bool tbox_context_is_option_container(const tbox_html_node *node) {
+    return tbox_context_is_select(node) || tbox_context_is_element(node, "optgroup");
+}
+
+static bool tbox_context_is_option_item(const tbox_html_node *node) {
+    return tbox_context_is_element(node, "option") || tbox_context_is_element(node, "optgroup");
+}
+
+/* An element of the context's document: what every mutation below needs. */
+static bool tbox_context_owns_element(const tbox_context *ctx, const tbox_html_node *node) {
+    return ctx != NULL && node != NULL && node->type == TBOX_HTML_NODE_ELEMENT && node->owner_document == ctx->document;
+}
+
+tbox_html_node *tbox_context_query_in(const tbox_context *ctx, const tbox_html_node *root, const char *selector, size_t length) {
+    if (!tbox_context_owns_element(ctx, root)) return NULL;
+    tbox_css_selector_query *query = tbox_css_selector_compile(selector, length, NULL);
+    tbox_html_node *found          = (tbox_html_node *)tbox_css_selector_query_first(query, root);
+    tbox_css_selector_query_destroy(query);
+    return found;
+}
+
+bool tbox_context_control_has_class(const tbox_html_node *node, tbox_string_view name) {
+    return tbox_html_node_has_class(node, name);
+}
+
+bool tbox_context_control_set_class(tbox_context *ctx, tbox_html_node *node, tbox_string_view name, bool on) {
+    if (!tbox_context_owns_element(ctx, node) || name.size == 0) return false;
+    for (size_t i = 0; i < name.size; i++)
+        if (tbox_ascii_is_space(name.data[i])) return false;
+    if (on)
+        tbox_html_node_add_class(ctx->document, node, name);
+    else
+        tbox_html_node_remove_class(ctx->document, node, name);
+    return true;
+}
+
+bool tbox_context_control_hidden(const tbox_html_node *node) {
+    return node != NULL && tbox_html_node_has_attribute(node, tbox_string_view_make("hidden", 6));
+}
+
+void tbox_context_control_set_hidden(tbox_context *ctx, tbox_html_node *node, bool hidden) {
+    if (!tbox_context_owns_element(ctx, node)) return;
+    tbox_html_node_set_bool_attribute(ctx->document, node, tbox_string_view_make("hidden", 6), hidden);
+    if (hidden) tbox_context_blur_within(ctx, node);
+}
+
+/* The element child of `parent` at `index`, or NULL past the end. */
+static tbox_html_node *tbox_context_element_child_at(const tbox_html_node *parent, size_t index) {
+    for (tbox_html_node *child = tbox_html_node_first_element_child(parent); child != NULL;
+         child = tbox_html_node_next_element_sibling(child))
+        if (index-- == 0) return child;
+    return NULL;
+}
+
+tbox_html_node *tbox_context_control_instantiate(tbox_context *ctx, const tbox_html_node *templ, tbox_html_node *parent,
+                                                 size_t before_index) {
+    if (!tbox_context_owns_element(ctx, templ) || !tbox_context_is_element(templ, "template") ||
+        !tbox_context_owns_element(ctx, parent) || tbox_context_is_option_container(parent))
+        return NULL;
+    /* A template inside `parent` would see its own copies while cloning. */
+    for (const tbox_html_node *at = parent; at != NULL; at = at->parent)
+        if (at == templ) return NULL;
+    tbox_html_node *before = tbox_context_element_child_at(parent, before_index);
+    tbox_html_node *first  = NULL;
+    for (const tbox_html_node *child = tbox_html_node_first_element_child(templ); child != NULL;
+         child = tbox_html_node_next_element_sibling(child)) {
+        tbox_html_node *copy = tbox_html_node_clone(ctx->document, child, true);
+        if (copy == NULL) break;
+        tbox_html_node_insert_before(parent, copy, before);
+        if (first == NULL) first = copy;
+    }
+    return first;
+}
+
+bool tbox_context_control_remove(tbox_context *ctx, tbox_html_node *node) {
+    if (!tbox_context_owns_element(ctx, node) || node->parent == NULL || node->parent->type != TBOX_HTML_NODE_ELEMENT ||
+        tbox_context_is_option_item(node))
+        return false;
+    tbox_context_blur_within(ctx, node);
+    tbox_html_node_remove(node);
+    return true;
+}
+
+bool tbox_context_control_clear(tbox_context *ctx, tbox_html_node *container) {
+    if (!tbox_context_owns_element(ctx, container) || tbox_context_is_option_container(container)) return false;
+    for (const tbox_html_node *child = container->first_child; child != NULL; child = child->next_sibling)
+        tbox_context_blur_within(ctx, child);
+    tbox_html_node_remove_children(container);
+    return true;
 }
 
 /* Tables: plain tree walks in HTMLTableElement.rows order (see

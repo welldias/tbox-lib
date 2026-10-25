@@ -961,3 +961,27 @@ ser montado à mão.
   ganho, já que como subprojeto ele não é criado.
 - **Soname `0.1`** (maior.menor), porque na série 0.x a ABI muda entre
   versões menores. Pelo mesmo motivo, o pacote CMake usa `SameMinorVersion`.
+
+## Itens a partir de `<template>` em `controls.h` — 2026-10-25
+
+Para a aplicação montar listas e linhas com estrutura (ícone, texto,
+botão) sem andar no DOM, o modelo vem do próprio HTML, num `<template>`, e
+`tbox_control_instantiate` copia os filhos dele. A marcação fica no HTML,
+onde o CSS que a estiliza está, e o C só preenche dados. Descartadas:
+
+- **Um construtor em C** (criar elemento, pôr classe, anexar): é a API de
+  DOM de novo, e a estrutura do item ficaria espalhada pelo código.
+- **Parse de um fragmento de HTML vindo do C** (`innerHTML`): exige montar
+  e escapar strings, e cada chamada passaria pelo parser.
+- **Funções por tipo de item** (`tbox_list_*`, `tbox_card_*`): não há
+  semântica própria a esconder, como há na tabela e no select.
+
+`<select>`/`<optgroup>` são recusados como contêiner (e `<option>` em
+`remove`) porque a escolha vive no contexto e precisa de
+`tbox_context_select_options_changed`; para eles já existem as
+`tbox_select_*`. O índice de inserção conta só elementos, como as demais
+funções de posição. Classe e `hidden` entraram como funções genéricas, e
+não como estados nomeados (`selected`, `current`), para o CSS da aplicação
+decidir o que cada estado significa. `hidden` passou a ter
+`display: none` na folha UA, que o `display` do autor vence, como nos
+navegadores.

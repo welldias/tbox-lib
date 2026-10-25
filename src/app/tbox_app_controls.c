@@ -20,6 +20,10 @@ tbox_css_selector_node_set tbox_app_query_all(tbox_app *app, const char *selecto
     return tbox_context_query_all(tbox_app_context(app), selector, length);
 }
 
+tbox_html_node *tbox_app_query_in(tbox_app *app, const tbox_html_node *root, const char *selector, size_t length) {
+    return tbox_context_query_in(tbox_app_context(app), root, selector, length);
+}
+
 tbox_string_view tbox_control_value(tbox_app *app, const tbox_html_node *control) {
     return tbox_context_control_value(tbox_app_context(app), control);
 }
@@ -62,6 +66,35 @@ bool tbox_control_set_checked(tbox_app *app, tbox_html_node *control, bool check
 
 tbox_html_node *tbox_control_radio_checked(tbox_app *app, const tbox_html_node *radio) {
     return tbox_context_control_radio_checked(tbox_app_context(app), radio);
+}
+
+bool tbox_control_has_class(const tbox_html_node *node, tbox_string_view name) {
+    return tbox_context_control_has_class(node, name);
+}
+
+bool tbox_control_set_class(tbox_app *app, tbox_html_node *node, tbox_string_view name, bool on) {
+    return tbox_context_control_set_class(tbox_app_context(app), node, name, on);
+}
+
+bool tbox_control_hidden(const tbox_html_node *node) {
+    return tbox_context_control_hidden(node);
+}
+
+void tbox_control_set_hidden(tbox_app *app, tbox_html_node *node, bool hidden) {
+    tbox_context_control_set_hidden(tbox_app_context(app), node, hidden);
+}
+
+tbox_html_node *tbox_control_instantiate(tbox_app *app, const tbox_html_node *templ, tbox_html_node *parent,
+                                         size_t before_index) {
+    return tbox_context_control_instantiate(tbox_app_context(app), templ, parent, before_index);
+}
+
+bool tbox_control_remove(tbox_app *app, tbox_html_node *node) {
+    return tbox_context_control_remove(tbox_app_context(app), node);
+}
+
+bool tbox_control_clear(tbox_app *app, tbox_html_node *container) {
+    return tbox_context_control_clear(tbox_app_context(app), container);
 }
 
 size_t tbox_select_option_count(const tbox_html_node *select) {

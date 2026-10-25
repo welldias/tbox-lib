@@ -755,6 +755,7 @@ tbox_css_stylesheet *tbox_ua_stylesheet_create(tbox_ua_style_config config) {
         UA_RULE_3("cite", "dfn", "var", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE), UA_KW(TBOX_UA_PROP_FONT_STYLE, TBOX_UA_KW_ITALIC)),
         UA_RULE_1("big", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_INLINE), UA_LEN(TBOX_UA_PROP_FONT_SIZE, 1.2, TBOX_UA_UNIT_EM)),
         UA_RULE_5("head", "title", "template", "dialog", "datalist", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_NONE)),
+        UA_RULE_SELECTORS(1, ((const tbox_ua_selector[]){ UA_SEL_ATTR("*", "hidden") }), UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_NONE)),
         UA_RULE_6("table", "tr", "thead", "tbody", "tfoot", "caption", UA_KW(TBOX_UA_PROP_DISPLAY, TBOX_UA_KW_BLOCK)),
         UA_RULE_1("caption", UA_KW(TBOX_UA_PROP_TEXT_ALIGN, TBOX_UA_KW_CENTER)),
         UA_RULE_1("th", UA_KW(TBOX_UA_PROP_FONT_WEIGHT, TBOX_UA_KW_BOLD), UA_KW(TBOX_UA_PROP_TEXT_ALIGN, TBOX_UA_KW_CENTER)),

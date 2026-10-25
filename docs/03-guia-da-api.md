@@ -186,6 +186,7 @@ com `tbox_app_post` para ela acontecer depois do despacho atual.
 | `tbox_app_get_element_by_id(app, id)` | Primeiro elemento com esse `id`. |
 | `tbox_app_query(app, "seletor", len)` | Primeiro elemento que casa (`querySelector`); `NULL` também em erro de sintaxe. |
 | `tbox_app_query_all(app, "seletor", len)` | Todos (`querySelectorAll`); libere com `tbox_css_selector_node_set_destroy`. |
+| `tbox_app_query_in(app, raiz, "seletor", len)` | Primeiro descendente de `raiz` que casa (`Element.querySelector`, sem a própria raiz); para preencher um item criado por `tbox_control_instantiate`. |
 
 Os nós voltam não-`const` e pertencem ao documento atual do app: podem ir
 direto para `controls.h` ou para as funções de mutação do DOM (o documento
@@ -267,7 +268,36 @@ tbox_app_on_click(app, "#clientes tbody td", 18, on_linha, t, NULL);
 Exemplo completo em `example/table_demo.c`.
 
 Ordenação de linhas e seleção gerenciada pela biblioteca ficaram de fora;
-seleção se faz com `tbox_html_node_add_class`/`_toggle_class` e CSS.
+seleção se faz com `tbox_control_set_class` e CSS. Para linhas com mais do
+que texto (ícone, botão), use um `<template>` com o `<tr>` e
+`tbox_control_instantiate` no `<tbody>` (próxima seção).
+
+### Itens, classes e visibilidade — `controls.h`
+
+Para listas, cards e linhas que a aplicação monta conforme os dados. O HTML
+declara cada item uma vez dentro de um `<template>` (não desenhado; os
+filhos são nós comuns), e o código cria cópias, preenche cada uma com
+`tbox_app_query_in` + `tbox_control_set_label`/`_set_value` e marca o estado
+visual com classes. `<select>`/`<optgroup>` ficam de fora: as opções têm
+estado no contexto, use `tbox_select_*`.
+
+| Função | Uso |
+|---|---|
+| `tbox_control_instantiate(app, modelo, pai, antes_de)` | Copia (profundo) cada elemento filho do `<template>` e insere no `pai` antes do filho de elemento `antes_de` (`SIZE_MAX` = no fim). Devolve a primeira cópia. `id`s são copiados como estão: deixe-os fora do modelo. |
+| `tbox_control_remove(app, nó)` / `tbox_control_clear(app, pai)` | Tira um item / todos os filhos, movendo antes o foco se estiver dentro. Em `<table>` o `clear` também tira `thead`/`tfoot`; para linhas use `tbox_table_clear_body`. |
+| `tbox_control_has_class(nó, c)` / `_set_class(app, nó, c, on)` | Uma classe (sem espaços); `set_class` é idempotente. |
+| `tbox_control_hidden(nó)` / `_set_hidden(app, nó, on)` | Atributo `hidden` (`[hidden] { display: none }` na UA); esconder o focado, ou quem o contém, tira o foco. |
+
+```c
+/* <ul id="pastas"></ul>
+ * <template id="pasta"><li class="item"><span class="nome"></span></li></template> */
+tbox_html_node *lista = tbox_app_query(app, "#pastas", 7);
+tbox_html_node *modelo = tbox_app_query(app, "#pasta", 6);
+tbox_control_clear(app, lista);
+tbox_html_node *item = tbox_control_instantiate(app, modelo, lista, SIZE_MAX);
+tbox_control_set_label(app, tbox_app_query_in(app, item, ".nome", 5), tbox_string_view_make("Fotos", 5));
+tbox_control_set_class(app, item, tbox_string_view_make("ativo", 5), true);
+```
 
 ## 2. Documento e eventos — `context.h`
 
