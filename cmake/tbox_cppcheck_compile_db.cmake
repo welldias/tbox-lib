@@ -1,8 +1,8 @@
 # Writes a copy of the compile database for cppcheck with one entry per
-# source file. tbox_static and tbox_shared compile the same sources with
-# slightly different flags (tbox_shared_EXPORTS, -fPIC); cppcheck treats
-# each entry as a separate configuration and would analyse every file of
-# src/ twice. The first entry for a file wins.
+# source file. The library compiles each source once (tbox_objects), but the
+# app_lifecycle test compiles src/app/tbox_app.c and tbox_app_events.c again
+# with its own flags; cppcheck treats each entry as a separate configuration
+# and would analyse those files twice. The first entry for a file wins.
 #
 #   cmake -DINPUT=<compile_commands.json> -DOUTPUT=<filtered.json> -P <this>
 

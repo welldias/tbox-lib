@@ -1,0 +1,49 @@
+# CMake package for an installed tbox:
+#
+#   find_package(tbox 0.1 CONFIG REQUIRED)
+#   target_link_libraries(app PRIVATE tbox::tbox)
+#
+# tbox::tbox is the shared library when it was installed, the static one
+# otherwise; tbox::tbox_shared / tbox::tbox_static name each explicitly.
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# A static libtbox hands its system libraries to the consumer's link, so
+# the imported targets it references must exist here too. Same detection
+# (and the same TBOX_-prefixed pkg-config names) as tbox's own build.
+if(@TBOX_BUILD_STATIC@)
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_dependency(Threads)
+    find_dependency(Freetype)
+
+    if(@TBOX_CONFIG_FONTCONFIG@ OR @TBOX_CONFIG_HARFBUZZ@ OR @TBOX_CONFIG_WAYLAND@)
+        find_dependency(PkgConfig)
+    endif()
+    if(@TBOX_CONFIG_FONTCONFIG@)
+        pkg_check_modules(TBOX_FONTCONFIG REQUIRED QUIET IMPORTED_TARGET fontconfig)
+    endif()
+    if(@TBOX_CONFIG_HARFBUZZ@)
+        pkg_check_modules(TBOX_HARFBUZZ REQUIRED QUIET IMPORTED_TARGET harfbuzz)
+    endif()
+    if(@TBOX_CONFIG_WAYLAND@)
+        pkg_check_modules(TBOX_WAYLAND_CLIENT REQUIRED QUIET IMPORTED_TARGET wayland-client)
+        pkg_check_modules(TBOX_XKBCOMMON REQUIRED QUIET IMPORTED_TARGET xkbcommon)
+    endif()
+    if(@TBOX_CONFIG_WAYLAND_CURSOR@)
+        pkg_check_modules(TBOX_WAYLAND_CURSOR REQUIRED QUIET IMPORTED_TARGET wayland-cursor)
+    endif()
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/tboxTargets.cmake")
+
+if(NOT TARGET tbox::tbox)
+    if(TARGET tbox::tbox_shared)
+        add_library(tbox::tbox ALIAS tbox::tbox_shared)
+    else()
+        add_library(tbox::tbox ALIAS tbox::tbox_static)
+    endif()
+endif()
+
+check_required_components(tbox)

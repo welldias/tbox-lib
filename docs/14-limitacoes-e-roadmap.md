@@ -26,7 +26,7 @@ ainda muda.
 | Recursos | Sem rede: imagens, fontes e CSS vêm de arquivos locais ou strings. |
 | Desempenho | Estilo e layout são recalculados por inteiro a cada frame sujo; só a pintura é parcial. |
 | Concorrência | Uma thread de UI; outras threads só entregam trabalho por `tbox_app_post`. |
-| Integração | Sem `install`, `pkg-config` nem suporte a `add_subdirectory`. |
+| Integração | CMake: `add_subdirectory`/`FetchContent` e `find_package` (alvo `tbox::tbox`). Sem arquivo `pkg-config`. |
 | HTML | Fechamento implícito só de `<p>`/`<li>`; feche tabelas e `<option>` explicitamente. Um único elemento de topo é desenhado. |
 
 Simplificações de layout mais finas estão em

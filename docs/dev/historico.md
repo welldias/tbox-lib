@@ -18,6 +18,24 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — tbox como subprojeto CMake e pacote instalável (2026-10-25)
+
+O tbox passa a poder ser incluído por outro projeto com `add_subdirectory`
+ou `FetchContent`, e instalado com `cmake --install` para
+`find_package(tbox)`. O alvo é `tbox::tbox` nos dois casos. Caminhos usam
+`PROJECT_SOURCE_DIR`/`PROJECT_BINARY_DIR` em vez de
+`CMAKE_SOURCE_DIR`/`CMAKE_BINARY_DIR`. Exemplos, testes, `-Werror`
+(`TBOX_WARNINGS_AS_ERRORS`, nova), regras de install (`TBOX_INSTALL`,
+nova), o build type padrão e o alvo `cppcheck` só valem quando o tbox é o
+projeto raiz. Fontconfig e HarfBuzz são detectados na raiz, como o Wayland,
+com alvos `PkgConfig::TBOX_*`; os `PARENT_SCOPE` e as listas de
+`*_LIBRARIES`/`*_INCLUDE_DIRS` nos exemplos e no `tbox_cmp` saíram. As fontes
+são compiladas uma vez (`tbox_objects`) para a estática e a compartilhada:
+o build completo caiu de 323 para 206 passos. A `.so` ganhou soname
+`libtbox.so.0.1` e exporta os mesmos 944 símbolos de antes. O mínimo de CMake
+caiu de 4.0 para 3.25 (build e `ctest` conferidos com o 3.25.3). O alias sem
+namespace `tbox` foi removido; os exemplos usam `tbox::tbox`.
+
 ## Após v20 — Cantos arredondados nos controles (2026-10-22)
 
 A folha UA passa a dar `border-radius: 4px` a `button`, `input`, `select` e

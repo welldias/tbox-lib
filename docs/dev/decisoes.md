@@ -933,3 +933,31 @@ aparecer o caso. As funções ficam em `controls.h`, ao lado das
 `tbox_select_*`, em vez de um header próprio. Diferente do `<select>`, a
 tabela não tem estado no contexto, então nada novo foi guardado. Ordenação
 ficou para outro momento.
+
+## tbox como subprojeto CMake — 2026-10-25
+
+O `add_subdirectory`/`FetchContent` foi escolhido como a forma principal de
+consumo, com `find_package` sobre um install como alternativa, porque não
+exige empacotar nada e mantém as opções do tbox ao alcance do projeto pai.
+O consumidor linka o mesmo `tbox::tbox` nas duas formas. Um
+`ExternalProject` (o que o t-explorer precisava fazer antes) foi descartado
+como recomendação: ele esconde os alvos do pai, e o alvo importado precisa
+ser montado à mão.
+
+- **Padrões por `PROJECT_IS_TOP_LEVEL`**, em vez de exigir que o pai
+  desligue exemplos, testes e `-Werror`: quem só quer a biblioteca não
+  deveria compilar os exemplos, ter os testes no `ctest` dele nem quebrar
+  por um aviso novo do compilador.
+- **Como subprojeto, uma biblioteca só, escolhida por `BUILD_SHARED_LIBS`**,
+  a convenção do `add_library` sem tipo. No build raiz continuam as duas,
+  porque os testes linkam a estática (internos, `app_lifecycle`).
+- **Uma `OBJECT` library compartilhada pelas duas**, em vez de compilar as
+  fontes duas vezes. O custo é `-fPIC` também na estática, irrelevante aqui.
+- **Prefixo `TBOX_` nos módulos do pkg-config** (`PkgConfig::TBOX_FONTCONFIG`):
+  os alvos importados são por diretório, mas o nome sem prefixo colidiria
+  com um `pkg_check_modules(FONTCONFIG ...)` do próprio projeto pai.
+- **O alvo `cppcheck` mantém o nome**, mas só existe no build raiz. Renomear
+  para `tbox_cppcheck` foi descartado: mudaria o comando do mantenedor sem
+  ganho, já que como subprojeto ele não é criado.
+- **Soname `0.1`** (maior.menor), porque na série 0.x a ABI muda entre
+  versões menores. Pelo mesmo motivo, o pacote CMake usa `SameMinorVersion`.

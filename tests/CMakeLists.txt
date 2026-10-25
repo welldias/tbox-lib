@@ -15,13 +15,13 @@ add_executable(tbox_tests ${TBOX_TEST_SOURCES})
 # without explicit export declarations for internal symbols may not expose
 # them on all platforms (notably Windows), whereas a static library always
 # does.
-target_include_directories(tbox_tests PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tests ${CMAKE_SOURCE_DIR}/external/stb_image)
+target_include_directories(tbox_tests PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/tests ${PROJECT_SOURCE_DIR}/external/stb_image)
 
 # test_font.c loads the vendored Liberation Sans Regular by path (same
 # pattern as TBOX_EXAMPLE_HTML_PATH in example/CMakeLists.txt) rather than
 # depending on Fontconfig or anything installed on the test machine.
 target_compile_definitions(tbox_tests PRIVATE
-    TBOX_TEST_LIBERATION_SANS_PATH="${CMAKE_SOURCE_DIR}/external/liberation-sans/LiberationSans-Regular.ttf")
+    TBOX_TEST_LIBERATION_SANS_PATH="${PROJECT_SOURCE_DIR}/external/liberation-sans/LiberationSans-Regular.ttf")
 
 # test_image.c decodes real fixtures already on disk (tests/assets/black.png/
 # yellow.png, the same ones tests/assets/html-images.html's <img> regression fixture
@@ -29,12 +29,12 @@ target_compile_definitions(tbox_tests PRIVATE
 # join against regardless of ctest's own working directory.
 target_compile_definitions(tbox_tests PRIVATE
     TBOX_TEST_COMPLEX_SHAPING=$<BOOL:${TBOX_HARFBUZZ_FOUND}>
-    TBOX_TEST_ASSETS_DIR="${CMAKE_SOURCE_DIR}/tests/assets")
+    TBOX_TEST_ASSETS_DIR="${PROJECT_SOURCE_DIR}/tests/assets")
 
 if(TBOX_BUILD_STATIC)
     target_link_libraries(tbox_tests PRIVATE tbox_static tbox_warnings tbox_sanitizers)
 else()
-    target_link_libraries(tbox_tests PRIVATE tbox tbox_warnings tbox_sanitizers)
+    target_link_libraries(tbox_tests PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
 endif()
 
 foreach(tbox_test_group arena list vector string number bidi debug html_parser_tokenizer html_parser_tree html_xpath css_parser_tokenizer css_parser_parser css_selector css_cascade css_cascade_named_color css_cascade_color_convert css_cascade_color_parse style font image layout render output_raster context container_queries)
@@ -52,27 +52,13 @@ if(TBOX_OPENCV_FOUND AND TBOX_FONTCONFIG_FOUND)
     if(TBOX_BUILD_STATIC)
         target_link_libraries(tbox_cmp PRIVATE tbox_static tbox_warnings tbox_sanitizers)
     else()
-        target_link_libraries(tbox_cmp PRIVATE tbox tbox_warnings tbox_sanitizers)
+        target_link_libraries(tbox_cmp PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
     endif()
 
-    target_link_libraries(tbox_cmp PRIVATE
-        Freetype::Freetype
-        ${WAYLAND_CLIENT_LIBRARIES}
-        ${XKBCOMMON_LIBRARIES}
-        ${FONTCONFIG_LIBRARIES}
-        ${OpenCV_LIBS}
-    )
-    target_include_directories(tbox_cmp PRIVATE
-        ${WAYLAND_CLIENT_INCLUDE_DIRS}
-        ${XKBCOMMON_INCLUDE_DIRS}
-        ${FONTCONFIG_INCLUDE_DIRS}
-        ${OpenCV_INCLUDE_DIRS}
-    )
-    target_link_directories(tbox_cmp PRIVATE
-        ${WAYLAND_CLIENT_LIBRARY_DIRS}
-        ${XKBCOMMON_LIBRARY_DIRS}
-        ${FONTCONFIG_LIBRARY_DIRS}
-    )
+    # libtbox brings its own system dependencies (link-only from the static
+    # archive), so only OpenCV is listed here.
+    target_link_libraries(tbox_cmp PRIVATE ${OpenCV_LIBS})
+    target_include_directories(tbox_cmp PRIVATE ${OpenCV_INCLUDE_DIRS})
 
     set_target_properties(tbox_cmp PROPERTIES OUTPUT_NAME tbox_cmp)
 
@@ -89,11 +75,11 @@ endif()
 # supplies the rest of tbox, without extracting its real backend/app objects.
 if(TBOX_FONTCONFIG_FOUND AND TBOX_BUILD_STATIC)
     add_executable(tbox_app_lifecycle_tests test_app_lifecycle.c
-        ${CMAKE_SOURCE_DIR}/src/app/tbox_app.c
-        ${CMAKE_SOURCE_DIR}/src/app/tbox_app_events.c)
+        ${PROJECT_SOURCE_DIR}/src/app/tbox_app.c
+        ${PROJECT_SOURCE_DIR}/src/app/tbox_app_events.c)
     target_compile_definitions(tbox_app_lifecycle_tests PRIVATE
-        TBOX_HAS_WINDOW_BACKEND=1 TBOX_TEST_ASSETS_DIR="${CMAKE_SOURCE_DIR}/tests/assets")
-    target_include_directories(tbox_app_lifecycle_tests PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
+        TBOX_HAS_WINDOW_BACKEND=1 TBOX_TEST_ASSETS_DIR="${PROJECT_SOURCE_DIR}/tests/assets")
+    target_include_directories(tbox_app_lifecycle_tests PRIVATE ${PROJECT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(tbox_app_lifecycle_tests PRIVATE tbox_static tbox_warnings tbox_sanitizers)
     add_test(NAME app_lifecycle COMMAND tbox_app_lifecycle_tests)
 endif()

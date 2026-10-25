@@ -120,9 +120,12 @@ rolagem nem a evolução das animações.
   `build/cppcheck-report.txt`, e qualquer achado faz o target falhar.
 - Configuração em `tbox.cppcheck.in`, gerado como `build/tbox.cppcheck`.
   Ele lê `build/cppcheck-compile_commands.json`, cópia do banco de
-  compilação com uma entrada por fonte: `tbox_static` e `tbox_shared`
-  compilam os mesmos arquivos, e sem o filtro cada um seria analisado duas
-  vezes. Para rodar o cppcheck à mão, gere esse arquivo com o target antes.
+  compilação com uma entrada por fonte: o teste `app_lifecycle` compila de
+  novo `src/app/tbox_app.c` e `tbox_app_events.c` (que a biblioteca já
+  compila em `tbox_objects`), e sem o filtro esses arquivos seriam
+  analisados duas vezes. Para rodar o cppcheck à mão, gere esse arquivo com
+  o target antes. O target só existe no build do próprio tbox, não quando
+  ele é subprojeto de outro.
 - O addon `threadsafety` (precisa de Python 3) acusa `static` locais não
   `const` e funções da libc que não são seguras entre threads. Ele é
   desligado em `tests/` e `example/`, que são programas de uma thread só.

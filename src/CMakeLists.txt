@@ -15,95 +15,23 @@ file(GLOB TBOX_APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/app/*.c
 file(GLOB TBOX_IMAGE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/image/*.c)
 set(TBOX_SOURCES ${TBOX_SVG_SOURCES} ${TBOX_BASE_SOURCES} ${TBOX_HTML_PARSER_SOURCES} ${TBOX_HTML_XPATH_SOURCES} ${TBOX_CSS_PARSER_SOURCES} ${TBOX_CSS_SELECTOR_SOURCES} ${TBOX_CSS_CASCADE_SOURCES} ${TBOX_STYLE_SOURCES} ${TBOX_FONT_SOURCES} ${TBOX_LAYOUT_SOURCES} ${TBOX_RENDER_SOURCES} ${TBOX_OUTPUT_SOURCES} ${TBOX_CONTEXT_SOURCES} ${TBOX_APP_SOURCES} ${TBOX_IMAGE_SOURCES})
 
-# tbox_css_hsla_to_rgba (css_cascade/tbox_css_color_convert.c) uses fmod(),
-# which pre-C99-merge glibc and some other libcs ship in a separate math
-# library rather than folding into libc itself.
-find_library(TBOX_MATH_LIBRARY m)
-
-# tbox_app_post's queue lock (src/base/tbox_mutex.h): the one piece of the
-# library called from other threads.
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
-
-# Fontconfig backs tbox_font_source_fontconfig.c (Fonte/Texto layer), which
-# resolves a generic family like "sans-serif" to a real font file on Linux.
-# It is optional, same graceful-skip pattern as the Wayland dependency
-# detection in example/CMakeLists.txt: absence must never fail configure,
-# because the test suite only ever exercises the embedded font backend and
-# has to keep building in a CI container without Fontconfig installed --
-# when absent, tbox_font_source_fontconfig.c is excluded from TBOX_SOURCES
-# below rather than compiled and left to fail.
-find_package(PkgConfig QUIET)
-
-set(TBOX_FONTCONFIG_FOUND FALSE)
-
-if(TBOX_ENABLE_FONTCONFIG AND PkgConfig_FOUND)
-    pkg_check_modules(FONTCONFIG QUIET fontconfig)
-    if(FONTCONFIG_FOUND)
-        set(TBOX_FONTCONFIG_FOUND TRUE)
-    endif()
-endif()
-
-# example/CMakeLists.txt (a sibling add_subdirectory(), added after this one
-# by the root CMakeLists.txt) needs this too, to gate the tbox_app_demo
-# example the same way tbox_app.c is gated below -- directory-scoped `set()`
-# doesn't cross the src/ <-> example/ boundary on its own, so these have to
-# be pushed up to the scope both share (same reasoning as TBOX_WAYLAND_FOUND,
-# which is why that one is set in the root CMakeLists.txt directly instead).
-# The FONTCONFIG_* variables are only ever meaningful once TBOX_FONTCONFIG_FOUND
-# is true, but PARENT_SCOPE on an unset variable is harmless either way.
-set(TBOX_FONTCONFIG_FOUND ${TBOX_FONTCONFIG_FOUND} PARENT_SCOPE)
-set(FONTCONFIG_INCLUDE_DIRS ${FONTCONFIG_INCLUDE_DIRS} PARENT_SCOPE)
-set(FONTCONFIG_LIBRARY_DIRS ${FONTCONFIG_LIBRARY_DIRS} PARENT_SCOPE)
-set(FONTCONFIG_LIBRARIES ${FONTCONFIG_LIBRARIES} PARENT_SCOPE)
-
-# HarfBuzz backs the text shaper (docs/09-texto-e-fontes.md, "Shaping").
-# Optional with the same graceful-skip: exactly one of the two shaper files
-# is compiled -- tbox_font_shaper_harfbuzz.c when HarfBuzz is found,
-# tbox_font_shaper_simple.c (one glyph per codepoint) otherwise.
-set(TBOX_HARFBUZZ_FOUND FALSE)
-if(TBOX_ENABLE_HARFBUZZ AND PkgConfig_FOUND)
-    pkg_check_modules(HARFBUZZ QUIET harfbuzz)
-    if(HARFBUZZ_FOUND)
-        set(TBOX_HARFBUZZ_FOUND TRUE)
-    endif()
-endif()
+# The optional dependencies are detected in the root CMakeLists.txt (shared
+# with example/ and tests/); here each one only decides which files are
+# compiled. Exactly one of the two shaper files is built.
 if(TBOX_HARFBUZZ_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_shaper_simple.c)
 else()
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_shaper_harfbuzz.c)
-    if(TBOX_ENABLE_HARFBUZZ)
-        message(WARNING
-            "HarfBuzz (pkg-config module 'harfbuzz') not found: text is shaped "
-            "one glyph per codepoint (no ligatures or complex scripts).\n"
-            "  Arch Linux:    sudo pacman -S harfbuzz\n"
-            "  Debian/Ubuntu: sudo apt install libharfbuzz-dev"
-        )
-    endif()
 endif()
-
-set(TBOX_HARFBUZZ_FOUND ${TBOX_HARFBUZZ_FOUND} PARENT_SCOPE)
 
 if(NOT TBOX_FONTCONFIG_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/font/tbox_font_source_fontconfig.c)
-    if(TBOX_ENABLE_FONTCONFIG)
-        message(WARNING
-            "Fontconfig (pkg-config module 'fontconfig') not found: "
-            "application rendering is unavailable, but the core library "
-            "still builds with embedded fonts.\n"
-            "  Arch Linux:    sudo pacman -S fontconfig\n"
-            "  Debian/Ubuntu: sudo apt install libfontconfig1-dev"
-        )
-    endif()
 endif()
 
 # tbox_backend_wayland.c (Output Display's real Wayland backend) needs
-# wayland-client/xkbcommon plus the generated xdg-shell protocol glue --
-# TBOX_WAYLAND_FOUND and the associated variables/targets are detected once
-# in the root CMakeLists.txt (before add_subdirectory(src) runs), same
-# reasoning as TBOX_FONTCONFIG_FOUND above: this can't fail configure when
-# absent, since the test suite (tbox_raster_* only, no Wayland) must keep
-# building without these system packages installed.
+# wayland-client/xkbcommon plus the generated xdg-shell protocol glue. This
+# can't fail configure when absent, since the test suite (tbox_raster_* only,
+# no Wayland) must keep building without these system packages installed.
 if(NOT TBOX_WAYLAND_FOUND)
     list(REMOVE_ITEM TBOX_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/output/tbox_backend_wayland.c)
 else()
@@ -124,101 +52,89 @@ endif()
 # through src/base/tbox_string.h, and an `#include "utf8.h"` elsewhere fails
 # to compile (docs/09-texto-e-fontes.md).
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/base/tbox_string.c
-    PROPERTIES INCLUDE_DIRECTORIES ${CMAKE_SOURCE_DIR}/external/utf8.h)
+    PROPERTIES INCLUDE_DIRECTORIES ${PROJECT_SOURCE_DIR}/external/utf8.h)
 
-option(TBOX_BUILD_STATIC "Build the static tbox library (libtbox.a)" ON)
-option(TBOX_BUILD_SHARED "Build the shared tbox library (libtbox.so)" ON)
-
-if(NOT TBOX_BUILD_STATIC AND NOT TBOX_BUILD_SHARED)
-    message(FATAL_ERROR "At least one of TBOX_BUILD_STATIC or TBOX_BUILD_SHARED must be ON")
-endif()
-
-if(TBOX_BUILD_STATIC)
-    add_library(tbox_static STATIC ${TBOX_SOURCES})
-    target_include_directories(tbox_static PUBLIC ${CMAKE_SOURCE_DIR}/include)
-    target_include_directories(tbox_static PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/external/stb_image)
-    target_link_libraries(tbox_static PRIVATE tbox_warnings tbox_sanitizers Freetype::Freetype Threads::Threads)
+# The system libraries the build found. Applied to the object library (their
+# include paths) and to each final library (linking). All PRIVATE: a shared
+# libtbox records them itself, and a static one passes them on to whoever
+# links it as link-only dependencies, so consumers never list them by hand.
+function(tbox_use_dependencies target)
+    target_link_libraries(${target} PRIVATE Freetype::Freetype Threads::Threads)
     if(TBOX_MATH_LIBRARY)
-        target_link_libraries(tbox_static PRIVATE ${TBOX_MATH_LIBRARY})
+        target_link_libraries(${target} PRIVATE m)
     endif()
     if(TBOX_FONTCONFIG_FOUND)
-        target_include_directories(tbox_static PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
-        target_link_directories(tbox_static PRIVATE ${FONTCONFIG_LIBRARY_DIRS})
-        target_link_libraries(tbox_static PRIVATE ${FONTCONFIG_LIBRARIES})
+        target_link_libraries(${target} PRIVATE PkgConfig::TBOX_FONTCONFIG)
     endif()
     if(TBOX_HARFBUZZ_FOUND)
-        target_include_directories(tbox_static PRIVATE ${HARFBUZZ_INCLUDE_DIRS})
-        target_link_directories(tbox_static PRIVATE ${HARFBUZZ_LIBRARY_DIRS})
-        target_link_libraries(tbox_static PRIVATE ${HARFBUZZ_LIBRARIES})
+        target_link_libraries(${target} PRIVATE PkgConfig::TBOX_HARFBUZZ)
     endif()
     if(TBOX_WAYLAND_FOUND)
-        target_compile_definitions(tbox_static PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)
-        if(WAYLAND_CURSOR_FOUND)
-            target_compile_definitions(tbox_static PRIVATE TBOX_HAS_WAYLAND_CURSOR=1)
+        target_link_libraries(${target} PRIVATE PkgConfig::TBOX_WAYLAND_CLIENT PkgConfig::TBOX_XKBCOMMON)
+        if(TBOX_WAYLAND_CURSOR_FOUND)
+            target_link_libraries(${target} PRIVATE PkgConfig::TBOX_WAYLAND_CURSOR)
         endif()
-        add_dependencies(tbox_static tbox_wayland_xdg_shell_protocol)
-        target_include_directories(tbox_static PRIVATE
-            "${TBOX_XDG_SHELL_PROTOCOL_DIR}"
-            ${WAYLAND_CLIENT_INCLUDE_DIRS}
-            ${XKBCOMMON_INCLUDE_DIRS}
-        )
-        target_link_directories(tbox_static PRIVATE
-            ${WAYLAND_CLIENT_LIBRARY_DIRS}
-            ${XKBCOMMON_LIBRARY_DIRS}
-        )
-        target_link_libraries(tbox_static PRIVATE
-            ${WAYLAND_CLIENT_LIBRARIES}
-            ${XKBCOMMON_LIBRARIES}
-        )
     endif()
-    set_target_properties(tbox_static PROPERTIES OUTPUT_NAME tbox)
+endfunction()
+
+# Every source is compiled once, position-independent, and both libraries
+# are archived/linked from the same objects.
+add_library(tbox_objects OBJECT ${TBOX_SOURCES})
+set_target_properties(tbox_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(tbox_objects
+    PUBLIC ${PROJECT_SOURCE_DIR}/include
+    PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/external/stb_image)
+target_link_libraries(tbox_objects PRIVATE tbox_warnings tbox_sanitizers)
+tbox_use_dependencies(tbox_objects)
+
+if(TBOX_WAYLAND_FOUND)
+    target_compile_definitions(tbox_objects PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)
+    if(TBOX_WAYLAND_CURSOR_FOUND)
+        target_compile_definitions(tbox_objects PRIVATE TBOX_HAS_WAYLAND_CURSOR=1)
+    endif()
+    add_dependencies(tbox_objects tbox_wayland_xdg_shell_protocol)
+    target_include_directories(tbox_objects PRIVATE "${TBOX_XDG_SHELL_PROTOCOL_DIR}")
 endif()
 
+# tbox_static / tbox_shared, both named libtbox on disk, each with a
+# tbox::-namespaced alias that matches the name of its installed, exported
+# counterpart (see the root CMakeLists.txt). tbox_sanitizers stays a
+# build-tree-only link dependency: it is never installed.
+set(TBOX_LIBRARY_TARGETS "")
+
+foreach(tbox_kind IN ITEMS STATIC SHARED)
+    if(NOT TBOX_BUILD_${tbox_kind})
+        continue()
+    endif()
+    string(TOLOWER "tbox_${tbox_kind}" tbox_target)
+
+    add_library(${tbox_target} ${tbox_kind} $<TARGET_OBJECTS:tbox_objects>)
+    add_library(tbox::${tbox_target} ALIAS ${tbox_target})
+    target_include_directories(${tbox_target} PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
+    target_link_libraries(${tbox_target} PRIVATE $<BUILD_INTERFACE:tbox_sanitizers>)
+    tbox_use_dependencies(${tbox_target})
+    set_target_properties(${tbox_target} PROPERTIES
+        OUTPUT_NAME tbox
+        EXPORT_NAME ${tbox_target})
+
+    list(APPEND TBOX_LIBRARY_TARGETS ${tbox_target})
+endforeach()
+
+# 0.x: every minor version may break the ABI, so it is part of the soname.
 if(TBOX_BUILD_SHARED)
-    add_library(tbox_shared SHARED ${TBOX_SOURCES})
-    target_include_directories(tbox_shared PUBLIC ${CMAKE_SOURCE_DIR}/include)
-    target_include_directories(tbox_shared PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/external/stb_image)
-    target_link_libraries(tbox_shared PRIVATE tbox_warnings tbox_sanitizers Freetype::Freetype Threads::Threads)
-    if(TBOX_MATH_LIBRARY)
-        target_link_libraries(tbox_shared PRIVATE ${TBOX_MATH_LIBRARY})
-    endif()
-    if(TBOX_FONTCONFIG_FOUND)
-        target_include_directories(tbox_shared PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
-        target_link_directories(tbox_shared PRIVATE ${FONTCONFIG_LIBRARY_DIRS})
-        target_link_libraries(tbox_shared PRIVATE ${FONTCONFIG_LIBRARIES})
-    endif()
-    if(TBOX_HARFBUZZ_FOUND)
-        target_include_directories(tbox_shared PRIVATE ${HARFBUZZ_INCLUDE_DIRS})
-        target_link_directories(tbox_shared PRIVATE ${HARFBUZZ_LIBRARY_DIRS})
-        target_link_libraries(tbox_shared PRIVATE ${HARFBUZZ_LIBRARIES})
-    endif()
-    if(TBOX_WAYLAND_FOUND)
-        target_compile_definitions(tbox_shared PRIVATE TBOX_HAS_WAYLAND=1 TBOX_HAS_WINDOW_BACKEND=1)
-        if(WAYLAND_CURSOR_FOUND)
-            target_compile_definitions(tbox_shared PRIVATE TBOX_HAS_WAYLAND_CURSOR=1)
-        endif()
-        add_dependencies(tbox_shared tbox_wayland_xdg_shell_protocol)
-        target_include_directories(tbox_shared PRIVATE
-            "${TBOX_XDG_SHELL_PROTOCOL_DIR}"
-            ${WAYLAND_CLIENT_INCLUDE_DIRS}
-            ${XKBCOMMON_INCLUDE_DIRS}
-        )
-        target_link_directories(tbox_shared PRIVATE
-            ${WAYLAND_CLIENT_LIBRARY_DIRS}
-            ${XKBCOMMON_LIBRARY_DIRS}
-        )
-        target_link_libraries(tbox_shared PRIVATE
-            ${WAYLAND_CLIENT_LIBRARIES}
-            ${XKBCOMMON_LIBRARIES}
-        )
-    endif()
-    set_target_properties(tbox_shared PROPERTIES OUTPUT_NAME tbox)
+    set_target_properties(tbox_shared PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
 endif()
 
-# `tbox` is the default target other parts of the build (e.g. the example) link
-# against: shared when available, falling back to static otherwise.
+set(TBOX_LIBRARY_TARGETS ${TBOX_LIBRARY_TARGETS} PARENT_SCOPE)
+
+# `tbox::tbox` is the target consumers (and the examples) link against:
+# shared when available, falling back to static otherwise.
 if(TBOX_BUILD_SHARED)
-    add_library(tbox ALIAS tbox_shared)
+    add_library(tbox::tbox ALIAS tbox_shared)
 else()
-    add_library(tbox ALIAS tbox_static)
+    add_library(tbox::tbox ALIAS tbox_static)
 endif()

@@ -6,7 +6,7 @@
 
 ## Requisitos
 
-- Linux, compilador C com suporte a C23, CMake ≥ 4.0.
+- Linux, compilador C com suporte a C23, CMake ≥ 3.25.
 - **FreeType**: instalado no sistema, incluindo headers de desenvolvimento
   (`freetype2` no Arch Linux; `libfreetype-dev` no Debian/Ubuntu).
 - **Fontconfig** (opcional): necessário para `tbox_app` e para screenshots.
@@ -69,21 +69,28 @@ int main(void) {
 }
 ```
 
-Compile contra a biblioteca compartilhada gerada pelo build:
+Num projeto CMake, traga o tbox com `FetchContent` e linke `tbox::tbox`:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(tbox GIT_REPOSITORY https://github.com/welldias/tbox-lib.git GIT_TAG main)
+FetchContent_MakeAvailable(tbox)
+
+add_executable(ola ola.c)
+target_link_libraries(ola PRIVATE tbox::tbox)
+```
+
+As dependências de sistema (FreeType e, quando habilitados, Fontconfig,
+HarfBuzz e Wayland) vêm com o alvo. `add_subdirectory` de um submódulo e
+`find_package(tbox)` depois de um `cmake --install` também funcionam; veja
+[Plataformas e build](11-plataformas-e-build.md#usar-em-outro-projeto).
+
+Sem CMake, compile contra a biblioteca compartilhada gerada pelo build:
 
 ```sh
 cc -std=c23 -I tbox-lib/include ola.c -o ola \
    -L tbox-lib/build/src -ltbox -Wl,-rpath,"$PWD/tbox-lib/build/src"
 ```
-
-A `libtbox.so` referencia as dependências de sistema usadas pelo build
-(FreeType e, quando habilitados, Fontconfig, HarfBuzz e Wayland). Com a
-estática (`libtbox.a`) é preciso listar essas dependências ao linkar; veja
-[Plataformas e build](11-plataformas-e-build.md#usar-em-outro-projeto).
-
-O projeto ainda não tem regras de `install`, arquivo `pkg-config` nem
-suporte a ser incluído com `add_subdirectory` (os caminhos de include do
-CMake assumem que o tbox é o projeto raiz).
 
 ## Próximos passos
 

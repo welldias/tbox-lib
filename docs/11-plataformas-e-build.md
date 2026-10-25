@@ -1,7 +1,7 @@
 # 11. Plataformas e build
 
 > - **Escopo:** em quais plataformas o tbox roda, opções de build, dependências e como integrar a biblioteca a outro projeto.
-> - **Código relacionado:** `CMakeLists.txt`, `src/CMakeLists.txt`, `example/CMakeLists.txt`, `tests/CMakeLists.txt`, `src/output/tbox_window_backend.h`, `src/app/tbox_app_unavailable.c`
+> - **Código relacionado:** `CMakeLists.txt`, `src/CMakeLists.txt`, `example/CMakeLists.txt`, `tests/CMakeLists.txt`, `cmake/tboxConfig.cmake.in`, `src/output/tbox_window_backend.h`, `src/app/tbox_app_unavailable.c`
 > - **Veja também:** [Primeiros passos](01-primeiros-passos.md), [Arquitetura](02-arquitetura.md#fronteira-com-a-plataforma), [Limitações e roadmap](14-limitacoes-e-roadmap.md)
 
 ## Plataformas
@@ -54,39 +54,79 @@ sudo apt install libfreetype-dev
 
 ## Opções do CMake
 
-| Opção | Padrão | Efeito |
+"Raiz" é o build do próprio tbox (`cmake -S tbox-lib`); "subprojeto" é o
+tbox incluído por outro projeto com `add_subdirectory` ou `FetchContent`.
+
+| Opção | Padrão (raiz / subprojeto) | Efeito |
 |---|---|---|
 | `TBOX_ENABLE_WAYLAND` | `ON` | Constrói o backend Wayland, se as dependências existirem. `OFF` gera uma lib headless. |
 | `TBOX_ENABLE_FONTCONFIG` | `ON` | Usa Fontconfig, se existir. `OFF` deixa só a fonte que você fornecer. |
 | `TBOX_ENABLE_HARFBUZZ` | `ON` | Usa HarfBuzz para o shaping, se existir. `OFF` usa o shaper simples. |
-| `TBOX_BUILD_STATIC` / `TBOX_BUILD_SHARED` | `ON` / `ON` | `libtbox.a` e/ou `libtbox.so` (pelo menos uma). |
-| `TBOX_BUILD_EXAMPLES` | `ON` | Programas de `example/`. |
-| `TBOX_BUILD_TESTS` | `ON` | `tbox_tests` e, com OpenCV, `tbox_cmp`. |
+| `TBOX_BUILD_STATIC` / `TBOX_BUILD_SHARED` | `ON`/`ON` / segue `BUILD_SHARED_LIBS` | `libtbox.a` e/ou `libtbox.so` (pelo menos uma). Como subprojeto: só a compartilhada se `BUILD_SHARED_LIBS=ON`, senão só a estática. |
+| `TBOX_BUILD_EXAMPLES` | `ON` / `OFF` | Programas de `example/`. |
+| `TBOX_BUILD_TESTS` | `ON` / `OFF` | `tbox_tests` e, com OpenCV, `tbox_cmp`. |
+| `TBOX_WARNINGS_AS_ERRORS` | `ON` / `OFF` | `-Werror` (`/WX` no MSVC) além de `-Wall -Wextra -Wpedantic`. |
+| `TBOX_INSTALL` | `ON` / `OFF` | Regras de `install` e o pacote CMake (`tboxConfig.cmake`). |
 | `TBOX_ENABLE_SANITIZERS` | `OFF` | AddressSanitizer + UndefinedBehaviorSanitizer. |
 
-O build padrão é `Debug`. O próprio projeto compila com `-Wall -Wextra -Wpedantic -Werror`.
+Na raiz, o build padrão é `Debug` e o projeto compila com
+`-Wall -Wextra -Wpedantic -Werror`. Como subprojeto, o tbox não mexe no
+`CMAKE_BUILD_TYPE` nem no `CMAKE_EXPORT_COMPILE_COMMANDS` do projeto pai, e
+o alvo `cppcheck` não é criado.
+
+As duas bibliotecas saem dos mesmos objetos (`tbox_objects`, compilados uma
+vez, com `-fPIC`). A compartilhada tem soname `libtbox.so.0.1`: enquanto a
+versão for 0.x, cada versão menor pode quebrar a ABI.
 
 ## Usar em outro projeto
 
-Ainda não há `install`, `pkg-config` nem suporte a `add_subdirectory` (o
-CMake usa `${CMAKE_SOURCE_DIR}` nos caminhos de include, que só está certo
-quando o tbox é o projeto raiz). Hoje:
+Os alvos públicos são `tbox::tbox` (a compartilhada, se for construída;
+senão a estática), `tbox::tbox_shared` e `tbox::tbox_static`, com os mesmos
+nomes nas formas de consumo abaixo. As dependências de sistema vêm com o
+alvo: a `libtbox.so` as referencia, e a `libtbox.a` as repassa para o link
+de quem a usa. O consumidor não lista nenhuma.
 
-1. Compile o tbox com o CMake dele.
-2. Aponte o include para `tbox-lib/include`.
-3. Linke:
-   - **compartilhada** (mais simples):
-     `-L tbox-lib/build/src -ltbox -Wl,-rpath,<caminho>`;
-   - **estática**: `tbox-lib/build/src/libtbox.a` e as bibliotecas de sistema
-     usadas pelo build. Com todos os backends e HarfBuzz habilitados:
-     `$(pkg-config --libs freetype2 fontconfig harfbuzz wayland-client wayland-cursor xkbcommon) -lm -pthread`.
-     Para um build só com fontes fornecidas pela aplicação e shaper simples:
-     `$(pkg-config --libs freetype2) -lm -pthread`.
-     Se as dependências também forem linkadas estaticamente, use
-     `pkg-config --static --libs` para incluir as dependências transitivas.
+**`FetchContent`** (ou `add_subdirectory` de um submódulo git):
 
-Empacotamento (instalar a lib e a fonte embutida no sistema) faz parte do
-[roadmap](14-limitacoes-e-roadmap.md).
+```cmake
+include(FetchContent)
+FetchContent_Declare(tbox GIT_REPOSITORY https://github.com/welldias/tbox-lib.git GIT_TAG main)
+FetchContent_MakeAvailable(tbox)
+target_link_libraries(app PRIVATE tbox::tbox)
+```
+
+Para usar um checkout local no lugar do download:
+`-DFETCHCONTENT_SOURCE_DIR_TBOX=/caminho/tbox-lib`. As variáveis e os
+alvos importados do pkg-config têm prefixo `TBOX_`
+(`PkgConfig::TBOX_FONTCONFIG` etc.) para não colidir com os do projeto pai.
+
+**Instalado** (`cmake --install build --prefix <prefixo>`):
+
+```cmake
+find_package(tbox 0.1 CONFIG REQUIRED)   # com CMAKE_PREFIX_PATH=<prefixo>
+target_link_libraries(app PRIVATE tbox::tbox)
+```
+
+São instalados `lib/libtbox.{a,so}`, `include/tbox/` e `lib/cmake/tbox/`.
+O `tboxConfig.cmake` procura de novo as dependências de sistema que o build
+encontrou, porque a estática precisa delas no link do consumidor. A versão
+é compatível dentro da mesma versão menor (`SameMinorVersion`).
+
+**Sem CMake**, aponte o include para `tbox-lib/include` e linke:
+
+- **compartilhada** (mais simples):
+  `-L tbox-lib/build/src -ltbox -Wl,-rpath,<caminho>`;
+- **estática**: `tbox-lib/build/src/libtbox.a` e as bibliotecas de sistema
+  usadas pelo build. Com todos os backends e HarfBuzz habilitados:
+  `$(pkg-config --libs freetype2 fontconfig harfbuzz wayland-client wayland-cursor xkbcommon) -lm -pthread`.
+  Para um build só com fontes fornecidas pela aplicação e shaper simples:
+  `$(pkg-config --libs freetype2) -lm -pthread`.
+  Se as dependências também forem linkadas estaticamente, use
+  `pkg-config --static --libs` para incluir as dependências transitivas.
+
+Ainda não há arquivo `pkg-config` (`tbox.pc`). A `.so` exporta todo símbolo
+não `static`, sem macro de exportação, o que só funciona assim no Linux
+(ver [débito técnico](dev/debito-tecnico.md#consumo-por-outro-projeto)).
 
 ## Fronteira para novos backends
 

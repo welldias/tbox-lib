@@ -198,16 +198,19 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 
 ### Consumo por outro projeto
 
-- **O que é:** não há regras de `install`, arquivo `pkg-config` nem export
-  de alvos CMake. `src/CMakeLists.txt` usa `${CMAKE_SOURCE_DIR}` nos
-  `target_include_directories`, o que só é correto quando o tbox é o projeto
-  raiz — com `add_subdirectory` a partir de outro projeto, os caminhos
-  apontam para o lugar errado (`${PROJECT_SOURCE_DIR}` ou
-  `${CMAKE_CURRENT_SOURCE_DIR}/..` resolveriam). A fonte embutida também
-  precisaria ser instalada junto.
-- **Quando revisitar:** item 4 do roadmap (alvos de distribuição), ou antes,
-  se um projeto externo quiser usar o tbox.
-- **Toca:** `CMakeLists.txt`, `src/CMakeLists.txt`.
+- **O que é:** resolvido em parte (2026-10-25): o tbox funciona como
+  subprojeto (`add_subdirectory`/`FetchContent`) e instalado
+  (`find_package(tbox)`), com o alvo `tbox::tbox` nos dois casos (ver
+  [Plataformas e build](../11-plataformas-e-build.md#usar-em-outro-projeto)).
+  Continuam faltando: um `tbox.pc` para quem não usa CMake, e uma macro de
+  exportação nos headers públicos (`GenerateExportHeader` +
+  visibilidade `hidden`). Sem ela a `.so` exporta todo símbolo não
+  `static`, inclusive os internos usados pelos testes, e uma DLL no Windows
+  não exportaria nada. A fonte embutida não precisa ser instalada: a
+  aplicação passa os bytes para `tbox_font_source_embedded_create`.
+- **Quando revisitar:** `tbox.pc` quando um consumidor sem CMake pedir; a
+  macro de exportação junto com o backend de Windows (item 4 do roadmap).
+- **Toca:** `CMakeLists.txt`, `src/CMakeLists.txt`, `include/tbox/*.h`.
 
 ## Thread-safety
 

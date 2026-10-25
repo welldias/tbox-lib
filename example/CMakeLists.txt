@@ -7,7 +7,7 @@ add_executable(html_parser
 )
 
 target_link_libraries(html_parser
-    PRIVATE tbox tbox_warnings tbox_sanitizers
+    PRIVATE tbox::tbox tbox_warnings tbox_sanitizers
 )
 
 target_compile_definitions(html_parser PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html")
@@ -19,7 +19,7 @@ add_executable(html_xpath
 )
 
 target_link_libraries(html_xpath
-    PRIVATE tbox tbox_warnings tbox_sanitizers
+    PRIVATE tbox::tbox tbox_warnings tbox_sanitizers
 )
 
 target_compile_definitions(html_xpath PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html")
@@ -31,7 +31,7 @@ add_executable(css_parser
 )
 
 target_link_libraries(css_parser
-    PRIVATE tbox tbox_warnings tbox_sanitizers
+    PRIVATE tbox::tbox tbox_warnings tbox_sanitizers
 )
 
 target_compile_definitions(css_parser PRIVATE TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
@@ -43,7 +43,7 @@ add_executable(css_selector
 )
 
 target_link_libraries(css_selector
-    PRIVATE tbox tbox_warnings tbox_sanitizers
+    PRIVATE tbox::tbox tbox_warnings tbox_sanitizers
 )
 
 target_compile_definitions(css_selector PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html" TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
@@ -55,7 +55,7 @@ add_executable(css_style_by_node
 )
 
 target_link_libraries(css_style_by_node
-    PRIVATE tbox tbox_warnings tbox_sanitizers
+    PRIVATE tbox::tbox tbox_warnings tbox_sanitizers
 )
 
 target_compile_definitions(css_style_by_node PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html" TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
@@ -67,7 +67,7 @@ add_executable(css_cascade
 )
 
 target_link_libraries(css_cascade
-    PRIVATE tbox tbox_warnings tbox_sanitizers
+    PRIVATE tbox::tbox tbox_warnings tbox_sanitizers
 )
 
 target_compile_definitions(css_cascade PRIVATE TBOX_EXAMPLE_HTML_PATH="${CMAKE_CURRENT_SOURCE_DIR}/index.html" TBOX_EXAMPLE_CSS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/style.css")
@@ -79,7 +79,7 @@ add_executable(css_cascade_origins
 )
 
 target_link_libraries(css_cascade_origins
-    PRIVATE tbox tbox_warnings tbox_sanitizers
+    PRIVATE tbox::tbox tbox_warnings tbox_sanitizers
 )
 
 target_compile_definitions(css_cascade_origins PRIVATE
@@ -111,20 +111,12 @@ if(TBOX_WAYLAND_FOUND)
 
     add_dependencies(tbox_wayland tbox_wayland_xdg_shell_protocol)
 
-    target_include_directories(tbox_wayland PRIVATE
-        "${TBOX_XDG_SHELL_PROTOCOL_DIR}"
-        ${WAYLAND_CLIENT_INCLUDE_DIRS}
-        ${XKBCOMMON_INCLUDE_DIRS}
-    )
-    target_link_directories(tbox_wayland PRIVATE
-        ${WAYLAND_CLIENT_LIBRARY_DIRS}
-        ${XKBCOMMON_LIBRARY_DIRS}
-    )
+    target_include_directories(tbox_wayland PRIVATE "${TBOX_XDG_SHELL_PROTOCOL_DIR}")
     target_link_libraries(tbox_wayland
-        PRIVATE tbox tbox_warnings tbox_sanitizers
+        PRIVATE tbox::tbox tbox_warnings tbox_sanitizers
                 Freetype::Freetype
-                ${WAYLAND_CLIENT_LIBRARIES}
-                ${XKBCOMMON_LIBRARIES}
+                PkgConfig::TBOX_WAYLAND_CLIENT
+                PkgConfig::TBOX_XKBCOMMON
     )
 
     set_target_properties(tbox_wayland PROPERTIES OUTPUT_NAME tbox_wayland)
@@ -133,27 +125,27 @@ endif()
 # This demo uses only the public application API and can always be compiled.
 # At runtime it reports when no interactive window backend is available.
 add_executable(tbox_keyboard_demo keyboard_demo.c)
-target_link_libraries(tbox_keyboard_demo PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_link_libraries(tbox_keyboard_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
 target_compile_definitions(tbox_keyboard_demo PRIVATE
     TBOX_KEYBOARD_HTML_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/keyboard_demo.html\"
     TBOX_KEYBOARD_CSS_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/keyboard_demo.css\")
 
 add_executable(tbox_control_theme_demo control_theme_demo.c)
-target_link_libraries(tbox_control_theme_demo PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_link_libraries(tbox_control_theme_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
 target_compile_definitions(tbox_control_theme_demo PRIVATE
     TBOX_CONTROL_THEME_HTML_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/control_theme_demo.html\"
     TBOX_CONTROL_THEME_PAGE_CSS_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/control_theme_demo.page.css\"
     TBOX_CONTROL_THEME_CSS_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}/control_theme_demo.controls.css\")
 
 add_executable(tbox_assets_showrun assets_showrun.c)
-target_link_libraries(tbox_assets_showrun PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_link_libraries(tbox_assets_showrun PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
 target_compile_definitions(tbox_assets_showrun PRIVATE
     TBOX_SHOWRUN_ASSETS_DIR=\"${PROJECT_SOURCE_DIR}/tests/assets\")
 
 # tbox_app_post from a worker thread; public API only, like the demos above.
 find_package(Threads REQUIRED)
 add_executable(tbox_worker_post_demo worker_post_demo.c)
-target_link_libraries(tbox_worker_post_demo PRIVATE tbox tbox_warnings tbox_sanitizers Threads::Threads)
+target_link_libraries(tbox_worker_post_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers Threads::Threads)
 
 # The older app demo is still built only with both of its platform dependencies.
 if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
@@ -161,24 +153,8 @@ if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
         tbox_app.c
     )
 
-    target_link_libraries(tbox_app_demo
-        PRIVATE tbox tbox_warnings tbox_sanitizers
-                Freetype::Freetype
-                ${WAYLAND_CLIENT_LIBRARIES}
-                ${XKBCOMMON_LIBRARIES}
-                ${FONTCONFIG_LIBRARIES}
-    )
-
-    target_include_directories(tbox_app_demo PRIVATE
-        ${WAYLAND_CLIENT_INCLUDE_DIRS}
-        ${XKBCOMMON_INCLUDE_DIRS}
-        ${FONTCONFIG_INCLUDE_DIRS}
-    )
-    target_link_directories(tbox_app_demo PRIVATE
-        ${WAYLAND_CLIENT_LIBRARY_DIRS}
-        ${XKBCOMMON_LIBRARY_DIRS}
-        ${FONTCONFIG_LIBRARY_DIRS}
-    )
+    # Public API only: libtbox brings its own system dependencies.
+    target_link_libraries(tbox_app_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
 
     # tbox_app.c now loads its own dedicated fixture files via
     # tbox_app_create_from_files instead of inline C-string HTML/CSS -- same
@@ -194,10 +170,10 @@ if(TBOX_WAYLAND_FOUND AND TBOX_FONTCONFIG_FOUND)
 endif()
 
 add_executable(tbox_lifecycle_demo lifecycle_demo.c)
-target_link_libraries(tbox_lifecycle_demo PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_link_libraries(tbox_lifecycle_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
 
 add_executable(tbox_controls_demo controls_demo.c)
-target_link_libraries(tbox_controls_demo PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_link_libraries(tbox_controls_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
 
 add_executable(tbox_table_demo table_demo.c)
-target_link_libraries(tbox_table_demo PRIVATE tbox tbox_warnings tbox_sanitizers)
+target_link_libraries(tbox_table_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)

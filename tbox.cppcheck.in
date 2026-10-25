@@ -12,8 +12,8 @@
 
   Include paths and defines come from the compile database, so they always
   match the real build. The CMake target first writes a copy with one entry
-  per source file (cmake/tbox_cppcheck_compile_db.cmake): tbox_static and
-  tbox_shared compile the same files, which would be analysed twice.
+  per source file (cmake/tbox_cppcheck_compile_db.cmake): the app_lifecycle
+  test compiles src/app/tbox_app*.c again, which would be analysed twice.
   Running cppcheck by hand needs that file, so build the target once.
 -->
 <project version="1">
