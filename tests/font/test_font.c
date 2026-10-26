@@ -164,6 +164,27 @@ int tbox_test_font_run(void) {
                 tbox_font_measure_text(face, tbox_string_view_make(distinct, (size_t)length));
             }
             TBOX_TEST_ASSERT(tbox_font_measure_text(face, word) == width);
+
+            /* Past the cache's largest table: the table grows, then sweeps
+             * the runs nobody asked for. A run asked for all along, one
+             * moved by every rebuild and one swept out still shape as on
+             * a fresh face. */
+            tbox_string_view early = tbox_test_font_view_from_cstr("w7");
+            for (int i = 0; i < 70000; i++) {
+                int length = snprintf(distinct, sizeof(distinct), "x%d", i);
+                tbox_font_measure_text(face, tbox_string_view_make(distinct, (size_t)length));
+                if (i % 1000 == 0) {
+                    TBOX_TEST_ASSERT(tbox_font_shape(&arena, face, word, 0.0, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &cached, &cached_count, &cached_width));
+                    TBOX_TEST_ASSERT(cached_count == shaped_count && memcmp(cached, shaped, cached_count * sizeof(*cached)) == 0);
+                }
+            }
+            tbox_string_view checks[] = { word, early, tbox_test_font_view_from_cstr("x69999") };
+            for (size_t i = 0; i < sizeof(checks) / sizeof(checks[0]); i++) {
+                TBOX_TEST_ASSERT(tbox_font_shape(&arena, face, checks[i], 0.0, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &cached, &cached_count, &cached_width));
+                TBOX_TEST_ASSERT(tbox_font_shape(&arena, fresh, checks[i], 0.0, TBOX_FONT_DIRECTION_AUTO, 0.0, 0, &shaped, &shaped_count, &shaped_width));
+                TBOX_TEST_ASSERT(cached_width == shaped_width && cached_count == shaped_count);
+                TBOX_TEST_ASSERT(cached_count > 0 && memcmp(cached, shaped, cached_count * sizeof(*cached)) == 0);
+            }
             tbox_arena_destroy(&arena);
             tbox_font_face_destroy(fresh);
         }

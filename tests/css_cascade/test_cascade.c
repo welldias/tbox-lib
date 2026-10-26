@@ -670,5 +670,46 @@ int tbox_test_css_cascade_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* The rule index (rulesets by the id, class or tag of their rightmost
+     * compound) keeps source order across buckets -- a tie between a class
+     * and an attribute selector (the universal bucket) goes to the later
+     * one either way -- compares ids and classes case-sensitively, and
+     * lets :where() rules through as universal ones. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div class='b a' id='x'>t</div><div class='A'>u</div><p class='q'>v</p>");
+        const tbox_html_node *div = tbox_html_document_root(doc)->first_child, *upper = div->next_sibling, *p = upper->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(
+            ".b { color: red; } div { color: blue; } .a { color: green; }"
+            ".a { width: 1px; } [id] { width: 2px; } [id] { left: 2px; } .a { left: 1px; }"
+            ":where(#x) { height: 1px; } div { height: 2px; }"
+            "#X { margin: 9px; } #x { margin: 3px; } .a { padding: 9px; } .A { padding: 4px; }"
+            "span, .q { color: purple; }"
+            "div::before { content: 'tag'; } .a::before { content: 'class'; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_css_computed_style style  = tbox_css_cascade_resolve(&source, 1, div);
+        const tbox_css_resolved_declaration *color = find_cstr(&style, "color"), *width = find_cstr(&style, "width");
+        const tbox_css_resolved_declaration *height = find_cstr(&style, "height"), *margin = find_cstr(&style, "margin"), *left = find_cstr(&style, "left");
+        TBOX_TEST_ASSERT(color != NULL && text_eq(color->value, "green"));
+        TBOX_TEST_ASSERT(width != NULL && text_eq(width->value, "2px"));
+        TBOX_TEST_ASSERT(left != NULL && text_eq(left->value, "1px"));
+        TBOX_TEST_ASSERT(height != NULL && text_eq(height->value, "2px"));
+        TBOX_TEST_ASSERT(margin != NULL && text_eq(margin->value, "3px"));
+        tbox_css_computed_style_destroy(&style);
+        style = tbox_css_cascade_resolve(&source, 1, upper);
+        const tbox_css_resolved_declaration *padding = find_cstr(&style, "padding");
+        TBOX_TEST_ASSERT(padding != NULL && text_eq(padding->value, "4px"));
+        tbox_css_computed_style_destroy(&style);
+        style = tbox_css_cascade_resolve(&source, 1, p);
+        color = find_cstr(&style, "color");
+        TBOX_TEST_ASSERT(color != NULL && text_eq(color->value, "purple"));
+        tbox_css_computed_style_destroy(&style);
+        style = tbox_css_cascade_resolve_pseudo_element(&source, 1, div, "before");
+        const tbox_css_resolved_declaration *content = find_cstr(&style, "content");
+        TBOX_TEST_ASSERT(content != NULL && text_eq(content->value, "'class'"));
+        tbox_css_computed_style_destroy(&style);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     return failures;
 }

@@ -5,8 +5,10 @@
 # file.
 file(GLOB_RECURSE TBOX_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
 
-# The app integration test has its own main and simulated backend.
-list(REMOVE_ITEM TBOX_TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test_app_lifecycle.c)
+# The app integration test has its own main and simulated backend; the
+# measuring tools (further down) are programs of their own too.
+list(REMOVE_ITEM TBOX_TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test_app_lifecycle.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tbox_bench.c ${CMAKE_CURRENT_SOURCE_DIR}/tbox_frame_dump.c)
 add_executable(tbox_tests ${TBOX_TEST_SOURCES})
 
 # The parser/tree-builder test groups exercise internals that aren't part of
@@ -82,4 +84,22 @@ if(TBOX_FONTCONFIG_FOUND AND TBOX_BUILD_STATIC)
     target_include_directories(tbox_app_lifecycle_tests PRIVATE ${PROJECT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(tbox_app_lifecycle_tests PRIVATE tbox_static tbox_warnings tbox_sanitizers)
     add_test(NAME app_lifecycle COMMAND tbox_app_lifecycle_tests)
+endif()
+
+# Measuring tools (docs/12-ferramentas-e-testes.md): tbox_bench times a
+# frame and its memory, tbox_frame_dump signs every frame of a set of
+# documents to compare two builds. They read context internals (the frame
+# arena, the box tree), hence the static library, and use the vendored
+# font so results do not depend on the machine's fonts. ctest only checks
+# that they still run; their numbers are read by hand.
+if(TBOX_BUILD_STATIC)
+    foreach(tbox_tool tbox_bench tbox_frame_dump)
+        add_executable(${tbox_tool} ${tbox_tool}.c)
+        target_include_directories(${tbox_tool} PRIVATE ${PROJECT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR})
+        target_compile_definitions(${tbox_tool} PRIVATE
+            TBOX_TOOL_FONT_PATH="${PROJECT_SOURCE_DIR}/external/liberation-sans/LiberationSans-Regular.ttf")
+        target_link_libraries(${tbox_tool} PRIVATE tbox_static tbox_warnings tbox_sanitizers)
+    endforeach()
+    add_test(NAME tool_bench COMMAND tbox_bench --table 20 --frames 1)
+    add_test(NAME tool_frame_dump COMMAND tbox_frame_dump --hover-step 300 ${CMAKE_CURRENT_SOURCE_DIR}/assets/html-tables-styled.html)
 endif()

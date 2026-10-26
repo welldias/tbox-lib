@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <tbox/css_parser.h>
@@ -21,6 +22,8 @@ tbox_css_stylesheet *tbox_css_stylesheet_create_empty(void) {
     stylesheet->ruleset_count = 0;
     stylesheet->pseudo_element_rulesets      = NULL;
     stylesheet->pseudo_element_ruleset_count = 0;
+    stylesheet->element_index                = (tbox_css_rule_index){ 0 };
+    stylesheet->pseudo_element_index         = (tbox_css_rule_index){ 0 };
     stylesheet->font_palettes = NULL;
     stylesheet->font_palette_count = 0;
     stylesheet->font_faces = NULL;
@@ -51,7 +54,7 @@ tbox_css_stylesheet *tbox_css_parse(const char *input, size_t length) {
     stylesheet->counter_styles = parser.counter_styles;
     stylesheet->keyframes       = parser.keyframes_out;
     stylesheet->keyframes_count = parser.keyframes_out_count;
-    if (!tbox_css_stylesheet_index_pseudo_elements(stylesheet)) {
+    if (!tbox_css_stylesheet_index_rules(stylesheet)) {
         tbox_css_stylesheet_destroy(stylesheet);
         return NULL;
     }
@@ -74,7 +77,7 @@ static bool tbox_css_ruleset_has_pseudo_element(const tbox_css_ruleset *ruleset)
     return false;
 }
 
-bool tbox_css_stylesheet_index_pseudo_elements(tbox_css_stylesheet *stylesheet) {
+static bool tbox_css_stylesheet_index_pseudo_elements(tbox_css_stylesheet *stylesheet) {
     size_t count = 0;
     for (size_t r = 0; r < stylesheet->ruleset_count; r++)
         if (tbox_css_ruleset_has_pseudo_element(&stylesheet->rulesets[r]))
@@ -89,6 +92,137 @@ bool tbox_css_stylesheet_index_pseudo_elements(tbox_css_stylesheet *stylesheet) 
     for (size_t r = 0; r < stylesheet->ruleset_count; r++)
         if (tbox_css_ruleset_has_pseudo_element(&stylesheet->rulesets[r]))
             stylesheet->pseudo_element_rulesets[stylesheet->pseudo_element_ruleset_count++] = r;
+    return true;
+}
+
+/* The rule index key of `selector`: its rightmost compound's id, else its
+ * first class, else its tag; UNIVERSAL when it has none. Simple selectors
+ * inside :is()/:not() and the like are not looked at: a compound needing
+ * them still needs its own id, class or tag. */
+static tbox_css_simple_selector_kind tbox_css_selector_index_key(const tbox_css_selector *selector, tbox_string_view *name) {
+    size_t start = selector->simple_selector_count - 1;
+    while (start > 0 && selector->simple_selectors[start].combinator_before == TBOX_CSS_COMBINATOR_NONE)
+        start--;
+    const tbox_css_simple_selector *id = NULL, *class_item = NULL, *type = NULL;
+    for (size_t i = start; i < selector->simple_selector_count; i++) {
+        const tbox_css_simple_selector *item = &selector->simple_selectors[i];
+        if (item->kind == TBOX_CSS_SIMPLE_SELECTOR_ID && id == NULL)
+            id = item;
+        else if (item->kind == TBOX_CSS_SIMPLE_SELECTOR_CLASS && class_item == NULL)
+            class_item = item;
+        else if (item->kind == TBOX_CSS_SIMPLE_SELECTOR_TYPE && type == NULL)
+            type = item;
+    }
+    const tbox_css_simple_selector *key = id != NULL ? id : class_item != NULL ? class_item : type;
+    *name = key != NULL ? key->name : tbox_string_view_make(NULL, 0);
+    return key != NULL ? key->kind : TBOX_CSS_SIMPLE_SELECTOR_UNIVERSAL;
+}
+
+static size_t tbox_css_rule_index_hash(tbox_css_simple_selector_kind kind, tbox_string_view name) {
+    uint64_t hash = 14695981039346656037ull ^ (uint64_t)kind;
+    for (size_t i = 0; i < name.size; i++) {
+        unsigned char c = (unsigned char)name.data[i];
+        if (kind == TBOX_CSS_SIMPLE_SELECTOR_TYPE)
+            c = (unsigned char)tbox_ascii_to_lower((char)c);
+        hash ^= c;
+        hash *= 1099511628211ull;
+    }
+    return (size_t)hash;
+}
+
+static bool tbox_css_rule_bucket_is(const tbox_css_rule_bucket *bucket, tbox_css_simple_selector_kind kind, tbox_string_view name) {
+    return bucket->kind == kind && (kind == TBOX_CSS_SIMPLE_SELECTOR_TYPE ? tbox_string_view_equal_ascii_ci(bucket->name, name) : tbox_string_view_equal(bucket->name, name));
+}
+
+static tbox_css_rule_bucket *tbox_css_rule_index_slot(const tbox_css_rule_index *index, tbox_css_simple_selector_kind kind, tbox_string_view name) {
+    for (size_t slot = tbox_css_rule_index_hash(kind, name) & index->mask;; slot = (slot + 1) & index->mask) {
+        tbox_css_rule_bucket *bucket = &index->buckets[slot];
+        if (!bucket->used || tbox_css_rule_bucket_is(bucket, kind, name))
+            return bucket;
+    }
+}
+
+const tbox_css_rule_bucket *tbox_css_rule_index_find(const tbox_css_rule_index *index, tbox_css_simple_selector_kind kind, tbox_string_view name) {
+    if (index->buckets == NULL)
+        return NULL;
+    const tbox_css_rule_bucket *bucket = tbox_css_rule_index_slot(index, kind, name);
+    return bucket->used ? bucket : NULL;
+}
+
+/* Builds `index` over the rulesets `list` names (all of them when NULL),
+ * in two passes: count each bucket, then fill it. */
+static bool tbox_css_rule_index_build(tbox_css_stylesheet *stylesheet, const size_t *list, size_t count, tbox_css_rule_index *index) {
+    *index           = (tbox_css_rule_index){ 0 };
+    size_t selectors = 0;
+    for (size_t k = 0; k < count; k++)
+        selectors += stylesheet->rulesets[list != NULL ? list[k] : k].selector_count;
+    size_t capacity = 16;
+    while (capacity < selectors * 2 && capacity <= SIZE_MAX / 4 / sizeof(tbox_css_rule_bucket))
+        capacity *= 2;
+    index->buckets = tbox_arena_alloc_zero(&stylesheet->arena, capacity * sizeof(tbox_css_rule_bucket));
+    if (index->buckets == NULL)
+        return false;
+    index->mask = capacity - 1;
+    size_t universal_last = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        for (size_t k = 0; k < count; k++) {
+            size_t r                         = list != NULL ? list[k] : k;
+            const tbox_css_ruleset *ruleset  = &stylesheet->rulesets[r];
+            for (size_t s = 0; s < ruleset->selector_count; s++) {
+                tbox_string_view name;
+                tbox_css_simple_selector_kind kind = tbox_css_selector_index_key(&ruleset->selectors[s], &name);
+                size_t *target = NULL, *target_count, *last;
+                if (kind == TBOX_CSS_SIMPLE_SELECTOR_UNIVERSAL) {
+                    target       = index->universal;
+                    target_count = &index->universal_count;
+                    last         = &universal_last;
+                } else {
+                    tbox_css_rule_bucket *bucket = tbox_css_rule_index_slot(index, kind, name);
+                    if (!bucket->used)
+                        *bucket = (tbox_css_rule_bucket){ true, kind, name, NULL, 0, 0 };
+                    target       = bucket->rulesets;
+                    target_count = &bucket->count;
+                    last         = &bucket->last;
+                }
+                if (*last == r + 1)
+                    continue; /* two selectors of one ruleset in the same bucket */
+                *last = r + 1;
+                if (pass == 1)
+                    target[*target_count] = r;
+                (*target_count)++;
+            }
+        }
+        if (pass == 1)
+            break;
+        /* Storage for the counts, which the fill pass recounts. */
+        index->universal = index->universal_count > 0 ? tbox_arena_alloc(&stylesheet->arena, index->universal_count * sizeof(size_t)) : NULL;
+        if (index->universal_count > 0 && index->universal == NULL)
+            return false;
+        index->universal_count = 0;
+        universal_last         = 0;
+        for (size_t slot = 0; slot < capacity; slot++) {
+            tbox_css_rule_bucket *bucket = &index->buckets[slot];
+            if (!bucket->used)
+                continue;
+            bucket->rulesets = tbox_arena_alloc(&stylesheet->arena, bucket->count * sizeof(size_t));
+            if (bucket->rulesets == NULL)
+                return false;
+            bucket->count = 0;
+            bucket->last  = 0;
+        }
+    }
+    return true;
+}
+
+bool tbox_css_stylesheet_index_rules(tbox_css_stylesheet *stylesheet) {
+    if (!tbox_css_stylesheet_index_pseudo_elements(stylesheet))
+        return false;
+    if (!tbox_css_rule_index_build(stylesheet, NULL, stylesheet->ruleset_count, &stylesheet->element_index) ||
+        !tbox_css_rule_index_build(stylesheet, stylesheet->pseudo_element_rulesets, stylesheet->pseudo_element_ruleset_count, &stylesheet->pseudo_element_index)) {
+        /* Without an index the cascade looks at every ruleset. */
+        stylesheet->element_index        = (tbox_css_rule_index){ 0 };
+        stylesheet->pseudo_element_index = (tbox_css_rule_index){ 0 };
+    }
     return true;
 }
 

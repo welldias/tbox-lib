@@ -2379,6 +2379,57 @@ static bool tbox_style_parse_reflection(tbox_string_view value, const tbox_style
     return i == count;
 }
 
+/* The properties the declaration validators know, sorted for a binary
+ * search: composition (masks, box-reflect, box-decoration-break), SVG
+ * paint, paint (paint-order, markers, mask-type), motion path, OpenType
+ * and inline (initial-letter, hanging-punctuation). -webkit- names are
+ * matched by prefix. */
+static const char *const tbox_style_checked_properties[] = {
+    "box-decoration-break", "box-reflect", "fill", "fill-opacity", "fill-rule",
+    "font-feature-settings", "font-language-override", "font-palette", "font-variant",
+    "font-variant-alternates", "font-variant-east-asian", "font-variant-ligatures",
+    "font-variant-numeric", "hanging-punctuation", "initial-letter", "marker",
+    "marker-end", "marker-mid", "marker-start", "mask", "mask-clip", "mask-composite",
+    "mask-image", "mask-mode", "mask-origin", "mask-position", "mask-repeat", "mask-size",
+    "mask-type", "offset", "offset-anchor", "offset-distance", "offset-path",
+    "offset-position", "offset-rotate", "paint-order", "stroke", "stroke-dasharray",
+    "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+    "stroke-opacity", "stroke-width",
+};
+
+/* strcmp order over the ASCII-lowercased bytes. */
+static int tbox_style_compare_name(tbox_string_view name, const char *other) {
+    size_t i = 0;
+    for (; i < name.size && other[i] != '\0'; i++) {
+        unsigned char a = (unsigned char)tbox_ascii_to_lower(name.data[i]), b = (unsigned char)other[i];
+        if (a != b)
+            return a < b ? -1 : 1;
+    }
+    return i < name.size ? 1 : other[i] != '\0' ? -1 : 0;
+}
+
+const char *tbox_style_checked_property(size_t index) {
+    return index < sizeof(tbox_style_checked_properties) / sizeof(tbox_style_checked_properties[0]) ? tbox_style_checked_properties[index] : NULL;
+}
+
+bool tbox_style_declaration_checked(tbox_string_view property) {
+    property = tbox_string_view_trim_ascii_space(property);
+    if (tbox_string_view_starts_with_ascii_ci(property, "-webkit-"))
+        return true;
+    size_t low = 0, high = sizeof(tbox_style_checked_properties) / sizeof(tbox_style_checked_properties[0]);
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        int order     = tbox_style_compare_name(property, tbox_style_checked_properties[middle]);
+        if (order == 0)
+            return true;
+        if (order < 0)
+            high = middle;
+        else
+            low = middle + 1;
+    }
+    return false;
+}
+
 bool tbox_style_composition_declaration_valid(tbox_string_view name, tbox_string_view value) {
     bool legacy = tbox_string_view_starts_with_ascii_ci(name, "-webkit-");
     if (legacy) name.data += 8, name.size -= 8;
@@ -4605,7 +4656,124 @@ static const tbox_css_query_container *tbox_style_query_container(const tbox_htm
     return container;
 }
 
-static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena, tbox_vector *items, tbox_style_generated *generated, const tbox_style_counter_styles *counter_styles, bool hidden, const tbox_style_container_sizes *sizes, const tbox_style_font_metrics *metrics, const tbox_style *declared_initial) {
+/* Style sharing (docs/dev/decisoes.md): elements alike resolve alike.
+ * Two elements with the same tag and attributes, parents of the same share
+ * class and exactly the same cascade result (the same declarations of the
+ * same rules) get the same tbox_style from tbox_style_resolve_full, so the
+ * second one copies the first one's instead of converting the
+ * declarations again. The cascade still runs for every element: it is
+ * what proves the two alike. A share class names a set of elements whose
+ * styles are equal; an element that copies joins its model's class.
+ *
+ * A model is an element whose entry still holds the style
+ * tbox_style_resolve_full gave it after the per-node steps that follow
+ * (marker, control parts, container): one those steps changed is not a
+ * model. Its first-letter style is set later, per node, and not copied. */
+typedef struct tbox_style_share_declaration {
+    tbox_string_view property, value;
+    const tbox_css_ruleset *ruleset;
+    const tbox_css_property_rule *registration;
+    tbox_css_origin origin;
+    bool important, registered_default;
+} tbox_style_share_declaration;
+
+typedef struct tbox_style_share_model {
+    uint64_t hash;
+    const tbox_html_node *node; /* its tag and attributes */
+    size_t parent_class, share_class;
+    size_t entry; /* index in the table being built */
+    tbox_style_share_declaration *declarations;
+    size_t declaration_count;
+} tbox_style_share_model;
+
+typedef struct tbox_style_share {
+    tbox_style_share_model **slots;
+    size_t mask, classes;
+} tbox_style_share;
+
+static uint64_t tbox_style_share_mix(uint64_t hash, const void *data, size_t size) {
+    const unsigned char *bytes = data;
+    for (size_t i = 0; i < size; i++) {
+        hash ^= bytes[i];
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+static uint64_t tbox_style_share_hash(const tbox_html_node *node, size_t parent_class, const tbox_css_computed_style *computed) {
+    uint64_t hash = tbox_style_share_mix(14695981039346656037ull, &parent_class, sizeof(parent_class));
+    hash          = tbox_style_share_mix(hash, node->element.tag_name.data, node->element.tag_name.size);
+    for (size_t i = 0; i < node->element.attribute_count; i++) {
+        const tbox_html_attribute *attribute = &node->element.attributes[i];
+        hash = tbox_style_share_mix(hash, attribute->name.data, attribute->name.size);
+        hash = tbox_style_share_mix(hash, "=", 1);
+        hash = tbox_style_share_mix(hash, attribute->value.data, attribute->value.size);
+    }
+    for (size_t i = 0; i < computed->count; i++) {
+        const tbox_css_resolved_declaration *declaration = &computed->items[i];
+        hash = tbox_style_share_mix(hash, declaration->property.data, declaration->property.size);
+        hash = tbox_style_share_mix(hash, ":", 1);
+        hash = tbox_style_share_mix(hash, declaration->value.data, declaration->value.size);
+        hash = tbox_style_share_mix(hash, &declaration->ruleset, sizeof(declaration->ruleset));
+    }
+    return hash != 0 ? hash : 1;
+}
+
+static bool tbox_style_share_matches(const tbox_style_share_model *model, uint64_t hash, const tbox_html_node *node, size_t parent_class, const tbox_css_computed_style *computed) {
+    const tbox_html_node *other = model->node;
+    if (model->hash != hash || model->parent_class != parent_class || model->declaration_count != computed->count ||
+        !tbox_string_view_equal(other->element.tag_name, node->element.tag_name) || other->element.attribute_count != node->element.attribute_count)
+        return false;
+    for (size_t i = 0; i < node->element.attribute_count; i++)
+        if (!tbox_string_view_equal(other->element.attributes[i].name, node->element.attributes[i].name) ||
+            !tbox_string_view_equal(other->element.attributes[i].value, node->element.attributes[i].value))
+            return false;
+    for (size_t i = 0; i < computed->count; i++) {
+        const tbox_style_share_declaration *a   = &model->declarations[i];
+        const tbox_css_resolved_declaration *b  = &computed->items[i];
+        if (a->ruleset != b->ruleset || a->registration != b->registration || a->origin != b->origin || a->important != b->important ||
+            a->registered_default != b->registered_default || !tbox_string_view_equal(a->property, b->property) || !tbox_string_view_equal(a->value, b->value))
+            return false;
+    }
+    return true;
+}
+
+/* The slot of the model alike `node`, or the empty one where it would go;
+ * NULL without a table. */
+static tbox_style_share_model **tbox_style_share_slot(tbox_style_share *share, uint64_t hash, const tbox_html_node *node, size_t parent_class, const tbox_css_computed_style *computed) {
+    if (share == NULL || share->slots == NULL)
+        return NULL;
+    for (size_t slot = hash & share->mask;; slot = (slot + 1) & share->mask)
+        if (share->slots[slot] == NULL || tbox_style_share_matches(share->slots[slot], hash, node, parent_class, computed))
+            return &share->slots[slot];
+}
+
+/* Records the element of entry `entry` as a model in `slot`. Its
+ * declarations are copied: the cascade result they live in is freed. */
+static void tbox_style_share_add(tbox_style_share_model **slot, tbox_arena *arena, uint64_t hash, const tbox_html_node *node, size_t parent_class, size_t share_class, size_t entry, const tbox_css_computed_style *computed) {
+    tbox_style_share_model *model = tbox_arena_alloc(arena, sizeof(*model));
+    tbox_style_share_declaration *declarations = computed->count > 0 ? tbox_arena_alloc(arena, computed->count * sizeof(*declarations)) : NULL;
+    if (model == NULL || (computed->count > 0 && declarations == NULL))
+        return;
+    for (size_t i = 0; i < computed->count; i++) {
+        const tbox_css_resolved_declaration *declaration = &computed->items[i];
+        char *text = tbox_arena_alloc(arena, declaration->property.size + declaration->value.size + 1);
+        if (text == NULL)
+            return;
+        memcpy(text, declaration->property.data, declaration->property.size);
+        memcpy(text + declaration->property.size, declaration->value.data, declaration->value.size);
+        declarations[i] = (tbox_style_share_declaration){
+            .property = tbox_string_view_make(text, declaration->property.size),
+            .value = tbox_string_view_make(text + declaration->property.size, declaration->value.size),
+            .ruleset = declaration->ruleset, .registration = declaration->registration, .origin = declaration->origin,
+            .important = declaration->important, .registered_default = declaration->registered_default,
+        };
+    }
+    *model = (tbox_style_share_model){ hash, node, parent_class, share_class, entry, declarations, computed->count };
+    *slot  = model;
+}
+
+static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_style *parent_style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena, tbox_vector *items, tbox_style_generated *generated, const tbox_style_counter_styles *counter_styles, bool hidden, const tbox_style_container_sizes *sizes, const tbox_style_font_metrics *metrics, const tbox_style *declared_initial, tbox_style_share *share, size_t parent_class) {
     if (node == NULL) {
         return;
     }
@@ -4615,12 +4783,28 @@ static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_
     bool generating    = false;
     const void *quotes = NULL;
     size_t node_index = items->length;
+    size_t node_class = parent_class;
 
     if (node->type == TBOX_HTML_NODE_ELEMENT) {
         tbox_css_query_context query     = { parent_style != NULL ? parent_style->query_container : NULL, parent_style != NULL ? parent_style->custom_properties : NULL };
         tbox_css_computed_style computed = tbox_css_cascade_resolve_in_viewport(sources, source_count, node, viewport_width, viewport_height, reduced_motion, &query);
-        tbox_style_resolve_full(&node_style, node, parent_style, &computed, viewport_width, viewport_height, arena, metrics, declared_initial);
+        /* SVG elements get per-node data after the walk (tbox_svg_prepare). */
+        bool shareable                     = share != NULL && !tbox_svg_is_element(node);
+        uint64_t share_hash                = shareable ? tbox_style_share_hash(node, parent_class, &computed) : 0;
+        tbox_style_share_model **share_slot = shareable ? tbox_style_share_slot(share, share_hash, node, parent_class, &computed) : NULL;
+        bool shared                        = share_slot != NULL && *share_slot != NULL;
+        tbox_style pristine;
+        if (shared) {
+            node_style              = ((const tbox_style_entry *)items->data)[(*share_slot)->entry].style;
+            node_style.first_letter = NULL;
+            node_class              = (*share_slot)->share_class;
+        } else {
+            tbox_style_resolve_full(&node_style, node, parent_style, &computed, viewport_width, viewport_height, arena, metrics, declared_initial);
+            node_class = share != NULL ? ++share->classes : 0;
+        }
         node_style.counter_styles = counter_styles;
+        if (share_slot != NULL && !shared)
+            pristine = node_style;
         const tbox_css_query_container *own_container = tbox_style_query_container(node, &node_style, sizes, arena);
         if (own_container != NULL)
             node_style.query_container = own_container;
@@ -4630,7 +4814,6 @@ static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_
             tbox_style_generated_counters(generated, node->parent, &computed);
             quotes = tbox_style_generated_quotes(generated, &computed);
         }
-        tbox_css_computed_style_destroy(&computed);
         if (tbox_string_view_equal_cstr(node->element.tag_name, "li") || node_style.display_list_item)
             tbox_style_resolve_marker(node, &node_style, sources, source_count, viewport_width, viewport_height, reduced_motion, arena);
         tbox_style_resolve_parts(node, &node_style, sources, source_count, viewport_width, viewport_height, reduced_motion, arena);
@@ -4638,6 +4821,9 @@ static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_
         tbox_style_entry *entry = (tbox_style_entry *)tbox_vector_push(items);
         entry->node             = node;
         entry->style            = node_style;
+        if (share_slot != NULL && !shared && memcmp(&pristine, &node_style, sizeof(node_style)) == 0)
+            tbox_style_share_add(share_slot, arena, share_hash, node, parent_class, node_class, node_index, &computed);
+        tbox_css_computed_style_destroy(&computed);
 
         effective_parent = &node_style;
         generating       = generating && tbox_style_generated_allowed(node);
@@ -4646,7 +4832,7 @@ static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_
     }
 
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling) {
-        tbox_style_resolve_tree_walk(child, effective_parent, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, items, generated, counter_styles, hidden, sizes, metrics, declared_initial);
+        tbox_style_resolve_tree_walk(child, effective_parent, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, items, generated, counter_styles, hidden, sizes, metrics, declared_initial, share, node_class);
     }
 
     if (node->type == TBOX_HTML_NODE_ELEMENT && !hidden && tbox_style_generated_allowed(node)) {
@@ -4674,6 +4860,57 @@ static void tbox_style_resolve_tree_walk(const tbox_html_node *node, const tbox_
     }
 }
 
+/* Open addressing over the entries: `slots` holds entry index + 1, 0 is
+ * empty, and the table is at least twice as large as `count`. A node with
+ * two entries keeps the first, as the linear scan finds it. `count` is the
+ * table's at build time: a table grown later goes back to the scan. */
+typedef struct tbox_style_table_index {
+    size_t *slots;
+    size_t mask;
+    size_t count;
+} tbox_style_table_index;
+
+static size_t tbox_style_table_index_hash(const tbox_html_node *node) {
+    uint64_t key = (uint64_t)(uintptr_t)node;
+    key ^= key >> 33;
+    key *= 0xff51afd7ed558ccdull;
+    key ^= key >> 33;
+    return (size_t)key;
+}
+
+static const tbox_style_table_index *tbox_style_table_index_build(tbox_arena *arena, const tbox_style_table *table) {
+    if (table->count == 0 || table->count > SIZE_MAX / 4 / sizeof(size_t))
+        return NULL;
+    size_t capacity = 16;
+    while (capacity < table->count * 2)
+        capacity *= 2;
+    tbox_style_table_index *index = tbox_arena_alloc(arena, sizeof(*index));
+    size_t *slots                 = tbox_arena_alloc_zero(arena, capacity * sizeof(*slots));
+    if (index == NULL || slots == NULL)
+        return NULL;
+    *index = (tbox_style_table_index){ slots, capacity - 1, table->count };
+    for (size_t i = 0; i < table->count; i++) {
+        const tbox_html_node *node = table->items[i].node;
+        size_t slot                = tbox_style_table_index_hash(node) & index->mask;
+        while (slots[slot] != 0 && table->items[slots[slot] - 1].node != node)
+            slot = (slot + 1) & index->mask;
+        if (slots[slot] == 0)
+            slots[slot] = i + 1;
+    }
+    return index;
+}
+
+/* The ELEMENT nodes in `node`'s subtree, `node` included: the entries
+ * tbox_style_resolve_tree_walk adds, before any ::before/::after. */
+static size_t tbox_style_count_elements(const tbox_html_node *node) {
+    if (node == NULL)
+        return 0;
+    size_t count = node->type == TBOX_HTML_NODE_ELEMENT ? 1 : 0;
+    for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling)
+        count += tbox_style_count_elements(child);
+    return count;
+}
+
 tbox_style_table tbox_style_resolve_tree(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count) {
     return tbox_style_resolve_tree_in_viewport(arena, root, sources, source_count, 0.0, 0.0);
 }
@@ -4684,8 +4921,20 @@ tbox_style_table tbox_style_resolve_tree_in_viewport(tbox_arena *arena, const tb
 
 tbox_style_table tbox_style_resolve_tree_in_viewport_with_preferences(tbox_arena *arena, const tbox_html_node *root, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, const tbox_style_container_size *container_sizes, size_t container_size_count, const tbox_style_font_metrics *font_metrics) {
     tbox_style_container_sizes sizes = { container_sizes, container_size_count };
+    /* One entry per element, reserved up front: in the arena a growing
+     * vector leaves every outgrown copy behind (2-4x the table). Only
+     * ::before/::after entries beyond that make it grow, once. */
+    size_t element_count = tbox_style_count_elements(root);
     tbox_vector items;
-    tbox_vector_init(&items, arena, sizeof(tbox_style_entry), 0);
+    tbox_vector_init(&items, arena, sizeof(tbox_style_entry), element_count);
+    /* Room for every element as a model, twice over; without it (no
+     * memory) nothing is shared. */
+    tbox_style_share share = { NULL, 0, 0 };
+    size_t share_capacity  = 16;
+    while (share_capacity < element_count * 2 && share_capacity <= SIZE_MAX / 4 / sizeof(*share.slots))
+        share_capacity *= 2;
+    share.slots = tbox_arena_alloc_zero(arena, share_capacity * sizeof(*share.slots));
+    share.mask  = share_capacity - 1;
 
     const tbox_style_counter_styles *counter_styles = tbox_style_counter_styles_create(arena, sources, source_count, viewport_width, viewport_height, reduced_motion);
     tbox_style_generated *generated = tbox_style_generated_create(arena, sources, source_count, counter_styles);
@@ -4696,12 +4945,13 @@ tbox_style_table tbox_style_resolve_tree_in_viewport_with_preferences(tbox_arena
         tbox_css_computed_style empty = { NULL, 0, NULL, { 0 } };
         tbox_style_resolve_declared(declared_initial, arena, NULL, NULL, &empty, viewport_width, viewport_height, NULL);
     }
-    tbox_style_resolve_tree_walk(root, NULL, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, &items, generated, counter_styles, false, &sizes, font_metrics, declared_initial);
+    tbox_style_resolve_tree_walk(root, NULL, sources, source_count, viewport_width, viewport_height, reduced_motion, arena, &items, generated, counter_styles, false, &sizes, font_metrics, declared_initial, &share, 0);
 
     tbox_style_table table = { 0 };
     table.items = (tbox_style_entry *)items.data;
     table.count = items.length;
     tbox_svg_prepare(arena, root, sources, source_count, &table, viewport_width, viewport_height, reduced_motion);
+    table.index_ = tbox_style_table_index_build(arena, &table);
     return table;
 }
 
@@ -4715,6 +4965,17 @@ bool tbox_style_table_has_size_containers(const tbox_style_table *table) {
 const tbox_style *tbox_style_table_find(const tbox_style_table *table, const tbox_html_node *node) {
     if (table == NULL || node == NULL) {
         return NULL;
+    }
+    const tbox_style_table_index *index = table->index_;
+    if (index != NULL && index->count == table->count) {
+        for (size_t slot = tbox_style_table_index_hash(node) & index->mask;; slot = (slot + 1) & index->mask) {
+            size_t entry = index->slots[slot];
+            if (entry == 0)
+                break;
+            if (table->items[entry - 1].node == node)
+                return &table->items[entry - 1].style;
+        }
+        return tbox_style_table_find(table->fallback, node);
     }
     for (size_t i = 0; i < table->count; i++) {
         if (table->items[i].node == node) {

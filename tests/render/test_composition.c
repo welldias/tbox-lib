@@ -343,6 +343,48 @@ int tbox_test_composition_run(const void *font_data, size_t font_size) {
         TBOX_TEST_ASSERT(frame.box->text_runs[0].line_y >= 40 && frame.box->text_runs[0].rect.x == 8);
         tbox_test_composition_close(&frame);
     }
+    /* Culling: under an overflow clip, rows wholly outside it emit nothing
+     * (the one touching its edge stays), while paint that reaches into it
+     * from a box far below -- a box shadow, a relative child -- stays. */
+    {
+        char html[2048] = "<div id='s'>";
+        for (int i = 0; i < 20; i++)
+            strcat(html, "<div class='r'></div>");
+        strcat(html, "<div class='far'></div><div class='up'><div></div></div></div>");
+        tbox_test_composition_frame frame = tbox_test_composition_open(html,
+            "#s{height:60px;overflow-y:auto}.r{height:20px;background:rgb(255,0,0)}"
+            ".far{height:10px;box-shadow:0 -375px 0 rgb(0,0,255)}"
+            ".up{height:10px}.up div{position:relative;top:-360px;height:10px;background:rgb(0,128,0)}", fonts, images);
+        size_t red = 0;
+        for (size_t i = 0; i < frame.list.count; i++)
+            if (frame.list.items[i].kind == TBOX_PAINT_FILL_RECT && frame.list.items[i].color.r == 255 && frame.list.items[i].color.g == 0)
+                red++;
+        TBOX_TEST_ASSERT(red == 4);
+        tbox_test_composition_paint(pixels, &frame.list);
+        TBOX_TEST_ASSERT(pixels[5 * 160 + 5] == 0xFFFF0000u);
+        TBOX_TEST_ASSERT(pixels[30 * 160 + 5] == 0xFF0000FFu);
+        TBOX_TEST_ASSERT(pixels[55 * 160 + 5] == 0xFF008000u);
+        TBOX_TEST_ASSERT(pixels[70 * 160 + 5] == 0xFFFFFFFFu);
+        tbox_test_composition_close(&frame);
+    }
+    /* The collapsed borders a table paints itself are culled one by one:
+     * 20 rows give 61 edges, of which the clip meets about a fifth. */
+    {
+        char html[2048] = "<div id='s'><table>";
+        for (int i = 0; i < 20; i++)
+            strcat(html, "<tr><td></td></tr>");
+        strcat(html, "</table></div>");
+        tbox_test_composition_frame frame = tbox_test_composition_open(html,
+            "#s{height:60px;overflow-y:auto}table{border-collapse:collapse}td{width:40px;height:20px;padding:0;border:4px solid rgb(0,0,128)}", fonts, images);
+        size_t edges = 0;
+        for (size_t i = 0; i < frame.list.count; i++)
+            if (frame.list.items[i].kind == TBOX_PAINT_FILL_RECT && frame.list.items[i].color.b == 128)
+                edges++;
+        TBOX_TEST_ASSERT(edges > 0 && edges < 20);
+        tbox_test_composition_paint(pixels, &frame.list);
+        TBOX_TEST_ASSERT(pixels[30 * 160 + 0] == 0xFF000080u);
+        tbox_test_composition_close(&frame);
+    }
     /* Feature detection agrees with the values the new parsers accept. */
     static const char *const supported[] = {
         "(mask-composite: add, subtract, intersect, exclude)", "(-webkit-mask-composite: source-over, source-out, source-in, xor)",

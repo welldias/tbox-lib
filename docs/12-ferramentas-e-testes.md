@@ -1,7 +1,7 @@
 # 12. Ferramentas e testes
 
 > - **Escopo:** testes automáticos, fixtures visuais, screenshot headless, comparação contra referências, análise estática e ajudas de depuração.
-> - **Código relacionado:** `tests/`, `tests/assets/`, `tests/tbox_cmp.cpp`, `example/assets_showrun.c`, `example/tbox_app.c`, `include/tbox/debug.h`, `tbox.cppcheck.in`, `cmake/tbox_cppcheck_compile_db.cmake`
+> - **Código relacionado:** `tests/`, `tests/assets/`, `tests/tbox_cmp.cpp`, `tests/tbox_bench.c`, `tests/tbox_frame_dump.c`, `example/assets_showrun.c`, `example/tbox_app.c`, `include/tbox/debug.h`, `tbox.cppcheck.in`, `cmake/tbox_cppcheck_compile_db.cmake`
 > - **Veja também:** [Primeiros passos](01-primeiros-passos.md), [Atualização da tela](05-atualizacao-da-tela.md#ver-o-que-está-sendo-repintado)
 
 ## Testes automáticos
@@ -134,6 +134,79 @@ rolagem nem a evolução das animações.
 - O relatório está zerado; mantenha assim. Falso positivo:
   `// cppcheck-suppress <id>` na linha anterior à do achado, com o motivo
   num comentário.
+
+## Medição de desempenho — `tbox_bench`
+
+```sh
+build/tests/tbox_bench --table 1000                 # tabela sintética de 1000 linhas
+build/tests/tbox_bench --table 1000 --scroll 40     # rolando 40px entre frames
+build/tests/tbox_bench example/file-explorer/index.html example/file-explorer/styles.css
+build/tests/tbox_bench --frames 50 --size 1024x768 pagina.html
+```
+
+Mede um frame com `tbox_context_run_frame`, depois de um frame de
+aquecimento, e imprime a média de `--frames` frames (20 por padrão):
+
+- **frame:** o `tbox_context_run_frame` inteiro.
+- **style, layout, display list:** as três etapas medidas à parte, numa
+  arena própria, com o tempo e a memória de cada uma. Ficam sem o que o
+  `run_frame` faz em volta (transições, rolagem, controles), então somam
+  um pouco menos que o frame.
+- **damage diff e raster:** o diff do damage tracking e a repintura só das
+  regiões alteradas (zero quando nada muda entre frames); entre parênteses,
+  uma repintura completa da janela.
+- **frame arena e resident:** a memória da `frame_arena` depois do frame e
+  a residente do processo (só no Linux), com a de antes de abrir a página.
+
+`--table N` gera uma tabela de 5 colunas com cabeçalho, zebra
+(`:nth-child`), regra de `:hover`, algumas linhas com classe e a primeira
+coluna em negrito, dentro de um contêiner rolável da altura da janela. Uma
+página recebe a CSS da aplicação como segundo argumento e resolve
+`<link>`, imagens e `@font-face` a partir do diretório do HTML.
+
+O texto usa a Liberation Sans embutida, então o resultado não depende das
+fontes instaladas. Os números dependem da máquina e do tipo de build:
+compare só medições feitas no mesmo build (em Debug tudo fica 1,5–2×
+mais lento). O `ctest` só confere que a ferramenta roda (`tool_bench`).
+
+## Comparação entre builds — `tbox_frame_dump`
+
+Para conferir que uma otimização não muda o resultado: gere a assinatura
+de cada frame com o build de antes e com o de depois, e compare.
+
+```sh
+# antes da mudança (por exemplo, numa worktree do commit base)
+git worktree add ../tbox-ref HEAD
+cmake -S ../tbox-ref -B ../tbox-ref/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build ../tbox-ref/build --target tbox_frame_dump
+../tbox-ref/build/tests/tbox_frame_dump tests/assets/*.html example/*.html > antes.txt
+
+# depois
+build/tests/tbox_frame_dump tests/assets/*.html example/*.html > depois.txt
+build/tests/tbox_frame_dump --compare antes.txt depois.txt
+```
+
+Para cada documento, uma linha com uma assinatura de 64 bits por frame: o
+primeiro sem ponteiro, e um por ponto de uma grade de hover (`--hover-step`,
+80px por padrão), rolando o centro da janela em `--scroll` px (90) a cada
+`--scroll-every` frames (9). A assinatura cobre a geometria de toda caixa e
+de todo run de texto (posição e texto), cada op da display list (tipo,
+retângulo e cor) e os pixels pintados. `--compare` aponta cada documento
+que difere (e o primeiro frame diferente) ou que só existe de um lado; sai
+com 0 quando tudo é igual, 1 quando algo difere e 2 em erro.
+
+- A ferramenta lê campos internos do contexto (a árvore de caixas), então
+  é compilada em cada árvore que se quer medir; para um commit anterior a
+  ela, copie `tests/tbox_frame_dump.c` e `tests/tbox_tool_support.h` para lá.
+- Como no `tbox_bench`, usa a Liberation Sans embutida e resolve
+  `<link>`, imagens e `@font-face` a partir do diretório de cada HTML.
+- Fixtures e exemplos (~130 documentos, ~9600 frames) levam cerca de um
+  minuto em Release. Documentos que exercitam o que mudou valem mais que
+  muitos documentos: ao validar o compartilhamento de estilo e o índice de
+  regras (ver [Histórico](dev/historico.md)), foram usadas também tabelas
+  grandes e páginas com seletores e casos de borda.
+- Antes de confiar numa comparação "idêntica", vale introduzir de
+  propósito o defeito que se quer evitar e ver a ferramenta acusá-lo.
 
 ## Depuração
 

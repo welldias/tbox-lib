@@ -522,7 +522,7 @@ static tbox_css_stylesheet *tbox_ua_build_stylesheet(const tbox_ua_rule *rules, 
                 goto fail;
         }
     }
-    if (!tbox_css_stylesheet_index_pseudo_elements(stylesheet))
+    if (!tbox_css_stylesheet_index_rules(stylesheet))
         goto fail;
     return stylesheet;
 

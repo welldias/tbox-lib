@@ -23,6 +23,7 @@ typedef struct tbox_font_run_entry {
     size_t count;       /* glyphs of the whole run */
     double width;       /* total advance, letter-spacing included */
     tbox_glyph *glyphs; /* malloc'd; NULL while only the width was asked */
+    bool used;          /* asked for again since it was added or last swept */
 } tbox_font_run_entry;
 
 struct tbox_font_face {
@@ -39,12 +40,23 @@ struct tbox_font_face {
     size_t font_data_size;
     void *shaper; /* the shaper backend's per-face state, NULL for none */
     /* Shaped runs by (text, letter-spacing, direction): the layout shapes
-     * the same words again and again, every frame. Open addressing,
-     * TBOX_FONT_RUN_CACHE_SLOTS slots allocated on first use, emptied when
-     * half full or when the kerning changes. */
+     * the same words again and again, every frame. Open addressing over
+     * `run_slots` slots (a power of two, 0 until first use), kept at most
+     * half full: it doubles up to a limit, then drops the runs nobody asked
+     * for since the previous sweep. Emptied when the kerning changes. */
     tbox_font_run_entry *runs;
+    size_t run_slots;
     size_t run_count;
+    /* Glyph advances in 26.6, by glyph id, in pages allocated on first use
+     * (tbox_font_face_glyph_advance). The face's size and load flags never
+     * change, so neither do they. */
+    int32_t **advance_pages;
+    size_t advance_page_count;
 };
+
+/* `glyph`'s horizontal advance in 26.6 pixels (FT_LOAD_DEFAULT, as the
+ * rasterizer loads it), 0 when it fails to load; cached by the face. */
+int32_t tbox_font_face_glyph_advance(tbox_font_face *face, uint32_t glyph);
 
 /* The shaper backend (docs/09-texto-e-fontes.md, "Shaping"): exactly one
  * of src/font/tbox_font_shaper_harfbuzz.c and tbox_font_shaper_simple.c is

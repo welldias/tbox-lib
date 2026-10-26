@@ -18,6 +18,163 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Ferramentas de medição: `tbox_bench` e `tbox_frame_dump` (2026-10-26)
+
+As medições e verificações das otimizações de tabelas grandes eram feitas
+com programas soltos. Viraram duas ferramentas em `tests/` (ver
+[Ferramentas e testes](../12-ferramentas-e-testes.md)): `tbox_bench`
+cronometra o frame e suas etapas e mede a memória, numa página ou numa
+tabela sintética de N linhas; `tbox_frame_dump` assina cada frame
+(geometria, display list, pixels) de um conjunto de documentos, com hover
+e rolagem, e compara as assinaturas de dois builds. Ambas usam a fonte
+embutida e são ligadas à biblioteca estática, porque leem campos internos
+do contexto. O `ctest` ganhou `tool_bench` e `tool_frame_dump`, que só
+conferem que elas rodam. Validação: a assinatura das fixtures e exemplos é
+idêntica entre a versão atual e a anterior ao compartilhamento de estilo e
+ao índice de regras (9656 frames), e o defeito de considerar só a
+primeira classe do elemento aparece em 77 documentos.
+
+De passagem, o cppcheck achou um defeito no culling da display list:
+`tbox_render_shadow_reach(shadows, tbox_render_box_shadows(style, &shadows, …))`
+dependia da ordem de avaliação dos argumentos, que o C não define; com a
+outra ordem, a função receberia `NULL` com contagem positiva. O GCC
+avaliava na ordem que funciona, por isso nada falhou. A contagem agora é
+calculada antes.
+
+## Após v20 — Validadores de declaração só para quem eles conhecem (2026-10-26)
+
+`tbox_css_cascade_offer` chamava seis validadores para toda declaração
+oferecida a todo elemento, e cada um comparava o nome com sua lista: ~21%
+do frame. Um filtro por nome (`tbox_style_declaration_checked`, ver
+[Decisões](decisoes.md)) deixa passar só as 44 propriedades que eles
+conhecem e os nomes `-webkit-`. Medido em Release: estilo com 1000 linhas
+de tabela de 29 para 20 ms, frame de 55 para 46 ms (200 linhas: 9,6 para
+7,6 ms; 2000: 113 para 96 ms); file-explorer de 12,2 para 10,8 ms. Os 9928
+quadros da comparação com a versão de referência e as 123 fixtures seguem
+idênticos. O teste novo acusa nome faltando, fora de ordem e obsoleto na
+tabela.
+
+## Após v20 — Índice de regras na cascata (2026-10-26)
+
+A cascata de cada elemento passa a visitar só as regras cujo seletor pode
+casar com ele, por um índice montado na folha pelo id, classe ou tag do
+componente mais à direita (ver [HTML e CSS](../07-html-e-css.md#seletores)
+e [Decisões](decisoes.md)). Medido antes: 171 seletores por elemento numa
+tabela, 307 no file-explorer; com o índice, 6 e 14. Medido em Release:
+estilo com 1000 linhas de tabela de 45 para 29 ms, frame de 71 para 55 ms
+(200 linhas: 12,8 para 9,6 ms; 2000: 144 para 113 ms); frame do
+file-explorer de 17,0 para 12,2 ms, do tbox_app_demo de 4,0 para 2,8 ms
+(esses dois contra a versão sem compartilhamento nem índice). Conferido
+contra a versão sem compartilhamento nem índice em 136 documentos, inclusive
+um de seletores (`:where`, `:not`, atributos, maiúsculas, SVG, várias
+classes, ids, listas, combinadores, `@scope`, `@media`, `@layer`, CSS
+aninhado, `!important`): 9928 quadros idênticos. A mesma comparação acusa
+candidatas fora de ordem (2 documentos) e classes ignoradas (70); tags com
+outra caixa não chegam ao DOM (parser e `tbox_html_element_create` as
+passam para minúsculas). Teste novo em `tests/css_cascade/test_cascade.c`,
+conferido contra as duas falhas. Resolve o débito "Regras sem índice por
+seletor".
+
+## Após v20 — Compartilhamento de estilo e `border` sem `border-image` (2026-10-26)
+
+Elementos iguais (mesma tag, atributos, classe do pai e resultado da
+cascata) passam a copiar o `tbox_style` de um modelo em vez de converter as
+declarações de novo (ver [HTML e CSS](../07-html-e-css.md#compartilhamento-de-estilo)
+e [Decisões](decisoes.md)). E `border` deixou de alocar uma cópia de 1720
+bytes do `border-image` inicial por elemento. Medido em Release (tabela de
+5 colunas, 1000 linhas): estilo de 110 para 47 ms numa tabela simples, de
+122 para 51 ms com zebra, `:first-child` e `:hover`, de 140 para 62 ms com
+seletores de ancestral e irmão; frame inteiro de 131 para 71 ms (200
+linhas: 25 para 13 ms; 2000: 269 para 144 ms); arena do frame de 93 para
+85 MB. Conferido contra uma variante sem compartilhamento em 134 documentos
+(fixtures, exemplos, tabelas com zebra/hover/seletores de ancestral e irmão,
+um documento com variáveis CSS, marcadores, `::first-letter`, contadores,
+`attr()`, container queries, `:empty`, `dir`, controles, `img` com
+atributos, estilo inline e SVG), com hover em 73 pontos e rolagem: 9782
+quadros com geometria de caixas e textos, ops e pixels idênticos; a mesma
+comparação acusa 12 documentos quando a igualdade da cascata é ignorada.
+Testes novos em `tests/style/test_style.c`, conferidos contra o
+compartilhamento desligado, contra a classe do pai ignorada e contra a
+cópia do `border-image`.
+
+## Após v20 — Culling da display list (2026-10-26)
+
+Uma tabela num contêiner rolável emitia ops para todas as linhas, inclusive
+as fora da área visível, que o clip descartava só na rasterização. O Render
+agora pula a subárvore de um filho cuja pintura não alcança o clip do
+contêiner `overflow`, por um limite conservador calculado das caixas, e
+descarta as bordas colapsadas da tabela fora do clip (ver
+[Layout e pintura](../08-layout-e-pintura.md#culling)). Medido em Release
+(tabela de 5 colunas, `border-collapse`, contêiner de 600px): 342 ops com
+200, 1000 ou 2000 linhas (antes 3222, 16022 e 32022); com 1000 linhas o
+diff do damage tracking foi de 11 para 0,24 ms, a display list de 19 MB
+para quase nada e a arena do frame de 121 para 93 MB. Pixels idênticos ao
+código anterior nas 123 fixtures, em 129 documentos (fixtures e exemplos)
+renderizados antes e depois de rolar todos os contêineres, e num
+documento de casos de borda (conteúdo transbordando, sombras, `outline`,
+inline com padding grande, `text-shadow`, transformação, relativo e
+absoluto deslocados, margem negativa, tabela colapsada) rolado em 30
+posições. Testes novos em `tests/render/test_composition.c`, conferidos
+contra o culling desligado, contra sombras fora do limite e contra as
+bordas colapsadas sem culling.
+
+## Após v20 — Tabela de estilos com capacidade reservada (2026-10-26)
+
+O vetor da tabela de estilos crescia dobrando dentro da `frame_arena`, que
+não libera as cópias superadas: com 1000 linhas de tabela, 151 MiB alocados
+para 56 MiB de entradas. `tbox_style_resolve_tree*` agora conta os
+elementos e reserva uma entrada para cada (ver [Decisões](decisoes.md)).
+Medido em Release (tabela de 5 colunas, `border-collapse`): arena do frame
+com 1000 linhas de 217 para 121 MB, RSS de 219 para 142 MB, frame de 151
+para 138 ms; com 200 linhas, frame de 33 para 27 ms. Com `::before` em toda
+célula o vetor dobra uma vez: 176 MB contra 312 MB no código anterior às
+mudanças de 2026-10-26. Screenshots das 123 fixtures idênticos.
+
+## Após v20 — Estado de transição só para quem declara `transition` (2026-10-26)
+
+`tbox_context_apply_transitions` criava um estado de 4128 bytes para todo
+elemento e o procurava numa lista ligada: com 1000 linhas de tabela, 173 ms
+por frame e ~25 MB; com 2000, 679 ms. Agora só elementos com `transition`
+efetiva têm estado, achado por um índice por hash montado a cada frame, e
+os estados não vistos no frame são liberados (ver
+[Decisões](decisoes.md) para o que deixa de animar). De quebra, um
+elemento visto pela primeira vez em `display: none` não anima mais do zero
+até o próprio valor (antes, uma transição invisível pedia frames ao abrir o
+documento). Medido em Release: frame inteiro com 1000 linhas de 331 para
+151 ms, com 2000 de 1037 para 325 ms; com `tr { transition: … }` em todas as
+linhas, a etapa custa 1,6 ms com 1000 linhas (antes 166 ms) e guarda 1001
+estados em vez de 6011. Teste novo em `tests/context/test_context.c`,
+conferido contra as duas regressões (estado para todos; elemento oculto
+animando). Screenshots das 123 fixtures idênticos.
+
+## Após v20 — Cache de runs que cresce e cache de avanços (2026-10-26)
+
+Acima de ~300 linhas, uma tabela tinha mais palavras distintas que as 1024
+runs do cache da face, que se esvaziava várias vezes por frame: o layout
+saltava de 7,8 para 71 ms entre 300 e 400 linhas. O cache agora dobra até
+65536 posições e, no limite, descarta só o que não foi reaproveitado (ver
+[Texto e fontes](../09-texto-e-fontes.md#cache-de-runs)); os avanços de
+glifo ficam em cache na face em vez de um `FT_Load_Glyph` com hinting por
+glifo a cada shaping. Medido em Release (tabela de 5 colunas,
+`border-collapse`): layout com 1000 linhas de 172 para 28 ms, com 2000 de
+386 para 62 ms; frame inteiro com 1000 linhas de 481 para 331 ms. Os
+screenshots das 123 fixtures são idênticos byte a byte aos de antes. O
+teste do cache em `tests/font/test_font.c` passa pelo crescimento e pela
+varredura e confere os glifos contra uma face nova.
+
+## Após v20 — Busca de estilo por hash (2026-10-26)
+
+Uma tabela com muitas linhas ficava lenta: `tbox_style_table_find`
+percorria todas as entradas (9,7 KB cada), e layout, render e contexto a
+chamam várias vezes por nó, o que tornava o layout quadrático. A tabela
+ganhou um índice por hash de ponteiro (`tbox_style_table.index_`, ver
+[Decisões](decisoes.md)). Medido em Release, tabela de 5 colunas com
+`border-collapse` dentro de um `overflow: auto`: layout com 1000 linhas
+foi de 249 para 172 ms, com 2000 de 717 para 386 ms, e o frame inteiro com
+2000 linhas de 1710 para 1335 ms. A contagem de instruções do layout agora
+cresce linearmente. Os demais custos medidos estão em
+[Débito técnico](debito-tecnico.md#tabelas-grandes).
+
 ## Após v20 — Itens de `<template>`, classes e `hidden` em `controls.h` (2026-10-25)
 
 Pedido do t-explorer, que só mexe na tela por `controls.h`: faltava como

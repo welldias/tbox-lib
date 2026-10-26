@@ -71,7 +71,10 @@ No HarfBuzz:
   o callback de avanços com hinting do FreeType.
 - **Avanços vêm do FreeType** (`FT_Load_Glyph`, com hinting) — os mesmos
   que o raster usa para os bitmaps; o HarfBuzz decide quais glifos e os
-  deslocamentos (kerning, marcas).
+  deslocamentos (kerning, marcas). Cada face guarda o avanço de cada glifo
+  já carregado (`tbox_font_face_glyph_advance`, em páginas de 256 glifos
+  alocadas sob demanda), já que tamanho e flags de carga são fixos nela; o
+  shaper simples usa o mesmo cache.
 - **`font-kerning: none`** desliga a feature `kern`; **`letter-spacing`
   diferente de zero** desliga as ligaduras opcionais (`liga`, `clig`,
   `dlig`), como o CSS recomenda. O `letter-spacing` entra uma vez por
@@ -112,8 +115,13 @@ runs já moldados (`tbox_font_face.runs`, em `src/font/tbox_font_face.c`):
 - **Valor:** a largura, o número de glifos e os glifos. Quem só mede
   (`tbox_font_measure_text_spaced`) guarda só a largura; os glifos entram
   quando alguém os pede.
-- **Limites:** 2048 posições por face; ao passar da metade, o cache é
-  esvaziado inteiro. Textos com mais de 256 bytes não entram.
+- **Limites:** a tabela começa com 2048 posições por face e dobra ao
+  passar da metade, até 65536 (32768 runs). No tamanho máximo, uma
+  varredura descarta os runs que não foram pedidos de novo desde a
+  varredura anterior (um run só é marcado quando é reaproveitado, não ao
+  entrar): o texto exibido em todo frame fica, o visto uma vez sai. Se
+  quase tudo ficaria, o conjunto não cabe e o cache é esvaziado inteiro.
+  Textos com mais de 256 bytes não entram.
 - **Invalidação:** `tbox_font_face_set_kerning` esvazia o cache quando o
   valor muda; `tbox_font_face_destroy` o libera.
 

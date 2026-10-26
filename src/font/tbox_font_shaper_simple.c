@@ -41,8 +41,7 @@ size_t tbox_font_shaper_run(tbox_font_face *face, tbox_string_view text, double 
         FT_UInt id = FT_Get_Char_Index(face->ft_face, (FT_ULong)codepoint);
         /* 26.6 fixed-point advance; a glyph that fails to load only takes
          * the letter-spacing. */
-        double advance = FT_Load_Glyph(face->ft_face, id, FT_LOAD_DEFAULT) == 0 ?
-            face->ft_face->glyph->advance.x / 64.0 + letter_spacing : letter_spacing;
+        double advance = tbox_font_face_glyph_advance(face, id) / 64.0 + letter_spacing;
         if (count < capacity)
             out[count] = (tbox_glyph){ .id = id, .cluster = (uint32_t)start, .x = pen, .y = 0.0, .advance = advance };
         count++;

@@ -8,6 +8,7 @@
 #include "base/tbox_string.h"
 #include "test_support.h"
 #include "style/tbox_style_internal.h"
+#include "css_parser/tbox_css_parser.h"
 
 /* Out-of-line style groups (tbox_style_masks_of, ...) of the styles this
  * file resolves live here, for the whole run. */
@@ -3779,6 +3780,85 @@ int tbox_test_style_run(void) {
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
+    }
+
+    /* Style sharing: alike elements (same tag and attributes, alike
+     * parents, same cascade result) take a copy of the first one's style,
+     * out-of-line data included; a different parent, cascade result or
+     * attribute keeps them apart. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div class='a'><span>1</span><span>2</span><span>3</span></div>"
+                                                  "<div class='b'><span>4</span></div><p><img width='10'><img width='20'><img width='10'></p>");
+        const tbox_html_node *a = tbox_html_document_root(doc)->first_child, *b = a->next_sibling, *p = b->next_sibling;
+        const tbox_html_node *s1 = a->first_child, *s2 = s1->next_sibling, *s3 = s2->next_sibling, *s4 = b->first_child;
+        const tbox_html_node *i1 = p->first_child, *i2 = i1->next_sibling, *i3 = i2->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(".a { --c: red; } .b { --c: blue; } span { --k: 1; color: var(--c); } span:nth-child(3) { font-weight: bold; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const tbox_style *st1 = tbox_style_table_find(&table, s1), *st2 = tbox_style_table_find(&table, s2);
+        const tbox_style *st3 = tbox_style_table_find(&table, s3), *st4 = tbox_style_table_find(&table, s4);
+        const tbox_style *it1 = tbox_style_table_find(&table, i1), *it2 = tbox_style_table_find(&table, i2), *it3 = tbox_style_table_find(&table, i3);
+        TBOX_TEST_REQUIRE(st1 != NULL && st2 != NULL && st3 != NULL && st4 != NULL && it1 != NULL && it2 != NULL && it3 != NULL);
+        TBOX_TEST_ASSERT(st1->custom_properties != NULL && st1->custom_properties == st2->custom_properties);
+        TBOX_TEST_ASSERT(rgba_eq(st1->color, (tbox_css_rgba){ 255, 0, 0, 255 }) && rgba_eq(st2->color, st1->color));
+        TBOX_TEST_ASSERT(st3->custom_properties != st1->custom_properties && st3->font_weight != st1->font_weight);
+        TBOX_TEST_ASSERT(st4->custom_properties != st1->custom_properties && rgba_eq(st4->color, (tbox_css_rgba){ 0, 0, 255, 255 }));
+        TBOX_TEST_ASSERT(it1->width.value == 10.0 && it2->width.value == 20.0 && it3->width.value == 10.0);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* `border` alone leaves border-image at its initial value without an
+     * out-of-line copy; it still resets an earlier border-image, and one
+     * declared after it still applies. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<p class='a'>a</p><p class='b'>b</p><p class='c'>c</p>");
+        const tbox_html_node *a = tbox_html_document_root(doc)->first_child, *b = a->next_sibling, *c = b->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr(".a { border: 1px solid red; }"
+                                                    ".b { border-image: linear-gradient(red, blue) 1; border: 2px solid; }"
+                                                    ".c { border: 2px solid; border-image: linear-gradient(red, blue) 1; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const tbox_style *as = tbox_style_table_find(&table, a), *bs = tbox_style_table_find(&table, b), *cs = tbox_style_table_find(&table, c);
+        TBOX_TEST_REQUIRE(as != NULL && bs != NULL && cs != NULL);
+        TBOX_TEST_ASSERT(as->border_image == NULL && !as->has_border_image && as->border_widths[0] == 1.0);
+        TBOX_TEST_ASSERT(bs->border_image == NULL && !bs->has_border_image);
+        TBOX_TEST_ASSERT(cs->border_image != NULL && cs->has_border_image && tbox_style_border_image_of(cs)->gradient.kind != TBOX_STYLE_GRADIENT_NONE);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* tbox_style_declaration_checked, which lets the cascade skip the
+     * declaration validators, covers every property one of them rejects a
+     * bad value for, and only those; its table stays sorted. */
+    {
+        tbox_string_view bogus = tbox_string_view_from_cstr("@@ not a value (");
+        for (size_t i = 0; tbox_css_supported_property(i) != NULL; i++) {
+            tbox_string_view name = tbox_string_view_from_cstr(tbox_css_supported_property(i));
+            bool rejected = !tbox_style_opentype_declaration_valid(name, bogus) || !tbox_style_paint_declaration_valid(name, bogus) ||
+                            !tbox_style_motion_declaration_valid(name, bogus) || !tbox_style_composition_declaration_valid(name, bogus) ||
+                            !tbox_style_inline_declaration_valid(name, bogus) || !tbox_style_svg_declaration_valid(name, bogus);
+            if (rejected && !tbox_style_declaration_checked(name)) {
+                fprintf(stderr, "  validated but not checked: %s\n", tbox_css_supported_property(i));
+                failures++;
+            }
+        }
+        for (size_t i = 0; tbox_style_checked_property(i) != NULL; i++) {
+            tbox_string_view name = tbox_string_view_from_cstr(tbox_style_checked_property(i));
+            bool rejected = !tbox_style_opentype_declaration_valid(name, bogus) || !tbox_style_paint_declaration_valid(name, bogus) ||
+                            !tbox_style_motion_declaration_valid(name, bogus) || !tbox_style_composition_declaration_valid(name, bogus) ||
+                            !tbox_style_inline_declaration_valid(name, bogus) || !tbox_style_svg_declaration_valid(name, bogus);
+            if (!rejected || !tbox_style_declaration_checked(name) || (i > 0 && strcmp(tbox_style_checked_property(i - 1), tbox_style_checked_property(i)) >= 0)) {
+                fprintf(stderr, "  stale or out of order in the checked table: %s\n", tbox_style_checked_property(i));
+                failures++;
+            }
+        }
+        TBOX_TEST_ASSERT(!tbox_style_declaration_checked(tbox_string_view_from_cstr("color")) && !tbox_style_declaration_checked(tbox_string_view_from_cstr("mas")));
+        TBOX_TEST_ASSERT(tbox_style_declaration_checked(tbox_string_view_from_cstr("-WEBKIT-mask")) && tbox_style_declaration_checked(tbox_string_view_from_cstr(" Fill ")));
     }
 
     failures += tbox_test_grid_style_run();

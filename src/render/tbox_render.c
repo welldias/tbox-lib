@@ -567,6 +567,111 @@ static tbox_rect tbox_render_intersect(tbox_rect a, tbox_rect b) {
     return (tbox_rect){ x0, y0, x1 > x0 ? x1 - x0 : 0.0, y1 > y0 ? y1 - y0 : 0.0 };
 }
 
+/* Culling (docs/08-layout-e-pintura.md): a subtree under an overflow clip
+ * whose paint lies wholly outside that clip emits nothing visible, since
+ * every op it emits carries the clip. Its paint is bounded from the layout
+ * boxes, conservatively; whatever is hard to bound (transforms, filters,
+ * masks, reflections, SVG, border images) is never culled. */
+
+/* Rectangles that overlap or touch: an op on the clip's edge is kept. */
+static bool tbox_render_rects_meet(tbox_rect a, tbox_rect b) {
+    return a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
+}
+
+static tbox_rect tbox_render_union(tbox_rect a, tbox_rect b) {
+    double x0 = a.x < b.x ? a.x : b.x;
+    double y0 = a.y < b.y ? a.y : b.y;
+    double x1 = a.x + a.width > b.x + b.width ? a.x + a.width : b.x + b.width;
+    double y1 = a.y + a.height > b.y + b.height ? a.y + a.height : b.y + b.height;
+    return (tbox_rect){ x0, y0, x1 - x0, y1 - y0 };
+}
+
+static tbox_rect tbox_render_outset(tbox_rect rect, double amount) {
+    return (tbox_rect){ rect.x - amount, rect.y - amount, rect.width + 2.0 * amount, rect.height + 2.0 * amount };
+}
+
+/* How far outer shadows reach past their box, in any direction. */
+static double tbox_render_shadow_reach(const tbox_style_shadow *shadows, size_t count) {
+    double reach = 0.0;
+    for (size_t i = 0; shadows != NULL && i < count; i++) {
+        if (shadows[i].inset)
+            continue;
+        double r = fabs(shadows[i].offset_x) + fabs(shadows[i].offset_y) + fabs(shadows[i].blur) + fabs(shadows[i].spread);
+        if (r > reach)
+            reach = r;
+    }
+    return reach;
+}
+
+static size_t tbox_render_box_shadows(const tbox_style *style, const tbox_style_shadow **out, tbox_style_shadow *legacy);
+static size_t tbox_render_text_shadows(const tbox_style *style, const tbox_style_shadow **out, tbox_style_shadow *legacy);
+
+/* Grows *bounds by everything `box` and its descendants may paint
+ * (positioned ones included, though their stacking context paints them).
+ * False when some part cannot be bounded cheaply. */
+static bool tbox_render_subtree_bounds(const tbox_layout_box *box, tbox_rect *bounds) {
+    const tbox_style *style = box->style;
+    if (box->has_transform)
+        return false;
+    double reach = 0.0;
+    if (style != NULL) {
+        if (tbox_style_has_transform(style) || style->has_filter || style->has_mask || style->has_border_image || style->svg != NULL ||
+            tbox_style_box_reflect_of(style)->direction != TBOX_STYLE_REFLECT_NONE)
+            return false;
+        const tbox_style_shadow *shadows = NULL;
+        tbox_style_shadow legacy;
+        size_t count = tbox_render_box_shadows(style, &shadows, &legacy);
+        reach        = tbox_render_shadow_reach(shadows, count);
+        double outline = style->outline_style != TBOX_STYLE_BORDER_STYLE_NONE ? style->outline_width + fabs(style->outline_offset) : 0.0;
+        if (outline > reach)
+            reach = outline;
+    }
+    *bounds = tbox_render_union(*bounds, tbox_render_outset(box->border_box, reach));
+    for (size_t i = 0; i < box->text_run_count; i++) {
+        const tbox_layout_text_run *run = &box->text_runs[i];
+        /* Glyphs, decorations and emphasis marks stay within a line's
+         * height of the run. */
+        double margin = run->rect.height;
+        if (run->style != NULL) {
+            if (run->style->has_border_image)
+                return false;
+            const tbox_style_shadow *shadows = NULL;
+            tbox_style_shadow legacy;
+            size_t count = tbox_render_text_shadows(run->style, &shadows, &legacy);
+            margin += tbox_render_shadow_reach(shadows, count) + fabs(run->style->text_stroke_width);
+            if (run->style != style) {
+                /* An inline element's padding, border and shadows. */
+                double edge = 0.0;
+                for (size_t side = 0; side < 4; side++) {
+                    double e = fabs(tbox_style_length_resolve(run->style->padding[side], box->content_box.width)) + tbox_style_border_side_width(run->style, side);
+                    if (e > edge)
+                        edge = e;
+                }
+                count = tbox_render_box_shadows(run->style, &shadows, &legacy);
+                margin += edge + tbox_render_shadow_reach(shadows, count);
+            }
+        }
+        *bounds = tbox_render_union(*bounds, tbox_render_outset(run->rect, margin));
+    }
+    for (size_t i = 0; i < box->column_rule_count; i++)
+        *bounds = tbox_render_union(*bounds, box->column_rules[i]);
+    for (size_t i = 0; i < box->table_edge_count; i++)
+        *bounds = tbox_render_union(*bounds, box->table_edges[i].rect);
+    for (const tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
+        if (!tbox_render_subtree_bounds(child, bounds))
+            return false;
+    return true;
+}
+
+/* `box`'s subtree paints nothing inside `clip`. The border box decides
+ * most boxes at once; only one outside it pays for the subtree walk. */
+static bool tbox_render_culled(const tbox_layout_box *box, tbox_rect clip) {
+    if (tbox_render_rects_meet(box->border_box, clip))
+        return false;
+    tbox_rect bounds = box->border_box;
+    return tbox_render_subtree_bounds(box, &bounds) && !tbox_render_rects_meet(bounds, clip);
+}
+
 /* Upper bound on background tiles per box, so a tiny tile over a large
  * box can't flood the display list. */
 #define TBOX_RENDER_MAX_TILES 4096
@@ -2029,11 +2134,13 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
         }
     }
     for (const tbox_layout_box *child = box->first_child; child != NULL; child = child->next_sibling)
-        if (!tbox_render_is_layer(child))
+        if (!tbox_render_is_layer(child) && !(child_has_clip && tbox_render_culled(child, child_clip)))
             tbox_render_box(child, items, child_has_clip, child_clip, arena, viewport);
     if (context)
         tbox_render_paint_layers(&layers, false, items, arena, viewport);
     for (size_t i = 0; visible && i < box->table_edge_count; i++) {
+        if (has_clip && !tbox_render_rects_meet(box->table_edges[i].rect, clip))
+            continue; /* culled, as the rows above */
         size_t index = items->length;
         tbox_render_push_fill_rect(items, box->table_edges[i].rect, box->table_edges[i].color);
         if (has_clip) {

@@ -23,10 +23,7 @@ typedef struct tbox_font_harfbuzz {
 static hb_position_t tbox_font_harfbuzz_advance(hb_font_t *font, void *font_data, hb_codepoint_t glyph, void *user_data) {
     (void)font;
     (void)user_data;
-    FT_Face ft_face = (FT_Face)font_data;
-    if (FT_Load_Glyph(ft_face, (FT_UInt)glyph, FT_LOAD_DEFAULT) != 0)
-        return 0;
-    return (hb_position_t)ft_face->glyph->advance.x; /* 26.6, the font's scale below */
+    return (hb_position_t)tbox_font_face_glyph_advance((tbox_font_face *)font_data, (uint32_t)glyph); /* 26.6, the font's scale below */
 }
 
 static void tbox_font_harfbuzz_free(tbox_font_harfbuzz *hb) {
@@ -57,7 +54,7 @@ bool tbox_font_shaper_attach(tbox_font_face *face) {
     hb_font_funcs_set_glyph_h_advance_func(hb->funcs, tbox_font_harfbuzz_advance, NULL, NULL);
     hb_font_funcs_make_immutable(hb->funcs);
     hb->font = hb_font_create_sub_font(hb->parent);
-    hb_font_set_funcs(hb->font, hb->funcs, face->ft_face, NULL);
+    hb_font_set_funcs(hb->font, hb->funcs, face, NULL);
     hb->buffer = hb_buffer_create();
     if (!hb_buffer_allocation_successful(hb->buffer) || hb_face_get_glyph_count(hb->face) == 0) {
         tbox_font_harfbuzz_free(hb);

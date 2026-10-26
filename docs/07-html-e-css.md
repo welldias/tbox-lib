@@ -334,6 +334,17 @@ no parser de supports e continua falsa. Fixtures: `tests/assets/cascade-scope-an
 cor, opacidade e estilos de texto, sem alterar o valor ou dimensionar o
 controle. Veja [Texto auxiliar dos campos](10-formularios-e-controles.md#texto-auxiliar-dos-campos).
 
+**Índice de regras.** Ao criar a folha (`tbox_css_stylesheet`), cada regra
+é posta num balde pelo componente mais à direita de cada um dos seus
+seletores: o `#id`, senão uma `.classe`, senão a tag, senão "qualquer
+elemento" (seletores só com atributos, pseudo-classes, `:where()`…). A
+cascata de um elemento visita só as regras dos baldes do seu id, de cada
+classe e da sua tag, mais as universais, em ordem de origem; a de um
+pseudo-elemento faz o mesmo sobre as regras que nomeiam um. Uma regra fora
+desses baldes não tem seletor que possa casar, então o resultado é o
+mesmo; a comparação segue a do matcher (tag sem caixa, id e classe com
+caixa). Num elemento de tabela isso são ~6 seletores em vez de 171.
+
 ### Conteúdo gerado (`::before`/`::after`)
 
 - **`content`**: strings (com escapes CSS, `"\201C"`), `attr(nome)` (com
@@ -454,6 +465,31 @@ arquivos especializados; veja [Organização do código](dev/organizacao-do-codi
 - **Herança e valores iniciais** seguem o CSS: `color`, fonte, `text-align`
   etc. herdam; `background`, `border`, `margin` não.
 
+### Compartilhamento de estilo
+
+Linhas de tabela e itens de lista costumam ter estilos iguais. A cascata
+roda para todo elemento, mas a conversão das declarações em `tbox_style`
+(a maior parte do custo) é feita uma vez por grupo de elementos iguais: um
+elemento com a mesma tag e os mesmos atributos (nomes, valores e ordem) que
+um anterior, com um pai de estilo igual ao dele e exatamente o mesmo
+resultado da cascata (as mesmas declarações das mesmas regras) recebe uma
+cópia do estilo desse modelo, inclusive os dados fora da linha (que são
+imutáveis). Como a cascata confirma a igualdade, seletores como
+`:nth-child`, `+`, `:hover` ou contêineres não precisam de tratamento
+especial: quando mudam o resultado para um elemento, ele simplesmente não
+compartilha.
+
+- **Quem serve de modelo:** um elemento cujo estilo não foi alterado pelos
+  passos seguintes, que são por nó (marcador de `li`, partes de controles,
+  contêiner de consulta); elementos SVG nunca, porque recebem dados por nó
+  depois. `::first-letter`, `::before`/`::after`, contadores e aspas
+  continuam resolvidos por elemento.
+- **"Pai de estilo igual"** é uma classe: cada elemento convertido abre
+  uma, e quem copia entra na do modelo.
+- O resultado é idêntico ao da conversão de cada elemento; ver
+  [Decisões](dev/decisoes.md) para as alternativas e o próximo passo
+  (pular também a cascata).
+
 ## Transições e animações
 
 As duas rodam na orquestração (`tbox_context_transition.c`,
@@ -490,7 +526,15 @@ atraso inicial de uma `transition-delay`/`animation-delay`, o fim do atraso).
   (`-property`, `-duration`, `-delay`, `-timing-function`), cada um uma
   lista pareada pelo índice com `transition-property` e repetida quando é
   mais curta. Com duas entradas para a mesma propriedade, vale a última. Uma
-  mudança no meio de uma transição recomeça do valor atual.
+  mudança no meio de uma transição recomeça do valor atual. Só elementos com
+  uma `transition` efetiva (duração maior que zero) guardam os valores do
+  frame anterior; por isso, diferente do navegador, um elemento que ganha
+  `transition` no mesmo frame em que o valor muda (por exemplo
+  `.ativo { color: blue; transition: color 1s }`) troca de uma vez, sem
+  animar; e um elemento já visível que ganha `transition` é tratado como
+  recém-aparecido, então uma regra `@starting-style` que o alcance vira o
+  ponto de partida. Perder a `transition` encerra as que estavam em curso.
+  Ver [Decisões](dev/decisoes.md).
 - **`animation`**: shorthand (palavras-chave em qualquer ordem, o nome por
   último) e os longhands `animation-name`, `-duration`, `-delay`,
   `-timing-function`, `-iteration-count` (inclusive `infinite` e

@@ -79,6 +79,9 @@ typedef struct tbox_transition_track {
     bool active;
 } tbox_transition_track;
 
+/* Kept only for the elements whose style declares a transition: one that
+ * gains `transition` together with a value change does not animate it,
+ * since its previous values were never kept (docs/dev/decisoes.md). */
 typedef struct tbox_transition_state {
     const tbox_html_node *node;
     /* Last frame's target of every animatable property, to detect changes. */
@@ -86,6 +89,7 @@ typedef struct tbox_transition_state {
     /* NULL until the element first starts a transition. */
     tbox_transition_track *tracks;
     bool hidden; /* display: none last frame: showing it again uses @starting-style */
+    bool seen;   /* found in this frame's styles; the others are freed after it */
     struct tbox_transition_state *next;
 } tbox_transition_state;
 

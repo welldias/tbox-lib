@@ -69,20 +69,30 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
   independentemente de como foram produzidas.
 - **Toca:** `tbox_context_run_frame`, Style, Layout, arenas.
 
-### Regras sem índice por seletor
+### Tabelas grandes
 
-- **O que é:** a cascata de um elemento testa todos os seletores de todas
-  as regras (UA + autor + controles); no `example/file-explorer` são ~570
-  por elemento, ~20% de um frame em Release (2026-10-20).
-- **Por que importa:** cresce com o número de regras, inclusive as do UA
-  para controles que a página nem usa.
-- **Quando revisitar:** junto ou depois do estilo incremental. Esboço:
-  agrupar as regras, na criação da `tbox_css_stylesheet`, pelo seletor
-  composto mais à direita (id, classe, tag ou universal), como já é feito
-  para as regras com pseudo-elemento (`pseudo_element_rulesets`), e
-  visitar só os grupos do elemento, mantendo a ordem de origem.
-- **Toca:** `src/css_parser/tbox_css_stylesheet.c`,
-  `src/css_cascade/tbox_css_cascade.c`, `src/context/tbox_ua_style.c`.
+- **O que é:** medido em 2026-10-26 (Release, tabela de 5 colunas). Depois
+  do índice da tabela de estilos, do cache de runs que cresce e do estado
+  de transição só para quem declara `transition`, da capacidade certa para
+  a tabela de estilos, do culling, do compartilhamento de estilo e do
+  índice de regras e do filtro dos validadores, o frame é linear (~46 ms
+  com 1000 linhas, ~96 ms com 2000). Restam estes custos:
+  - estilo e layout têm agora o mesmo peso (~20 ms cada com 1000 linhas);
+    a cascata ainda roda para todo elemento, inclusive os que
+    compartilham (o passo C em [Decisões](decisoes.md) a pularia);
+  - cada entrada da tabela de estilos ocupa 9,7 KB (`tbox_style` com
+    strings de 256 bytes e arrays fixos): ~56 MiB com 1000 linhas;
+  - o texto de cada célula é medido e moldado 2 a 3 vezes;
+  - rolar ou passar o mouse sobre a tabela refaz estilo e layout inteiros
+    (ver [Estilo e layout incrementais](#estilo-e-layout-incrementais)).
+- **Por que importa:** com 1000 linhas a arena do frame ainda ocupa
+  ~85 MB, e cada movimento do mouse sobre linhas com `:hover` custa um
+  frame inteiro.
+- **Quando revisitar:** já é um problema real; ordem proposta: medição
+  única por célula, pular a cascata no compartilhamento (C), dados raros
+  fora do `tbox_style`.
+- **Toca:** `src/style/tbox_style.c`, `include/tbox/style.h`,
+  `src/layout/tbox_layout_table*.c`.
 
 ### Screenshot headless incremental
 

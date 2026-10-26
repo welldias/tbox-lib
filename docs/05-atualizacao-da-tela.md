@@ -294,10 +294,12 @@ que importa).
   documento inteiro. É o próximo passo de otimização
   ([Débito técnico](dev/debito-tecnico.md#estilo-e-layout-incrementais)).
 
-O benchmark não está no repositório. Para reproduzir: abra o demo com
-`tbox_context_open` e cronometre `tbox_context_run_frame`,
-`tbox_damage_tracker_update` e `tbox_raster_display_list_damaged` com dano
-`full` e com uma op alterada.
+Para medir: `build/tests/tbox_bench` (ver
+[Ferramentas e testes](12-ferramentas-e-testes.md#medição-de-desempenho--tbox_bench))
+cronometra `tbox_context_run_frame`, as etapas de estilo, layout e display
+list, o diff do damage tracking e a repintura, numa página ou numa tabela
+sintética. A tabela acima é de antes dela e de antes das otimizações de
+2026-10-26 (ver [Histórico](dev/historico.md)).
 
 ## Usando o damage tracking sem `tbox_app`
 

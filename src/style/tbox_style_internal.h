@@ -261,4 +261,14 @@ void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, con
 
 bool tbox_style_composition_declaration_valid(tbox_string_view name, tbox_string_view value);
 
+/* Whether `property` is one the *_declaration_valid functions above check
+ * (any -webkit- name included); every other property passes all of them,
+ * so the cascade skips them. tests/style/test_style.c keeps the two in
+ * step. */
+bool tbox_style_declaration_checked(tbox_string_view property);
+
+/* The `index`th name of the table tbox_style_declaration_checked searches,
+ * NULL past the last one (for that test). */
+const char *tbox_style_checked_property(size_t index);
+
 #endif /* TBOX_STYLE_INTERNAL_H */

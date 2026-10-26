@@ -75,8 +75,11 @@ tbox_font_face *tbox_font_face_load(const void *font_data, size_t size, double s
     face->kerning           = false;
     face->kerning_requested = false;
     face->shaper            = NULL;
-    face->runs              = NULL;
-    face->run_count         = 0;
+    face->runs               = NULL;
+    face->run_slots          = 0;
+    face->run_count          = 0;
+    face->advance_pages      = NULL;
+    face->advance_page_count = 0;
     if (!tbox_font_shaper_attach(face)) {
         FT_Done_Face(ft_face);
         free(font_data_copy);
@@ -116,6 +119,9 @@ void tbox_font_face_destroy(tbox_font_face *face) {
      * font_data_copy only once they return. */
     tbox_font_run_cache_clear(face);
     free(face->runs);
+    for (size_t i = 0; i < face->advance_page_count; i++)
+        free(face->advance_pages[i]);
+    free(face->advance_pages);
     tbox_font_shaper_detach(face);
     if (face->stroke_glyph != NULL) FT_Done_Glyph(face->stroke_glyph);
     FT_Done_Face(face->ft_face);
@@ -284,18 +290,22 @@ static size_t tbox_font_run_uncached(tbox_font_face *face, tbox_string_view text
 
 /* The run cache (tbox_font_face.runs): a run's glyphs depend only on the
  * face and on (text, letter-spacing, direction), and HarfBuzz shaping was
- * most of the layout's cost. Runs longer than this are not kept. */
-#define TBOX_FONT_RUN_CACHE_SLOTS    2048
-#define TBOX_FONT_RUN_CACHE_MAX_TEXT 256
+ * most of the layout's cost. The table starts at MIN_SLOTS and doubles up
+ * to MAX_SLOTS (MAX_SLOTS / 2 runs: a table of a few thousand rows has
+ * that many different words, and each frame asks for all of them). Runs
+ * longer than MAX_TEXT are not kept. */
+#define TBOX_FONT_RUN_CACHE_MIN_SLOTS 2048
+#define TBOX_FONT_RUN_CACHE_MAX_SLOTS 65536
+#define TBOX_FONT_RUN_CACHE_MAX_TEXT  256
 
 static void tbox_font_run_cache_clear(tbox_font_face *face) {
     if (face->runs == NULL)
         return;
-    for (size_t i = 0; i < TBOX_FONT_RUN_CACHE_SLOTS; i++) {
+    for (size_t i = 0; i < face->run_slots; i++) {
         free(face->runs[i].text);
         free(face->runs[i].glyphs);
     }
-    memset(face->runs, 0, TBOX_FONT_RUN_CACHE_SLOTS * sizeof(*face->runs));
+    memset(face->runs, 0, face->run_slots * sizeof(*face->runs));
     face->run_count = 0;
 }
 
@@ -316,15 +326,63 @@ static uint64_t tbox_font_run_hash(tbox_string_view text, double letter_spacing,
  * only when the table cannot be allocated. */
 static tbox_font_run_entry *tbox_font_run_slot(tbox_font_face *face, uint64_t hash, tbox_string_view text, double letter_spacing, tbox_font_direction direction) {
     if (face->runs == NULL) {
-        face->runs = calloc(TBOX_FONT_RUN_CACHE_SLOTS, sizeof(*face->runs));
+        face->runs = calloc(TBOX_FONT_RUN_CACHE_MIN_SLOTS, sizeof(*face->runs));
         if (face->runs == NULL)
             return NULL;
+        face->run_slots = TBOX_FONT_RUN_CACHE_MIN_SLOTS;
     }
-    for (size_t i = hash & (TBOX_FONT_RUN_CACHE_SLOTS - 1);; i = (i + 1) & (TBOX_FONT_RUN_CACHE_SLOTS - 1)) {
+    size_t mask = face->run_slots - 1;
+    for (size_t i = hash & mask;; i = (i + 1) & mask) {
         tbox_font_run_entry *entry = &face->runs[i];
         if (entry->hash == 0 || (entry->hash == hash && entry->text_size == text.size && entry->letter_spacing == letter_spacing && entry->direction == direction && memcmp(entry->text, text.data, text.size) == 0))
             return entry;
     }
+}
+
+/* Moves the runs into a table of `slots` slots, keeping all of them, or
+ * (`sweep`) only those asked for since the previous sweep, whose marks
+ * it then clears. False, with nothing changed, when out of memory. */
+static bool tbox_font_run_cache_rebuild(tbox_font_face *face, size_t slots, bool sweep) {
+    tbox_font_run_entry *runs = calloc(slots, sizeof(*runs));
+    if (runs == NULL)
+        return false;
+    size_t count = 0;
+    for (size_t i = 0; i < face->run_slots; i++) {
+        tbox_font_run_entry *entry = &face->runs[i];
+        if (entry->hash == 0)
+            continue;
+        if (sweep && !entry->used) {
+            free(entry->text);
+            free(entry->glyphs);
+            continue;
+        }
+        size_t slot = entry->hash & (slots - 1);
+        while (runs[slot].hash != 0)
+            slot = (slot + 1) & (slots - 1);
+        runs[slot]      = *entry;
+        runs[slot].used = !sweep && entry->used;
+        count++;
+    }
+    free(face->runs);
+    face->runs      = runs;
+    face->run_slots = slots;
+    face->run_count = count;
+    return true;
+}
+
+/* Room for one more run: the table doubles while it can; at its largest,
+ * the runs not asked for again since the previous sweep (`used` marks a
+ * hit, not the insertion) go, so text shown every frame stays and text
+ * seen once leaves. When nearly all of them stay (the working set does
+ * not fit), it is emptied instead, so that a sweep does not come again a
+ * few runs later. */
+static void tbox_font_run_cache_make_room(tbox_font_face *face) {
+    if (face->run_count + 1 <= face->run_slots / 2)
+        return;
+    if (face->run_slots < TBOX_FONT_RUN_CACHE_MAX_SLOTS && tbox_font_run_cache_rebuild(face, face->run_slots * 2, false))
+        return;
+    if (!tbox_font_run_cache_rebuild(face, face->run_slots, true) || face->run_count > face->run_slots * 3 / 8)
+        tbox_font_run_cache_clear(face);
 }
 
 /* tbox_font_run_uncached through the face's run cache. */
@@ -338,7 +396,8 @@ static size_t tbox_font_run(tbox_font_face *face, tbox_string_view text, double 
     if (entry != NULL && entry->hash != 0 && (entry->glyphs != NULL || capacity == 0)) {
         if (capacity > 0 && entry->count > 0)
             memcpy(out, entry->glyphs, (capacity < entry->count ? capacity : entry->count) * sizeof(*out));
-        *out_width = entry->width;
+        *out_width  = entry->width;
+        entry->used = true;
         return entry->count;
     }
     double width;
@@ -354,8 +413,8 @@ static size_t tbox_font_run(tbox_font_face *face, tbox_string_view text, double 
         memcpy(glyphs, out, count * sizeof(*glyphs));
     }
     if (entry->hash == 0) {
-        if (face->run_count + 1 > TBOX_FONT_RUN_CACHE_SLOTS / 2) {
-            tbox_font_run_cache_clear(face);
+        if (face->run_count + 1 > face->run_slots / 2) {
+            tbox_font_run_cache_make_room(face);
             entry = tbox_font_run_slot(face, hash, text, letter_spacing, direction);
         }
         char *copy = malloc(text.size);
@@ -366,6 +425,8 @@ static size_t tbox_font_run(tbox_font_face *face, tbox_string_view text, double 
         memcpy(copy, text.data, text.size);
         *entry = (tbox_font_run_entry){ .hash = hash, .text = copy, .text_size = text.size, .letter_spacing = letter_spacing, .direction = direction };
         face->run_count++;
+    } else {
+        entry->used = true;
     }
     /* A width-only entry gains its glyphs when a caller wants them. */
     free(entry->glyphs);
@@ -373,6 +434,38 @@ static size_t tbox_font_run(tbox_font_face *face, tbox_string_view text, double 
     entry->width  = width;
     entry->glyphs = glyphs;
     return count;
+}
+
+#define TBOX_FONT_ADVANCE_PAGE 256
+#define TBOX_FONT_ADVANCE_NONE INT32_MIN
+
+int32_t tbox_font_face_glyph_advance(tbox_font_face *face, uint32_t glyph) {
+    FT_Face ft_face = face->ft_face;
+    size_t page     = glyph / TBOX_FONT_ADVANCE_PAGE;
+    if (face->advance_pages == NULL && ft_face->num_glyphs > 0) {
+        size_t pages        = ((size_t)ft_face->num_glyphs + TBOX_FONT_ADVANCE_PAGE - 1) / TBOX_FONT_ADVANCE_PAGE;
+        face->advance_pages = calloc(pages, sizeof(*face->advance_pages));
+        if (face->advance_pages != NULL)
+            face->advance_page_count = pages;
+    }
+    int32_t *advances = NULL;
+    if (page < face->advance_page_count) {
+        advances = face->advance_pages[page];
+        if (advances == NULL) {
+            advances = malloc(TBOX_FONT_ADVANCE_PAGE * sizeof(*advances));
+            if (advances != NULL)
+                for (size_t i = 0; i < TBOX_FONT_ADVANCE_PAGE; i++)
+                    advances[i] = TBOX_FONT_ADVANCE_NONE;
+            face->advance_pages[page] = advances;
+        }
+    }
+    if (advances != NULL && advances[glyph % TBOX_FONT_ADVANCE_PAGE] != TBOX_FONT_ADVANCE_NONE)
+        return advances[glyph % TBOX_FONT_ADVANCE_PAGE];
+    FT_Pos advance = FT_Load_Glyph(ft_face, (FT_UInt)glyph, FT_LOAD_DEFAULT) == 0 ? ft_face->glyph->advance.x : 0;
+    int32_t value  = advance > INT32_MIN && advance <= INT32_MAX ? (int32_t)advance : 0;
+    if (advances != NULL)
+        advances[glyph % TBOX_FONT_ADVANCE_PAGE] = value;
+    return value;
 }
 
 /* Shapes `text` into a malloc'd array, growing it once if the shaper

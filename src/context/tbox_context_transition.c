@@ -56,24 +56,65 @@ void tbox_context_free_transitions(tbox_context *ctx) {
     ctx->transitions = NULL;
 }
 
-void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height) {
-    ctx->next_frame_time = INFINITY;
-    tbox_transition_state **link = &ctx->transitions;
-    while (*link != NULL) {
-        if (tbox_context_node_attached(ctx, (*link)->node)) link = &(*link)->next;
-        else {
-            tbox_transition_state *removed = *link;
-            *link = removed->next;
-            tbox_transition_free(removed);
-        }
+/* The states by node for one frame, in the frame arena: open addressing
+ * over at least twice as many slots as states, so the per-element lookup
+ * does not walk the list. `slots` is NULL when it could not be allocated,
+ * and the lookup walks the list instead. */
+typedef struct tbox_transition_index {
+    tbox_transition_state **slots;
+    size_t mask;
+} tbox_transition_index;
+
+static size_t tbox_transition_hash(const tbox_html_node *node) {
+    uint64_t key = (uint64_t)(uintptr_t)node;
+    key ^= key >> 33;
+    key *= 0xff51afd7ed558ccdull;
+    key ^= key >> 33;
+    return (size_t)key;
+}
+
+/* The slot holding `node`'s state, or the empty one where it would go. */
+static tbox_transition_state **tbox_transition_slot(const tbox_transition_index *index, const tbox_html_node *node) {
+    size_t slot = tbox_transition_hash(node) & index->mask;
+    while (index->slots[slot] != NULL && index->slots[slot]->node != node)
+        slot = (slot + 1) & index->mask;
+    return &index->slots[slot];
+}
+
+/* Room for the states there are plus one per element that may gain one. */
+static tbox_transition_index tbox_transition_index_build(tbox_context *ctx) {
+    tbox_transition_index index = { NULL, 0 };
+    size_t count                = ctx->styles.count;
+    for (const tbox_transition_state *state = ctx->transitions; state != NULL; state = state->next)
+        count++;
+    if (count > SIZE_MAX / 4 / sizeof(*index.slots))
+        return index;
+    size_t capacity = 16;
+    while (capacity < count * 2)
+        capacity *= 2;
+    index.slots = tbox_arena_alloc_zero(&ctx->frame_arena, capacity * sizeof(*index.slots));
+    index.mask  = capacity - 1;
+    for (tbox_transition_state *state = ctx->transitions; index.slots != NULL && state != NULL; state = state->next) {
+        tbox_transition_state **slot = tbox_transition_slot(&index, state->node);
+        if (*slot == NULL)
+            *slot = state;
     }
+    return index;
+}
+
+void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height) {
+    ctx->next_frame_time        = INFINITY;
+    tbox_transition_index index = tbox_transition_index_build(ctx);
     double now = ctx->animation_time;
     for (size_t i = 0; i < ctx->styles.count; i++) {
         tbox_style_entry *entry = &ctx->styles.items[i];
         if (entry->style.generated != 0)
             continue; /* ::before/::after nodes are rebuilt every frame: no transitions */
-        tbox_transition_state *state = ctx->transitions;
-        while (state != NULL && state->node != entry->node) state = state->next;
+        if (!tbox_transition_any(&entry->style))
+            continue; /* no state: losing `transition` cancels the running ones */
+        tbox_transition_state **slot = index.slots != NULL ? tbox_transition_slot(&index, entry->node) : NULL;
+        tbox_transition_state *state = slot != NULL ? *slot : ctx->transitions;
+        while (slot == NULL && state != NULL && state->node != entry->node) state = state->next;
         bool hidden = entry->style.display == TBOX_STYLE_DISPLAY_NONE;
         bool appearing = state == NULL ? !hidden : state->hidden && !hidden;
         if (state == NULL) {
@@ -82,7 +123,14 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
             state->node = entry->node;
             state->next = ctx->transitions;
             ctx->transitions = state;
+            if (slot != NULL)
+                *slot = state;
+            /* First seen hidden: nothing to transition from or to yet. */
+            if (!appearing)
+                for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
+                    tbox_style_animatable_read(&entry->style, (tbox_style_animatable)p, state->values[p]);
         }
+        state->seen = true;
         state->hidden = hidden;
         /* Appearing: the "previous" values are the @starting-style ones,
          * so the change below starts a transition from them; without
@@ -128,6 +176,19 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
                 /* in its delay the value holds still until start_time */
                 tbox_context_wake_at(ctx, now < track->start_time ? track->start_time : -INFINITY);
             } else track->active = false;
+        }
+    }
+    /* The elements not found above left the document or their
+     * transitions: their states (and running transitions) go. */
+    tbox_transition_state **link = &ctx->transitions;
+    while (*link != NULL) {
+        if ((*link)->seen) {
+            (*link)->seen = false;
+            link = &(*link)->next;
+        } else {
+            tbox_transition_state *removed = *link;
+            *link = removed->next;
+            tbox_transition_free(removed);
         }
     }
 }

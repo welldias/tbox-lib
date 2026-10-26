@@ -57,6 +57,10 @@ void tbox_css_parser_run(tbox_css_parser *parser, tbox_css_ruleset **out_ruleset
  * stopped. */
 bool tbox_css_parser_parse_standalone_selector_group(const char *input, size_t length, tbox_arena *arena, tbox_css_selector **out_selectors, size_t *out_count, size_t *out_error_offset);
 
+/* The `index`th property @supports accepts (tbox_css_supports.c), NULL
+ * past the last one. */
+const char *tbox_css_supported_property(size_t index);
+
 #ifdef __cplusplus
 }
 #endif

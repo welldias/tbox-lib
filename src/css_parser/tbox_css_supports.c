@@ -682,6 +682,10 @@ static bool tbox_css_supports_condition_at(tbox_css_supports_cursor *c) {
     return result;
 }
 
+const char *tbox_css_supported_property(size_t index) {
+    return index < sizeof(tbox_css_supported_properties) / sizeof(tbox_css_supported_properties[0]) ? tbox_css_supported_properties[index] : NULL;
+}
+
 bool tbox_css_supports(tbox_string_view condition) {
     tbox_css_supports_cursor c = { condition.data, condition.data + condition.size, condition.data != NULL };
     bool result                = c.valid && tbox_css_supports_condition_at(&c);

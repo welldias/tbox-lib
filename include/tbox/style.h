@@ -1730,6 +1730,10 @@ typedef struct tbox_style_table {
      * node: Layout overlays a vertical subtree's remapped styles on the
      * resolved table this way. NULL for a table from the Style layer. */
     const struct tbox_style_table *fallback;
+    /* Private: node -> entry hash built by the tbox_style_resolve_tree*
+     * functions, in the table's arena. NULL (a table filled by hand)
+     * makes tbox_style_table_find scan `items`. */
+    const struct tbox_style_table_index *index_;
 } tbox_style_table;
 
 /* `arena` is supplied by the caller (same pattern as tbox_layout_build and

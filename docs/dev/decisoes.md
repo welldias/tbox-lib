@@ -280,12 +280,96 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
 - **Orchestration (`tbox_context`) é dona do cômputo, não do event loop.**
   O loop da plataforma e a apresentação ficam na Application; `tbox_context`
   não sabe que Wayland existe (v0, corrigido durante a implementação).
-- **`tbox_style_table` é uma tabela plana com busca linear.** Escolhida entre
-  callback pull-based, tabela plana e hash por ponteiro: reaproveita o
-  padrão de `tbox_css_computed_style_find`, não exige hash table na Base e
-  não acopla a ordem de travessia entre Style e Layout (v0).
+- **`tbox_style_table` é uma tabela plana, indexada por hash de ponteiro.**
+  Na v0 a busca era linear (reaproveitava o padrão de
+  `tbox_css_computed_style_find`). Em 2026-10-26 a busca linear tornou o
+  layout quadrático em tabelas de centenas de linhas, e a tabela ganhou um
+  índice privado (`index_`) montado na arena ao fim de
+  `tbox_style_resolve_tree*`. O índice ficou na tabela, e não no
+  `tbox_html_node`, por três motivos. Há várias tabelas vivas para o mesmo
+  nó: as duas passadas de `@container`, a sobreposta da escrita vertical
+  (`fallback`) e as montadas pela própria API pública. Um índice no nó
+  ficaria obsoleto para nós criados entre frames. E a resolução teria de
+  escrever no DOM, que ela recebe `const`. Tabelas montadas à mão (sem
+  índice) ou que cresceram depois de indexadas voltam à busca linear.
 - **Uma `frame_arena` por contexto, resetada a cada frame**, compartilhada
   por Style, Layout e Render (v0).
+- **Culling no Render, por subárvore e só sob clip de `overflow`.**
+  Escolhido entre filtrar a display list pronta (cada op já tem seu clip),
+  pular subárvores no Render e usar também o viewport. Filtrar depois não
+  poupa a construção nem a memória da lista, e as camadas (máscara,
+  reflexo, filtros) tornam arriscado remover ops soltos. A subárvore é
+  pulada só quando um limite conservador, calculado das caixas, não toca o
+  clip; o que não se limita barato (transformação, filtro, máscara,
+  reflexo, `border-image`, SVG) é sempre pintado, então um erro de limite
+  só pode deixar de cortar, nunca cortar a mais. O viewport ficou de fora:
+  a página não rola fora dos contêineres, e
+  `tbox_render_build_display_list` usa a caixa raiz como viewport, menor
+  que o conteúdo que transborda dela (2026-10-26).
+- **Filtro por nome antes dos validadores de declaração.** A cascata
+  passa cada declaração por seis validadores (OpenType, pintura, motion
+  path, composição, inline, SVG), puros em (propriedade, valor), cada um
+  comparando o nome com a própria lista: ~21% do frame de uma tabela
+  grande, quase todo para concluir "não é comigo". Escolhido entre
+  guardar a validade por declaração na folha e um filtro por nome: a
+  folha fica no parser, abaixo da Style, que é dona dos validadores, e
+  calcular sob demanda numa folha `const` seria mutação escondida. Ficou
+  `tbox_style_declaration_checked`, uma tabela constante ordenada (busca
+  binária) com a união dos nomes, mais todo `-webkit-`. Para a tabela não
+  ficar para trás quando um validador ganhar uma propriedade,
+  `tests/style/test_style.c` confere nos dois sentidos, contra a lista do
+  `@supports`: quem algum validador rejeita está na tabela, e todo nome da
+  tabela é rejeitado por algum (2026-10-26).
+- **Índice de regras por regra, não por seletor, e montado na folha.**
+  A cascata testava todos os seletores de todas as regras: 171 a 307 por
+  elemento nos exemplos, ~24% do frame de uma tabela grande e mais 8,6% nas
+  cascatas de pseudo-elementos. A chave é o componente mais à direita (id,
+  senão a primeira classe, senão a tag), como fazem os navegadores; o que
+  há dentro de `:is()`/`:not()` não conta, de modo que a chave é sempre
+  algo que o elemento precisa ter. O índice guarda regras (uma regra entra
+  no balde de cada seletor seu) e a cascata reaproveita o laço por regra
+  que já existia, só com menos regras; indexar seletores exigiria
+  reagrupar os vencedores por regra. As candidatas são juntadas, ordenadas
+  e sem repetição, para manter a ordem de origem, que decide empates entre
+  baldes. A busca de candidatas fica na cascata, que já conhece o nó; a
+  folha só monta o índice, sem depender do DOM. Sem índice (falta de
+  memória) a cascata volta a visitar todas as regras (2026-10-26).
+- **Compartilhamento de estilo conferido pela cascata.** Medido antes (1000
+  linhas de tabela): a conversão das declarações era ~58% do estilo e a
+  cascata ~29%, e 99,7% dos elementos tinham um anterior igual. Escolhido
+  entre (A) rodar a cascata sempre e compartilhar só a conversão quando o
+  resultado da cascata, a tag, os atributos e a classe do pai são iguais e
+  (C) pular também a cascata, com uma chave por tag, atributos, pai e
+  posição entre os irmãos. A chave de C é segura em tabelas comuns (83% de
+  compartilhamento, zero erros) mas erra com seletores que dependem da
+  posição de um ancestral, de irmãos ou de estado (`tr:nth-child(even) td`,
+  `tr.x + tr td`, `tr:hover td`): 2855 erros em 6011 elementos. Ficou A,
+  correta por construção; C fica como passo seguinte, exigindo que o matcher
+  registre o que consultou (posição própria, de ancestral, irmãos, estado,
+  `:has`, contêiner) para recusar o modelo quando a chave não basta. A
+  igualdade da cascata compara propriedade, valor, regra, origem,
+  `!important` e registro `@property`, nessa ordem; os textos são copiados
+  para o modelo porque a cascata libera os seus. Um modelo só conta se os
+  passos por nó seguintes (marcador, partes, contêiner) não mudaram seu
+  estilo, conferido por comparação de bytes com a cópia feita logo após a
+  conversão, para que um passo novo desse tipo não quebre o compartilhamento
+  em silêncio (2026-10-26).
+- **`border` sem cópia de `border-image`.** O `border` redefine
+  `border-image` para o inicial, e a resolução alocava uma cópia do inicial
+  (1720 bytes) para todo elemento com `border`. `NULL` já é o inicial; a
+  cópia só existe quando alguma declaração de `border-image` vem depois do
+  último `border` (2026-10-26).
+- **Tabela de estilos reservada pelo número de elementos.** Na arena, um
+  `tbox_vector` que dobra deixa para trás cada cópia superada, e a tabela
+  (entradas de 9,7 KB) ocupava 2 a 4 vezes o necessário: 151 MiB para
+  56 MiB úteis com 1000 linhas de tabela. A resolução conta os elementos
+  antes e reserva uma entrada para cada. Os `::before`/`::after` também
+  entram na tabela e só são conhecidos depois do estilo; escolhido entre
+  reservar só os elementos (um excedente de pseudo-elementos faz o vetor
+  dobrar uma vez), reservar o triplo quando há regras desses
+  pseudo-elementos e separá-los numa tabela ligada por `fallback`: ficou a
+  primeira, a mais simples, cujo pior caso (toda célula com `::before`)
+  ainda ocupa menos da metade de antes (2026-10-26).
 - **Recompute total por frame.** Sem dirty-tracking de estilo/layout; desde a
   v20, só a *repintura* é parcial (ver [Atualização da tela](../05-atualizacao-da-tela.md)).
 - **`tbox_context` não guarda flag "sujo".** Funções de evento
@@ -410,11 +494,25 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   layout de `tbox_style`. Transições e animações rodam antes do layout, então
   `width`/`padding` animam refazendo o layout, que já é refeito a cada frame
   (2026-10-12).
-- **Estado de transição: alvos sempre, trilhas sob demanda.** Cada elemento
-  guarda o último alvo de toda propriedade animável (é o que detecta uma
-  mudança que chega junto com o `transition`, como num `:hover`), mas as
-  trilhas em andamento só são alocadas quando a primeira transição começa
-  (2026-10-12).
+- **Estado de transição só para quem declara `transition`; trilhas sob
+  demanda.** Até 2026-10-26 todo elemento guardava o último alvo de toda
+  propriedade animável (~4 KB, `malloc`, numa lista ligada procurada por
+  elemento), para animar também uma mudança que chega junto com o
+  `transition`, como num `:hover` que declara os dois. Numa tabela de 1000
+  linhas isso eram 6000 estados (~25 MB) e 173 ms por frame, quadrático.
+  Escolhido entre (a) estado só para elementos com `transition` efetiva,
+  (b) estado para todos mas compacto (só valores fora do inicial, ou só
+  propriedades que alguma regra transiciona) e (c) só trocar a lista por
+  um índice: ficou (a), por ser a maior economia e por o caso perdido ser
+  raro numa UI de aplicação, com efeito discreto (a mudança acontece sem
+  animar). Consequências aceitas: ganhar `transition` junto com a mudança
+  não anima; um elemento visível que ganha `transition` é tratado como
+  recém-aparecido (`@starting-style` pode valer); perder `transition`
+  encerra as em curso. A busca usa um índice por hash montado a cada frame
+  na `frame_arena` a partir da lista, e os estados não vistos no frame
+  (nó fora do documento, `transition` removida) são liberados ao fim. As
+  trilhas em andamento continuam alocadas só quando a primeira transição
+  começa (2026-10-12; revisto em 2026-10-26).
 - **`@supports` decidido no parse**, por uma tabela de propriedades no
   módulo do parser (`tbox_css_supports.c`), em vez de levar a condição até a
   Style: o parser fica abaixo da Style e o que a tbox suporta não muda em
@@ -589,12 +687,23 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   carrega o estado do shaper e vive no `tbox_font_face_cache`, então o
   cache tem o mesmo dono, a mesma vida e a mesma afinidade de thread.
   Chave (texto, `letter-spacing`, direção); o resto do que muda o shaping
-  é fixo na face. Despejo por esvaziamento total ao passar da metade das
-  2048 posições, em vez de LRU: mais simples, sem lista, e o conjunto de
-  palavras de uma UI cabe com folga; textos acima de 256 bytes não entram.
-  Alternativa adiada: o layout incremental, que evitaria o shaping por não
-  refazer o layout (ver [Débito técnico](debito-tecnico.md#estilo-e-layout-incrementais))
-  (2026-10-20).
+  é fixo na face. Textos acima de 256 bytes não entram. Alternativa
+  adiada: o layout incremental, que evitaria o shaping por não refazer o
+  layout (ver [Débito técnico](debito-tecnico.md#estilo-e-layout-incrementais))
+  (2026-10-20). O despejo era esvaziar tudo ao passar da metade de 2048
+  posições, e uma tabela de ~400 linhas tem mais palavras que isso: o
+  cache se esvaziava várias vezes por frame e nada era reaproveitado. Em
+  2026-10-26 a tabela passou a dobrar até 65536 posições e, no máximo, a
+  varrer com segunda chance (fica o que foi reaproveitado desde a última
+  varredura), em vez de LRU: sem lista nem relógio, e o custo da varredura
+  só aparece quando o conjunto de trabalho passa de 32768 runs. A marca de
+  uso vale para o reaproveitamento, não para a entrada; marcar na entrada
+  faria a primeira varredura achar tudo usado e esvaziar o cache.
+- **Avanços de glifo em cache na face**, em páginas de 256 glifos alocadas
+  sob demanda, e não um vetor do tamanho da fonte (uma fonte CJK tem dezenas
+  de milhares de glifos, e cada tamanho é uma face). Continuam vindo do
+  `FT_Load_Glyph` com hinting, que o raster também usa; desligar o hinting
+  só no avanço mudaria as métricas e a paridade com o Firefox (2026-10-26).
 
 ## Layout
 

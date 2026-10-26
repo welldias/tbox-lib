@@ -578,6 +578,41 @@ imagem/gradiente (da última para a primeira, posicionadas na área de
 `background-origin`, recortadas por `background-clip`, misturadas pelo
 `background-blend-mode`) → sombras `inset` → borda.
 
+### Culling
+
+Dentro de um contêiner com `overflow` diferente de `visible`, todo op da
+subárvore carrega o clip do contêiner, então o que fica inteiramente fora
+dele não pinta nada. O Render não emite esses ops: um filho em fluxo cuja
+pintura não alcança o clip é pulado com toda a subárvore. Com isso, uma
+lista longa ou uma tabela de milhares de linhas num contêiner rolável gera
+uma display list do tamanho do que está visível.
+
+- **Decisão por limite conservador.** Primeiro o `border_box` do filho:
+  se toca o clip (encostar na borda conta), a subárvore é pintada. Se não,
+  o limite da subárvore é a união dos `border_box`, das sombras de caixa,
+  do `outline` (largura + `outline-offset`), de cada run de texto com uma
+  folga de uma altura de linha (glifos, decorações, ênfase), mais
+  `text-shadow`, `-webkit-text-stroke` e o padding, a borda e as sombras de
+  um elemento inline, das regras de coluna e das bordas de tabela. Os
+  descendentes posicionados entram no limite, embora o contexto de
+  empilhamento os pinte à parte.
+- **O que não se limita não é cortado.** Transformação, `filter`, máscara,
+  `box-reflect`, `border-image` (o `outset` estende a borda) e SVG fazem a
+  subárvore ser sempre pintada.
+- **Bordas colapsadas** (`border-collapse`) são pintadas pela própria
+  tabela; cada aresta fora do clip é descartada.
+- **Só há culling sob um clip de `overflow`.** O viewport não é usado: a
+  página não rola fora dos contêineres, e
+  `tbox_render_build_display_list` sem viewport continua emitindo tudo.
+  Posicionados que o contexto de empilhamento pinta (`z-index`, floats)
+  também não passam pelo culling.
+
+O resultado em pixels é idêntico ao da lista completa (conferido nas
+fixtures e num documento de casos de borda rolado quadro a quadro, ver
+[Histórico](dev/historico.md)); `tests/render/test_composition.c` cobre
+linhas cortadas, a que encosta no clip, uma sombra e um filho relativo que
+alcançam o clip vindos de baixo e as bordas colapsadas.
+
 ### Rasterização
 
 O Output rasteriza a display list em software num buffer XRGB8888

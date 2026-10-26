@@ -267,16 +267,24 @@ void tbox_style_resolve_border_image(const tbox_css_computed_style *computed, co
         return;
     tbox_style_border_image image;
     tbox_style_border_image_init(&image);
+    bool declared = false; /* something after the last `border` reset */
     for (size_t i = 0; i < count; i++) {
         if (kinds[i] == BORDER) {
             tbox_style_border_image_init(&image);
+            declared = false;
         } else if (kinds[i] == SHORTHAND) {
             tbox_style_border_image_parse_shorthand(decls[i]->value, units, style->color, &image);
+            declared = true;
         } else {
             /* an invalid value leaves the part alone */
             tbox_style_border_image_parse_longhand(kinds[i], decls[i]->value, units, style->color, &image);
+            declared = true;
         }
     }
+    /* Only `border` resets: the initial value, which NULL already is
+     * (an out-of-line copy cost 1720 bytes per bordered element). */
+    if (!declared)
+        return;
     tbox_style_border_image *copy = tbox_style_group_copy(arena, &image, sizeof(*copy));
     if (copy != NULL) {
         style->border_image     = copy;

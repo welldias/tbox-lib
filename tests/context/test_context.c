@@ -4915,6 +4915,57 @@ int tbox_test_context_run(void) {
         }
         TBOX_TEST_ASSERT(tbox_context_next_frame_time(NULL) == INFINITY);
     }
+    /* Transition states exist only for elements that declare a transition
+     * (docs/dev/decisoes.md): a hidden one waits without animating; losing
+     * `transition` or leaving the document frees the state and ends what
+     * was running; gaining `transition` along with the change does not
+     * animate it. */
+    {
+        const char *css = "#w > div { width: 20px; height: 20px; background-color: red; }"
+                          "#t { transition: background-color 1s linear; } #t.blue { background-color: blue; } #t.plain { transition: none; }"
+                          "#h { display: none; transition: background-color 1s linear; }"
+                          "#g.blue { background-color: blue; transition: background-color 1s linear; }";
+        tbox_context *ctx = open_cstr("<div id='w'><div id='t'></div><div id='h'></div><div id='g'></div><div></div><div></div></div>", css, fonts);
+        TBOX_TEST_ASSERT(ctx != NULL);
+        if (ctx != NULL) {
+            tbox_html_document *document = tbox_context_document(ctx);
+            tbox_html_node *t = (tbox_html_node *)tbox_html_document_root(document)->first_child->first_child;
+            tbox_html_node *h = t->next_sibling, *g = h->next_sibling;
+            tbox_string_view class_name = tbox_string_view_make("class", 5);
+            size_t states;
+            tbox_display_list list;
+            tbox_context_set_animation_time(ctx, 0.0);
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            states = 0;
+            for (const tbox_transition_state *state = ctx->transitions; state != NULL; state = state->next) states++;
+            TBOX_TEST_ASSERT(states == 2 && !tbox_context_animations_active(ctx));
+
+            tbox_html_node_set_attribute(document, t, class_name, tbox_string_view_make("blue", 4));
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            tbox_context_set_animation_time(ctx, 0.5);
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            const tbox_layout_box *box = find_context_box(ctx, t);
+            TBOX_TEST_ASSERT(box != NULL && box->style->background_color.b >= 126 && box->style->background_color.b <= 129 && tbox_context_animations_active(ctx));
+
+            tbox_html_node_set_attribute(document, t, class_name, tbox_string_view_make("blue plain", 10));
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            box = find_context_box(ctx, t);
+            TBOX_TEST_ASSERT(box != NULL && box->style->background_color.b == 255 && !tbox_context_animations_active(ctx));
+
+            tbox_html_node_set_attribute(document, g, class_name, tbox_string_view_make("blue", 4));
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            box = find_context_box(ctx, g);
+            TBOX_TEST_ASSERT(box != NULL && box->style->background_color.b == 255 && !tbox_context_animations_active(ctx));
+            states = 0;
+            for (const tbox_transition_state *state = ctx->transitions; state != NULL; state = state->next) states++;
+            TBOX_TEST_ASSERT(states == 2);
+
+            tbox_html_node_remove(g);
+            tbox_context_run_frame(ctx, 300.0, 100.0, &list);
+            TBOX_TEST_ASSERT(ctx->transitions != NULL && ctx->transitions->node == h && ctx->transitions->next == NULL);
+            tbox_context_close(ctx);
+        }
+    }
     {
         const char *css = "@keyframes fade { from { opacity: 0; } to { opacity: 1; } }"
                           "#a { width: 20px; height: 20px; background: red; animation: fade 1s linear 2s; }";

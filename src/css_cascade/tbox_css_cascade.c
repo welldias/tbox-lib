@@ -365,12 +365,16 @@ static bool tbox_css_cascade_wins_or_ties(const tbox_css_resolved_declaration *c
  * one place. `winners` holds tbox_css_resolved_declaration items, one per
  * distinct property seen so far. */
 static void tbox_css_cascade_offer(tbox_vector *winners, const tbox_css_resolved_declaration *candidate) {
-    if (!tbox_style_opentype_declaration_valid(candidate->property, candidate->value) ||
-        !tbox_style_paint_declaration_valid(candidate->property, candidate->value) ||
-        !tbox_style_motion_declaration_valid(candidate->property, candidate->value)) return;
-    if (!tbox_style_composition_declaration_valid(candidate->property, candidate->value)) return;
-    if (!tbox_style_inline_declaration_valid(candidate->property, candidate->value)) return;
-    if (!tbox_style_svg_declaration_valid(candidate->property, candidate->value)) return;
+    /* The validators only know a few properties; asking each of them
+     * about every declaration was a fifth of a frame. */
+    if (tbox_style_declaration_checked(candidate->property) &&
+        (!tbox_style_opentype_declaration_valid(candidate->property, candidate->value) ||
+         !tbox_style_paint_declaration_valid(candidate->property, candidate->value) ||
+         !tbox_style_motion_declaration_valid(candidate->property, candidate->value) ||
+         !tbox_style_composition_declaration_valid(candidate->property, candidate->value) ||
+         !tbox_style_inline_declaration_valid(candidate->property, candidate->value) ||
+         !tbox_style_svg_declaration_valid(candidate->property, candidate->value)))
+        return;
     tbox_css_resolved_declaration *existing = NULL;
     size_t winner_count                     = tbox_vector_length(winners);
     for (size_t w = 0; w < winner_count; w++) {
@@ -477,6 +481,54 @@ tbox_css_computed_style tbox_css_cascade_resolve_starting_style_in_viewport(cons
     return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, true, query);
 }
 
+/* Appends `bucket`'s rulesets to `out`. */
+static void tbox_css_cascade_add_bucket(tbox_vector *out, const tbox_css_rule_bucket *bucket) {
+    for (size_t i = 0; bucket != NULL && i < bucket->count; i++)
+        *(size_t *)tbox_vector_push(out) = bucket->rulesets[i];
+}
+
+static int tbox_css_cascade_compare_index(const void *a, const void *b) {
+    size_t x = *(const size_t *)a, y = *(const size_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+/* The rulesets of `index` that may match `node` (see tbox_css_rule_index),
+ * ascending and without repeats, so that source order is kept. False when
+ * there is no index: every ruleset is then a candidate. */
+static bool tbox_css_cascade_candidates(const tbox_css_rule_index *index, const tbox_html_node *node, tbox_arena *arena, const size_t **out, size_t *out_count) {
+    *out       = NULL;
+    *out_count = 0;
+    if (index->buckets == NULL || node->type != TBOX_HTML_NODE_ELEMENT)
+        return false;
+    tbox_vector found;
+    tbox_vector_init(&found, arena, sizeof(size_t), index->universal_count + 16);
+    for (size_t i = 0; i < index->universal_count; i++)
+        *(size_t *)tbox_vector_push(&found) = index->universal[i];
+    tbox_css_cascade_add_bucket(&found, tbox_css_rule_index_find(index, TBOX_CSS_SIMPLE_SELECTOR_TYPE, node->element.tag_name));
+    const tbox_html_attribute *id = tbox_html_node_get_attribute(node, tbox_string_view_make("id", 2));
+    if (id != NULL)
+        tbox_css_cascade_add_bucket(&found, tbox_css_rule_index_find(index, TBOX_CSS_SIMPLE_SELECTOR_ID, id->value));
+    const tbox_html_attribute *classes = tbox_html_node_get_attribute(node, tbox_string_view_make("class", 5));
+    for (size_t i = 0; classes != NULL && i < classes->value.size;) {
+        while (i < classes->value.size && tbox_ascii_is_space(classes->value.data[i]))
+            i++;
+        size_t start = i;
+        while (i < classes->value.size && !tbox_ascii_is_space(classes->value.data[i]))
+            i++;
+        if (i > start)
+            tbox_css_cascade_add_bucket(&found, tbox_css_rule_index_find(index, TBOX_CSS_SIMPLE_SELECTOR_CLASS, tbox_string_view_make(classes->value.data + start, i - start)));
+    }
+    size_t *items = found.data, count = 0;
+    if (found.length > 1)
+        qsort(items, found.length, sizeof(size_t), tbox_css_cascade_compare_index);
+    for (size_t i = 0; i < found.length; i++)
+        if (count == 0 || items[count - 1] != items[i])
+            items[count++] = items[i];
+    *out       = items;
+    *out_count = count;
+    return true;
+}
+
 static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting, const tbox_css_query_context *query) {
     tbox_css_computed_style result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (node == NULL) {
@@ -524,11 +576,19 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
         tbox_css_origin origin = sources[src].origin;
 
         const tbox_css_ruleset *rulesets = tbox_css_stylesheet_rulesets(stylesheet);
-        /* A pseudo-element only visits the rulesets that name one. */
-        size_t ruleset_count = pseudo != NULL ? stylesheet->pseudo_element_ruleset_count : tbox_css_stylesheet_ruleset_count(stylesheet);
+        /* A pseudo-element only visits the rulesets that name one; either
+         * cascade, only those its rule index lets through. */
+        const size_t *visited = pseudo != NULL ? stylesheet->pseudo_element_rulesets : NULL;
+        size_t ruleset_count  = pseudo != NULL ? stylesheet->pseudo_element_ruleset_count : tbox_css_stylesheet_ruleset_count(stylesheet);
+        const size_t *candidates;
+        size_t candidate_count;
+        if (tbox_css_cascade_candidates(pseudo != NULL ? &stylesheet->pseudo_element_index : &stylesheet->element_index, node, &scratch, &candidates, &candidate_count)) {
+            visited       = candidates;
+            ruleset_count = candidate_count;
+        }
 
         for (size_t r = 0; r < ruleset_count; r++) {
-            const tbox_css_ruleset *ruleset = &rulesets[pseudo != NULL ? stylesheet->pseudo_element_rulesets[r] : r];
+            const tbox_css_ruleset *ruleset = &rulesets[visited != NULL ? visited[r] : r];
             if (ruleset->starting_style && !starting) continue;
 
             const tbox_css_selector *best_selector = NULL;
