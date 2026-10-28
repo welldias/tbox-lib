@@ -1,3 +1,4 @@
+#include <tbox/css_selector.h>
 #include <tbox/style.h>
 
 #include <math.h>
@@ -1983,8 +1984,8 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(rgba_eq(parent.border_colors[3], (tbox_css_rgba){ 255, 0, 0, 255 }) && rgba_eq(parent.border_colors[1], (tbox_css_rgba){ 0, 0, 255, 255 }));
         TBOX_TEST_ASSERT(parent.overscroll_y == TBOX_STYLE_OVERSCROLL_CONTAIN && child.overscroll_y == TBOX_STYLE_OVERSCROLL_AUTO);
         TBOX_TEST_ASSERT(strcmp(parent.hyphenate_character, "=") == 0 && strcmp(child.hyphenate_character, "=") == 0);
-        TBOX_TEST_ASSERT(parent.scroll_padding[0].value == 1.0 && parent.scroll_padding[3].value == 2.0);
-        TBOX_TEST_ASSERT(parent.scroll_margin[0].value == 4.0 && parent.scroll_margin[2].value == 0.0 && child.scroll_padding[0].value == 0.0);
+        TBOX_TEST_ASSERT(tbox_style_scroll_spacing_of(&parent)->scroll_padding[0].value == 1.0 && tbox_style_scroll_spacing_of(&parent)->scroll_padding[3].value == 2.0);
+        TBOX_TEST_ASSERT(tbox_style_scroll_spacing_of(&parent)->scroll_margin[0].value == 4.0 && tbox_style_scroll_spacing_of(&parent)->scroll_margin[2].value == 0.0 && tbox_style_scroll_spacing_of(&child)->scroll_padding[0].value == 0.0);
         TBOX_TEST_ASSERT(tbox_style_clip_path_of(&parent)->kind == TBOX_STYLE_CLIP_PATH_INSET && tbox_style_clip_path_of(&parent)->inset[0].value == 5.0 && tbox_style_clip_path_of(&parent)->inset[3].value == 10.0);
         TBOX_TEST_ASSERT(tbox_style_clip_path_of(&parent)->inset[1].kind == TBOX_STYLE_LENGTH_PERCENT && tbox_style_clip_path_of(&parent)->inset[1].value == 100.0 && tbox_style_clip_path_of(&parent)->inset[1].px_offset == -80.0);
         TBOX_TEST_ASSERT(tbox_style_clip_path_of(&parent)->inset[2].kind == TBOX_STYLE_LENGTH_PERCENT && tbox_style_clip_path_of(&parent)->inset[2].value == 0.0);
@@ -2088,7 +2089,7 @@ int tbox_test_style_run(void) {
         const tbox_style *styles[16];
         size_t generated = 0;
         for (size_t i = 0; i < table.count && generated < 16; i++) {
-            if (table.items[i].style.generated == 0)
+            if (table.items[i].style->generated == 0)
                 continue;
             const tbox_html_node *node = table.items[i].node;
             static char buffers[16][32];
@@ -2097,8 +2098,8 @@ int tbox_test_style_run(void) {
             if (n > 0) memcpy(buffers[generated], text->text.text.data, n);
             buffers[generated][n] = '\0';
             texts[generated]  = buffers[generated];
-            which[generated]  = table.items[i].style.generated;
-            styles[generated] = &table.items[i].style;
+            which[generated]  = table.items[i].style->generated;
+            styles[generated] = table.items[i].style;
             TBOX_TEST_ASSERT(node->parent != NULL && node->parent->type == TBOX_HTML_NODE_ELEMENT && node->prev_sibling == NULL && node->next_sibling == NULL);
             generated++;
         }
@@ -2321,7 +2322,7 @@ int tbox_test_style_run(void) {
         const tbox_html_node *div  = tbox_html_document_root(doc)->first_child;
         tbox_css_stylesheet *sheet = parse_css_cstr("div { background: #fff url(\"img/a.png\") right 10px bottom 20% / 50% auto no-repeat padding-box; }");
         tbox_style style           = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(strcmp(style.background_image, "img/a.png") == 0);
+        TBOX_TEST_ASSERT(strcmp(tbox_style_background_source_of(&style)->image, "img/a.png") == 0);
         TBOX_TEST_ASSERT(rgba_eq(style.background_color, (tbox_css_rgba){ 255, 255, 255, 255 }));
         TBOX_TEST_ASSERT(style.background_position[0].kind == TBOX_STYLE_LENGTH_PERCENT && style.background_position[0].value == 100.0 && style.background_position[0].px_offset == -10.0);
         TBOX_TEST_ASSERT(style.background_position[1].value == 80.0);
@@ -2332,9 +2333,9 @@ int tbox_test_style_run(void) {
 
         sheet = parse_css_cstr("div { background-image: linear-gradient(to right, red, rgba(0, 0, 255, 0.5) 40%, lime); background-size: cover; background-repeat: repeat-x; background-position: center; }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.background_gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && style.background_gradient.angle == 90.0);
-        TBOX_TEST_ASSERT(style.background_gradient.stop_count == 3 && style.background_gradient.stops[1].position.value == 40.0);
-        TBOX_TEST_ASSERT(style.background_gradient.stops[0].position.kind == TBOX_STYLE_LENGTH_AUTO && style.background_gradient.stops[1].color.a == 128);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && tbox_style_background_source_of(&style)->gradient.angle == 90.0);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.stop_count == 3 && tbox_style_background_source_of(&style)->gradient.stops[1].position.value == 40.0);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.stops[0].position.kind == TBOX_STYLE_LENGTH_AUTO && tbox_style_background_source_of(&style)->gradient.stops[1].color.a == 128);
         TBOX_TEST_ASSERT(style.background_size_kind == TBOX_STYLE_BACKGROUND_SIZE_COVER);
         TBOX_TEST_ASSERT(style.background_repeat_x && !style.background_repeat_y);
         TBOX_TEST_ASSERT(style.background_position[0].value == 50.0 && style.background_position[1].value == 50.0);
@@ -2342,19 +2343,19 @@ int tbox_test_style_run(void) {
 
         sheet = parse_css_cstr("div { background: repeating-radial-gradient(circle closest-side at 25% 75%, red 0 10px, blue 20px) }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.background_gradient.kind == TBOX_STYLE_GRADIENT_RADIAL && style.background_gradient.repeating && style.background_gradient.circle);
-        TBOX_TEST_ASSERT(style.background_gradient.extent == TBOX_STYLE_GRADIENT_CLOSEST_SIDE);
-        TBOX_TEST_ASSERT(style.background_gradient.center[0].value == 25.0 && style.background_gradient.center[1].value == 75.0);
-        TBOX_TEST_ASSERT(style.background_gradient.stop_count == 3 && style.background_gradient.stops[1].position.value == 10.0);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.kind == TBOX_STYLE_GRADIENT_RADIAL && tbox_style_background_source_of(&style)->gradient.repeating && tbox_style_background_source_of(&style)->gradient.circle);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.extent == TBOX_STYLE_GRADIENT_CLOSEST_SIDE);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.center[0].value == 25.0 && tbox_style_background_source_of(&style)->gradient.center[1].value == 75.0);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.stop_count == 3 && tbox_style_background_source_of(&style)->gradient.stops[1].position.value == 10.0);
         tbox_css_stylesheet_destroy(sheet);
 
         sheet = parse_css_cstr("div { background-image: linear-gradient(45deg, red); }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.background_gradient.kind == TBOX_STYLE_GRADIENT_NONE); /* one stop is invalid */
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.kind == TBOX_STYLE_GRADIENT_NONE); /* one stop is invalid */
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("div { background-image: linear-gradient(to top left, red, blue); }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.background_gradient.corner[0] == -1 && style.background_gradient.corner[1] == -1);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.corner[0] == -1 && tbox_style_background_source_of(&style)->gradient.corner[1] == -1);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -2375,10 +2376,10 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(parent.border_radius_corners[0] == 10.0 && parent.border_radius_corners[1] == 20.0 && parent.border_radius_vertical[1] == 5.0);
         TBOX_TEST_ASSERT(child.border_radius_corners[0] == 8.0 && child.border_radius_vertical[0] == 4.0);
         /* transform functions keep their own slots (translateX is a translate) */
-        const tbox_style_transform_function *t = parent.transforms;
+        const tbox_style_transform_function *t = tbox_style_transforms_of(&parent)->functions;
         TBOX_TEST_ASSERT(t[0].kind == TBOX_STYLE_TRANSFORM_TRANSLATE && t[0].v[0] == 0.0 && t[0].v[1] == 10.0 && t[0].v[2] == 50.0 && t[0].v[3] == 0.0);
         TBOX_TEST_ASSERT(t[1].kind == TBOX_STYLE_TRANSFORM_TRANSLATE && t[1].v[1] == 5.0 && t[2].kind == TBOX_STYLE_TRANSFORM_NONE);
-        TBOX_TEST_ASSERT(parent.translate_x.value == 0.0 && child.transforms[0].kind == TBOX_STYLE_TRANSFORM_NONE);
+        TBOX_TEST_ASSERT(parent.translate_x.value == 0.0 && tbox_style_transforms_of(&child)->functions[0].kind == TBOX_STYLE_TRANSFORM_NONE);
         TBOX_TEST_ASSERT(child.translate_x.value == 3.0 && child.translate_y.value == 0.0);
         double m[6];
         TBOX_TEST_ASSERT(tbox_style_transform_matrix(&parent, 0.0, 0.0, 100.0, 40.0, NULL, m) && m[0] == 1.0 && m[3] == 1.0 && m[4] == 15.0 && m[5] == 20.0);
@@ -2552,7 +2553,7 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(tbox_style_filters_of(&style)->ops[0].matrix[0] == -1.0 && tbox_style_filters_of(&style)->ops[0].matrix[4] == 1.0 && tbox_style_filters_of(&style)->ops[0].matrix[18] == 1.0);
         TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->kind == TBOX_STYLE_CLIP_PATH_CIRCLE && tbox_style_clip_path_of(&style)->radius[0].value == 30.0);
         TBOX_TEST_ASSERT(tbox_style_clip_path_of(&style)->center[0].px_offset == 10.0 && tbox_style_clip_path_of(&style)->center[1].px_offset == 20.0);
-        TBOX_TEST_ASSERT(style.background_layer_count == 3 && strcmp(style.background_image, "a.png") == 0 && style.background_size[0].value == 10.0);
+        TBOX_TEST_ASSERT(style.background_layer_count == 3 && strcmp(tbox_style_background_source_of(&style)->image, "a.png") == 0 && style.background_size[0].value == 10.0);
         TBOX_TEST_ASSERT(tbox_style_background_layers_of(&style)->layers[1].image[0] == '\0' && tbox_style_background_layers_of(&style)->layers[1].gradient.kind == TBOX_STYLE_GRADIENT_NONE); /* color-only last layer */
         TBOX_TEST_ASSERT(tbox_style_background_layers_of(&style)->layers[0].gradient.kind == TBOX_STYLE_GRADIENT_LINEAR);
         TBOX_TEST_ASSERT(style.background_repeat_x && !style.background_repeat_y && tbox_style_background_layers_of(&style)->layers[0].repeat_x && !tbox_style_background_layers_of(&style)->layers[0].repeat_y); /* the list repeats */
@@ -2591,9 +2592,9 @@ int tbox_test_style_run(void) {
             TBOX_TEST_ASSERT(rgba_eq(li_style->border_colors[0], li_style->color)); /* var(--missing): unset, currentColor */
             TBOX_TEST_ASSERT(li_style->padding[0].value == 3.0);                   /* a cyclic variable is invalid, so the fallback applies */
             TBOX_TEST_ASSERT(span_style->margin[0].value == 14.0 && rgba_eq(span_style->background_color, (tbox_css_rgba){ 0, 255, 0, 255 }));
-            TBOX_TEST_ASSERT(li_style->marker_styled && rgba_eq(li_style->marker_color, (tbox_css_rgba){ 255, 0, 0, 255 }) && li_style->marker_font_size == 30.0);
-            TBOX_TEST_ASSERT(li_style->marker_has_content && strcmp(li_style->marker_content, "> ") == 0);
-            TBOX_TEST_ASSERT(strcmp(li_style->list_style_image, "dot.png") == 0 && li_style->list_style_inside);
+            TBOX_TEST_ASSERT(li_style->marker != NULL && rgba_eq(li_style->marker->color, (tbox_css_rgba){ 255, 0, 0, 255 }) && li_style->marker->font_size == 30.0);
+            TBOX_TEST_ASSERT(li_style->marker->has_content && strcmp(li_style->marker->content, "> ") == 0);
+            TBOX_TEST_ASSERT(strcmp(tbox_style_markers_of(li_style)->list_style_image, "dot.png") == 0 && li_style->list_style_inside);
         }
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
@@ -2723,7 +2724,7 @@ int tbox_test_style_run(void) {
             "p { transition-property: opacity, padding, bogus; transition-duration: 1s; transition-delay: 0s, 1s; transition-timing-function: step-end; }");
         tbox_style a = resolve_node(sheet, div, NULL);
         tbox_style b = resolve_node(sheet, p, NULL);
-        TBOX_TEST_ASSERT(a.transition_count == 3);
+        TBOX_TEST_ASSERT(tbox_style_animation_lists_of(&a)->transition_count == 3);
         const tbox_style_transition *width = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_WIDTH);
         const tbox_style_transition *border = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_BORDER_LEFT_COLOR);
         const tbox_style_transition *move = tbox_style_transition_find(&a, TBOX_STYLE_ANIM_TRANSFORM_0);
@@ -2731,11 +2732,11 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(border != NULL && border->delay == 0.2 && border->easing.steps && tbox_style_easing_apply(&border->easing, 0.0) == 0.5);
         TBOX_TEST_ASSERT(move != NULL && move->duration == 2.0 && move->easing.x2 == 1.0 && move->easing.y1 == 0.7);
         TBOX_TEST_ASSERT(tbox_style_transition_find(&a, TBOX_STYLE_ANIM_COLOR) == NULL);
-        TBOX_TEST_ASSERT(b.transition_count == 3);
+        TBOX_TEST_ASSERT(tbox_style_animation_lists_of(&b)->transition_count == 3);
         const tbox_style_transition *opacity = tbox_style_transition_find(&b, TBOX_STYLE_ANIM_OPACITY);
         const tbox_style_transition *padding = tbox_style_transition_find(&b, TBOX_STYLE_ANIM_PADDING_RIGHT);
         TBOX_TEST_ASSERT(opacity != NULL && opacity->delay == 0.0 && padding != NULL && padding->delay == 1.0 && padding->duration == 1.0);
-        TBOX_TEST_ASSERT(b.transitions[2].properties == 0 && b.transitions[2].delay == 0.0);
+        TBOX_TEST_ASSERT(tbox_style_animation_lists_of(&b)->transitions[2].properties == 0 && tbox_style_animation_lists_of(&b)->transitions[2].delay == 0.0);
         TBOX_TEST_ASSERT(tbox_style_easing_apply(&opacity->easing, 0.99) == 0.0 && tbox_style_easing_apply(&opacity->easing, 1.0) == 1.0);
         tbox_style_easing ease = tbox_style_easing_default();
         TBOX_TEST_ASSERT(fabs(tbox_style_easing_apply(&ease, 0.5) - 0.8024) < 0.002);
@@ -2826,13 +2827,13 @@ int tbox_test_style_run(void) {
             "p { animation-name: a, b, c; animation-duration: 1s, 2s; animation-iteration-count: 3; animation-fill-mode: forwards; animation-direction: reverse, alternate; }");
         tbox_style a = resolve_node(sheet, div, NULL);
         tbox_style b = resolve_node(sheet, p, NULL);
-        TBOX_TEST_ASSERT(a.animation_count == 2);
-        const tbox_style_animation *spin = &a.animations[0];
+        TBOX_TEST_ASSERT(tbox_style_animation_lists_of(&a)->animation_count == 2);
+        const tbox_style_animation *spin = &tbox_style_animation_lists_of(&a)->animations[0];
         TBOX_TEST_ASSERT(strcmp(spin->name, "spin") == 0 && spin->duration == 2.0 && spin->delay == 0.5 && isinf(spin->iterations));
         TBOX_TEST_ASSERT(spin->direction == TBOX_STYLE_ANIMATION_ALTERNATE_REVERSE && spin->fill_forwards && spin->fill_backwards && spin->paused && spin->easing.x1 == 0.42);
-        TBOX_TEST_ASSERT(strcmp(a.animations[1].name, "fade") == 0 && a.animations[1].iterations == 1.0 && !a.animations[1].paused);
-        TBOX_TEST_ASSERT(b.animation_count == 3 && b.animations[2].duration == 1.0 && b.animations[1].duration == 2.0 && b.animations[2].iterations == 3.0);
-        TBOX_TEST_ASSERT(b.animations[0].fill_forwards && !b.animations[0].fill_backwards && b.animations[2].direction == TBOX_STYLE_ANIMATION_REVERSE);
+        TBOX_TEST_ASSERT(strcmp(tbox_style_animation_lists_of(&a)->animations[1].name, "fade") == 0 && tbox_style_animation_lists_of(&a)->animations[1].iterations == 1.0 && !tbox_style_animation_lists_of(&a)->animations[1].paused);
+        TBOX_TEST_ASSERT(tbox_style_animation_lists_of(&b)->animation_count == 3 && tbox_style_animation_lists_of(&b)->animations[2].duration == 1.0 && tbox_style_animation_lists_of(&b)->animations[1].duration == 2.0 && tbox_style_animation_lists_of(&b)->animations[2].iterations == 3.0);
+        TBOX_TEST_ASSERT(tbox_style_animation_lists_of(&b)->animations[0].fill_forwards && !tbox_style_animation_lists_of(&b)->animations[0].fill_backwards && tbox_style_animation_lists_of(&b)->animations[2].direction == TBOX_STYLE_ANIMATION_REVERSE);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -3019,7 +3020,7 @@ int tbox_test_style_run(void) {
         tbox_style style = resolve_node(sheet, div, NULL);
         TBOX_TEST_ASSERT(style.width.kind == TBOX_STYLE_LENGTH_PERCENT && tbox_style_length_resolve(style.width, 200) == 40);
         TBOX_TEST_ASSERT(style.color.r == 255 && style.color.g == 0);
-        TBOX_TEST_ASSERT(style.background_gradient.stop_count == 2 && style.background_gradient.stops[0].color.r == 188);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.stop_count == 2 && tbox_style_background_source_of(&style)->gradient.stops[0].color.r == 188);
         tbox_css_stylesheet_destroy(sheet);
         static const char *const invalid[] = {
             "calc(pow(2) * 1px)", "calc(pow(2, 3, 4) * 1px)", "calc(pow(-2, 0.5) * 1px)",
@@ -3299,7 +3300,7 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { background-image: %s; }", cases[i].value);
             tbox_css_stylesheet *sheet = parse_css_cstr(css);
             tbox_style style = resolve_node(sheet, div, NULL);
-            const tbox_style_gradient *g = &style.background_gradient;
+            const tbox_style_gradient *g = &tbox_style_background_source_of(&style)->gradient;
             TBOX_TEST_ASSERT_MSG(g->kind == TBOX_STYLE_GRADIENT_RADIAL && g->circle == cases[i].circle && g->repeating == cases[i].repeating, cases[i].value);
             TBOX_TEST_ASSERT_MSG(fabs(tbox_style_length_resolve(g->radius[0], 200) - cases[i].rx) < 1e-9 &&
                                 fabs(tbox_style_length_resolve(g->radius[1], 100) - cases[i].ry) < 1e-9, cases[i].value);
@@ -3319,7 +3320,7 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { background-image: %s; }", invalid[i]);
             tbox_css_stylesheet *sheet = parse_css_cstr(css);
             tbox_style style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT_MSG(style.background_gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
+            TBOX_TEST_ASSERT_MSG(tbox_style_background_source_of(&style)->gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
             tbox_css_stylesheet_destroy(sheet);
         }
         tbox_html_document_destroy(doc);
@@ -3349,9 +3350,9 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { background-image: linear-gradient(%s, red, blue); }", cases[i].value);
             tbox_css_stylesheet *sheet = parse_css_cstr(css);
             tbox_style style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT_MSG(style.background_gradient.kind == TBOX_STYLE_GRADIENT_LINEAR &&
-                                fabs(style.background_gradient.angle - cases[i].expected) < 1e-9, cases[i].value);
-            if (i == 13) TBOX_TEST_ASSERT(signbit(style.background_gradient.angle));
+            TBOX_TEST_ASSERT_MSG(tbox_style_background_source_of(&style)->gradient.kind == TBOX_STYLE_GRADIENT_LINEAR &&
+                                fabs(tbox_style_background_source_of(&style)->gradient.angle - cases[i].expected) < 1e-9, cases[i].value);
+            if (i == 13) TBOX_TEST_ASSERT(signbit(tbox_style_background_source_of(&style)->gradient.angle));
             tbox_css_stylesheet_destroy(sheet);
         }
         static const char *const invalid[] = {
@@ -3368,7 +3369,7 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { background-image: linear-gradient(%s, red, blue); }", invalid[i]);
             tbox_css_stylesheet *sheet = parse_css_cstr(css);
             tbox_style style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT_MSG(style.background_gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
+            TBOX_TEST_ASSERT_MSG(tbox_style_background_source_of(&style)->gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
             tbox_css_stylesheet_destroy(sheet);
         }
         static const struct { const char *value; double expected; } numeric[] = {
@@ -3397,7 +3398,7 @@ int tbox_test_style_run(void) {
         /* Angle consumers must use the element's font size for relative lengths. */
         sheet = parse_css_cstr("div { font-size: 32px; background-image: linear-gradient(atan2(1em, 32px), red, blue); }");
         style = resolve_node(sheet, div, NULL);
-        TBOX_TEST_ASSERT(style.background_gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && fabs(style.background_gradient.angle - 45) < 1e-9);
+        TBOX_TEST_ASSERT(tbox_style_background_source_of(&style)->gradient.kind == TBOX_STYLE_GRADIENT_LINEAR && fabs(tbox_style_background_source_of(&style)->gradient.angle - 45) < 1e-9);
         tbox_css_stylesheet_destroy(sheet);
         char css[1024] = "div { width: calc(";
         for (int i = 0; i < 24; i++) strcat(css, "sin(asin(");
@@ -3428,7 +3429,7 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { background-image: %s; mask-image: %s; }", cases[i].css, cases[i].css);
             tbox_css_stylesheet *sheet = parse_css_cstr(css);
             tbox_style style = resolve_node(sheet, div, NULL);
-            const tbox_style_gradient *g = &style.background_gradient;
+            const tbox_style_gradient *g = &tbox_style_background_source_of(&style)->gradient;
             TBOX_TEST_ASSERT_MSG(g->kind == TBOX_STYLE_GRADIENT_CONIC && g->angle == cases[i].angle && g->repeating == cases[i].repeat, cases[i].css);
             TBOX_TEST_ASSERT_MSG(g->stop_count >= 2, cases[i].css);
             if (g->stop_count >= 2) {
@@ -3453,7 +3454,7 @@ int tbox_test_style_run(void) {
             snprintf(css, sizeof(css), "div { background-image: %s; }", invalid[i]);
             tbox_css_stylesheet *sheet = parse_css_cstr(css);
             tbox_style style = resolve_node(sheet, div, NULL);
-            TBOX_TEST_ASSERT_MSG(style.background_gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
+            TBOX_TEST_ASSERT_MSG(tbox_style_background_source_of(&style)->gradient.kind == TBOX_STYLE_GRADIENT_NONE, invalid[i]);
             tbox_css_stylesheet_destroy(sheet);
         }
         tbox_html_document_destroy(doc);
@@ -3514,8 +3515,8 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(child.font_variant_numeric == parent.font_variant_numeric && child.font_variant_numeric != 0);
         TBOX_TEST_ASSERT(child.font_variant_ligatures == parent.font_variant_ligatures && child.font_variant_east_asian != 0);
         TBOX_TEST_ASSERT(child.font_variant_alternates && child.font_language_override == 0x54524b20u);
-        TBOX_TEST_ASSERT(strcmp(child.font_palette, "--demo") == 0);
-        TBOX_TEST_ASSERT(child.font_feature_settings.count == 3 && child.font_feature_settings.items[0].value == 0);
+        TBOX_TEST_ASSERT(strcmp(tbox_style_font_settings_of(&child)->font_palette, "--demo") == 0);
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&child)->font_feature_settings.count == 3 && tbox_style_font_settings_of(&child)->font_feature_settings.items[0].value == 0);
         bool liga = false, hist = false, frac = false;
         for (size_t i = 0; i < options.count; i++) {
             if (options.items[i].tag == 0x6c696761u) liga = options.items[i].value == 0;
@@ -3527,11 +3528,11 @@ int tbox_test_style_run(void) {
         sheet = parse_css_cstr("p { font-variant: normal; }");
         child = resolve_node(sheet, p, &parent);
         TBOX_TEST_ASSERT(child.font_variant_numeric == 0 && child.font_variant_east_asian == 0 && !child.font_variant_alternates);
-        TBOX_TEST_ASSERT(child.font_feature_settings.count == 3 && child.font_language_override == parent.font_language_override);
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&child)->font_feature_settings.count == 3 && child.font_language_override == parent.font_language_override);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("p { font-variant-numeric: tabular-nums; font: 24px sans-serif; }");
         child = resolve_node(sheet, p, &parent);
-        TBOX_TEST_ASSERT(child.font_feature_settings.count == 0 && child.font_language_override == 0 && child.font_palette[0] == '\0');
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&child)->font_feature_settings.count == 0 && child.font_language_override == 0 && tbox_style_font_settings_of(&child)->font_palette[0] == '\0');
         TBOX_TEST_ASSERT(child.font_variant_numeric == 0 && child.font_variant_ligatures == 0 && child.font_variant_east_asian == 0);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("p { font-variant-numeric: tabular-nums !important; font: 24px sans-serif; font-variant: none; }");
@@ -3545,26 +3546,26 @@ int tbox_test_style_run(void) {
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("p { font-feature-settings: initial; font-variant: inherit; font-language-override: unset; font-palette: initial; }");
         child = resolve_node(sheet, p, &parent);
-        TBOX_TEST_ASSERT(child.font_feature_settings.count == 0 && child.font_language_override == parent.font_language_override);
-        TBOX_TEST_ASSERT(child.font_variant_numeric == parent.font_variant_numeric && child.font_palette[0] == '\0');
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&child)->font_feature_settings.count == 0 && child.font_language_override == parent.font_language_override);
+        TBOX_TEST_ASSERT(child.font_variant_numeric == parent.font_variant_numeric && tbox_style_font_settings_of(&child)->font_palette[0] == '\0');
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("p { all: initial; }");
         child = resolve_node(sheet, p, &parent);
-        TBOX_TEST_ASSERT(child.font_feature_settings.count == 0 && child.font_language_override == 0 && child.font_variant_numeric == 0);
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&child)->font_feature_settings.count == 0 && child.font_language_override == 0 && child.font_variant_numeric == 0);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("p { font-feature-settings: 'bad' 1; font-variant-numeric: lining-nums oldstyle-nums; font-language-override: 'TOOLONG'; }");
         child = resolve_node(sheet, p, &parent);
-        TBOX_TEST_ASSERT(child.font_feature_settings.count == parent.font_feature_settings.count && child.font_variant_numeric == parent.font_variant_numeric);
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&child)->font_feature_settings.count == tbox_style_font_settings_of(&parent)->font_feature_settings.count && child.font_variant_numeric == parent.font_variant_numeric);
         TBOX_TEST_ASSERT(child.font_language_override == parent.font_language_override);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("p { font-feature-settings: 'liga' 0; font-feature-settings: 'bad'; font-variant-numeric: tabular-nums; font-variant-numeric: oldstyle-nums lining-nums; }");
         child = resolve_node(sheet, p, NULL);
-        TBOX_TEST_ASSERT(child.font_feature_settings.count == 1 && child.font_feature_settings.items[0].value == 0);
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&child)->font_feature_settings.count == 1 && tbox_style_font_settings_of(&child)->font_feature_settings.items[0].value == 0);
         TBOX_TEST_ASSERT(child.font_variant_numeric != 0);
         tbox_css_stylesheet_destroy(sheet);
         sheet = parse_css_cstr("p { --features: 'smcp'; font-feature-settings: var(--features); }");
         child = resolve_node(sheet, p, NULL);
-        TBOX_TEST_ASSERT(child.font_feature_settings.count == 1 && child.font_feature_settings.items[0].tag == 0x736d6370u);
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&child)->font_feature_settings.count == 1 && tbox_style_font_settings_of(&child)->font_feature_settings.items[0].tag == 0x736d6370u);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);
     }
@@ -3654,8 +3655,10 @@ int tbox_test_style_run(void) {
             {"font-feature-settings", "'\\6c iga'", "liga", 1},
         };
         for (size_t k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
-            tbox_style style = {0};
-            TBOX_TEST_ASSERT(tbox_style_parse_opentype(cases[k].property, tbox_string_view_from_cstr(cases[k].value), &style));
+            tbox_style style                  = {0};
+            tbox_style_font_settings settings = {0};
+            style.font_settings               = &settings;
+            TBOX_TEST_ASSERT(tbox_style_parse_opentype(cases[k].property, tbox_string_view_from_cstr(cases[k].value), &style, &settings));
             tbox_font_shaping_options options;
             tbox_style_shaping_options(&style, &options);
             uint32_t tag = (uint32_t)cases[k].tag[0] << 24 | (uint32_t)cases[k].tag[1] << 16 | (uint32_t)cases[k].tag[2] << 8 | (uint32_t)cases[k].tag[3];
@@ -3688,17 +3691,19 @@ int tbox_test_style_run(void) {
     {
         char text[2048] = "";
         size_t used = 0;
-        tbox_style style = {0};
+        tbox_style style                  = {0};
+        tbox_style_font_settings settings = {0};
+        style.font_settings               = &settings;
         for (unsigned i = 0; i <= TBOX_FONT_MAX_FEATURE_SETTINGS; i++) {
             int written = snprintf(text + used, sizeof(text) - used, "%s'a%03u' 1", i == 0 ? "" : ", ", i);
             TBOX_TEST_REQUIRE(written > 0 && (size_t)written < sizeof(text) - used);
             used += (size_t)written;
-            bool valid = tbox_style_parse_opentype("font-feature-settings", tbox_string_view_make(text, used), &style);
+            bool valid = tbox_style_parse_opentype("font-feature-settings", tbox_string_view_make(text, used), &style, &settings);
             TBOX_TEST_ASSERT(valid == (i < TBOX_FONT_MAX_FEATURE_SETTINGS));
         }
-        TBOX_TEST_ASSERT(style.font_feature_settings.count == TBOX_FONT_MAX_FEATURE_SETTINGS);
+        TBOX_TEST_ASSERT(tbox_style_font_settings_of(&style)->font_feature_settings.count == TBOX_FONT_MAX_FEATURE_SETTINGS);
         TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-variant", tbox_string_view_from_cstr(
-            "common-ligatures discretionary-ligatures historical-ligatures contextual oldstyle-nums tabular-nums diagonal-fractions ordinal slashed-zero jis90 full-width ruby historical-forms"), &style));
+            "common-ligatures discretionary-ligatures historical-ligatures contextual oldstyle-nums tabular-nums diagonal-fractions ordinal slashed-zero jis90 full-width ruby historical-forms"), &style, &settings));
         tbox_font_shaping_options options;
         tbox_style_shaping_options(&style, &options);
         TBOX_TEST_ASSERT(options.count > TBOX_FONT_MAX_FEATURE_SETTINGS && options.count <= TBOX_FONT_MAX_FEATURES);
@@ -3805,6 +3810,121 @@ int tbox_test_style_run(void) {
         TBOX_TEST_ASSERT(st3->custom_properties != st1->custom_properties && st3->font_weight != st1->font_weight);
         TBOX_TEST_ASSERT(st4->custom_properties != st1->custom_properties && rgba_eq(st4->color, (tbox_css_rgba){ 0, 0, 255, 255 }));
         TBOX_TEST_ASSERT(it1->width.value == 10.0 && it2->width.value == 20.0 && it3->width.value == 10.0);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Alike block-level elements point at one style; inline-level ones
+     * keep their own, which Layout and Render tell apart by address. An
+     * entry written through tbox_style_table_mutable gets its own copy,
+     * once; ::first-letter is written that way and stays per element. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<div><p>1</p><p>2</p><p class='f'>ab</p><p class='f'>cd</p><span>3</span><span>4</span></div>");
+        const tbox_html_node *p1 = tbox_html_document_root(doc)->first_child->first_child, *p2 = p1->next_sibling;
+        const tbox_html_node *f1 = p2->next_sibling, *f2 = f1->next_sibling, *s1 = f2->next_sibling, *s2 = s1->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr("p { margin: 0; } span { display: inline; padding: 0 2px; border: 1px solid; } .f::first-letter { color: red; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const tbox_style *ps1 = tbox_style_table_find(&table, p1), *ps2 = tbox_style_table_find(&table, p2);
+        const tbox_style *fs1 = tbox_style_table_find(&table, f1), *fs2 = tbox_style_table_find(&table, f2);
+        const tbox_style *ss1 = tbox_style_table_find(&table, s1), *ss2 = tbox_style_table_find(&table, s2);
+        TBOX_TEST_REQUIRE(ps1 != NULL && ps2 != NULL && fs1 != NULL && fs2 != NULL && ss1 != NULL && ss2 != NULL);
+        TBOX_TEST_ASSERT(ps1 == ps2 && ps1->first_letter == NULL);
+        TBOX_TEST_ASSERT(ss1 != ss2 && ss1->padding[1].value == 2.0 && ss2->padding[1].value == 2.0 && ss2->border_widths[0] == 1.0);
+        TBOX_TEST_ASSERT(fs1 != fs2 && fs1->first_letter != NULL && fs2->first_letter != NULL && fs1->first_letter != fs2->first_letter);
+        size_t index = table.count;
+        for (size_t i = 0; i < table.count; i++)
+            if (table.items[i].node == p1)
+                index = i;
+        tbox_style *own = tbox_style_table_mutable(&table, index, &arena);
+        TBOX_TEST_REQUIRE(own != NULL);
+        own->opacity = 0.5;
+        TBOX_TEST_ASSERT(own != ps1 && tbox_style_table_find(&table, p1) == own && tbox_style_table_find(&table, p2) == ps2 && ps2->opacity == 1.0);
+        TBOX_TEST_ASSERT(tbox_style_table_mutable(&table, index, &arena) == own && tbox_style_table_mutable(&table, table.count, &arena) == NULL);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Step C: an element alike its model in tag, attributes and parent
+     * skips its cascade only when the model's guards (position, :hover)
+     * come out the same for it. Even and odd rows, the first cell and the
+     * hovered row each get their own. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<table><tbody><tr><td>a</td><td>b</td></tr><tr><td>a</td><td>b</td></tr><tr><td>a</td><td>b</td></tr><tr><td>a</td><td>b</td></tr></tbody></table>");
+        const tbox_html_node *table = tbox_html_document_root(doc)->first_child, *tbody = table->first_child;
+        const tbox_html_node *rows[4] = { tbody->first_child, tbody->first_child->next_sibling, tbody->first_child->next_sibling->next_sibling, tbody->first_child->next_sibling->next_sibling->next_sibling };
+        tbox_css_stylesheet *sheet = parse_css_cstr("td { color: black; } tr:nth-child(even) td { color: red; } td:first-child { padding-left: 4px; } tr:hover td { color: blue; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_css_selector_set_hover_context(rows[2]->first_child);
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table_styles = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        for (size_t r = 0; r < 4; r++) {
+            const tbox_style *first = tbox_style_table_find(&table_styles, rows[r]->first_child), *second = tbox_style_table_find(&table_styles, rows[r]->first_child->next_sibling);
+            TBOX_TEST_REQUIRE(first != NULL && second != NULL);
+            tbox_css_rgba expected = r == 2 ? (tbox_css_rgba){ 0, 0, 255, 255 } : r % 2 == 1 ? (tbox_css_rgba){ 255, 0, 0, 255 } : (tbox_css_rgba){ 0, 0, 0, 255 };
+            TBOX_TEST_ASSERT(rgba_eq(first->color, expected) && rgba_eq(second->color, expected));
+            TBOX_TEST_ASSERT(first->padding[3].value == 4.0 && second->padding[3].value == 0.0);
+        }
+        tbox_css_selector_set_hover_context(NULL);
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* Elements alike in tag, attributes and parent still run their
+     * per-node steps: the first item, whose ::marker matches no rule, is
+     * the model; the second one shares its cascade but not its ::marker. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<ul><li>a</li><li>b</li><li>c</li></ul>");
+        const tbox_html_node *first = tbox_html_document_root(doc)->first_child->first_child, *second = first->next_sibling, *third = second->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr("li { color: green; } li:nth-child(2)::marker { color: red; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const tbox_style *a = tbox_style_table_find(&table, first), *b = tbox_style_table_find(&table, second), *c = tbox_style_table_find(&table, third);
+        TBOX_TEST_REQUIRE(a != NULL && b != NULL && c != NULL);
+        TBOX_TEST_ASSERT(a->marker == NULL && c->marker == NULL && a == c);
+        TBOX_TEST_ASSERT(b->marker != NULL && rgba_eq(b->marker->color, (tbox_css_rgba){ 255, 0, 0, 255 }) && rgba_eq(b->color, (tbox_css_rgba){ 0, 128, 0, 255 }));
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
+    /* The rare groups: an element without their properties has none of
+     * its own (NULL, or its parent's for inherited ones); `inherit` and an
+     * animated write go to a private copy, leaving the source unchanged. */
+    {
+        tbox_html_document *doc = parse_html_cstr("<ul><li><span>a</span></li></ul><div><p>b</p></div><em>c</em>");
+        const tbox_html_node *ul = tbox_html_document_root(doc)->first_child, *li = ul->first_child, *span = li->first_child;
+        const tbox_html_node *div = ul->next_sibling, *p = div->first_child, *em = div->next_sibling;
+        tbox_css_stylesheet *sheet = parse_css_cstr("ul { list-style-image: url(dot.png); font-feature-settings: 'liga' 0; }"
+                                                    "div { transform: rotate(10deg); transition: width 1s; scroll-margin: 4px; grid-row: 2; }"
+                                                    "p { transform: inherit; } span { display: inline; } em { display: inline; }");
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_arena arena       = tbox_arena_create(0);
+        tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
+        const tbox_style *uls = tbox_style_table_find(&table, ul), *lis = tbox_style_table_find(&table, li), *spans = tbox_style_table_find(&table, span);
+        const tbox_style *divs = tbox_style_table_find(&table, div), *ps = tbox_style_table_find(&table, p), *ems = tbox_style_table_find(&table, em);
+        TBOX_TEST_REQUIRE(uls != NULL && lis != NULL && spans != NULL && divs != NULL && ps != NULL && ems != NULL);
+        TBOX_TEST_ASSERT(ems->markers == NULL && ems->font_settings == NULL && ems->transforms == NULL && ems->animation_lists == NULL);
+        TBOX_TEST_ASSERT(ems->scroll_spacing == NULL && ems->grid_placement == NULL && ems->background_source == NULL && ems->marker == NULL);
+        TBOX_TEST_ASSERT(uls->markers != NULL && lis->markers == uls->markers && spans->markers == uls->markers);
+        TBOX_TEST_ASSERT(spans->font_settings == uls->font_settings && tbox_style_font_settings_of(spans)->font_feature_settings.count == 1);
+        TBOX_TEST_ASSERT(strcmp(tbox_style_markers_of(spans)->list_style_image, "dot.png") == 0);
+        TBOX_TEST_ASSERT(divs->transforms != NULL && divs->animation_lists != NULL && divs->scroll_spacing != NULL && divs->grid_placement != NULL);
+        TBOX_TEST_ASSERT(tbox_style_scroll_spacing_of(divs)->scroll_margin[0].value == 4.0 && tbox_style_grid_placement_of(divs)->grid_row_start.number == 2);
+        TBOX_TEST_ASSERT(ps->transforms != NULL && ps->transforms != divs->transforms && ps->animation_lists == NULL && ps->scroll_spacing == NULL);
+        TBOX_TEST_ASSERT(tbox_style_transforms_of(ps)->functions[0].kind == TBOX_STYLE_TRANSFORM_ROTATE && tbox_style_transforms_of(ps)->functions[0].v[0] == 10.0);
+        tbox_style animated = *divs;
+        double value[TBOX_STYLE_ANIM_VALUE_SIZE];
+        tbox_style_animatable_read(divs, TBOX_STYLE_ANIM_TRANSFORM_0, value);
+        value[1] = 20.0;
+        tbox_style_animatable_write(&animated, TBOX_STYLE_ANIM_TRANSFORM_0, value, &arena);
+        TBOX_TEST_ASSERT(animated.transforms != divs->transforms && tbox_style_transforms_of(&animated)->functions[0].v[0] == 20.0);
+        TBOX_TEST_ASSERT(tbox_style_transforms_of(divs)->functions[0].v[0] == 10.0);
         tbox_arena_destroy(&arena);
         tbox_css_stylesheet_destroy(sheet);
         tbox_html_document_destroy(doc);

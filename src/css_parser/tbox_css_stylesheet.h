@@ -41,6 +41,16 @@ typedef struct tbox_css_rule_index {
     size_t universal_count;
 } tbox_css_rule_index;
 
+/* The rulesets of a stylesheet with a selector naming one pseudo-element,
+ * and a rule index over them: what the cascade of that pseudo-element
+ * looks at. */
+typedef struct tbox_css_pseudo_element_rules {
+    tbox_string_view name; /* without its "::" ("before", "marker") */
+    size_t *rulesets;      /* indices into the stylesheet's rulesets, in order */
+    size_t ruleset_count;
+    tbox_css_rule_index index; /* zero when it could not be built */
+} tbox_css_pseudo_element_rules;
+
 struct tbox_css_stylesheet {
     tbox_arena arena;
     tbox_css_ruleset *rulesets;
@@ -50,9 +60,13 @@ struct tbox_css_stylesheet {
      * pseudo-element has to look at. */
     size_t *pseudo_element_rulesets;
     size_t pseudo_element_ruleset_count;
-    /* Over every ruleset, for the cascade of an element, and over
-     * pseudo_element_rulesets, for that of a pseudo-element. */
-    tbox_css_rule_index element_index, pseudo_element_index;
+    /* Each pseudo-element those selectors name, once, with its own
+     * rulesets and rule index (tbox_css_stylesheet_pseudo_element_rules):
+     * an element asked for one no rule can fit needs no cascade. */
+    tbox_css_pseudo_element_rules *pseudo_elements;
+    size_t pseudo_element_count;
+    /* Over every ruleset, for the cascade of an element. */
+    tbox_css_rule_index element_index;
     tbox_css_font_face_rule *font_faces;
     size_t font_face_count;
     tbox_css_font_palette_rule *font_palettes;
@@ -75,6 +89,14 @@ tbox_css_stylesheet *tbox_css_stylesheet_create_empty(void);
 /* Fills pseudo_element_rulesets and the two rule indexes once `rulesets`
  * is final. False when out of memory. */
 bool tbox_css_stylesheet_index_rules(tbox_css_stylesheet *stylesheet);
+
+/* Whether a selector of `stylesheet` names the pseudo-element `pseudo`
+ * ("before", without "::"). */
+bool tbox_css_stylesheet_names_pseudo_element(const tbox_css_stylesheet *stylesheet, const char *pseudo);
+
+/* The rulesets naming `pseudo` ("before") in `stylesheet`, NULL when none
+ * does. */
+const tbox_css_pseudo_element_rules *tbox_css_stylesheet_pseudo_element_rules(const tbox_css_stylesheet *stylesheet, tbox_string_view pseudo);
 
 /* The bucket of (`kind`, `name`) in `index`, NULL when there is none. */
 const tbox_css_rule_bucket *tbox_css_rule_index_find(const tbox_css_rule_index *index, tbox_css_simple_selector_kind kind, tbox_string_view name);

@@ -23,12 +23,15 @@ const tbox_style_svg_paint *tbox_style_svg_paint_of(const tbox_style *style) {
 static const char *const tbox_svg_properties[] = { "fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-dashoffset", "fill-opacity", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "fill-rule" };
 
 bool tbox_svg_is_element(const tbox_html_node *node) {
+    /* Asked for every element, up its whole ancestor chain: the size
+     * rules out almost every tag before comparing letters. */
     for (const tbox_html_node *n = node; n != NULL; n = n->parent) {
         if (n->type != TBOX_HTML_NODE_ELEMENT)
             continue;
-        if (tbox_style_is(n->element.tag_name, "foreignobject"))
+        tbox_string_view tag = n->element.tag_name;
+        if (tag.size == 13 && tbox_string_view_equal_ascii_ci(tag, tbox_string_view_make("foreignobject", 13)))
             return false;
-        if (tbox_style_is(n->element.tag_name, "svg"))
+        if (tag.size == 3 && tbox_string_view_equal_ascii_ci(tag, tbox_string_view_make("svg", 3)))
             return true;
     }
     return false;

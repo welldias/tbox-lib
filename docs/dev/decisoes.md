@@ -354,6 +354,69 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   estilo, conferido por comparação de bytes com a cópia feita logo após a
   conversão, para que um passo novo desse tipo não quebre o compartilhamento
   em silêncio (2026-10-26).
+- **Pular cópia e comparação pela condição de entrada dos passos por nó**
+  (2026-10-27), não por cada passo informando se mudou algo: a comparação
+  de bytes depois dos passos continua para quem tem algum passo, e quem não
+  tem nenhum usa o estilo do modelo. Um passo novo que não entre em
+  `tbox_style_has_node_steps` seria pulado em silêncio para quem
+  compartilha; o teste do `::marker` por posição mostra o modo de falha.
+- **Um índice de regras por nome de pseudo-elemento** (2026-10-27), não um
+  só para todos nem uma lista de tags por pseudo-elemento: o índice por
+  nome reaproveita o mesmo código de baldes (id, classe, tag, universal) e
+  já diz, sem alocar, se alguma regra pode servir ao elemento; um índice
+  comum fazia `::before` reunir as regras universais de `::marker` e das
+  partes; uma lista só de tags erraria com `.classe::before`.
+- **Passo C com guardas, não com chave maior** (2026-10-27): pular a
+  cascata de um elemento com a tag, os atributos e a classe do pai de um
+  modelo, conferindo de novo só as avaliações que leram mais que isso
+  (guardas: seletor, `@scope`, resultado e distância; condição de
+  `@container` e resultado). A chave sozinha erra com posição, irmãos e
+  estado (os 2855 erros acima); uma marca "leu contexto" que desligasse o
+  pulo o desligaria justamente nas tabelas reais, que têm
+  `tr:nth-child(even) td`, `td:first-child` e `tr:hover td`. Com as
+  guardas, cada combinação de resultados é um modelo (até 8 por chave), e o
+  elemento refaz 2 ou 3 seletores em vez da cascata. Conferido com uma
+  comparação temporária de cada cascata pulada contra a real (1 milhão de
+  pulos em 133 documentos, incluindo uma página feita para quebrar a chave,
+  sem nenhuma diferença), removida depois. Alternativas descartadas: chave
+  com a posição entre irmãos e a de cada ancestral (ainda erra com `:hover`
+  e `+`, e separa linhas que a cascata trata igual); guardar só uma
+  marca por modelo (perde as tabelas); memorizar o resultado de cada
+  seletor por nó (custo de memória por par seletor × nó). Fica como
+  regra: uma pseudo-classe nova do matcher que leia posição, filhos ou
+  estado entra em `tbox_css_selector_pseudo_reads_context`.
+- **Rascunho do layout numa arena local por caixa, não numa arena do
+  layout inteiro nem com marca e volta na arena do frame.** Escolhido entre
+  as três. Uma arena para o layout inteiro só libera no fim, sem baixar o
+  pico. Marca e volta na arena do frame exige que nada que a árvore guarda
+  seja alocado entre a marca e a volta, e as palavras são coletadas junto
+  com inline-blocks, floats e capitulares, que ficam. Uma arena local
+  (`tbox_arena_create`/`_destroy`, um bloco de 8 KB por caixa de texto)
+  não cria estado global, não precisa passar por toda a cadeia de funções
+  (o `tbox_vector` já leva a própria arena: basta iniciar os vetores de
+  rascunho com ela) e uma caixa aninhada abre a sua. O preço é um
+  `malloc`/`free` por caixa de texto, abaixo do ruído da medição. O que a
+  árvore guarda é copiado no tamanho exato ao sair: as bordas e os runs
+  num vetor que dobra deixariam a capacidade sobrando na arena do frame
+  (2026-10-27).
+- **Estilo compartilhado por endereço só em nível de bloco, com cópia
+  antes de escrever.** Depois do compartilhamento (A), cada entrada ainda
+  copiava os 9688 bytes do modelo. Escolhido entre guardar ponteiro em
+  toda entrada e guardar o nó de origem em palavras e runs: Layout, Render
+  e contexto distinguem elementos inline pelo endereço do estilo (palavras
+  que viram um run, bidi, padding e borda de fragmentos inline, cursor,
+  image map), e dois `<span>` irmãos iguais passariam a parecer um só.
+  Levar o nó por palavras e runs mexeria em ~55 pontos do layout; em nível
+  de bloco (`block`, `flex`, `grid`, `none`) o estilo nunca vai para as
+  palavras de outro elemento, só para as da própria caixa, e é aí que
+  estão linhas e células de tabela. Os dois pontos do contexto que achavam o
+  elemento pelo endereço passaram a procurar dentro do elemento da caixa.
+  Para escrever, escolhido um acessor (`tbox_style_table_mutable`) em vez
+  de cada quem copiar por conta própria, para que um caminho novo não
+  esqueça a cópia; o estilo do modelo é imutável, inclusive para a entrada
+  do próprio modelo (o `::first-letter` dela é escrito depois que outros já
+  apontam para ele). Uma entrada montada à mão (`owned_` falso) só paga uma
+  cópia na primeira escrita (2026-10-27).
 - **`border` sem cópia de `border-image`.** O `border` redefine
   `border-image` para o inicial, e a resolução alocava uma cópia do inicial
   (1720 bytes) para todo elemento com `border`. `NULL` já é o inicial; a
@@ -572,6 +635,44 @@ todas as chamadas CSS num dispatcher único aumentaria essas dependências.
   só passar por ponteiro (as cópias por herança e no layout continuariam);
   `NULL` = zero (exigiria que todo leitor conhecesse os iniciais não nulos).
   `tbox_style_resolve`/`_in_viewport` passaram a receber a arena (2026-10-20).
+- **Palavras da célula guardadas da medida para o layout** (2026-10-27):
+  a medida intrínseca da tabela guarda as palavras de cada célula no
+  rascunho da tabela, e o layout da célula as recebe pelo
+  `tbox_layout_positioned_context` (que já desce até a caixa de texto),
+  conferidas pelo nó, pelo estilo e pelo intervalo de filhos. Só palavras
+  de texto: as outras dependem da largura da célula. Alternativas
+  descartadas: um cache por nó na `tbox_style_table` ou no cache de fontes
+  (estado compartilhado que sobreviveria à tabela); medir só no layout
+  (as larguras das colunas vêm antes dele); cache de medida por palavra
+  (o cache de runs já evita o shaping repetido, o custo era montar as
+  palavras).
+- **Display list num rascunho, op do mesmo tamanho** (2026-10-27): o vetor
+  de ops cresce numa arena local e é copiado no tamanho exato, como os runs
+  do layout; o contexto junta barras de rolagem e controles numa cópia só.
+  Alternativas descartadas por ora: estimar a capacidade antes (erra para
+  menos e volta a dobrar); encolher o `tbox_paint_op` de 608 bytes tirando
+  de linha o recorte arredondado, a borda interna do `FILL_RING` e a matriz
+  da camada (~240 bytes a menos, ~4 MB na tabela medida, mas ~120 pontos
+  do tipo público, do raster e dos testes mudam).
+- **Mais grupos fora de linha, um por recurso** (2026-10-27): listas de
+  `transition`/`animation`, imagens de lista e marcadores, imagem da 1ª
+  camada de fundo, `transform` com `offset-position`/`-anchor`,
+  `font-feature-settings`/`font-palette`, `scroll-margin`/`-padding`,
+  linhas de grid do item e as sobreposições de `::marker`; `tbox_style`
+  caiu de 9688 para 4088 bytes. Cada grupo tem uma herança só: o herdado
+  começa no ponteiro do pai e só é copiado quando um valor muda
+  (`tbox_style_group_set`, que compara antes de copiar), o não herdado
+  começa `NULL`. A comparação é por bytes só em grupos sem padding ou
+  montados a partir de memória zerada; `tbox_style_length` e
+  `tbox_style_grid_line` são comparados campo a campo, porque o padding de
+  um struct montado por atribuição é indefinido. `::marker` mantém o
+  ponteiro do modelo quando os valores são iguais, senão os `<li>` com
+  `::marker` deixariam de compartilhar. Alternativas descartadas: um bloco
+  só de dados raros (herdados e não herdados misturados; declarar qualquer
+  um copiaria ~5 KB); reordenar `tbox_style_length` para 40 bytes (360 B a
+  menos, mas ~180 inicializadores posicionais, alguns parciais como
+  `{ PX, v }`, mudariam de sentido sem erro de compilação); `float` nos
+  campos de `calc()` (muda resultados).
 
 ## Texto e fontes
 

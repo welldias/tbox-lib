@@ -21,8 +21,9 @@ static void tbox_transition_current(tbox_style_animatable property, const tbox_t
 }
 
 static bool tbox_transition_any(const tbox_style *style) {
-    for (size_t i = 0; i < style->transition_count; i++)
-        if (style->transitions[i].duration > 0.0 && style->transitions[i].properties != 0) return true;
+    const tbox_style_animation_lists *lists = tbox_style_animation_lists_of(style);
+    for (size_t i = 0; i < lists->transition_count; i++)
+        if (lists->transitions[i].duration > 0.0 && lists->transitions[i].properties != 0) return true;
     return false;
 }
 
@@ -31,7 +32,7 @@ static bool tbox_transition_any(const tbox_style *style) {
  * the cascade, against the parent's current style. False when it has no
  * transitions or no @starting-style rule could apply. */
 static bool tbox_transition_starting_values(tbox_context *ctx, const tbox_style_entry *entry, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, double out[TBOX_STYLE_ANIM_COUNT][TBOX_STYLE_ANIM_VALUE_SIZE]) {
-    if (!ctx->has_starting_style || !tbox_transition_any(&entry->style))
+    if (!ctx->has_starting_style || !tbox_transition_any(entry->style))
         return false;
     const tbox_style *parent = entry->node->parent != NULL ? tbox_style_table_find(&ctx->styles, entry->node->parent) : NULL;
     tbox_css_computed_style computed = tbox_css_cascade_resolve_starting_style_in_viewport(sources, source_count, entry->node, viewport_width, viewport_height, ctx->prefers_reduced_motion, &(tbox_css_query_context){ parent != NULL ? parent->query_container : NULL, parent != NULL ? parent->custom_properties : NULL });
@@ -108,14 +109,14 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
     double now = ctx->animation_time;
     for (size_t i = 0; i < ctx->styles.count; i++) {
         tbox_style_entry *entry = &ctx->styles.items[i];
-        if (entry->style.generated != 0)
+        if (entry->style->generated != 0)
             continue; /* ::before/::after nodes are rebuilt every frame: no transitions */
-        if (!tbox_transition_any(&entry->style))
+        if (!tbox_transition_any(entry->style))
             continue; /* no state: losing `transition` cancels the running ones */
         tbox_transition_state **slot = index.slots != NULL ? tbox_transition_slot(&index, entry->node) : NULL;
         tbox_transition_state *state = slot != NULL ? *slot : ctx->transitions;
         while (slot == NULL && state != NULL && state->node != entry->node) state = state->next;
-        bool hidden = entry->style.display == TBOX_STYLE_DISPLAY_NONE;
+        bool hidden = entry->style->display == TBOX_STYLE_DISPLAY_NONE;
         bool appearing = state == NULL ? !hidden : state->hidden && !hidden;
         if (state == NULL) {
             state = calloc(1, sizeof(*state));
@@ -128,7 +129,7 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
             /* First seen hidden: nothing to transition from or to yet. */
             if (!appearing)
                 for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
-                    tbox_style_animatable_read(&entry->style, (tbox_style_animatable)p, state->values[p]);
+                    tbox_style_animatable_read(entry->style, (tbox_style_animatable)p, state->values[p]);
         }
         state->seen = true;
         state->hidden = hidden;
@@ -140,20 +141,20 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
                 for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++) state->tracks[p].active = false;
             if (!tbox_transition_starting_values(ctx, entry, sources, source_count, viewport_width, viewport_height, state->values)) {
                 for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
-                    tbox_style_animatable_read(&entry->style, (tbox_style_animatable)p, state->values[p]);
+                    tbox_style_animatable_read(entry->style, (tbox_style_animatable)p, state->values[p]);
                 continue;
             }
         }
         for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++) {
             tbox_style_animatable property = (tbox_style_animatable)p;
             double target[TBOX_STYLE_ANIM_VALUE_SIZE];
-            tbox_style_animatable_read(&entry->style, property, target);
+            tbox_style_animatable_read(entry->style, property, target);
             if (memcmp(target, state->values[p], sizeof(target)) != 0) {
                 double current[TBOX_STYLE_ANIM_VALUE_SIZE];
                 memcpy(current, state->values[p], sizeof(current));
                 if (state->tracks != NULL && state->tracks[p].active)
                     tbox_transition_current(property, &state->tracks[p], state->values[p], now, current);
-                const tbox_style_transition *transition = tbox_style_transition_find(&entry->style, property);
+                const tbox_style_transition *transition = tbox_style_transition_find(entry->style, property);
                 if (transition != NULL && tbox_style_animatable_interpolable(property, current, target)) {
                     if (state->tracks == NULL) state->tracks = calloc(TBOX_STYLE_ANIM_COUNT, sizeof(*state->tracks));
                     if (state->tracks != NULL) {
@@ -172,7 +173,9 @@ void tbox_context_apply_transitions(tbox_context *ctx, const tbox_css_cascade_so
             if (now < track->start_time + track->duration) {
                 double current[TBOX_STYLE_ANIM_VALUE_SIZE];
                 tbox_transition_current(property, track, target, now, current);
-                tbox_style_animatable_write(&entry->style, property, current);
+                tbox_style *own = tbox_style_table_mutable(&ctx->styles, i, &ctx->frame_arena);
+                if (own != NULL)
+                    tbox_style_animatable_write(own, property, current, &ctx->frame_arena);
                 /* in its delay the value holds still until start_time */
                 tbox_context_wake_at(ctx, now < track->start_time ? track->start_time : -INFINITY);
             } else track->active = false;

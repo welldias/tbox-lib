@@ -12,7 +12,18 @@ extern "C" {
 /* Explicit scoping root for :scope and ancestor matching. */
 bool tbox_css_selector_matches_scoped(const tbox_css_selector *selector, const tbox_html_node *node, const tbox_html_node *root);
 
-bool tbox_css_selector_scope_matches(const tbox_css_scope *scope, const tbox_html_node *node, const tbox_css_selector *selector, size_t *hops);
+/* tbox_css_selector_matches_scoped that also sets *contextual (when not
+ * NULL; never cleared) if matching read anything about `node` beyond its
+ * and its ancestors' tags and attributes: its or an ancestor's position
+ * among siblings, its children, runtime state (:hover, :focus, :checked,
+ * :disabled...) or one node's identity. A match that read nothing else
+ * comes out the same for every element with the same tags and attributes
+ * up its ancestor chain. */
+bool tbox_css_selector_matches_traced(const tbox_css_selector *selector, const tbox_html_node *node, const tbox_html_node *root, bool *contextual);
+
+/* `selector` within `scope` (NULL: unscoped); `contextual` as in
+ * tbox_css_selector_matches_traced, NULL to ignore. */
+bool tbox_css_selector_scope_matches(const tbox_css_scope *scope, const tbox_html_node *node, const tbox_css_selector *selector, size_t *hops, bool *contextual);
 
 /* Walks every ELEMENT descendant of `root` (root itself excluded) in
  * document (pre-order) order, pushing (as `const tbox_html_node *`) each one

@@ -102,22 +102,23 @@ typedef struct tbox_layout_marker {
 /* The item's style with its ::marker overrides (color, font), allocated
  * in `arena`; the item's own style when there are none. */
 static const tbox_style *tbox_layout_marker_style(tbox_arena *arena, const tbox_style *style) {
-    if (!style->marker_styled)
+    const tbox_style_marker_overrides *overrides = style->marker;
+    if (overrides == NULL)
         return style;
     tbox_style *marker = (tbox_style *)tbox_arena_alloc(arena, sizeof(tbox_style));
     if (marker == NULL)
         return style;
     *marker                  = *style;
-    marker->color            = style->marker_color;
-    marker->font_size        = style->marker_font_size;
-    marker->font_weight      = style->marker_font_weight;
-    marker->font_weight_bold = style->marker_font_weight >= 600;
-    marker->font_italic      = style->marker_italic;
+    marker->color            = overrides->color;
+    marker->font_size        = overrides->font_size;
+    marker->font_weight      = overrides->font_weight;
+    marker->font_weight_bold = overrides->font_weight >= 600;
+    marker->font_italic      = overrides->italic;
     marker->background_color = (tbox_css_rgba){ 0, 0, 0, 0 };
     marker->text_decoration_lines = 0;
     marker->text_decoration  = TBOX_STYLE_TEXT_DECORATION_NONE;
     marker->decoration_propagated.lines = 0;
-    memcpy(marker->font_family, style->marker_font_family, sizeof(marker->font_family));
+    memcpy(marker->font_family, overrides->font_family, sizeof(marker->font_family));
     return marker;
 }
 
@@ -129,14 +130,15 @@ static bool tbox_layout_list_marker(tbox_arena *arena, const tbox_html_node *nod
     *out       = (tbox_layout_marker){ { NULL, 0 }, NULL, tbox_layout_marker_style(arena, style), NULL };
     if (!tbox_layout_list_marker_text(arena, node, out->style, fonts, &out->text, &out->face))
         return false;
-    if (style->list_style_image[0] != '\0' && images != NULL) {
-        out->image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->list_style_image));
+    const char *image = tbox_style_markers_of(style)->list_style_image;
+    if (image[0] != '\0' && images != NULL) {
+        out->image = tbox_image_cache_get(images, tbox_string_view_from_cstr(image));
         if (out->image != NULL && out->image->width > 0 && out->image->height > 0)
             return true;
         out->image = NULL;
     }
-    if (style->marker_has_content) {
-        out->text = tbox_string_view_from_cstr(style->marker_content);
+    if (style->marker != NULL && style->marker->has_content) {
+        out->text = tbox_string_view_from_cstr(style->marker->content);
         return out->text.size > 0;
     }
     return true;
@@ -214,7 +216,7 @@ static bool tbox_layout_list_marker_text(tbox_arena *arena, const tbox_html_node
     }
 
     if (type == TBOX_STYLE_LIST_STYLE_CUSTOM) {
-        *out_text = tbox_style_counter_format(arena, style->counter_styles, tbox_string_view_from_cstr(style->list_style_custom), (long)index, true);
+        *out_text = tbox_style_counter_format(arena, style->counter_styles, tbox_string_view_from_cstr(tbox_style_markers_of(style)->list_style_custom), (long)index, true);
         return out_text->size > 0;
     }
 

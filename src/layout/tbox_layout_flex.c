@@ -219,11 +219,13 @@ double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, con
         if (row) {
             tbox_layout_intrinsic intrinsic;
             if (item->anonymous) {
+                tbox_arena scratch = tbox_arena_create(TBOX_LAYOUT_SCRATCH_BLOCK);
                 tbox_vector words;
-                tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+                tbox_vector_init(&words, &scratch, sizeof(tbox_layout_word), 0);
                 tbox_layout_inline_state state = { false, false };
                 tbox_layout_collect_words_in(arena, item->node, item->run_end, style, styles, fonts, images, 0.0, false, true, &state, &words);
                 intrinsic = tbox_layout_measure_words((const tbox_layout_word *)words.data, words.length, tbox_layout_white_space_nowrap(style));
+                tbox_arena_destroy(&scratch);
             } else {
                 intrinsic = tbox_layout_intrinsic_content(arena, item->node, styles, fonts, images);
             }

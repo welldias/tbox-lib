@@ -348,7 +348,7 @@ int tbox_test_multicol_run(tbox_font_face_cache *fonts) {
         tbox_style_animatable_read(&to, TBOX_STYLE_ANIM_COLUMN_COUNT, b);
         TBOX_TEST_ASSERT(tbox_style_animatable_interpolable(TBOX_STYLE_ANIM_COLUMN_COUNT, a, b));
         tbox_style_animatable_mix(TBOX_STYLE_ANIM_COLUMN_COUNT, a, b, 0.5, mixed);
-        tbox_style_animatable_write(&from, TBOX_STYLE_ANIM_COLUMN_COUNT, mixed);
+        tbox_style_animatable_write(&from, TBOX_STYLE_ANIM_COLUMN_COUNT, mixed, NULL);
         TBOX_TEST_ASSERT(from.column_count == 4);
         a[0] = 0;
         TBOX_TEST_ASSERT(!tbox_style_animatable_interpolable(TBOX_STYLE_ANIM_COLUMN_COUNT, a, b));
@@ -358,7 +358,7 @@ int tbox_test_multicol_run(tbox_font_face_cache *fonts) {
         TBOX_TEST_ASSERT(a[0] == 100);
         to.column_rule_color = (tbox_css_rgba){ 20, 60, 80, 255 };
         tbox_style_animatable_read(&to, TBOX_STYLE_ANIM_COLUMN_RULE_COLOR, a);
-        tbox_style_animatable_write(&from, TBOX_STYLE_ANIM_COLUMN_RULE_COLOR, a);
+        tbox_style_animatable_write(&from, TBOX_STYLE_ANIM_COLUMN_RULE_COLOR, a, NULL);
         TBOX_TEST_ASSERT(from.column_rule_color.b == 80);
     }
     return failures;

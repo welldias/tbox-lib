@@ -270,7 +270,7 @@ static void tbox_layout_emit_bidi_run(tbox_arena *arena, tbox_layout_piece *piec
         }
     }
     const tbox_layout_word *word = &words[pieces[group[0]].word];
-    tbox_layout_push_run(runs, line, line_y, content_x, block_face, start_x, end_x, word->face, word->style, NULL, 0.0, tbox_string_builder_finish(&text), &glyphs);
+    tbox_layout_push_run(arena, runs, line, line_y, content_x, block_face, start_x, end_x, word->face, word->style, NULL, 0.0, tbox_string_builder_finish(&text), &glyphs);
 }
 
 double tbox_layout_build_bidi_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_word_bidi *bidi, const tbox_layout_line *line, double line_y, double content_x, double available_width, size_t word_count, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs) {
@@ -409,7 +409,7 @@ double tbox_layout_build_bidi_line_runs(tbox_arena *arena, const tbox_layout_wor
             } else {
                 tbox_vector none;
                 tbox_vector_init(&none, arena, sizeof(tbox_glyph), 0);
-                tbox_layout_push_run(runs, line, line_y, content_x, block_face, x, x + piece->width, word->face, word->style, word->image, word->image_height, word->text, &none);
+                tbox_layout_push_run(arena, runs, line, line_y, content_x, block_face, x, x + piece->width, word->face, word->style, word->image, word->image_height, word->text, &none);
             }
             x += piece->width;
             continue;

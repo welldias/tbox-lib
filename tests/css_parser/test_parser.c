@@ -1,5 +1,7 @@
 #include <tbox/css_parser.h>
 
+#include "css_parser/tbox_css_stylesheet.h"
+
 #include <string.h>
 
 #include "test_support.h"
@@ -591,6 +593,26 @@ int tbox_test_css_parser_parser_run(void) {
         TBOX_TEST_ASSERT(tbox_css_stylesheet_ruleset_count(ss) == 1);
         tbox_css_stylesheet_destroy(ss);
         TBOX_TEST_ASSERT(tbox_css_stylesheet_font_palette_count(NULL) == 0 && tbox_css_stylesheet_font_palettes(NULL) == NULL);
+    }
+
+    /* The pseudo-elements a sheet's selectors name, as the cascade reads
+     * them: legacy one-colon forms count, a trailing :hover does not hide
+     * one, and @media rules are included. */
+    {
+        tbox_css_stylesheet *ss = parse_cstr("p:first-letter { color: red; } a::before, b::before { content: 'x'; }"
+                                             "@media (min-width: 1px) { li::marker:hover { color: blue; } } div:hover { color: green; }");
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_names_pseudo_element(ss, "first-letter") && tbox_css_stylesheet_names_pseudo_element(ss, "before"));
+        TBOX_TEST_ASSERT(tbox_css_stylesheet_names_pseudo_element(ss, "marker") && !tbox_css_stylesheet_names_pseudo_element(ss, "after"));
+        TBOX_TEST_ASSERT(ss->pseudo_element_count == 3 && !tbox_css_stylesheet_names_pseudo_element(NULL, "before"));
+        /* Each name keeps only the rulesets that name it, with their own
+         * index: ::before's two selectors are one ruleset, keyed a and b. */
+        const tbox_css_pseudo_element_rules *before = tbox_css_stylesheet_pseudo_element_rules(ss, tbox_string_view_make("before", 6));
+        const tbox_css_pseudo_element_rules *marker = tbox_css_stylesheet_pseudo_element_rules(ss, tbox_string_view_make("marker", 6));
+        TBOX_TEST_REQUIRE(before != NULL && marker != NULL);
+        TBOX_TEST_ASSERT(before->ruleset_count == 1 && marker->ruleset_count == 1 && before->rulesets[0] != marker->rulesets[0]);
+        TBOX_TEST_ASSERT(tbox_css_rule_index_find(&before->index, TBOX_CSS_SIMPLE_SELECTOR_TYPE, tbox_string_view_make("b", 1)) != NULL);
+        TBOX_TEST_ASSERT(tbox_css_rule_index_find(&before->index, TBOX_CSS_SIMPLE_SELECTOR_TYPE, tbox_string_view_make("li", 2)) == NULL && before->index.universal_count == 0);
+        tbox_css_stylesheet_destroy(ss);
     }
 
     /* Page margin boxes, strings and nested rules are discarded as one

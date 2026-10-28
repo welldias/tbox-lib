@@ -84,8 +84,9 @@ static void tbox_context_snap_candidates(const tbox_layout_box *box, tbox_snap_s
     for (; box != NULL; box = box->next_sibling) {
         const tbox_style *style = box->style;
         if (style != NULL && style->scroll_snap_align != TBOX_STYLE_SCROLL_SNAP_ALIGN_NONE) {
-            double top    = box->border_box.y - tbox_style_length_resolve(style->scroll_margin[0], search->port_height);
-            double bottom = box->border_box.y + box->border_box.height + tbox_style_length_resolve(style->scroll_margin[2], search->port_height);
+            const tbox_style_length *margin = tbox_style_scroll_spacing_of(style)->scroll_margin;
+            double top    = box->border_box.y - tbox_style_length_resolve(margin[0], search->port_height);
+            double bottom = box->border_box.y + box->border_box.height + tbox_style_length_resolve(margin[2], search->port_height);
             double position = style->scroll_snap_align == TBOX_STYLE_SCROLL_SNAP_ALIGN_START ? top - search->port_top :
                               style->scroll_snap_align == TBOX_STYLE_SCROLL_SNAP_ALIGN_END   ? bottom - search->port_bottom :
                                                                                                (top + bottom - search->port_top - search->port_bottom) / 2.0;
@@ -115,7 +116,7 @@ static void tbox_context_snap_candidates(const tbox_layout_box *box, tbox_snap_s
 static bool tbox_context_snap_target(const tbox_layout_box *container, double y, double origin, double max_y, double *out) {
     const tbox_style *style = container->style;
     double port = container->padding_box.height;
-    const tbox_style_length *padding = style->scroll_padding;
+    const tbox_style_length *padding = tbox_style_scroll_spacing_of(style)->scroll_padding;
     tbox_snap_search search = { 0 };
     search.port_height = port;
     search.port_top    = container->padding_box.y + (padding[0].kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 : tbox_style_length_resolve(padding[0], port));
@@ -268,12 +269,12 @@ void tbox_context_reveal_focused(tbox_context *ctx) {
         /* scroll-padding shrinks the scrollport, scroll-margin grows the
          * element's box; percentages of scroll-padding are of the port. */
         double port = ancestor->padding_box.height;
-        const tbox_style_length *padding = ancestor->style->scroll_padding;
+        const tbox_style_length *padding = tbox_style_scroll_spacing_of(ancestor->style)->scroll_padding;
         double view_top = ancestor->padding_box.y +
             (padding[0].kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 : tbox_style_length_resolve(padding[0], port));
         double view_bottom = ancestor->padding_box.y + port -
             (padding[2].kind == TBOX_STYLE_LENGTH_AUTO ? 0.0 : tbox_style_length_resolve(padding[2], port));
-        const tbox_style_length *margin = focused->style != NULL ? focused->style->scroll_margin : NULL;
+        const tbox_style_length *margin = focused->style != NULL ? tbox_style_scroll_spacing_of(focused->style)->scroll_margin : NULL;
         double item_top = focused->border_box.y - (margin != NULL ? tbox_style_length_resolve(margin[0], port) : 0.0);
         double item_bottom = focused->border_box.y + focused->border_box.height +
             (margin != NULL ? tbox_style_length_resolve(margin[2], port) : 0.0);
@@ -405,17 +406,9 @@ static void tbox_context_paint_scrollbars(tbox_context *ctx, const tbox_layout_b
     }
 }
 
-void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list) {
-    tbox_vector items;
-    tbox_vector_init(&items, &ctx->frame_arena, sizeof(tbox_paint_op), list->count + 16);
-    for (size_t i = 0; i < list->count; i++)
-        *(tbox_paint_op *)tbox_vector_push(&items) = list->items[i];
-    size_t before = items.length;
-    tbox_context_paint_scrollbars(ctx, ctx->root, &items);
-    tbox_context_paint_resizers(ctx, ctx->root, &items);
-    if (items.length == before) return;
-    list->items = (tbox_paint_op *)items.data;
-    list->count = items.length;
+void tbox_context_paint_scroll_overlay(tbox_context *ctx, tbox_vector *items) {
+    tbox_context_paint_scrollbars(ctx, ctx->root, items);
+    tbox_context_paint_resizers(ctx, ctx->root, items);
 }
 
 const tbox_html_node *tbox_context_scrollbar_thumb_at(tbox_context *ctx, double x, double y) {

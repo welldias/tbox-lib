@@ -5050,7 +5050,7 @@ int tbox_test_context_run(void) {
             box = find_context_box(ctx, node);
             TBOX_TEST_ASSERT(box != NULL && fabs(box->content_box.width - 150.0) < 0.01);
             TBOX_TEST_ASSERT(box != NULL && tbox_style_border_side_color(box->style, 3).r == 255 && tbox_style_border_side_color(box->style, 3).b == 0);
-            TBOX_TEST_ASSERT(box != NULL && box->style->transforms[0].kind == TBOX_STYLE_TRANSFORM_TRANSLATE && fabs(box->style->transforms[0].v[1] - 10.0) < 0.01);
+            TBOX_TEST_ASSERT(box != NULL && tbox_style_transforms_of(box->style)->functions[0].kind == TBOX_STYLE_TRANSFORM_TRANSLATE && fabs(tbox_style_transforms_of(box->style)->functions[0].v[1] - 10.0) < 0.01);
             tbox_context_set_animation_time(ctx, 1.5);
             tbox_context_run_frame(ctx, 400.0, 100.0, &list);
             box = find_context_box(ctx, node);
@@ -5060,11 +5060,11 @@ int tbox_test_context_run(void) {
             tbox_html_node_remove_attribute(node, tbox_string_view_make("class", 5));
             tbox_context_run_frame(ctx, 400.0, 100.0, &list);
             box = find_context_box(ctx, node);
-            TBOX_TEST_ASSERT(box != NULL && fabs(box->style->transforms[0].v[1] - 20.0) < 0.01);
+            TBOX_TEST_ASSERT(box != NULL && fabs(tbox_style_transforms_of(box->style)->functions[0].v[1] - 20.0) < 0.01);
             tbox_context_set_animation_time(ctx, 3.0);
             tbox_context_run_frame(ctx, 400.0, 100.0, &list);
             box = find_context_box(ctx, node);
-            TBOX_TEST_ASSERT(box != NULL && box->style->transforms[0].kind == TBOX_STYLE_TRANSFORM_NONE && fabs(box->content_box.width - 100.0) < 0.01);
+            TBOX_TEST_ASSERT(box != NULL && tbox_style_transforms_of(box->style)->functions[0].kind == TBOX_STYLE_TRANSFORM_NONE && fabs(box->content_box.width - 100.0) < 0.01);
             TBOX_TEST_ASSERT(!tbox_context_animations_active(ctx));
             tbox_context_close(ctx);
         }
@@ -6028,7 +6028,7 @@ int tbox_test_context_run(void) {
             const tbox_style *style = NULL;
             for (size_t j = 0; j < ctx->styles.count; j++) {
                 const tbox_html_attribute *id = tbox_html_node_get_attribute(ctx->styles.items[j].node, tbox_string_view_from_cstr("id"));
-                if (id != NULL && string_view_equal_cstr(id->value, ids[i])) style = &ctx->styles.items[j].style;
+                if (id != NULL && string_view_equal_cstr(id->value, ids[i])) style = ctx->styles.items[j].style;
             }
             TBOX_TEST_REQUIRE(style != NULL);
             if (i == 0) TBOX_TEST_ASSERT(style->background_color.r == 255);

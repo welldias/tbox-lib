@@ -11,9 +11,8 @@ bool tbox_layout_is_text_tag(const tbox_html_node *node) {
         return true;
 
     static const char *const text_tags[] = { "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td", "th", "caption", "button", "progress", "meter", "summary", "ruby" };
-    tbox_string_view tag_name            = node->element.tag_name;
     for (size_t i = 0; i < sizeof(text_tags) / sizeof(text_tags[0]); i++) {
-        if (tbox_string_view_equal_cstr(tag_name, text_tags[i])) {
+        if (tbox_layout_tag(node, text_tags[i])) {
             return true;
         }
     }
@@ -32,7 +31,7 @@ bool tbox_layout_is_text_box(const tbox_html_node *node, const tbox_style *style
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling)
         if (child->type == TBOX_HTML_NODE_ELEMENT)
             for (size_t i = 0; i < sizeof(blocks) / sizeof(blocks[0]); i++)
-                if (tbox_string_view_equal_cstr(child->element.tag_name, blocks[i]))
+                if (tbox_layout_tag(child, blocks[i]))
                     return false;
     return true;
 }
@@ -197,9 +196,20 @@ static void tbox_layout_inline_positioned(tbox_arena *arena, const tbox_html_nod
  * tbox_layout_collect_words used to derive on its own -- the only pre-v14
  * call site (inside tbox_layout_build_element, for a real text-tag element)
  * passes (node, node->first_child, NULL, ...), behavior identical to
- * before. */
+ * before.
+ *
+ * Words, lines, bidi levels and the runs being built live in `scratch`, the
+ * caller's arena for this one box: only what the box keeps (runs, glyphs,
+ * texts, inline-blocks and floats) goes in `arena`. */
+/* Whether `premeasured` holds exactly what this box would collect: words
+ * of `node`'s whole content, its list marker included, with the same
+ * style. */
+static bool tbox_layout_premeasured_fits(const tbox_layout_premeasured *premeasured, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_html_node *marker_node, const tbox_style *marker_style) {
+    return premeasured != NULL && node != NULL && premeasured->node == node && premeasured->style == style && first_sibling == node->first_child && end_exclusive == NULL &&
+           marker_node == node && marker_style == style;
+}
 
-double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node, const tbox_style *marker_style) {
+static double tbox_layout_build_text_runs_in(tbox_arena *arena, tbox_arena *scratch, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node, const tbox_style *marker_style) {
     /* <pre> keeps its own verbatim path (whole-subtree text in the <pre>'s
      * face) for AUTO/`pre`; any other white-space mode on a <pre> goes
      * through the general per-node collection like every other element. */
@@ -208,7 +218,7 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
     bool is_select       = tbox_layout_is_select(node) || tbox_layout_is_textarea(node);
 
     tbox_vector words;
-    tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+    tbox_vector_init(&words, scratch, sizeof(tbox_layout_word), 0);
     if (is_input) {
         tbox_layout_input_push_value_word(arena, node, style, fonts, &words);
     } else if (is_select) {
@@ -216,6 +226,12 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
          * descendants do not create boxes or contribute to select height. */
     } else if (is_preformatted) {
         tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
+    } else if (tbox_layout_premeasured_fits(context->premeasured, node, first_sibling, end_exclusive, style, marker_node, marker_style)) {
+        /* Collected (marker included) by the intrinsic measurement of this
+         * very box; copied, since the steps below change them. */
+        const tbox_vector *kept = &context->premeasured->words;
+        for (size_t i = 0; i < kept->length; i++)
+            *(tbox_layout_word *)tbox_vector_push(&words) = *(const tbox_layout_word *)tbox_vector_at_const(kept, i);
     } else {
         if (marker_node != NULL) {
             tbox_layout_push_list_marker(arena, marker_node, marker_style, fonts, images, &words);
@@ -241,7 +257,7 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
     }
 
     tbox_vector lines;
-    tbox_vector_init(&lines, arena, sizeof(tbox_layout_line), 0);
+    tbox_vector_init(&lines, scratch, sizeof(tbox_layout_line), 0);
     double indent = style->text_indent.kind == TBOX_STYLE_LENGTH_PX ? style->text_indent.value : style->text_indent.kind == TBOX_STYLE_LENGTH_PERCENT ? tbox_style_length_resolve(style->text_indent, available_width) : 0.0;
     /* text-indent: hanging inverts it (every line but the first moves in,
      * so the text area narrows and the first line reaches back out);
@@ -253,12 +269,12 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         indent = -indent;
     bool no_wrap  = is_preformatted || is_input || tbox_layout_white_space_nowrap(style);
     if (!no_wrap)
-        tbox_layout_split_overlong_words(arena, &words, text_width, indent);
+        tbox_layout_split_overlong_words(&words, text_width, indent);
     const tbox_layout_word *word_items = (const tbox_layout_word *)words.data;
     word_count                         = tbox_vector_length(&words);
     const tbox_font_face *block_face   = tbox_layout_style_face(fonts, style);
     /* Bidi levels over the final words (after the overlong splits). */
-    const tbox_layout_word_bidi *bidi = tbox_layout_resolve_bidi(arena, word_items, word_count, style);
+    const tbox_layout_word_bidi *bidi = tbox_layout_resolve_bidi(scratch, word_items, word_count, style);
     /* Floats around (or among the words) make each line's room depend on
      * where it sits; without them lines keep the whole width. */
     tbox_layout_floats *floats = context != NULL ? context->floats : NULL;
@@ -300,7 +316,7 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
     }
 
     tbox_vector runs;
-    tbox_vector_init(&runs, arena, sizeof(tbox_layout_text_run), 0);
+    tbox_vector_init(&runs, scratch, sizeof(tbox_layout_text_run), 0);
 
     size_t line_count                  = tbox_vector_length(&lines);
     const tbox_layout_line *line_items = (const tbox_layout_line *)lines.data;
@@ -362,14 +378,14 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
             if (gaps > 0 && used < line_avail)
                 justify_gap = (line_avail - used) / (double)gaps;
         }
-        double line_used = tbox_layout_build_line_runs(arena, word_items, bidi, line, cumulative_y, line_x + line_indent, text_width, word_count, block_face, justify_gap, &runs);
+        double line_used = tbox_layout_build_line_runs(arena, scratch, word_items, bidi, line, cumulative_y, line_x + line_indent, text_width, word_count, block_face, justify_gap, &runs);
         if (style->text_overflow == TBOX_STYLE_TEXT_OVERFLOW_ELLIPSIS && tbox_layout_white_space_nowrap(style) && (style->overflow_y == TBOX_STYLE_OVERFLOW_Y_HIDDEN || style->overflow_x != TBOX_STYLE_OVERFLOW_Y_VISIBLE) && !is_input && !is_select) {
             const tbox_font_face *face = tbox_layout_style_face(fonts, style);
-            tbox_layout_ellipsize_line(&runs, runs_before, line_x, line_avail, style, face, line, cumulative_y, false);
+            tbox_layout_ellipsize_line(arena, &runs, runs_before, line_x, line_avail, style, face, line, cumulative_y, false);
         }
         if (clamped && li + 1 == line_count) {
             const tbox_font_face *face = tbox_layout_style_face(fonts, style);
-            tbox_layout_ellipsize_line(&runs, runs_before, line_x + line_indent, line_avail - line_indent, style, face, line, cumulative_y, true);
+            tbox_layout_ellipsize_line(arena, &runs, runs_before, line_x + line_indent, line_avail - line_indent, style, face, line, cumulative_y, true);
         }
         size_t runs_after = tbox_vector_length(&runs);
         for (size_t ri = runs_before; ri < runs_after; ri++) {
@@ -410,8 +426,11 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
 
     if (!is_preformatted && !is_input && !is_select)
         tbox_layout_append_outside_marker(arena, marker_node, marker_style, fonts, images, content_x, content_y, line_count > 0 ? &line_items[0] : NULL, &runs);
-    box->text_runs      = (tbox_layout_text_run *)runs.data;
-    box->text_run_count = runs.length;
+    tbox_layout_text_run *kept = runs.length > 0 ? tbox_arena_alloc(arena, runs.length * sizeof(*kept)) : NULL;
+    if (kept != NULL)
+        memcpy(kept, runs.data, runs.length * sizeof(*kept));
+    box->text_runs      = kept;
+    box->text_run_count = kept != NULL ? runs.length : 0;
 
     /* inline-blocks become this box's children, in document
      * order, so Render paints them and hit testing reaches them.
@@ -460,4 +479,13 @@ double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node
         }
     }
     return total_height;
+}
+
+double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node, const tbox_style *marker_style) {
+    /* One per box, freed on return: an inline-block among the words opens
+     * its own. */
+    tbox_arena scratch = tbox_arena_create(TBOX_LAYOUT_SCRATCH_BLOCK);
+    double height      = tbox_layout_build_text_runs_in(arena, &scratch, node, first_sibling, end_exclusive, style, styles, fonts, images, content_x, content_y, available_width, box, context, marker_node, marker_style);
+    tbox_arena_destroy(&scratch);
+    return height;
 }

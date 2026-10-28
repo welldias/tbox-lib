@@ -455,8 +455,10 @@ int tbox_test_font_run(void) {
         TBOX_TEST_REQUIRE(ot_cache != NULL);
         tbox_string_view family = tbox_string_view_make(NULL, 0);
         const tbox_font_face *normal = tbox_font_face_cache_get(ot_cache, family, false, false, 24.0);
-        tbox_style selection = {0};
-        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("'liga' 0"), &selection));
+        tbox_style selection              = {0};
+        tbox_style_font_settings settings = {0};
+        selection.font_settings           = &settings;
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("'liga' 0"), &selection, &settings));
         tbox_font_shaping_options options;
         tbox_style_shaping_options(&selection, &options);
         const tbox_font_face *no_liga = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
@@ -484,11 +486,11 @@ int tbox_test_font_run(void) {
         TBOX_TEST_ASSERT(tbox_font_shape(&arena, normal, office, 1, TBOX_FONT_DIRECTION_AUTO, 0, 0, &after, &after_count, NULL));
         TBOX_TEST_ASSERT(after_count == 6);
 
-        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("normal"), &selection));
-        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-variant-numeric", tbox_test_font_view_from_cstr("proportional-nums"), &selection));
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("normal"), &selection, &settings));
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-variant-numeric", tbox_test_font_view_from_cstr("proportional-nums"), &selection, &settings));
         tbox_style_shaping_options(&selection, &options);
         const tbox_font_face *proportional = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
-        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-variant-numeric", tbox_test_font_view_from_cstr("tabular-nums"), &selection));
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-variant-numeric", tbox_test_font_view_from_cstr("tabular-nums"), &selection, &settings));
         tbox_style_shaping_options(&selection, &options);
         const tbox_font_face *tabular = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
         TBOX_TEST_REQUIRE(proportional != NULL && tabular != NULL);
@@ -506,8 +508,10 @@ int tbox_test_font_run(void) {
             { "font-feature-settings", "'smcp'", "abc" },
         };
         for (size_t i = 0; i < sizeof(changes) / sizeof(changes[0]); i++) {
-            selection = (tbox_style){0};
-            TBOX_TEST_ASSERT(tbox_style_parse_opentype(changes[i].property, tbox_test_font_view_from_cstr(changes[i].value), &selection));
+            selection               = (tbox_style){0};
+            settings                = (tbox_style_font_settings){0};
+            selection.font_settings = &settings;
+            TBOX_TEST_ASSERT(tbox_style_parse_opentype(changes[i].property, tbox_test_font_view_from_cstr(changes[i].value), &selection, &settings));
             tbox_style_shaping_options(&selection, &options);
             const tbox_font_face *changed = tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options);
             TBOX_TEST_REQUIRE(changed != NULL);
@@ -520,7 +524,7 @@ int tbox_test_font_run(void) {
             TBOX_TEST_ASSERT_MSG(different == (bool)TBOX_TEST_COMPLEX_SHAPING, changes[i].value);
         }
         /* Same options are still cached after many intervening lookups. */
-        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("'liga' 0"), &selection));
+        TBOX_TEST_ASSERT(tbox_style_parse_opentype("font-feature-settings", tbox_test_font_view_from_cstr("'liga' 0"), &selection, &settings));
         selection.font_variant_numeric = 0;
         tbox_style_shaping_options(&selection, &options);
         TBOX_TEST_ASSERT(no_liga == tbox_font_face_cache_get_shaped(ot_cache, family, 400, 100, false, 24, true, &options));

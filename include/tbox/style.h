@@ -948,6 +948,10 @@ typedef enum tbox_style_caption_side {
  * Overlong declarations are ignored rather than truncated. */
 #define TBOX_STYLE_GRID_TEXT_SIZE 1024
 
+typedef struct tbox_style_grid_units {
+    double font_size, root_font_size, viewport_width, viewport_height;
+} tbox_style_grid_units;
+
 /* The grid track lists and areas as declared text (parsed again by the
  * layout, which knows the container), out of line (see
  * tbox_style.grid_templates). "" is none/auto. */
@@ -956,13 +960,12 @@ typedef struct tbox_style_grid_templates {
     char grid_template_rows[TBOX_STYLE_GRID_TEXT_SIZE];
     char grid_template_areas[TBOX_STYLE_GRID_TEXT_SIZE];
     char grid_auto_columns[256], grid_auto_rows[256];
+    /* The units each of them was declared in: template columns/rows,
+     * auto columns/rows. */
+    tbox_style_grid_units grid_units[4];
 } tbox_style_grid_templates;
 
 #define TBOX_STYLE_GRID_NAME_SIZE 64
-
-typedef struct tbox_style_grid_units {
-    double font_size, root_font_size, viewport_width, viewport_height;
-} tbox_style_grid_units;
 
 typedef struct tbox_style_grid_line {
     int number; /* 0 = auto; signed line number or positive span count */
@@ -1009,6 +1012,82 @@ typedef struct tbox_style_svg_paint {
 } tbox_style_svg_paint;
 struct tbox_svg_node;
 
+/* `scroll-margin` (on the revealed element) and `scroll-padding` (on the
+ * scroll container) of a style, kept out of line
+ * (tbox_style_scroll_spacing_of): top right bottom left, not inheritable,
+ * initial 0px; used when focus scrolls an element into view.
+ * scroll-padding AUTO counts as 0. */
+typedef struct tbox_style_scroll_spacing {
+    tbox_style_length scroll_margin[4], scroll_padding[4];
+} tbox_style_scroll_spacing;
+
+/* What a list item's `::marker` changes in its marker: color, font, and a
+ * `content` string replacing the marker text. */
+typedef struct tbox_style_marker_overrides {
+    tbox_css_rgba color;
+    double font_size;
+    int font_weight;
+    bool italic;
+    char font_family[TBOX_FONT_FAMILY_CAPACITY];
+    bool has_content;
+    char content[32];
+} tbox_style_marker_overrides;
+
+/* A grid item's `grid-row-*`/`grid-column-*` lines, kept out of line
+ * (tbox_style_grid_placement_of); not inheritable, initial auto. */
+typedef struct tbox_style_grid_placement {
+    tbox_style_grid_line grid_row_start, grid_row_end;
+    tbox_style_grid_line grid_column_start, grid_column_end;
+} tbox_style_grid_placement;
+
+/* The rarely set OpenType settings of a style, kept out of line
+ * (tbox_style_font_settings_of); inheritable. */
+typedef struct tbox_style_font_settings {
+    tbox_font_feature_settings font_feature_settings;
+    char font_palette[64]; /* empty = normal; retained, no color glyph raster */
+} tbox_style_font_settings;
+
+/* `transform` and the motion-path positions of a style, kept out of line
+ * (tbox_style_transforms_of); not inheritable. */
+typedef struct tbox_style_transforms {
+    /* `transform`: up to TBOX_STYLE_MAX_TRANSFORMS functions, in order;
+     * all NONE is `none`. */
+    tbox_style_transform_function functions[TBOX_STYLE_MAX_TRANSFORMS];
+    tbox_style_offset_position offset_position, offset_anchor; /* initial normal, auto */
+} tbox_style_transforms;
+
+/* The image of a style's first background layer, kept out of line
+ * (tbox_style_background_source_of); not inheritable. */
+typedef struct tbox_style_background_source {
+    /* `background-image: url(...)`, resolved by the image cache like an
+     * <img> src; "" is none. A gradient, when present, is painted
+     * instead. */
+    char image[256];
+    tbox_style_gradient gradient;
+} tbox_style_background_source;
+
+/* The list and marker images of a style, kept out of line
+ * (tbox_style_markers_of): inheritable, "" is none. */
+typedef struct tbox_style_markers {
+    char list_style_image[256];  /* `list-style-image: url()` */
+    char list_style_custom[256]; /* custom list-style-type: name, quoted string or symbols() */
+    char marker_urls[3][256];    /* SVG marker-start/mid/end; no drawing effect */
+} tbox_style_markers;
+
+/* The `transition` and `animation` lists of a style, kept out of line
+ * (tbox_style_animation_lists_of). Not inheritable. */
+typedef struct tbox_style_animation_lists {
+    /* `transition` (shorthand and longhands), in declaration order; when
+     * several entries name a property the last one wins (see
+     * tbox_style_transition_find). */
+    tbox_style_transition transitions[TBOX_STYLE_MAX_TRANSITIONS];
+    size_t transition_count;
+    /* `animation` (shorthand and longhands), paired by index like the
+     * transition lists. */
+    tbox_style_animation animations[TBOX_STYLE_MAX_ANIMATIONS];
+    size_t animation_count;
+} tbox_style_animation_lists;
+
 typedef struct tbox_style {
     const tbox_style_svg_paint *svg_paint; /* shared immutable, frame arena */
     const struct tbox_svg_node *svg; /* internal prepared inline SVG scene */
@@ -1045,18 +1124,11 @@ typedef struct tbox_style {
     double tab_size;                              /* inheritable; a number of spaces, or px when tab_size_length; initial 8 */
     bool tab_size_length;
     bool list_style_inside;                       /* inheritable; `list-style-position: inside` */
-    char list_style_image[256];                   /* inheritable; `list-style-image: url()`, "" is none */
-    /* `::marker` overrides (only through tbox_style_resolve_tree, which
-     * resolves the pseudo-element of list items): color, font, and a
-     * `content` string replacing the marker text. */
-    bool marker_styled;
-    tbox_css_rgba marker_color;
-    double marker_font_size;
-    int marker_font_weight;
-    bool marker_italic;
-    char marker_font_family[TBOX_FONT_FAMILY_CAPACITY];
-    bool marker_has_content;
-    char marker_content[32];
+    const tbox_style_markers *markers;            /* inheritable; out of line; tbox_style_markers_of */
+    /* `::marker` overrides, out of line (only through
+     * tbox_style_resolve_tree, which resolves the pseudo-element of list
+     * items); NULL when the item has none. */
+    const tbox_style_marker_overrides *marker;
     /* Form-control parts, only through tbox_style_resolve_tree and only
      * for the elements that have each part; NULL otherwise. */
     const tbox_style_part_style *parts[TBOX_STYLE_PART_COUNT];
@@ -1069,7 +1141,6 @@ typedef struct tbox_style {
     int line_clamp;                               /* `line-clamp`/`-webkit-line-clamp`: max lines, 0 is none */
     tbox_style_text_transform text_transform;     /* inheritable; initial NONE */
     tbox_style_list_style_type list_style_type;   /* inheritable */
-    char list_style_custom[256]; /* name, quoted string or symbols(); inheritable */
     const tbox_style_counter_styles *counter_styles; /* frame arena; shared registry */
     bool pointer_events_none;                     /* inheritable; auto by default */
     tbox_style_length width, height;              /* also inline-size/block-size in horizontal LTR; initial: AUTO */
@@ -1079,10 +1150,7 @@ typedef struct tbox_style {
     tbox_style_length min_height, max_height;     /* also min/max-block-size; AUTO means no constraint */
     tbox_style_length margin[4];                  /* top right bottom left; initial: 0px each */
     tbox_style_length padding[4];                 /* top right bottom left; initial: 0px each */
-    /* scroll-margin (on the revealed element) and scroll-padding (on the
-     * scroll container), top right bottom left, not inheritable; used when
-     * focus scrolls an element into view. scroll-padding AUTO counts as 0. */
-    tbox_style_length scroll_margin[4], scroll_padding[4];
+    const tbox_style_scroll_spacing *scroll_spacing; /* out of line; tbox_style_scroll_spacing_of */
     tbox_style_length text_indent;                /* inheritable; first line, px or %; initial 0px */
     bool text_indent_hanging;                     /* inheritable; every line but the first is indented */
     bool text_indent_each_line;                   /* inheritable; also lines after a forced break */
@@ -1097,11 +1165,9 @@ typedef struct tbox_style {
     tbox_css_rgba color;                          /* inheritable; initial (no parent): opaque black */
     tbox_css_rgba background_color;               /* not inheritable; initial: transparent, i.e. {0, 0, 0, 0} */
     tbox_style_background_clip background_clip;    /* initial: border-box */
-    /* `background-image: url(...)`, resolved by the image cache like an
-     * <img> src. Fixed buffer for the same reason as font_family below;
-     * "" is none. A gradient, when present, is painted instead. */
-    char background_image[256];
-    tbox_style_gradient background_gradient;
+    /* The first layer's `background-image`, out of line;
+     * tbox_style_background_source_of. */
+    const tbox_style_background_source *background_source;
     tbox_style_background_size_kind background_size_kind;
     tbox_style_length background_size[2];          /* width, height; AUTO keeps the intrinsic size/ratio */
     tbox_style_length background_position[2];      /* percent of the free space or px from the left/top; initial 0% 0% */
@@ -1152,14 +1218,15 @@ typedef struct tbox_style {
     /* `font-kerning`: auto/normal apply the font's kerning pairs (the
      * initial value auto does), none disables them. Inheritable. */
     bool font_kerning_none;
-    /* Inherited OpenType selection, independent of the shaping backend. */
-    tbox_font_feature_settings font_feature_settings;
+    /* Inherited OpenType selection, independent of the shaping backend;
+     * font-feature-settings and font-palette are out of line
+     * (tbox_style_font_settings_of). */
+    const tbox_style_font_settings *font_settings;
     uint32_t font_variant_ligatures;
     uint32_t font_variant_numeric;
     uint32_t font_variant_east_asian;
     bool font_variant_alternates;
     uint32_t font_language_override;
-    char font_palette[64]; /* empty = normal; retained, no color glyph raster */
     /* `font-size-adjust` (inheritable): the wanted x-height as a fraction
      * of font-size; 0 is `none`. Layout scales the face's size so its
      * x-height matches; `em` keeps using font_size. */
@@ -1204,11 +1271,10 @@ typedef struct tbox_style {
     double scale[2];
     const tbox_style_offset_path *offset_path; /* out of line; tbox_style_offset_path_of */
     tbox_style_length offset_distance;
-    tbox_style_offset_position offset_position, offset_anchor;
     tbox_style_offset_rotate offset_rotate;
-    /* `transform`: up to TBOX_STYLE_MAX_TRANSFORMS functions, in order;
-     * all NONE is `none`. */
-    tbox_style_transform_function transforms[TBOX_STYLE_MAX_TRANSFORMS];
+    /* `transform`, `offset-position` and `offset-anchor`, out of line;
+     * tbox_style_transforms_of. */
+    const tbox_style_transforms *transforms;
     /* `transform-origin` x and y, from the border box's top-left;
      * initial 50% 50% (the z value is ignored). */
     tbox_style_length transform_origin[2];
@@ -1298,9 +1364,8 @@ typedef struct tbox_style {
     tbox_css_rgba text_stroke_color;
     bool text_stroke_current_color;
     tbox_style_paint_layer paint_order[3];
-    /* SVG-only: inherited marker URLs (start/mid/end), empty means none;
-     * mask-type is non-inherited, false is luminance. No drawing effect. */
-    char marker_urls[3][256];
+    /* SVG-only: mask-type is non-inherited, false is luminance. No
+     * drawing effect. */
     bool mask_type_alpha;
     /* `vertical-align`. NOT inheritable; initial value BASELINE. */
     tbox_style_vertical_align vertical_align;
@@ -1357,15 +1422,7 @@ typedef struct tbox_style {
      * element paints nothing. */
     double opacity;
     bool isolation_isolate; /* `isolation: isolate`: a stacking context; not inheritable */
-    /* `transition` (shorthand and longhands), in declaration order; when
-     * several entries name a property the last one wins (see
-     * tbox_style_transition_find). Not inheritable. */
-    tbox_style_transition transitions[TBOX_STYLE_MAX_TRANSITIONS];
-    size_t transition_count;
-    /* `animation` (shorthand and longhands), paired by index like the
-     * transition lists. Not inheritable. */
-    tbox_style_animation animations[TBOX_STYLE_MAX_ANIMATIONS];
-    size_t animation_count;
+    const tbox_style_animation_lists *animation_lists; /* out of line; tbox_style_animation_lists_of */
     /* `filter`, in order (url() ignored). Without blur()/drop-shadow() the
      * color functions also come folded into one 4x5 color matrix over 0..1
      * RGBA (rows R G B A, columns r g b a + offset) that Render applies op
@@ -1479,11 +1536,9 @@ typedef struct tbox_style {
     double flex_grow, flex_shrink; /* initial 0 and 1 */
     tbox_style_length flex_basis;
     int order;
-    tbox_style_grid_units grid_units[4]; /* template columns/rows, auto columns/rows */
     const tbox_style_grid_templates *grid_templates; /* out of line; tbox_style_grid_templates_of */
     bool grid_auto_flow_column, grid_auto_flow_dense;
-    tbox_style_grid_line grid_row_start, grid_row_end;
-    tbox_style_grid_line grid_column_start, grid_column_end;
+    const tbox_style_grid_placement *grid_placement; /* out of line; tbox_style_grid_placement_of */
     tbox_style_flex_align justify_items, justify_self;
     /* Grows by supported property; see "Scope" below for what v0 covers. */
 } tbox_style;
@@ -1505,6 +1560,13 @@ const tbox_style_filter_list *tbox_style_filters_of(const tbox_style *style);
 const tbox_style_filter_list *tbox_style_backdrop_filters_of(const tbox_style *style);
 const tbox_style_shape_outside *tbox_style_shape_outside_of(const tbox_style *style);
 const tbox_style_offset_path *tbox_style_offset_path_of(const tbox_style *style);
+const tbox_style_animation_lists *tbox_style_animation_lists_of(const tbox_style *style);
+const tbox_style_markers *tbox_style_markers_of(const tbox_style *style);
+const tbox_style_background_source *tbox_style_background_source_of(const tbox_style *style);
+const tbox_style_transforms *tbox_style_transforms_of(const tbox_style *style);
+const tbox_style_font_settings *tbox_style_font_settings_of(const tbox_style *style);
+const tbox_style_scroll_spacing *tbox_style_scroll_spacing_of(const tbox_style *style);
+const tbox_style_grid_placement *tbox_style_grid_placement_of(const tbox_style *style);
 
 /* Resolves `node`'s own tbox_style from `computed` (its already-cascaded
  * text declarations -- see tbox_css_cascade_resolve_stylesheet). Per-node,
@@ -1665,7 +1727,11 @@ unsigned long long tbox_style_animatable_mask(tbox_string_view name);
  * horizontal %, vertical %), `rotate` (axis x, y, z, degrees), `scale`
  * (x, y), a `transform` slot (kind, then the function's six `v`). */
 void tbox_style_animatable_read(const tbox_style *style, tbox_style_animatable property, double out[TBOX_STYLE_ANIM_VALUE_SIZE]);
-void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable property, const double value[TBOX_STYLE_ANIM_VALUE_SIZE]);
+/* Sets `property` in `style` from tbox_style_animatable_read's layout. A
+ * property kept out of line (a `transform` slot, offset-position/anchor)
+ * is written to a copy of its group made in `arena`: the group the style
+ * pointed at may be shared, and stays unchanged. */
+void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable property, const double value[TBOX_STYLE_ANIM_VALUE_SIZE], tbox_arena *arena);
 
 /* False when the two values can't be blended (a length switching between
  * px, % and auto; `auto` accent/caret colors; `rotate` around different
@@ -1718,9 +1784,18 @@ const tbox_style_transition *tbox_style_transition_find(const tbox_style *style,
 
 const tbox_style_svg_paint *tbox_style_svg_paint_of(const tbox_style *style);
 
+/* `style` may be shared: block-level elements alike (same tag,
+ * attributes, parent and cascade result) point at one tbox_style, and a
+ * table never writes through it. Changing an entry's style goes through
+ * tbox_style_table_mutable, which first gives the entry a copy of its
+ * own. Inline-level elements always own theirs: Layout and Render tell
+ * inline elements apart by their style's address. */
 typedef struct tbox_style_entry {
     const tbox_html_node *node;
-    tbox_style style;
+    const tbox_style *style;
+    /* Private: `style` is this entry's alone, writable in place. false
+     * (a table filled by hand) only costs a copy on the first write. */
+    bool owned_;
 } tbox_style_entry;
 
 typedef struct tbox_style_table {
@@ -1797,6 +1872,12 @@ bool tbox_style_table_has_size_containers(const tbox_style_table *table);
  * `table->fallback` is searched next. Returns NULL if table == NULL,
  * node == NULL, or no entry has that node. */
 const tbox_style *tbox_style_table_find(const tbox_style_table *table, const tbox_html_node *node);
+
+/* Entry `index`'s style, writable without touching any other entry: a
+ * shared style is first copied into `arena` (which must outlive the
+ * table's use, normally the table's own). Further calls return the same
+ * copy. NULL when the copy can't be allocated or `index` is out of range. */
+tbox_style *tbox_style_table_mutable(tbox_style_table *table, size_t index, tbox_arena *arena);
 
 /* `style`'s resolved control `part`, or NULL when its element has no such
  * part or the style didn't come from tbox_style_resolve_tree. */

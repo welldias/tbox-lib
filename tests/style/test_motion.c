@@ -48,7 +48,7 @@ int tbox_test_motion_run(void) {
     style_arena = tbox_arena_create(0);
     int failures = 0;
     tbox_style initial = tbox_motion_resolve("div{}", NULL);
-    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&initial)->kind == TBOX_STYLE_OFFSET_PATH_NONE && initial.offset_position.mode == 2 && initial.offset_anchor.mode == 1 && initial.offset_rotate.auto_rotate);
+    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&initial)->kind == TBOX_STYLE_OFFSET_PATH_NONE && tbox_style_transforms_of(&initial)->offset_position.mode == 2 && tbox_style_transforms_of(&initial)->offset_anchor.mode == 1 && initial.offset_rotate.auto_rotate);
     TBOX_TEST_ASSERT(!tbox_style_has_transform(&initial));
 
     /* All SVG commands, relative/absolute, implicit lineto after moveto,
@@ -127,16 +127,16 @@ int tbox_test_motion_run(void) {
     }
     tbox_style style = tbox_motion_resolve("div{offset-distance:20px!important;offset:top left path('M0 0 L100 0') 50% auto 30deg / top left;offset-anchor:center}", NULL);
     TBOX_TEST_ASSERT(style.offset_distance.value == 20 && style.offset_distance.kind == TBOX_STYLE_LENGTH_PX);
-    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_SVG && style.offset_position.mode == 0);
+    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_SVG && tbox_style_transforms_of(&style)->offset_position.mode == 0);
     TBOX_TEST_ASSERT(style.offset_rotate.auto_rotate && style.offset_rotate.angle == 30);
-    TBOX_TEST_ASSERT(style.offset_anchor.mode == 0 && style.offset_anchor.position[0].value == 50);
+    TBOX_TEST_ASSERT(tbox_style_transforms_of(&style)->offset_anchor.mode == 0 && tbox_style_transforms_of(&style)->offset_anchor.position[0].value == 50);
     style = tbox_motion_resolve("div{offset-anchor:top left;offset-rotate:80deg;offset-distance:10px;offset:ray(0deg);}", NULL);
-    TBOX_TEST_ASSERT(style.offset_anchor.mode == 1 && style.offset_distance.value == 0 && style.offset_rotate.auto_rotate && style.offset_rotate.angle == 0);
+    TBOX_TEST_ASSERT(tbox_style_transforms_of(&style)->offset_anchor.mode == 1 && style.offset_distance.value == 0 && style.offset_rotate.auto_rotate && style.offset_rotate.angle == 0);
     tbox_style parent = style;
     style = tbox_motion_resolve("div{offset:inherit;offset-distance:25%}", &parent);
     TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_RAY && style.offset_distance.value == 25);
     style = tbox_motion_resolve("div{offset:unset}", &parent);
-    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_NONE && style.offset_position.mode == 2);
+    TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_NONE && tbox_style_transforms_of(&style)->offset_position.mode == 2);
     style = tbox_motion_resolve("div{--p:path('M0 0 L100 0');offset-path:var(--p);offset-distance:1em}", NULL);
     TBOX_TEST_ASSERT(tbox_style_offset_path_of(&style)->kind == TBOX_STYLE_OFFSET_PATH_SVG && style.offset_distance.value == 16);
     style = tbox_motion_resolve("div{width:10px}@supports (offset-path:ray(45deg)){div{width:20px}}@supports (offset-path:url('#p')){div{width:30px}}@supports (offset-path:ray(bogus)){div{width:40px}}", NULL);
@@ -153,12 +153,12 @@ int tbox_test_motion_run(void) {
         tbox_style_animatable_read(&to, properties[i], b);
         TBOX_TEST_ASSERT(tbox_style_animatable_interpolable(properties[i], a, b));
         tbox_style_animatable_mix(properties[i], a, b, .5, mixed);
-        tbox_style_animatable_write(&initial, properties[i], mixed);
+        tbox_style_animatable_write(&initial, properties[i], mixed, &style_arena);
     }
     TBOX_TEST_ASSERT(tbox_style_length_resolve(initial.offset_distance, 200) == 55);
     TBOX_TEST_ASSERT(initial.offset_rotate.auto_rotate && initial.offset_rotate.angle == 110);
-    TBOX_TEST_ASSERT(tbox_style_length_resolve(initial.offset_anchor.position[0], 40) == 15);
-    TBOX_TEST_ASSERT(initial.offset_position.position[0].value == 30);
+    TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_transforms_of(&initial)->offset_anchor.position[0], 40) == 15);
+    TBOX_TEST_ASSERT(tbox_style_transforms_of(&initial)->offset_position.position[0].value == 30);
     double a[TBOX_STYLE_ANIM_VALUE_SIZE], b[TBOX_STYLE_ANIM_VALUE_SIZE];
     tbox_style_animatable_read(&from, TBOX_STYLE_ANIM_OFFSET_ROTATE, a);
     to.offset_rotate.auto_rotate = false;
@@ -170,13 +170,13 @@ int tbox_test_motion_run(void) {
     tbox_style_animatable_read(&to, TBOX_STYLE_ANIM_OFFSET_ANCHOR_X, b);
     tbox_style_animatable_read(&from, TBOX_STYLE_ANIM_OFFSET_ANCHOR_X, a);
     TBOX_TEST_ASSERT(!tbox_style_animatable_interpolable(TBOX_STYLE_ANIM_OFFSET_ANCHOR_X, a, b));
-    tbox_style_animatable_write(&initial, TBOX_STYLE_ANIM_OFFSET_ANCHOR_X, b);
-    TBOX_TEST_ASSERT(tbox_style_length_resolve(initial.offset_anchor.position[0], 10) == 20);
-    TBOX_TEST_ASSERT(tbox_style_length_resolve(initial.offset_anchor.position[0], 1000) == 100);
+    tbox_style_animatable_write(&initial, TBOX_STYLE_ANIM_OFFSET_ANCHOR_X, b, &style_arena);
+    TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_transforms_of(&initial)->offset_anchor.position[0], 10) == 20);
+    TBOX_TEST_ASSERT(tbox_style_length_resolve(tbox_style_transforms_of(&initial)->offset_anchor.position[0], 1000) == 100);
     tbox_style_animatable_read(&to, TBOX_STYLE_ANIM_OFFSET_DISTANCE, b);
     tbox_style_animatable_read(&from, TBOX_STYLE_ANIM_OFFSET_DISTANCE, a);
     TBOX_TEST_ASSERT(!tbox_style_animatable_interpolable(TBOX_STYLE_ANIM_OFFSET_DISTANCE, a, b));
-    tbox_style_animatable_write(&initial, TBOX_STYLE_ANIM_OFFSET_DISTANCE, b);
+    tbox_style_animatable_write(&initial, TBOX_STYLE_ANIM_OFFSET_DISTANCE, b, &style_arena);
     TBOX_TEST_ASSERT(tbox_style_length_resolve(initial.offset_distance, 1000) == 100);
     TBOX_TEST_ASSERT(tbox_style_animatable_mask(tbox_string_view_from_cstr("offset")) != 0);
     tbox_arena_destroy(&style_arena);

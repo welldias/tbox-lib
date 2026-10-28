@@ -108,7 +108,10 @@ void tbox_svg_prepare(tbox_arena *arena, const tbox_html_node *root, const tbox_
         const tbox_html_node *node = styles->items[i].node;
         if (!tbox_svg_tag(node, "svg") || tbox_svg_is_element(node->parent))
             continue;
-        b.count                    = 0;
-        styles->items[i].style.svg = tbox_svg_build(&b, node, NULL, false, false, 0);
+        tbox_style *style = tbox_style_table_mutable(styles, i, arena);
+        if (style == NULL)
+            continue;
+        b.count    = 0;
+        style->svg = tbox_svg_build(&b, node, NULL, false, false, 0);
     }
 }

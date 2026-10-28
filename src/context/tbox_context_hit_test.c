@@ -162,12 +162,10 @@ tbox_style_cursor tbox_context_cursor_at(const tbox_context *ctx, double x, doub
         const tbox_layout_text_run *run = &box->text_runs[i];
         if (run->text.size == 0 || !tbox_context_point_in_rect(run->rect, lx, ly))
             continue;
-        for (size_t e = 0; e < ctx->styles.count; e++) {
-            if (&ctx->styles.items[e].style == run->style) {
-                style = run->style;
-                node  = ctx->styles.items[e].node;
-                break;
-            }
+        const tbox_html_node *element = tbox_context_run_element(ctx, box, run);
+        if (element != NULL) {
+            style = run->style;
+            node  = element;
         }
         break;
     }

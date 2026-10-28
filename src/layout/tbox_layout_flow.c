@@ -351,7 +351,7 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.line_break_anywhere      = container_style->line_break_anywhere;
     anon.text_transform           = container_style->text_transform;
     anon.list_style_type          = container_style->list_style_type;
-    memcpy(anon.list_style_custom, container_style->list_style_custom, sizeof(anon.list_style_custom));
+    anon.markers                  = container_style->markers;
     anon.counter_styles = container_style->counter_styles;
     anon.word_spacing             = container_style->word_spacing;
     anon.letter_spacing           = container_style->letter_spacing;
@@ -366,7 +366,6 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.text_stroke_color        = container_style->text_stroke_color;
     anon.text_stroke_current_color = container_style->text_stroke_current_color;
     memcpy(anon.paint_order, container_style->paint_order, sizeof(anon.paint_order));
-    memcpy(anon.marker_urls, container_style->marker_urls, sizeof(anon.marker_urls));
     anon.caption_side             = container_style->caption_side;
     anon.border_collapse          = container_style->border_collapse;
     anon.border_spacing_x         = container_style->border_spacing_x;
@@ -384,13 +383,12 @@ tbox_layout_box *tbox_layout_build_anonymous_box(tbox_arena *arena, const tbox_h
     anon.font_synthesis_no_position   = container_style->font_synthesis_no_position;
     if (anon.font_variant_position != TBOX_STYLE_FONT_VARIANT_POSITION_NORMAL && !anon.font_synthesis_no_position) /* synthesized, see tbox_style */
         anon.vertical_align = anon.font_variant_position == TBOX_STYLE_FONT_VARIANT_POSITION_SUB ? TBOX_STYLE_VERTICAL_ALIGN_SUB : TBOX_STYLE_VERTICAL_ALIGN_SUPER;
-    anon.font_feature_settings = container_style->font_feature_settings;
+    anon.font_settings = container_style->font_settings;
     anon.font_variant_ligatures = container_style->font_variant_ligatures;
     anon.font_variant_numeric = container_style->font_variant_numeric;
     anon.font_variant_east_asian = container_style->font_variant_east_asian;
     anon.font_variant_alternates = container_style->font_variant_alternates;
     anon.font_language_override = container_style->font_language_override;
-    memcpy(anon.font_palette, container_style->font_palette, sizeof(anon.font_palette));
     anon.font_kerning_none        = container_style->font_kerning_none;
     anon.font_size_adjust         = container_style->font_size_adjust;
     anon.word_break_keep_all      = container_style->word_break_keep_all;

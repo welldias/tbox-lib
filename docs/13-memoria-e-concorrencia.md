@@ -20,7 +20,7 @@ e define as regras abaixo.
 | `tbox_context` | `tbox_context_open*` | `tbox_context_close` | Dono do documento, das folhas de estilo e dos handlers. |
 | `tbox_html_node` | parser ou `tbox_html_node_create` | fechamento do contexto/documento | Mesmo removido da árvore, continua válido (só desconectado). |
 | atributos e textos do DOM | parser ou funções de mutação | fechamento do documento | Ao trocar um atributo ou texto, o valor antigo fica órfão na arena. |
-| `tbox_layout_box`, `tbox_display_list`, `tbox_style_table` | `tbox_context_run_frame` | **próximo** `run_frame` | Não guarde ponteiros entre frames. |
+| `tbox_layout_box`, `tbox_display_list`, `tbox_style_table` | `tbox_context_run_frame` | **próximo** `run_frame` | Não guarde ponteiros entre frames. Elementos iguais podem apontar para o mesmo `tbox_style`: para alterar o de uma entrada, use `tbox_style_table_mutable`. |
 | views passadas a handlers (`value` de `on_input`/`on_select`, `tbox_key_event *`) | o contexto | fim do handler / próxima edição | Copie se precisar guardar. |
 | `userdata` de handlers, tarefas e resolver | você | o `destroy` que você passou junto | A biblioteca chama `destroy(userdata)` uma vez, quando deixa de usá-lo (`unbind`, troca, tarefa concluída, `close`); com `destroy = NULL`, a posse continua sua. |
 | `tbox_css_selector_node_set`, `tbox_xpath_node_set` | consultas | `_destroy` | Os nós apontados seguem as regras do DOM. |

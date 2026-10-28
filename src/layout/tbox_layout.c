@@ -69,8 +69,9 @@ static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images, t
     for (; box != NULL; box = box->next_sibling) {
         const tbox_style *style = box->style;
         if (style != NULL) {
-            if (style->background_image[0] != '\0' && images != NULL)
-                box->background_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(style->background_image));
+            const char *background = tbox_style_background_source_of(style)->image;
+            if (background[0] != '\0' && images != NULL)
+                box->background_image = tbox_image_cache_get(images, tbox_string_view_from_cstr(background));
             for (size_t l = 1; l < style->background_layer_count && l < 4 && images != NULL; l++)
                 if (tbox_style_background_layers_of(style)->layers[l - 1].image[0] != '\0')
                     box->background_layer_images[l - 1] = tbox_image_cache_get(images, tbox_string_view_from_cstr(tbox_style_background_layers_of(style)->layers[l - 1].image));
@@ -90,7 +91,7 @@ static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images, t
                 run->decoration_border_image = NULL;
                 if (images == NULL || run->style == NULL || run->style == style || run->image != NULL) continue;
                 for (size_t l = 0; l < TBOX_STYLE_MAX_BACKGROUND_LAYERS; l++) {
-                    const char *image = l == 0 ? run->style->background_image : tbox_style_background_layers_of(run->style)->layers[l - 1].image;
+                    const char *image = l == 0 ? tbox_style_background_source_of(run->style)->image : tbox_style_background_layers_of(run->style)->layers[l - 1].image;
                     if (image[0] != '\0') run->decoration_images[l] = tbox_image_cache_get(images, tbox_string_view_from_cstr(image));
                 }
                 if (run->style->has_border_image && tbox_style_border_image_of(run->style)->image[0] != '\0')
@@ -132,7 +133,7 @@ static void tbox_layout_finish(tbox_layout_box *box, tbox_image_cache *images, t
  * live as long as the style table. */
 static void tbox_layout_link_generated(const tbox_style_table *styles, bool link) {
     for (size_t i = 0; styles != NULL && i < styles->count; i++) {
-        unsigned char generated = styles->items[i].style.generated;
+        unsigned char generated = styles->items[i].style->generated;
         if (generated == 0)
             continue;
         tbox_html_node *node   = (tbox_html_node *)styles->items[i].node;

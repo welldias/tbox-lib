@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "base/tbox_string.h"
@@ -297,8 +298,11 @@ void tbox_style_resolve_motion(const tbox_css_computed_style *computed, const tb
         }
     }
     style->offset_distance = values.offset_distance;
-    style->offset_position = values.offset_position;
-    style->offset_anchor   = values.offset_anchor;
+    /* Undeclared, they stay the group's initial values (no copy). */
+    if (count > 0) {
+        tbox_style_group_set(style, TBOX_STYLE_GROUP_TRANSFORMS, arena, offsetof(tbox_style_transforms, offset_position), &values.offset_position, sizeof(values.offset_position));
+        tbox_style_group_set(style, TBOX_STYLE_GROUP_TRANSFORMS, arena, offsetof(tbox_style_transforms, offset_anchor), &values.offset_anchor, sizeof(values.offset_anchor));
+    }
     style->offset_rotate   = values.offset_rotate;
     style->offset_path     = NULL; /* initial: none */
     if (path_set) {

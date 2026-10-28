@@ -159,9 +159,12 @@ static bool tbox_css_media_one(tbox_string_view query, double width, double heig
     return saw && (negate ? !result : result);
 }
 
-static bool tbox_css_media_matches(const tbox_css_media_condition *media, double width, double height, bool reduced_motion, const tbox_css_query_context *query) {
+static bool tbox_css_media_matches(const tbox_css_media_condition *media, double width, double height, bool reduced_motion, const tbox_css_query_context *query, bool *contextual) {
     for (; media != NULL; media = media->parent) {
         if (media->container) {
+            /* The element's query container, not the document. */
+            if (contextual != NULL)
+                *contextual = true;
             if (!tbox_css_cascade_container_matches(media->query, query, width, height)) return false;
             continue;
         }
@@ -187,7 +190,7 @@ static bool tbox_css_media_matches(const tbox_css_media_condition *media, double
 }
 
 bool tbox_css_cascade_media_matches(const tbox_css_media_condition *media, double viewport_width, double viewport_height, bool reduced_motion) {
-    return tbox_css_media_matches(media, viewport_width, viewport_height, reduced_motion, NULL);
+    return tbox_css_media_matches(media, viewport_width, viewport_height, reduced_motion, NULL, NULL);
 }
 
 /* Copies `view`'s bytes into `arena`, returning a NEW tbox_string_view that
@@ -459,26 +462,55 @@ static bool tbox_css_cascade_targets_pseudo_element(const tbox_css_selector *sel
     return true;
 }
 
-static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting, const tbox_css_query_context *query);
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting, const tbox_css_query_context *query, tbox_css_cascade_trace *trace);
 
 tbox_css_computed_style tbox_css_cascade_resolve(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, 0.0, 0.0, false, false, NULL);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, 0.0, 0.0, false, false, NULL, NULL);
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, 0, 0.0, 0.0, false, false, NULL);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, 0, 0.0, 0.0, false, false, NULL, NULL);
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, false, query);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, false, query, NULL);
+}
+
+tbox_css_computed_style tbox_css_cascade_resolve_traced(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query, tbox_css_cascade_trace *trace) {
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, false, query, trace);
+}
+
+/* Records one evaluation that read more than the key in `trace`. */
+static void tbox_css_cascade_trace_add(tbox_css_cascade_trace *trace, const tbox_css_scope *scope, const tbox_css_selector *selector, const tbox_css_media_condition *media, bool matched, size_t hops) {
+    tbox_css_cascade_guard *guard = tbox_vector_push(&trace->guards);
+    if (guard == NULL) {
+        trace->complete = false;
+        return;
+    }
+    *guard = (tbox_css_cascade_guard){ scope, selector, media, matched, hops };
+}
+
+bool tbox_css_cascade_guards_hold(const tbox_css_cascade_guard *guards, size_t count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query) {
+    for (size_t i = 0; i < count; i++) {
+        const tbox_css_cascade_guard *guard = &guards[i];
+        if (guard->selector != NULL) {
+            size_t hops  = 0;
+            bool matched = tbox_css_selector_scope_matches(guard->scope, node, guard->selector, &hops, NULL);
+            if (matched != guard->matched || (matched && hops != guard->hops))
+                return false;
+        } else if (tbox_css_media_matches(guard->media, viewport_width, viewport_height, reduced_motion, query, NULL) != guard->matched) {
+            return false;
+        }
+    }
+    return true;
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_pseudo_element_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, state, viewport_width, viewport_height, reduced_motion, false, query);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, pseudo, state, viewport_width, viewport_height, reduced_motion, false, query, NULL);
 }
 
 tbox_css_computed_style tbox_css_cascade_resolve_starting_style_in_viewport(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, double viewport_width, double viewport_height, bool reduced_motion, const tbox_css_query_context *query) {
-    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, true, query);
+    return tbox_css_cascade_resolve_impl(sources, source_count, node, NULL, 0, viewport_width, viewport_height, reduced_motion, true, query, NULL);
 }
 
 /* Appends `bucket`'s rulesets to `out`. */
@@ -529,18 +561,45 @@ static bool tbox_css_cascade_candidates(const tbox_css_rule_index *index, const 
     return true;
 }
 
-static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting, const tbox_css_query_context *query) {
+/* Whether a ruleset of `index` could match `node`: tbox_css_cascade_candidates
+ * would find one. True without an index (every ruleset is looked at). */
+static bool tbox_css_cascade_may_match(const tbox_css_rule_index *index, const tbox_html_node *node) {
+    if (index->buckets == NULL || index->universal_count > 0 || node->type != TBOX_HTML_NODE_ELEMENT)
+        return true;
+    if (tbox_css_rule_index_find(index, TBOX_CSS_SIMPLE_SELECTOR_TYPE, node->element.tag_name) != NULL)
+        return true;
+    const tbox_html_attribute *id = tbox_html_node_get_attribute(node, tbox_string_view_make("id", 2));
+    if (id != NULL && tbox_css_rule_index_find(index, TBOX_CSS_SIMPLE_SELECTOR_ID, id->value) != NULL)
+        return true;
+    const tbox_html_attribute *classes = tbox_html_node_get_attribute(node, tbox_string_view_make("class", 5));
+    for (size_t i = 0; classes != NULL && i < classes->value.size;) {
+        while (i < classes->value.size && tbox_ascii_is_space(classes->value.data[i]))
+            i++;
+        size_t start = i;
+        while (i < classes->value.size && !tbox_ascii_is_space(classes->value.data[i]))
+            i++;
+        if (i > start && tbox_css_rule_index_find(index, TBOX_CSS_SIMPLE_SELECTOR_CLASS, tbox_string_view_make(classes->value.data + start, i - start)) != NULL)
+            return true;
+    }
+    return false;
+}
+
+static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_cascade_source *sources, size_t source_count, const tbox_html_node *node, const char *pseudo, unsigned state, double viewport_width, double viewport_height, bool reduced_motion, bool starting, const tbox_css_query_context *query, tbox_css_cascade_trace *trace) {
     tbox_css_computed_style result = { .items = NULL, .count = 0, .reserved_ = NULL };
     if (node == NULL) {
         return result;
     }
 
-    /* Most elements have no rule for their ::before/::after: answer that
-     * before allocating anything. */
+    /* Most elements have no rule that could fit their ::before/::after
+     * (the user agent's are for <q>), and most pages none for
+     * ::first-letter: answer that before allocating anything. */
+    tbox_string_view pseudo_name = pseudo != NULL ? tbox_string_view_from_cstr(pseudo) : tbox_string_view_make(NULL, 0);
     if (pseudo != NULL) {
         bool any = false;
-        for (size_t src = 0; src < source_count && !any; src++)
-            any = sources[src].stylesheet != NULL && (sources[src].stylesheet->pseudo_element_ruleset_count > 0 || sources[src].stylesheet->properties != NULL);
+        for (size_t src = 0; src < source_count && !any; src++) {
+            const tbox_css_pseudo_element_rules *rules = tbox_css_stylesheet_pseudo_element_rules(sources[src].stylesheet, pseudo_name);
+            any = sources[src].stylesheet != NULL && ((rules != NULL && tbox_css_cascade_may_match(&rules->index, node)) || sources[src].stylesheet->properties != NULL);
+        }
         if (!any) {
             return result;
         }
@@ -576,13 +635,16 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
         tbox_css_origin origin = sources[src].origin;
 
         const tbox_css_ruleset *rulesets = tbox_css_stylesheet_rulesets(stylesheet);
-        /* A pseudo-element only visits the rulesets that name one; either
+        /* A pseudo-element only visits the rulesets that name it; either
          * cascade, only those its rule index lets through. */
-        const size_t *visited = pseudo != NULL ? stylesheet->pseudo_element_rulesets : NULL;
-        size_t ruleset_count  = pseudo != NULL ? stylesheet->pseudo_element_ruleset_count : tbox_css_stylesheet_ruleset_count(stylesheet);
+        const tbox_css_pseudo_element_rules *rules = pseudo != NULL ? tbox_css_stylesheet_pseudo_element_rules(stylesheet, pseudo_name) : NULL;
+        if (pseudo != NULL && rules == NULL)
+            continue;
+        const size_t *visited = rules != NULL ? rules->rulesets : NULL;
+        size_t ruleset_count  = rules != NULL ? rules->ruleset_count : tbox_css_stylesheet_ruleset_count(stylesheet);
         const size_t *candidates;
         size_t candidate_count;
-        if (tbox_css_cascade_candidates(pseudo != NULL ? &stylesheet->pseudo_element_index : &stylesheet->element_index, node, &scratch, &candidates, &candidate_count)) {
+        if (tbox_css_cascade_candidates(rules != NULL ? &rules->index : &stylesheet->element_index, node, &scratch, &candidates, &candidate_count)) {
             visited       = candidates;
             ruleset_count = candidate_count;
         }
@@ -598,7 +660,11 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
                 const tbox_css_selector *selector = &ruleset->selectors[s];
                 size_t hops = 0;
                 if (pseudo == NULL) {
-                    if (!tbox_css_selector_scope_matches(ruleset->scope, node, selector, &hops))
+                    bool reads   = false;
+                    bool matched = tbox_css_selector_scope_matches(ruleset->scope, node, selector, &hops, trace != NULL ? &reads : NULL);
+                    if (reads)
+                        tbox_css_cascade_trace_add(trace, ruleset->scope, selector, NULL, matched, hops);
+                    if (!matched)
                         continue;
                 } else {
                     /* The selector before its pseudo-element must match
@@ -607,7 +673,7 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
                     if (!tbox_css_cascade_targets_pseudo_element(selector, pseudo, state, &element_count))
                         continue;
                     tbox_css_selector element = { selector->simple_selectors, element_count };
-                    if (!tbox_css_selector_scope_matches(ruleset->scope, node, &element, &hops))
+                    if (!tbox_css_selector_scope_matches(ruleset->scope, node, &element, &hops, NULL))
                         continue;
                 }
                 tbox_css_specificity specificity = tbox_css_cascade_specificity(selector);
@@ -622,8 +688,15 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
             /* The media query only after a selector matched: re-reading
              * its text for every node and pseudo-element was most of the
              * cascade's cost. */
-            if (best_selector == NULL || (ruleset->media != NULL && !tbox_css_media_matches(ruleset->media, viewport_width, viewport_height, reduced_motion, query))) {
+            if (best_selector == NULL)
                 continue;
+            if (ruleset->media != NULL) {
+                bool reads   = false;
+                bool matched = tbox_css_media_matches(ruleset->media, viewport_width, viewport_height, reduced_motion, query, trace != NULL ? &reads : NULL);
+                if (reads)
+                    tbox_css_cascade_trace_add(trace, NULL, NULL, ruleset->media, matched, 0);
+                if (!matched)
+                    continue;
             }
 
             for (size_t d = 0; d < ruleset->declaration_count; d++) {
@@ -698,10 +771,10 @@ static tbox_css_computed_style tbox_css_cascade_resolve_impl(const tbox_css_casc
         const tbox_css_stylesheet *sheet = sources[src].stylesheet;
         if (sheet == NULL) continue;
         for (const tbox_css_property_rule *rule = sheet->properties; rule != NULL; rule = rule->next) {
-            if (!tbox_css_media_matches(rule->media, viewport_width, viewport_height, reduced_motion, NULL)) continue;
+            if (!tbox_css_media_matches(rule->media, viewport_width, viewport_height, reduced_motion, NULL, NULL)) continue;
             bool later = false;
             for (const tbox_css_property_rule *r = sheet->properties; r != rule; r = r->next)
-                if (tbox_string_view_equal(r->name, rule->name) && tbox_css_media_matches(r->media, viewport_width, viewport_height, reduced_motion, NULL)) later = true;
+                if (tbox_string_view_equal(r->name, rule->name) && tbox_css_media_matches(r->media, viewport_width, viewport_height, reduced_motion, NULL, NULL)) later = true;
             if (later) continue;
             tbox_css_resolved_declaration *decl = NULL;
             for (size_t i = 0; i < winners.length; i++) {

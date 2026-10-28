@@ -339,8 +339,12 @@ controle. Veja [Texto auxiliar dos campos](10-formularios-e-controles.md#texto-a
 seletores: o `#id`, senão uma `.classe`, senão a tag, senão "qualquer
 elemento" (seletores só com atributos, pseudo-classes, `:where()`…). A
 cascata de um elemento visita só as regras dos baldes do seu id, de cada
-classe e da sua tag, mais as universais, em ordem de origem; a de um
-pseudo-elemento faz o mesmo sobre as regras que nomeiam um. Uma regra fora
+classe e da sua tag, mais as universais, em ordem de origem. A de um
+pseudo-elemento faz o mesmo sobre as regras que nomeiam *aquele*
+pseudo-elemento, que têm um índice próprio por nome
+(`tbox_css_stylesheet_pseudo_element_rules`); quando nenhum balde desse
+índice pode servir ao elemento (o `::before`/`::after` da folha do user
+agent é só de `<q>`), ela volta sem alocar nada. Uma regra fora
 desses baldes não tem seletor que possa casar, então o resultado é o
 mesmo; a comparação segue a do matcher (tag sem caixa, id e classe com
 caixa). Num elemento de tabela isso são ~6 seletores em vez de 171.
@@ -467,17 +471,17 @@ arquivos especializados; veja [Organização do código](dev/organizacao-do-codi
 
 ### Compartilhamento de estilo
 
-Linhas de tabela e itens de lista costumam ter estilos iguais. A cascata
-roda para todo elemento, mas a conversão das declarações em `tbox_style`
-(a maior parte do custo) é feita uma vez por grupo de elementos iguais: um
+Linhas de tabela e itens de lista costumam ter estilos iguais. A conversão
+das declarações em `tbox_style` é feita uma vez por grupo de elementos
+iguais, e a cascata também, quando é seguro (ver "Sem cascata" abaixo): um
 elemento com a mesma tag e os mesmos atributos (nomes, valores e ordem) que
 um anterior, com um pai de estilo igual ao dele e exatamente o mesmo
 resultado da cascata (as mesmas declarações das mesmas regras) recebe uma
 cópia do estilo desse modelo, inclusive os dados fora da linha (que são
-imutáveis). Como a cascata confirma a igualdade, seletores como
-`:nth-child`, `+`, `:hover` ou contêineres não precisam de tratamento
-especial: quando mudam o resultado para um elemento, ele simplesmente não
-compartilha.
+imutáveis). Quando a cascata roda, ela confirma a igualdade: seletores como
+`:nth-child`, `+`, `:hover` ou contêineres que mudam o resultado para um
+elemento só fazem com que ele não compartilhe. Quando é pulada, as guardas
+fazem esse papel.
 
 - **Quem serve de modelo:** um elemento cujo estilo não foi alterado pelos
   passos seguintes, que são por nó (marcador de `li`, partes de controles,
@@ -486,9 +490,41 @@ compartilha.
   continuam resolvidos por elemento.
 - **"Pai de estilo igual"** é uma classe: cada elemento convertido abre
   uma, e quem copia entra na do modelo.
-- O resultado é idêntico ao da conversão de cada elemento; ver
-  [Decisões](dev/decisoes.md) para as alternativas e o próximo passo
-  (pular também a cascata).
+- **Sem passos por nó, sem cópia:** um elemento que compartilha e não tem
+  nenhum passo por nó (não é contêiner de consulta, não é `<li>` nem
+  `display: list-item`, não tem partes de controle) usa o estilo do modelo
+  como está, sem copiá-lo para a caminhada nem compará-lo depois. A
+  condição é a de entrada de cada passo (`tbox_style_has_node_steps`): um
+  passo por nó novo precisa entrar nela.
+- **Um estilo, vários elementos:** um elemento em nível de bloco (`block`,
+  `flex`, `grid` ou `none`) igual ao modelo, e que os passos por nó deixaram
+  igual, não recebe cópia: a entrada da tabela aponta para o mesmo
+  `tbox_style` do modelo. Os inline (`inline`, `inline-block`,
+  `inline-flex`, `inline-grid`) recebem cópia própria (~4 KB; os grupos
+  raros fora de linha continuam compartilhados, ver
+  [Guia da API](03-guia-da-api.md#grupos-fora-de-linha-de-tbox_style)),
+  porque Layout e
+  Render distinguem elementos inline pelo endereço do estilo (palavras que
+  viram um run, padding e borda de cada fragmento). Por isso a tabela não
+  escreve no estilo de uma entrada diretamente: `tbox_style_table_mutable`
+  dá à entrada uma cópia própria antes (o `::first-letter`, o SVG, a escrita
+  vertical, transições, animações e o redimensionamento passam por ela).
+- **Sem cascata:** um elemento com a tag, os atributos e o pai de estilo de
+  um modelo também pula a cascata, se as guardas do modelo valem para ele.
+  Guardas são as avaliações da cascata do modelo que leram mais que tags e
+  atributos dele e dos ancestrais: um seletor com `:nth-child`,
+  `:first-child`, `:empty`, `+`/`~`, `:hover`, `:focus`, `:checked`,
+  `:disabled` e afins (em qualquer parte do seletor, casado ou não), uma
+  raiz implícita de `@scope`, ou uma regra em `@container`. Cada uma é
+  refeita para o elemento e precisa dar o mesmo resultado; as outras dão o
+  mesmo por construção, então a cascata inteira daria o mesmo. Até 8
+  modelos por chave guardam resultados diferentes (linhas pares e ímpares,
+  a linha sob o mouse). O matcher marca as pseudo-classes que leem
+  contexto numa lista (`tbox_css_selector_pseudo_reads_context`): uma
+  pseudo-classe nova que leia posição, filhos ou estado precisa entrar
+  nela.
+- O resultado é idêntico ao da conversão e da cascata de cada elemento; ver
+  [Decisões](dev/decisoes.md) para as alternativas.
 
 ## Transições e animações
 

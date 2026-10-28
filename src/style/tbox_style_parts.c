@@ -88,6 +88,10 @@ static unsigned tbox_style_parts_of(const tbox_html_node *node, const tbox_style
     return parts;
 }
 
+bool tbox_style_has_parts(const tbox_html_node *node, const tbox_style *style) {
+    return tbox_style_parts_of(node, style) != 0;
+}
+
 /* Borders per side (none = 0 width) and radii per corner: a single
  * `border-radius` length fills every corner. */
 static void tbox_style_part_copy(const tbox_style *from, tbox_style_part_style *to) {
@@ -112,6 +116,8 @@ static void tbox_style_part_copy(const tbox_style *from, tbox_style_part_style *
 }
 
 void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena) {
+    if (!tbox_style_has_parts(node, style))
+        return;
     unsigned parts = tbox_style_parts_of(node, style);
     const tbox_html_attribute *placeholder = tbox_html_node_get_attribute(node, tbox_string_view_from_cstr("placeholder"));
     if ((parts & TBOX_STYLE_PART_BIT(TBOX_STYLE_PART_SELECTION)) != 0 && placeholder != NULL && placeholder->value.size > 0) {

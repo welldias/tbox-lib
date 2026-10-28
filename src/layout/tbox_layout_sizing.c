@@ -67,7 +67,23 @@ static double tbox_layout_px_or_zero(tbox_style_length length) {
 }
 
 /* The content-box min/max widths of `node`'s own content. */
+/* Whether `words` can stand for a layout's own collection: text only. */
+static bool tbox_layout_words_width_free(const tbox_vector *words) {
+    for (size_t i = 0; i < words->length; i++) {
+        const tbox_layout_word *word = tbox_vector_at_const(words, i);
+        /* has_min_width marks an inline-block or float measured without
+         * its box (measure_only). */
+        if (word->has_min_width || word->atomic != NULL || word->atomic_node != NULL || word->floating != NULL || word->image != NULL)
+            return false;
+    }
+    return true;
+}
+
 tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images) {
+    return tbox_layout_intrinsic_content_keep(arena, node, styles, fonts, images, NULL);
+}
+
+tbox_layout_intrinsic tbox_layout_intrinsic_content_keep(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_premeasured *kept) {
     tbox_layout_intrinsic result = { 0.0, 0.0 };
     const tbox_style *style      = tbox_layout_style_or_default(styles, node);
     /* `container-type: size`/`inline-size`: inline-size containment, the
@@ -129,14 +145,16 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
                 const tbox_html_node *end = child;
                 while (end != NULL && end->type != TBOX_HTML_NODE_ELEMENT)
                     end = end->next_sibling;
+                tbox_arena scratch = tbox_arena_create(TBOX_LAYOUT_SCRATCH_BLOCK);
                 tbox_vector words;
-                tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+                tbox_vector_init(&words, &scratch, sizeof(tbox_layout_word), 0);
                 tbox_layout_inline_state state = { false, false };
                 tbox_layout_collect_words_in(arena, child, end, style, styles, fonts, images, 0.0, false, true, &state, &words);
                 if (words.length > 0) {
                     contribution = tbox_layout_measure_words((const tbox_layout_word *)words.data, words.length, tbox_layout_white_space_nowrap(style));
                     is_item      = true;
                 }
+                tbox_arena_destroy(&scratch);
                 child = end;
             } else {
                 if (child->type == TBOX_HTML_NODE_ELEMENT && !tbox_layout_is_hidden_input(child)) {
@@ -170,17 +188,29 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
     }
 
     if (tbox_layout_is_inline_box(node, style, styles)) {
-        tbox_vector words;
-        tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+        /* The words only measure: they go with their own arena, unless
+         * the caller keeps them for the box's layout (`kept`). */
         bool is_pre = tbox_layout_tag(node, "pre") && (style->white_space == TBOX_STYLE_WHITE_SPACE_AUTO || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE);
+        bool keep   = kept != NULL && !is_pre && !tbox_layout_tag(node, "input") && !tbox_layout_is_select(node) && !tbox_layout_is_textarea(node);
+        tbox_arena scratch = tbox_arena_create(keep ? 0 : TBOX_LAYOUT_SCRATCH_BLOCK);
+        tbox_vector own;
+        tbox_vector *words = keep ? &kept->words : &own;
+        if (!keep)
+            tbox_vector_init(&own, &scratch, sizeof(tbox_layout_word), 0);
         if (is_pre) {
-            tbox_layout_collect_preformatted_words(arena, node, style, fonts, &words);
+            tbox_layout_collect_preformatted_words(arena, node, style, fonts, words);
         } else {
-            tbox_layout_push_list_marker(arena, node, style, fonts, images, &words);
+            tbox_layout_push_list_marker(arena, node, style, fonts, images, words);
             tbox_layout_inline_state state = { false, false };
-            tbox_layout_collect_words_in(arena, node->first_child, NULL, style, styles, fonts, images, 0.0, false, true, &state, &words);
+            tbox_layout_collect_words_in(arena, node->first_child, NULL, style, styles, fonts, images, 0.0, false, true, &state, words);
         }
-        return tbox_layout_measure_words((const tbox_layout_word *)words.data, words.length, is_pre || tbox_layout_white_space_nowrap(style));
+        tbox_layout_intrinsic measured = tbox_layout_measure_words((const tbox_layout_word *)words->data, words->length, is_pre || tbox_layout_white_space_nowrap(style));
+        if (keep && tbox_layout_words_width_free(words)) {
+            kept->node  = node;
+            kept->style = style;
+        }
+        tbox_arena_destroy(&scratch);
+        return measured;
     }
 
     /* Block container: loose inline content measures like an anonymous
@@ -192,11 +222,13 @@ tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbo
         }
         if (tbox_layout_is_inline_run_trigger(arena, child, styles)) {
             const tbox_html_node *run_end = tbox_layout_inline_run_end(child, styles);
+            tbox_arena scratch = tbox_arena_create(TBOX_LAYOUT_SCRATCH_BLOCK);
             tbox_vector words;
-            tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+            tbox_vector_init(&words, &scratch, sizeof(tbox_layout_word), 0);
             tbox_layout_inline_state state = { false, false };
             tbox_layout_collect_words_in(arena, child, run_end, style, styles, fonts, images, 0.0, false, true, &state, &words);
             tbox_layout_intrinsic run = tbox_layout_measure_words((const tbox_layout_word *)words.data, words.length, tbox_layout_white_space_nowrap(style));
+            tbox_arena_destroy(&scratch);
             if (run.min > result.min)
                 result.min = run.min;
             if (run.max > result.max)
@@ -231,7 +263,7 @@ tbox_layout_intrinsic tbox_layout_intrinsic_outer(tbox_arena *arena, const tbox_
     if (tbox_layout_frame_change(style) && style->width.kind != TBOX_STYLE_LENGTH_PX) {
         tbox_layout_containing_block container = { 0.0, 0.0, 0.0, 0.0, false };
         tbox_rect none                         = { 0.0, 0.0, 0.0, 0.0 };
-        tbox_layout_positioned_context context = { none, none, NULL };
+        tbox_layout_positioned_context context = { none, none, NULL, NULL };
         tbox_layout_box *box = tbox_layout_build_orthogonal(arena, node, styles, fonts, images, container, 0.0, context, NULL);
         if (box != NULL)
             result.min = result.max = box->margin_box.width;
@@ -318,7 +350,7 @@ void tbox_layout_push_atomic_word(tbox_arena *arena, const tbox_html_node *node,
     }
     tbox_layout_containing_block container = { 0.0, 0.0, containing_width, 0.0, false };
     tbox_rect origin                       = { 0.0, 0.0, containing_width, 0.0 };
-    tbox_layout_positioned_context context = { origin, origin, NULL };
+    tbox_layout_positioned_context context = { origin, origin, NULL, NULL };
     tbox_layout_box *box                   = tbox_layout_build_element_sized(arena, node, styles, fonts, images, container, 0.0, context, NULL, 0, forced.has_width ? &forced : NULL);
 
     /* A checkbox's checkmark run is decoration, not a line of content: the

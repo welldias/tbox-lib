@@ -7,30 +7,38 @@ typedef struct tbox_context_style_origin {
     const tbox_html_node *parent;
 } tbox_context_style_origin;
 
-static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_list *list);
+static void tbox_context_paint_controls(tbox_context *ctx, tbox_vector *items);
 static void tbox_context_collect_style_elements(tbox_arena *arena, const tbox_html_node *node, tbox_string_builder *builder, tbox_vector *origins, const char *asset_base, tbox_string_view document_base);
 
-static void tbox_context_append_control_paint(tbox_context *ctx, tbox_display_list *list) {
+static void tbox_context_paint_controls(tbox_context *ctx, tbox_vector *items) {
     if (ctx->select_fields == NULL && ctx->open_select == NULL && ctx->open_color == NULL && ctx->open_date == NULL && ctx->open_file == NULL && !ctx->has_file_input && !ctx->has_number_input && !ctx->has_range_input && !ctx->has_search_input && !ctx->has_gauge)
         return;
-    tbox_vector items;
-    tbox_vector_init(&items, &ctx->frame_arena, sizeof(tbox_paint_op), list->count + 32);
-    for (size_t i = 0; i < list->count; i++) {
-        tbox_paint_op *op = tbox_vector_push(&items);
-        *op               = list->items[i];
-    }
-    tbox_context_paint_select_arrows(ctx->root, &items);
-    tbox_context_paint_number_steppers(ctx->root, &items);
-    tbox_context_paint_search_clears(ctx->root, &items);
-    tbox_context_paint_ranges(ctx->root, &items);
-    tbox_context_paint_gauges(ctx->root, &items);
-    tbox_context_paint_file_controls(ctx, ctx->root, &items);
-    tbox_context_paint_select_popup(ctx, &items);
-    tbox_context_paint_color_popup(ctx, &items);
-    tbox_context_paint_date_popup(ctx, &items);
-    tbox_context_paint_file_popup(ctx, &items);
-    list->items = items.data;
-    list->count = items.length;
+    tbox_context_paint_select_arrows(ctx->root, items);
+    tbox_context_paint_number_steppers(ctx->root, items);
+    tbox_context_paint_search_clears(ctx->root, items);
+    tbox_context_paint_ranges(ctx->root, items);
+    tbox_context_paint_gauges(ctx->root, items);
+    tbox_context_paint_file_controls(ctx, ctx->root, items);
+    tbox_context_paint_select_popup(ctx, items);
+    tbox_context_paint_color_popup(ctx, items);
+    tbox_context_paint_date_popup(ctx, items);
+    tbox_context_paint_file_popup(ctx, items);
+}
+
+/* `list` followed by `extra`, in one array of the exact size: copying the
+ * whole list into a vector that grows would leave the old copies in the
+ * frame arena. Nothing is copied when `extra` is empty. */
+static void tbox_context_append_paint(tbox_context *ctx, tbox_display_list *list, const tbox_vector *extra) {
+    if (extra->length == 0)
+        return;
+    tbox_paint_op *items = tbox_arena_alloc(&ctx->frame_arena, (list->count + extra->length) * sizeof(*items));
+    if (items == NULL)
+        return;
+    if (list->count > 0)
+        memcpy(items, list->items, list->count * sizeof(*items));
+    memcpy(items + list->count, extra->data, extra->length * sizeof(*items));
+    list->items = items;
+    list->count += extra->length;
 }
 
 /* Collect author CSS from <style> and local <link rel=stylesheet> in document
@@ -680,8 +688,13 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
     *out_list = tbox_render_build_display_list_in_viewport(&ctx->frame_arena, ctx->root, viewport_width, viewport_height);
     tbox_context_paint_text_input_caret(ctx, out_list);
     tbox_context_paint_textarea_caret(ctx, out_list);
-    tbox_context_append_scrollbars(ctx, out_list);
-    tbox_context_append_control_paint(ctx, out_list);
+    /* Scrollbars, then form-control overlays and popups, over the page.
+     * Their ops (and what those point at) live in the frame arena. */
+    tbox_vector overlay;
+    tbox_vector_init(&overlay, &ctx->frame_arena, sizeof(tbox_paint_op), 0);
+    tbox_context_paint_scroll_overlay(ctx, &overlay);
+    tbox_context_paint_controls(ctx, &overlay);
+    tbox_context_append_paint(ctx, out_list, &overlay);
 }
 
 void tbox_context_set_input_handler(tbox_context *ctx, tbox_context_input_handler handler, void *userdata, tbox_destroy_notify destroy) {

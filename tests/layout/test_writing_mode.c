@@ -57,7 +57,7 @@ static const tbox_style *tbox_wm_style(const tbox_wm_test *test, const char *id)
     for (size_t i = 0; i < test->styles.count; i++) {
         const tbox_html_attribute *attribute = tbox_html_node_get_attribute(test->styles.items[i].node, tbox_string_view_from_cstr("id"));
         if (attribute != NULL && tbox_string_view_equal_cstr(attribute->value, id))
-            return &test->styles.items[i].style;
+            return test->styles.items[i].style;
     }
     return NULL;
 }

@@ -3,6 +3,7 @@
 #include "style/tbox_style_internal.h"
 
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "base/tbox_string.h"
@@ -77,7 +78,8 @@ static bool tbox_style_marker_url(tbox_string_view value, char out[256]) {
     return true;
 }
 
-static bool tbox_style_paint_parse(tbox_string_view property, tbox_string_view value, const tbox_style_units *units, tbox_style *style) {
+/* Marker URLs go to `markers` (start/mid/end), everything else to `style`. */
+static bool tbox_style_paint_parse(tbox_string_view property, tbox_string_view value, const tbox_style_units *units, tbox_style *style, char markers[3][256]) {
     if (tbox_style_is(property, "paint-order"))
         return tbox_style_paint_order_parse(value, style->paint_order);
     if (tbox_style_is(property, "mask-type")) {
@@ -88,12 +90,12 @@ static bool tbox_style_paint_parse(tbox_string_view property, tbox_string_view v
     if (tbox_style_is(property, "marker")) {
         char url[256] = {0};
         if (!tbox_style_marker_url(value, url)) return false;
-        for (size_t i = 0; i < 3; i++) memcpy(style->marker_urls[i], url, sizeof(url));
+        for (size_t i = 0; i < 3; i++) memcpy(markers[i], url, sizeof(url));
         return true;
     }
-    static const char *const markers[] = { "marker-start", "marker-mid", "marker-end" };
+    static const char *const names[] = { "marker-start", "marker-mid", "marker-end" };
     for (size_t i = 0; i < 3; i++)
-        if (tbox_style_is(property, markers[i])) return tbox_style_marker_url(value, style->marker_urls[i]);
+        if (tbox_style_is(property, names[i])) return tbox_style_marker_url(value, markers[i]);
     if (tbox_style_is(property, "-webkit-text-stroke-width"))
         return tbox_style_stroke_width(value, units, &style->text_stroke_width);
     if (tbox_style_is(property, "-webkit-text-stroke-color"))
@@ -131,22 +133,24 @@ bool tbox_style_paint_declaration_valid(tbox_string_view property, tbox_string_v
         if (i + 11 <= value.size && tbox_style_is(tbox_string_view_make(value.data + i, 11), "light-dark(")) return true;
     }
     const tbox_style_units units = { 16.0, 16.0, 800.0, 600.0, false, -1.0, -1.0, 1.0, TBOX_STYLE_FRAME_NONE, 0.0, 0.0 };
-    tbox_style scratch = {0};
-    return tbox_style_paint_parse(property, value, &units, &scratch);
+    tbox_style scratch      = {0};
+    char markers[3][256] = {0};
+    return tbox_style_paint_parse(property, value, &units, &scratch, markers);
 }
 
-void tbox_style_resolve_paint(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_style_units *units, tbox_style *style) {
+void tbox_style_resolve_paint(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_style_units *units, tbox_style *style, tbox_arena *arena) {
     style->paint_order[0] = TBOX_STYLE_PAINT_FILL;
     style->paint_order[1] = TBOX_STYLE_PAINT_STROKE;
     style->paint_order[2] = TBOX_STYLE_PAINT_MARKERS;
     style->text_stroke_current_color = true;
     if (parent != NULL) {
         memcpy(style->paint_order, parent->paint_order, sizeof(style->paint_order));
-        memcpy(style->marker_urls, parent->marker_urls, sizeof(style->marker_urls));
         style->text_stroke_width = parent->text_stroke_width;
         style->text_stroke_color = parent->text_stroke_color;
         style->text_stroke_current_color = parent->text_stroke_current_color;
     }
+    char markers[3][256];
+    memcpy(markers, tbox_style_markers_of(style)->marker_urls, sizeof(markers));
     static const char *const names[] = { "marker-start", "marker-mid", "marker-end", "mask-type", "paint-order", "-webkit-text-stroke-width", "-webkit-text-stroke-color" };
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
         tbox_string_view property = tbox_string_view_from_cstr(names[i]);
@@ -155,8 +159,10 @@ void tbox_style_resolve_paint(const tbox_css_computed_style *computed, const tbo
             i >= 5 ? tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("-webkit-text-stroke")) : NULL;
         if (shorthand != NULL && (decl == NULL || tbox_css_cascade_priority_compare(shorthand, decl) > 0)) {
             tbox_style parsed = *style;
-            if (tbox_style_paint_parse(shorthand->property, shorthand->value, units, &parsed)) {
-                if (i < 3) memcpy(style->marker_urls[i], parsed.marker_urls[i], sizeof(style->marker_urls[i]));
+            char parsed_markers[3][256];
+            memcpy(parsed_markers, markers, sizeof(markers));
+            if (tbox_style_paint_parse(shorthand->property, shorthand->value, units, &parsed, parsed_markers)) {
+                if (i < 3) memcpy(markers[i], parsed_markers[i], sizeof(markers[i]));
                 else if (i == 5) style->text_stroke_width = parsed.text_stroke_width;
                 else {
                     style->text_stroke_color = parsed.text_stroke_color;
@@ -165,7 +171,13 @@ void tbox_style_resolve_paint(const tbox_css_computed_style *computed, const tbo
             }
         } else if (decl != NULL) {
             tbox_style parsed = *style;
-            if (tbox_style_paint_parse(property, decl->value, units, &parsed)) *style = parsed;
+            char parsed_markers[3][256];
+            memcpy(parsed_markers, markers, sizeof(markers));
+            if (tbox_style_paint_parse(property, decl->value, units, &parsed, parsed_markers)) {
+                *style = parsed;
+                memcpy(markers, parsed_markers, sizeof(markers));
+            }
         }
     }
+    tbox_style_group_set(style, TBOX_STYLE_GROUP_MARKERS, arena, offsetof(tbox_style_markers, marker_urls), markers, sizeof(markers));
 }

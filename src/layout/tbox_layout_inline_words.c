@@ -233,7 +233,7 @@ static void tbox_layout_apply_soft_hyphens(tbox_arena *arena, tbox_vector *words
     if (!any)
         return;
     size_t count               = words->length - first;
-    tbox_layout_word *original = (tbox_layout_word *)tbox_arena_alloc(arena, count * sizeof(tbox_layout_word));
+    tbox_layout_word *original = (tbox_layout_word *)tbox_arena_alloc(words->arena, count * sizeof(tbox_layout_word));
     if (original == NULL)
         return;
     memcpy(original, (tbox_layout_word *)words->data + first, count * sizeof(tbox_layout_word));
@@ -307,7 +307,7 @@ static bool tbox_layout_break_after(tbox_string_view text, size_t i) {
     return after != '/';
 }
 
-static void tbox_layout_apply_break_opportunities(tbox_arena *arena, tbox_vector *words, size_t first, const tbox_style *style) {
+static void tbox_layout_apply_break_opportunities(tbox_vector *words, size_t first, const tbox_style *style) {
     if (style->white_space == TBOX_STYLE_WHITE_SPACE_NOWRAP || style->white_space == TBOX_STYLE_WHITE_SPACE_PRE)
         return;
     bool any = false;
@@ -319,7 +319,7 @@ static void tbox_layout_apply_break_opportunities(tbox_arena *arena, tbox_vector
     if (!any)
         return;
     size_t count               = words->length - first;
-    tbox_layout_word *original = (tbox_layout_word *)tbox_arena_alloc(arena, count * sizeof(tbox_layout_word));
+    tbox_layout_word *original = (tbox_layout_word *)tbox_arena_alloc(words->arena, count * sizeof(tbox_layout_word));
     if (original == NULL)
         return;
     memcpy(original, (tbox_layout_word *)words->data + first, count * sizeof(tbox_layout_word));
@@ -400,7 +400,7 @@ static void tbox_layout_apply_small_caps(tbox_arena *arena, tbox_vector *words, 
     if (small == NULL)
         return;
     size_t count                  = words->length - first;
-    tbox_layout_word *original    = (tbox_layout_word *)tbox_arena_alloc(arena, count * sizeof(tbox_layout_word));
+    tbox_layout_word *original    = (tbox_layout_word *)tbox_arena_alloc(words->arena, count * sizeof(tbox_layout_word));
     if (original == NULL)
         return;
     memcpy(original, (tbox_layout_word *)words->data + first, count * sizeof(tbox_layout_word));
@@ -513,7 +513,7 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
             tbox_string_view text      = child->text.text;
             tbox_layout_push_text_words(arena, words, text, face, style);
             tbox_layout_apply_soft_hyphens(arena, words, first, style);
-            tbox_layout_apply_break_opportunities(arena, words, first, style);
+            tbox_layout_apply_break_opportunities(words, first, style);
             if (style->font_small_caps && !style->font_synthesis_no_small_caps)
                 tbox_layout_apply_small_caps(arena, words, first, style, fonts);
             if (text.size == 0)
@@ -546,7 +546,7 @@ void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first
                 }
                 tbox_layout_containing_block container = { 0.0, 0.0, containing_width, 0.0, false };
                 tbox_rect origin                       = { 0.0, 0.0, containing_width, 0.0 };
-                tbox_layout_positioned_context context = { origin, origin, NULL };
+                tbox_layout_positioned_context context = { origin, origin, NULL, NULL };
                 tbox_layout_box *box                   = tbox_layout_build_float_box(arena, child, child_style, styles, fonts, images, container, 0.0, context);
                 tbox_layout_word *word                 = tbox_layout_new_word(words);
                 word->face                             = face;

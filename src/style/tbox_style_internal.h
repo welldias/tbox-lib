@@ -71,13 +71,14 @@ bool tbox_svg_is_element(const tbox_html_node *node);
 bool tbox_svg_presentation_property(tbox_string_view property);
 tbox_string_view tbox_svg_presentation_value(tbox_arena *arena, tbox_string_view property, tbox_string_view value);
 bool tbox_style_paint_declaration_valid(tbox_string_view property, tbox_string_view value);
-void tbox_style_resolve_paint(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_style_units *units, tbox_style *style);
+void tbox_style_resolve_paint(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_style_units *units, tbox_style *style, tbox_arena *arena);
 bool tbox_style_opentype_declaration_valid(tbox_string_view property, tbox_string_view value);
-/* Atomic parse: failure leaves style unchanged. */
-bool tbox_style_parse_opentype(const char *property, tbox_string_view value, tbox_style *style);
+/* Atomic parse: failure leaves style and settings unchanged.
+ * font-feature-settings and font-palette go to `settings`. */
+bool tbox_style_parse_opentype(const char *property, tbox_string_view value, tbox_style *style, tbox_style_font_settings *settings);
 void tbox_style_shaping_options(const tbox_style *style, tbox_font_shaping_options *out);
 void tbox_style_resolve_opentype(const tbox_css_computed_style *computed, const tbox_style *parent,
-                                 const tbox_css_resolved_declaration *font, tbox_string_view font_variant, tbox_style *style);
+                                 const tbox_css_resolved_declaration *font, tbox_string_view font_variant, tbox_style *style, tbox_arena *arena);
 
 bool tbox_style_is(tbox_string_view value, const char *keyword);
 size_t tbox_style_split_top_level(tbox_string_view text, char separator, tbox_string_view *parts, size_t max);
@@ -157,6 +158,13 @@ typedef enum tbox_style_group {
     TBOX_STYLE_GROUP_GRID,
     TBOX_STYLE_GROUP_BORDER_IMAGE,
     TBOX_STYLE_GROUP_SVG,
+    TBOX_STYLE_GROUP_ANIMATION,
+    TBOX_STYLE_GROUP_MARKERS,
+    TBOX_STYLE_GROUP_BACKGROUND,
+    TBOX_STYLE_GROUP_TRANSFORMS,
+    TBOX_STYLE_GROUP_FONT,
+    TBOX_STYLE_GROUP_SCROLL,
+    TBOX_STYLE_GROUP_GRID_PLACEMENT,
     TBOX_STYLE_GROUP_COUNT,
 } tbox_style_group;
 
@@ -174,6 +182,11 @@ void *tbox_style_group_edit(tbox_style *style, tbox_style_group group, tbox_aren
  * or without an arena): a fresh out-of-line group to fill and then point
  * the style at, starting from the current or initial values. */
 void *tbox_style_group_copy(tbox_arena *arena, const void *current, size_t size);
+
+/* Sets `size` bytes at `offset` of the group to `value`, through a copy
+ * (tbox_style_group_edit) only when they differ: an element that keeps
+ * its inherited values keeps pointing at its parent's group. */
+void tbox_style_group_set(tbox_style *style, tbox_style_group group, tbox_arena *arena, size_t offset, const void *value, size_t size);
 
 /* CSS custom properties (tbox_style_vars.c). */
 typedef struct tbox_arena tbox_arena;
@@ -257,6 +270,9 @@ void tbox_style_generated_leave(tbox_style_generated *generated, const tbox_html
 /* Resolves the control parts `node` has (::slider-thumb, ::selection...)
  * against its own already-resolved `style` and stores them, allocated in
  * `arena`, in style->parts. See tbox_style_part. */
+/* Whether `node` styled `style` has any part tbox_style_resolve_parts
+ * resolves (it changes nothing otherwise). */
+bool tbox_style_has_parts(const tbox_html_node *node, const tbox_style *style);
 void tbox_style_resolve_parts(const tbox_html_node *node, tbox_style *style, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height, bool reduced_motion, tbox_arena *arena);
 
 bool tbox_style_composition_declaration_valid(tbox_string_view name, tbox_string_view value);

@@ -1520,8 +1520,10 @@ int tbox_test_render_run(void) {
         style.box_shadows[0]   = (tbox_style_shadow){ 2, 2, 0, 0, { 255, 0, 0, 255 }, false };
         style.box_shadows[1]   = (tbox_style_shadow){ 4, 4, 0, 0, { 0, 255, 0, 255 }, false };
         style.box_shadows[2]   = (tbox_style_shadow){ 0, 0, 0, 3, { 0, 0, 255, 255 }, true };
-        style.background_gradient.kind       = TBOX_STYLE_GRADIENT_LINEAR;
-        style.background_gradient.stop_count = 2;
+        tbox_style_background_source background = { 0 };
+        style.background_source = &background;
+        background.gradient.kind       = TBOX_STYLE_GRADIENT_LINEAR;
+        background.gradient.stop_count = 2;
         style.background_size[0] = style.background_size[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_AUTO, 0.0, 0.0, 0, 0.0, 0.0 };
         style.background_position[0] = style.background_position[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PERCENT, 0.0, 0.0, 0, 0.0, 0.0 };
         tbox_layout_box box = tbox_test_render_default_box(&style);
@@ -1694,8 +1696,10 @@ int tbox_test_render_run(void) {
     /* `space` distributes fixed tiles; `round` resizes them to an integer fit. */
     {
         tbox_style style = tbox_test_render_default_style();
-        style.background_gradient.kind = TBOX_STYLE_GRADIENT_LINEAR;
-        style.background_gradient.stop_count = 2;
+        tbox_style_background_source background = { 0 };
+        style.background_source = &background;
+        background.gradient.kind = TBOX_STYLE_GRADIENT_LINEAR;
+        background.gradient.stop_count = 2;
         style.background_size_kind = TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT;
         style.background_size[0] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 30.0, 0.0, 0, 0.0, 0.0 };
         style.background_size[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 18.0, 0.0, 0, 0.0, 0.0 };
@@ -1724,8 +1728,8 @@ int tbox_test_render_run(void) {
         tbox_arena_destroy(&arena);
 
         /* An auto opposite axis keeps an image's aspect ratio after round. */
-        style.background_gradient.kind = TBOX_STYLE_GRADIENT_NONE;
-        strcpy(style.background_image, "tile.png");
+        background.gradient.kind = TBOX_STYLE_GRADIENT_NONE;
+        strcpy(background.image, "tile.png");
         style.background_size[1].kind = TBOX_STYLE_LENGTH_AUTO;
         style.background_repeat_mode_y = TBOX_STYLE_BACKGROUND_REPEAT_NO_REPEAT;
         style.background_repeat_y = false;
@@ -1743,8 +1747,10 @@ int tbox_test_render_run(void) {
      * retaining the element's own background clip. */
     {
         tbox_style style = tbox_test_render_default_style();
-        style.background_gradient.kind = TBOX_STYLE_GRADIENT_LINEAR;
-        style.background_gradient.stop_count = 2;
+        tbox_style_background_source background = { 0 };
+        style.background_source = &background;
+        background.gradient.kind = TBOX_STYLE_GRADIENT_LINEAR;
+        background.gradient.stop_count = 2;
         style.background_attachment_fixed = true;
         style.background_size_kind = TBOX_STYLE_BACKGROUND_SIZE_EXPLICIT;
         style.background_size[0] = style.background_size[1] = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, 20.0, 0.0, 0, 0.0, 0.0 };

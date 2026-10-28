@@ -53,6 +53,23 @@ static bool tbox_context_area_contains(const tbox_html_node *area, double x, dou
     return false;
 }
 
+const tbox_html_node *tbox_context_run_element(const tbox_context *ctx, const tbox_layout_box *box, const tbox_layout_text_run *run) {
+    const tbox_layout_box *scope = box;
+    while (scope != NULL && scope->node == NULL)
+        scope = scope->parent;
+    if (scope != NULL && run->style == scope->style)
+        return scope->node;
+    for (size_t i = 0; i < ctx->styles.count; i++) {
+        if (ctx->styles.items[i].style != run->style)
+            continue;
+        const tbox_html_node *node = ctx->styles.items[i].node;
+        for (const tbox_html_node *up = node; up != NULL; up = up->parent)
+            if (scope == NULL || up == scope->node)
+                return node;
+    }
+    return NULL;
+}
+
 const tbox_html_node *tbox_context_image_area_at(const tbox_context *ctx, const tbox_layout_box *box, double x, double y) {
     if (ctx == NULL || box == NULL || !tbox_context_box_point(box, &x, &y)) return NULL;
     for (size_t i = 0; i < box->text_run_count; i++) {
@@ -62,12 +79,11 @@ const tbox_html_node *tbox_context_image_area_at(const tbox_context *ctx, const 
         const tbox_html_node *img = NULL;
         if (box->node != NULL && box->node->type == TBOX_HTML_NODE_ELEMENT &&
             tbox_string_view_equal_cstr(box->node->element.tag_name, "img")) img = box->node;
-        else for (size_t s = 0; s < ctx->styles.count; s++)
-            if (&ctx->styles.items[s].style == run->style &&
-                tbox_string_view_equal_cstr(ctx->styles.items[s].node->element.tag_name, "img")) {
-                img = ctx->styles.items[s].node;
-                break;
-            }
+        else {
+            const tbox_html_node *element = tbox_context_run_element(ctx, box, run);
+            if (element != NULL && element->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(element->element.tag_name, "img"))
+                img = element;
+        }
         if (img == NULL) continue;
         const tbox_html_attribute *usemap = tbox_html_node_get_attribute(img, tbox_string_view_from_cstr("usemap"));
         if (usemap == NULL || usemap->value.size < 2 || usemap->value.data[0] != '#') continue;

@@ -18,6 +18,205 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Caminhada do estilo sem cópias para quem não muda (2026-10-27)
+
+Por elemento, a caminhada do estilo ainda gastava ~1600 instruções em
+`tbox_svg_is_element` (comparava cada ancestral com "svg" e
+"foreignobject" sem olhar o tamanho antes), ~930 em
+`tbox_style_generated_allowed` (21 nomes, chamada duas vezes) e ~940 em
+copiar o estilo do modelo para a pilha e compará-lo inteiro depois dos
+passos por nó. As duas primeiras comparam o tamanho antes das letras, e a
+segunda roda uma vez por elemento. Um elemento que compartilha e não tem
+passo por nó (contêiner de consulta, marcador, partes de controle; a
+condição de entrada de cada um, `tbox_style_has_node_steps`) usa o estilo
+do modelo como está, sem cópia nem comparação; os inline ainda ganham a
+cópia própria, feita direto do modelo. Um teste novo cobre o caso que a
+comparação quadro a quadro não pegava: um defeito injetado (nenhum passo por
+nó) passava pelos 9301 quadros; com o teste, um `<li>` que compartilha a
+cascata mas não o `::marker` falha. Medido por instruções (callgrind,
+Release): resolução de estilo −31% e frame −11,5% na tabela de 200 linhas;
+−19% e −11,6% na tabela com elementos inline; −3,3% e −2,6% no
+file-explorer. Os 9301 quadros de 131 documentos e os 142 da página
+adversária e da tabela com elementos inline são idênticos; testes e
+`tbox_frame_dump` passam com ASan+UBSan.
+
+## Após v20 — Índice de regras por pseudo-elemento (2026-10-27)
+
+Cada elemento rodava duas cascatas, de `::before` e de `::after`, porque a
+folha do user agent cita os dois (para `<q>`). Elas reuniam os candidatos
+de um índice comum a todos os pseudo-elementos (`::marker`,
+`::placeholder` e as partes dos controles são universais) e descartavam um
+por um. Cada nome de pseudo-elemento de uma folha agora tem as próprias
+regras e o próprio índice (`tbox_css_pseudo_element_rules`), e a cascata
+volta antes de alocar quando nenhum balde serve ao elemento
+(`tbox_css_cascade_may_match`). A busca do nome recebe uma
+`tbox_string_view` calculada uma vez por cascata. O índice comum saiu.
+Medido por instruções (callgrind, Release): resolução de estilo −20% e
+frame −8,4% na tabela de 200 linhas; −16% e −10% na tabela com elementos
+inline; file-explorer igual. Os 9301 quadros de 131 documentos e os 142 da
+página adversária e da tabela com elementos inline são idênticos; testes e
+`tbox_frame_dump` passam com ASan+UBSan.
+
+## Após v20 — Cascata pulada entre elementos iguais (passo C) (2026-10-27)
+
+Um elemento com a tag, os atributos e a classe do pai de um modelo do
+compartilhamento agora pula também a cascata, desde que as guardas do
+modelo valham para ele (ver
+[HTML e CSS](../07-html-e-css.md#compartilhamento-de-estilo) e
+[Decisões](decisoes.md)). O matcher marca as avaliações que leem posição,
+irmãos, filhos, estado ou identidade de nó
+(`tbox_css_selector_matches_traced`), e a cascata as guarda com o
+resultado, junto das condições de `@container`
+(`tbox_css_cascade_resolve_traced`, `tbox_css_cascade_guards_hold`). O
+modelo passou a guardar uma cópia inteira do resultado da cascata, em vez
+das declarações resumidas. A primeira versão marcava também os
+pseudo-elementos que aparecem em seletores da cascata do elemento (eles
+nunca casam ali) e não pulava nada; a lista passou a ser das pseudo-classes
+que leem contexto. Conferido com uma comparação temporária de cada cascata
+pulada contra a real (1 milhão de pulos em 133 documentos, incluindo uma
+página com `:nth-child` em ancestral, `+`, `~`, `:hover`, `:empty`,
+`@container`, `@scope` e `:checked`), removida depois; um defeito injetado
+(guardas sempre válidas) quebra o teste novo e a comparação quadro a
+quadro. Medido por instruções (callgrind, Release): resolução de estilo
+−40% e frame −22% na tabela de 200 linhas; −28% e −20% na tabela com
+elementos inline; file-explorer −3% e −2,6%. Memória igual. Os 9301 quadros
+de 131 documentos e os 142 da página adversária e da tabela com elementos
+inline são idênticos aos do HEAD; testes e `tbox_frame_dump` passam com
+ASan+UBSan.
+
+## Após v20 — Busca de face, comparação de tag e pseudo-elementos sem regra (2026-10-27)
+
+Duas funções que o layout chama várias vezes por caixa custavam caro:
+`tbox_layout_style_face` (~1260 instruções; a família era copiada com
+validação UTF-8 a cada busca, e as opções padrão de shaping eram zeradas a
+cada chamada) e `tbox_layout_is_inline_box` (~1850; cada nome de tag era
+comparado por uma função de outra unidade, com `strlen`). O cache de faces
+agora encontra uma face pela própria `tbox_string_view` da lista de
+famílias, com o tamanho guardado na entrada, e só copia ao criar uma; as
+opções padrão são uma constante. `tbox_layout_tag` passou a ser `inline` no
+header interno, comparando o tamanho antes dos bytes. Medido por instruções
+(callgrind, Release): layout −24% na tabela de 200 linhas e −20% na
+tabela com elementos inline; frame −9% e −4,5%.
+
+No estilo, cada elemento rodava a cascata de `::first-letter` mesmo sem
+nenhuma regra para ele: o atalho da cascata de pseudo-elementos só valia
+quando a folha não tinha regra de pseudo-elemento nenhuma, e a folha do
+user agent tem várias. Cada folha agora guarda os nomes de pseudo-elemento
+que suas regras citam (`tbox_css_stylesheet_names_pseudo_element`, lidos
+como a cascata os compara), e a cascata de um pseudo-elemento que nenhuma
+folha cita volta logo. `tbox_string_view_equal_cstr` compara byte a byte
+sem `strlen`, saindo na primeira diferença (listas de nomes de tag, como a
+de `tbox_style_generated_allowed`). Resolução de estilo −13% e frame mais
+−9% na tabela de 200 linhas. Os 9301 quadros de 131 documentos são
+idênticos; testes e `tbox_frame_dump` passam com ASan+UBSan.
+
+## Após v20 — Texto da célula medido uma vez (2026-10-27)
+
+Cada célula de tabela coletava e media suas palavras duas vezes por frame:
+na medida intrínseca das colunas e de novo no layout do texto. A medida
+agora guarda as palavras no rascunho da tabela e o layout da célula as
+copia (`tbox_layout_premeasured`, ver
+[Layout e pintura](../08-layout-e-pintura.md#rascunho-do-layout) e
+[Decisões](decisoes.md)); células com inline-block, float ou imagem
+continuam coletando de novo. O shaping já era feito uma vez, pelo cache de
+runs. Conferido com uma comparação temporária palavra a palavra nos 131
+documentos e na tabela com elementos inline (528 mil caixas, todas
+idênticas byte a byte fora do ponteiro do texto, que é uma cópia com o
+mesmo conteúdo), removida depois. Medido por instruções (callgrind,
+Release, o relógio da máquina oscila ±15%): layout −9,6% na tabela de 200
+linhas e na tabela com elementos inline, frame −4% e −2,4%. Os 9301
+quadros de 131 documentos são idênticos; testes e `tbox_frame_dump` passam
+com ASan+UBSan.
+
+## Após v20 — Display list fora da arena do frame (2026-10-27)
+
+A display list crescia num vetor na arena do frame, e cada vez que dobrava
+deixava a cópia anterior lá: 38 MB para 10 MB de ops numa tabela de 1000
+linhas com um elemento inline por célula. Ela passou a crescer num
+rascunho e é copiada no tamanho exato ao final (ver
+[Layout e pintura](../08-layout-e-pintura.md#da-caixa-ao-desenho)); os
+vetores de cada contexto de empilhamento e o espaço de troca do
+`box-reflect` também foram para o rascunho, e as marcas de
+`text-emphasis` moldam os glifos na arena passada, não na do vetor. O
+contexto copiava a lista inteira duas vezes por frame, para pôr as barras
+de rolagem (mesmo sem nenhuma) e os controles por cima; agora pinta os dois
+num vetor à parte e junta numa cópia exata, só se houver algo. Medido em
+Release na tabela com elementos inline: memória da display list de 38 para
+9,9 MB, arena do frame de 76 para 38 MB, RSS de 117 para 97 MB; tabela
+simples com 1000 linhas, arena de 8,1 para 7,7 MB. O tempo não mudou além
+do ruído. Os 9301 quadros de 131 documentos são idênticos; testes e
+`tbox_frame_dump` passam com ASan+UBSan.
+
+## Após v20 — Dados raros fora do `tbox_style` (2026-10-27)
+
+`tbox_style` caiu de 9688 para 4088 bytes: listas de `transition` e
+`animation`, `list-style-image`, `list-style-type` personalizado e
+`marker-*`, imagem e gradiente da 1ª camada de fundo, `transform` com
+`offset-position`/`offset-anchor`, `font-feature-settings` e
+`font-palette`, `scroll-margin`/`scroll-padding`, as linhas de grid do item
+e as sobreposições de `::marker` viraram grupos fora de linha, no padrão
+dos já existentes (ver
+[Guia da API](../03-guia-da-api.md#grupos-fora-de-linha-de-tbox_style) e
+[Decisões](decisoes.md)); `grid_units` foi para `grid_templates`.
+`tbox_style_animatable_write`, `tbox_style_resolve_paint`,
+`tbox_style_resolve_opentype`, `tbox_style_parse_opentype` e
+`tbox_layout_frame_remap` ganharam o parâmetro de que precisam (arena ou
+grupo). Medido em Release com uma tabela de 1000 linhas e um `<span>`,
+`<a>` ou `<b>` em cada célula (5000 estilos inline próprios): memória do
+estilo de ~49 MB (pelo tamanho antigo) para 20,6 MB; contra o HEAD de
+antes do compartilhamento por ponteiro, estilo de 102,6 para 20,6 MB,
+arena do frame de 179 para 76 MB, RSS de 218 para 117 MB, frame de ~97
+para ~77 ms. A tabela simples não muda (estilo já compartilhado, 0,5 MB);
+o frame do file-explorer fica ~4% abaixo do HEAD (12,6 → 12,1 ms,
+alternando as duas builds; perto do ruído). Os 9301 quadros de 131 documentos
+são idênticos; testes e `tbox_frame_dump` passam com ASan+UBSan.
+
+## Após v20 — Rascunho do layout fora da arena do frame (2026-10-27)
+
+Medido por pilha de chamada de cada alocação: ~60% da memória do layout de
+uma tabela era trabalho intermediário que ficava na `frame_arena` até o
+frame seguinte (palavras montadas duas vezes por célula, saída do shaping
+copiada para o run, cópia das palavras no split, linhas, vetores que dobram).
+O texto de cada caixa, a grade de cada tabela e as medidas de tamanho
+intrínseco passaram a usar uma arena de rascunho local, destruída ao
+retornar; runs, glifos e bordas colapsadas são copiados para a arena do
+frame no tamanho exato (ver
+[Layout e pintura](../08-layout-e-pintura.md#rascunho-do-layout) e
+[Decisões](decisoes.md)). `tbox_layout_split_overlong_words` só copia as
+palavras quando alguma é quebrada. `tbox_layout_push_run` e
+`tbox_layout_ellipsize_line` recebem a arena onde os glifos ficam, em vez
+de usar a do vetor de runs. Medido em Release (tabela de 5 colunas,
+`border-collapse`): memória do layout com 1000 linhas de 27,5 para 6,1 MB,
+arena do frame de 30 para 8,1 MB, RSS de 48 para 27 MB; com 2000 linhas,
+layout de 55 para 12 MB e RSS de 81 para 42 MB. Tempo do layout com 1000
+linhas de ~21 para ~18 ms; file-explorer igual, dentro do ruído (~13,7 ms). Os 9301 quadros de 131 documentos são idênticos
+aos de antes; testes e o `tbox_frame_dump` de todos os documentos passam com
+ASan+UBSan, que acusaria um ponteiro da árvore para um rascunho já liberado.
+
+## Após v20 — Um `tbox_style` para elementos iguais (2026-10-27)
+
+O compartilhamento de estilo poupava a conversão, mas cada entrada da
+tabela ainda guardava uma cópia de 9688 bytes do estilo do modelo:
+~56 MiB com 1000 linhas de tabela. `tbox_style_entry.style` passou a ser
+`const tbox_style *`; elementos em nível de bloco iguais ao modelo apontam
+para o estilo dele, e quem altera uma entrada passa por
+`tbox_style_table_mutable`, que copia antes (ver
+[HTML e CSS](../07-html-e-css.md#compartilhamento-de-estilo) e
+[Decisões](decisoes.md)). O cursor e o image map, que achavam o elemento
+de um run pelo endereço do estilo, agora procuram dentro do elemento da
+caixa (`tbox_context_run_element`). Medido em Release (tabela de 5 colunas,
+`border-collapse`): memória do estilo com 1000 linhas de 55,9 para 0,6 MB,
+arena do frame de 85 para 30 MB, RSS de 103 para 48 MB, frame de 50 para
+35 ms; com 2000 linhas, arena de 169 para 59 MB, RSS de 192 para 81 MB,
+frame de 118 para 83 ms. File-explorer: frame igual (12,4 ms), estilo
+isolado de 9,8 para 11,1 ms. Os 9301 quadros de 131 documentos (fixtures,
+exemplos e dois documentos com linhas iguais com `transition`, `:hover`,
+`::first-letter`, spans irmãos com borda, marcadores, `::before`, container
+queries, animação e image map) são idênticos aos de antes; compartilhar
+também os inline faz a comparação acusar o documento dos spans. Teste novo
+em `tests/style/test_style.c`, conferido contra os inline compartilhados,
+contra o modelo gravável e contra a cópia esquecida no acessor.
+
 ## Após v20 — Ferramentas de medição: `tbox_bench` e `tbox_frame_dump` (2026-10-26)
 
 As medições e verificações das otimizações de tabelas grandes eram feitas

@@ -133,7 +133,7 @@ static bool tbox_animation_progress(const tbox_style_animation *animation, doubl
 
 /* Writes `property` at directed progress `progress` between the keyframes
  * that name it (and the implicit 0%/100% ones, from `base`). */
-static void tbox_animation_apply_property(const tbox_animation_state *state, const tbox_style_animation *animation, tbox_style_animatable property, double progress, const double base[TBOX_STYLE_ANIM_VALUE_SIZE], tbox_style *style) {
+static void tbox_animation_apply_property(const tbox_animation_state *state, const tbox_style_animation *animation, tbox_style_animatable property, double progress, const double base[TBOX_STYLE_ANIM_VALUE_SIZE], tbox_style *style, tbox_arena *arena) {
     unsigned long long bit = 1ull << property;
     const double *from = base, *to = NULL;
     double from_offset = 0.0, to_offset = 1.0;
@@ -159,7 +159,7 @@ static void tbox_animation_apply_property(const tbox_animation_state *state, con
     double value[TBOX_STYLE_ANIM_VALUE_SIZE];
     if (tbox_style_animatable_interpolable(property, from, to)) tbox_style_animatable_mix(property, from, to, local, value);
     else memcpy(value, local < 0.5 ? from : to, sizeof(value));
-    tbox_style_animatable_write(style, property, value);
+    tbox_style_animatable_write(style, property, value, arena);
 }
 
 void tbox_context_apply_animations(tbox_context *ctx, const tbox_css_cascade_source *sources, size_t source_count, double viewport_width, double viewport_height) {
@@ -167,13 +167,14 @@ void tbox_context_apply_animations(tbox_context *ctx, const tbox_css_cascade_sou
     for (tbox_animation_state *state = ctx->animations; state != NULL; state = state->next) state->seen = false;
     for (size_t i = 0; i < ctx->styles.count; i++) {
         tbox_style_entry *entry = &ctx->styles.items[i];
-        if (entry->style.generated != 0 || entry->style.animation_count == 0 || entry->style.display == TBOX_STYLE_DISPLAY_NONE)
+        if (entry->style->generated != 0 || tbox_style_animation_lists_of(entry->style)->animation_count == 0 || entry->style->display == TBOX_STYLE_DISPLAY_NONE)
             continue;
         double base[TBOX_STYLE_ANIM_COUNT][TBOX_STYLE_ANIM_VALUE_SIZE];
         for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
-            tbox_style_animatable_read(&entry->style, (tbox_style_animatable)p, base[p]);
-        for (size_t a = 0; a < entry->style.animation_count; a++) {
-            const tbox_style_animation *animation = &entry->style.animations[a];
+            tbox_style_animatable_read(entry->style, (tbox_style_animatable)p, base[p]);
+        const tbox_style_animation_lists *lists = tbox_style_animation_lists_of(entry->style);
+        for (size_t a = 0; a < lists->animation_count; a++) {
+            const tbox_style_animation *animation = &lists->animations[a];
             const tbox_css_keyframes_rule *rule = tbox_animation_find_rule(sources, source_count, animation->name, viewport_width, viewport_height, ctx->prefers_reduced_motion);
             if (rule == NULL)
                 continue;
@@ -202,8 +203,9 @@ void tbox_context_apply_animations(tbox_context *ctx, const tbox_css_cascade_sou
             if (!effect) continue;
             unsigned long long animated = 0;
             for (size_t f = 0; f < state->frame_count; f++) animated |= state->frames[f].mask;
-            for (int p = 0; p < TBOX_STYLE_ANIM_COUNT; p++)
-                if (animated & (1ull << p)) tbox_animation_apply_property(state, animation, (tbox_style_animatable)p, progress, base[p], &entry->style);
+            tbox_style *own = animated != 0 ? tbox_style_table_mutable(&ctx->styles, i, &ctx->frame_arena) : NULL;
+            for (int p = 0; own != NULL && p < TBOX_STYLE_ANIM_COUNT; p++)
+                if (animated & (1ull << p)) tbox_animation_apply_property(state, animation, (tbox_style_animatable)p, progress, base[p], own, &ctx->frame_arena);
         }
     }
     tbox_animation_state **link = &ctx->animations;

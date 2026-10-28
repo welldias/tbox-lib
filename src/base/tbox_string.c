@@ -23,7 +23,13 @@ bool tbox_string_view_equal(tbox_string_view a, tbox_string_view b) {
 }
 
 bool tbox_string_view_equal_cstr(tbox_string_view view, const char *cstr) {
-    return tbox_string_view_equal(view, tbox_string_view_from_cstr(cstr));
+    /* Byte by byte, without strlen: most callers test a name against a
+     * list, and a mismatch shows at the first byte. A NUL in `cstr` ends it
+     * (so a view holding a NUL there differs), as strlen would. */
+    for (size_t i = 0; i < view.size; i++)
+        if (cstr[i] == '\0' || cstr[i] != view.data[i])
+            return false;
+    return cstr[view.size] == '\0';
 }
 
 tbox_string_view tbox_string_view_from_cstr(const char *nul_terminated) {

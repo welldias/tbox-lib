@@ -213,7 +213,24 @@ static bool tbox_css_selector_matches_lang(const tbox_html_node *node, tbox_stri
     return false;
 }
 
-static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_selector *item, const tbox_html_node *node, const tbox_html_node *root) {
+/* Whether matching the pseudo-class `name` below reads more than the
+ * element's and its ancestors' tags and attributes (see
+ * tbox_css_selector_matches_traced): its position, its children, runtime
+ * state. A pseudo-class added below that reads any of those belongs here;
+ * the others (:not, :scope, :lang, :required, :link...) and those that
+ * never match don't. */
+static bool tbox_css_selector_pseudo_reads_context(tbox_string_view name) {
+    static const char *const names[] = { "first-child", "last-child", "only-child", "root", "first-of-type", "last-of-type", "only-of-type", "nth-child", "nth-of-type",
+                                         "nth-last-child", "nth-last-of-type", "empty", "disabled", "enabled", "hover", "active", "focus", "focus-visible", "focus-within", "checked" };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (tbox_string_view_equal_ascii_ci(name, tbox_string_view_from_cstr(names[i])))
+            return true;
+    return false;
+}
+
+static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_selector *item, const tbox_html_node *node, const tbox_html_node *root, bool *contextual) {
+    if (contextual != NULL && item->kind == TBOX_CSS_SIMPLE_SELECTOR_PSEUDO && tbox_css_selector_pseudo_reads_context(item->name))
+        *contextual = true;
     switch (item->kind) {
     case TBOX_CSS_SIMPLE_SELECTOR_TYPE:
         return node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_ascii_ci(node->element.tag_name, item->name);
@@ -269,7 +286,7 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
             node->type == TBOX_HTML_NODE_ELEMENT && node->parent != NULL && node->parent->type == TBOX_HTML_NODE_DOCUMENT;
         if (tbox_string_view_equal_cstr(item->name, "not")) {
             return item->negated_selector != NULL && node->type == TBOX_HTML_NODE_ELEMENT &&
-                   !tbox_css_selector_matches_simple_selector(item->negated_selector, node, root);
+                   !tbox_css_selector_matches_simple_selector(item->negated_selector, node, root, contextual);
         }
         if (tbox_string_view_equal_cstr(item->name, "lang"))
             return tbox_css_selector_matches_lang(node, item->pseudo_argument);
@@ -378,9 +395,9 @@ static bool tbox_css_selector_matches_simple_selector(const tbox_css_simple_sele
     return false;
 }
 
-static bool tbox_css_selector_matches_compound(const tbox_css_simple_selector *items, size_t start, size_t end, const tbox_html_node *node, const tbox_html_node *root) {
+static bool tbox_css_selector_matches_compound(const tbox_css_simple_selector *items, size_t start, size_t end, const tbox_html_node *node, const tbox_html_node *root, bool *contextual) {
     for (size_t i = start; i < end; i++) {
-        if (!tbox_css_selector_matches_simple_selector(&items[i], node, root)) {
+        if (!tbox_css_selector_matches_simple_selector(&items[i], node, root, contextual)) {
             return false;
         }
     }
@@ -397,7 +414,7 @@ static bool tbox_css_selector_matches_compound(const tbox_css_simple_selector *i
  * one ancestor to the previous compound does not guarantee the rest of the
  * chain resolves from there, so this must keep trying ancestors rather than
  * stopping at the first one that matches). */
-static bool tbox_css_selector_matches_suffix(const tbox_css_simple_selector *items, size_t count, const tbox_html_node *node, const tbox_html_node *root, bool relative) {
+static bool tbox_css_selector_matches_suffix(const tbox_css_simple_selector *items, size_t count, const tbox_html_node *node, const tbox_html_node *root, bool relative, bool *contextual) {
     if (relative && node == root) return false;
     if (count == 0) {
         return true;
@@ -411,30 +428,34 @@ static bool tbox_css_selector_matches_suffix(const tbox_css_simple_selector *ite
         compound_start--;
     }
 
-    if (!tbox_css_selector_matches_compound(items, compound_start, count, node, root)) {
+    if (!tbox_css_selector_matches_compound(items, compound_start, count, node, root, contextual)) {
         return false;
     }
     if (compound_start == 0) {
         return true;
     }
 
+    /* A sibling combinator reads the element's position among its
+     * siblings, which its tag and attributes don't tell. */
+    if (contextual != NULL && (items[compound_start].combinator_before == TBOX_CSS_COMBINATOR_ADJACENT_SIBLING || items[compound_start].combinator_before == TBOX_CSS_COMBINATOR_GENERAL_SIBLING))
+        *contextual = true;
     switch (items[compound_start].combinator_before) {
     case TBOX_CSS_COMBINATOR_CHILD:
-        return tbox_css_selector_matches_suffix(items, compound_start, node->parent, root, relative);
+        return tbox_css_selector_matches_suffix(items, compound_start, node->parent, root, relative, contextual);
 
     case TBOX_CSS_COMBINATOR_ADJACENT_SIBLING:
-        return tbox_css_selector_matches_suffix(items, compound_start, tbox_css_selector_prev_element_sibling(node), root, relative);
+        return tbox_css_selector_matches_suffix(items, compound_start, tbox_css_selector_prev_element_sibling(node), root, relative, contextual);
 
     case TBOX_CSS_COMBINATOR_GENERAL_SIBLING:
         for (const tbox_html_node *sibling = tbox_css_selector_prev_element_sibling(node); sibling != NULL;
              sibling = tbox_css_selector_prev_element_sibling(sibling)) {
-            if (tbox_css_selector_matches_suffix(items, compound_start, sibling, root, relative)) return true;
+            if (tbox_css_selector_matches_suffix(items, compound_start, sibling, root, relative, contextual)) return true;
         }
         return false;
 
     case TBOX_CSS_COMBINATOR_DESCENDANT:
         for (const tbox_html_node *ancestor = node->parent; ancestor != NULL; ancestor = ancestor->parent) {
-            if (tbox_css_selector_matches_suffix(items, compound_start, ancestor, root, relative)) {
+            if (tbox_css_selector_matches_suffix(items, compound_start, ancestor, root, relative, contextual)) {
                 return true;
             }
             if (relative && ancestor == root) break;
@@ -455,6 +476,10 @@ bool tbox_css_selector_matches(const tbox_css_selector *selector, const tbox_htm
 }
 
 bool tbox_css_selector_matches_scoped(const tbox_css_selector *selector, const tbox_html_node *node, const tbox_html_node *root) {
+    return tbox_css_selector_matches_traced(selector, node, root, NULL);
+}
+
+bool tbox_css_selector_matches_traced(const tbox_css_selector *selector, const tbox_html_node *node, const tbox_html_node *root, bool *contextual) {
     if (selector == NULL || node == NULL) return false;
     bool relative = root != NULL;
     for (size_t i = 0; i < selector->simple_selector_count; i++) {
@@ -463,34 +488,38 @@ bool tbox_css_selector_matches_scoped(const tbox_css_selector *selector, const t
             (tbox_string_view_equal_cstr(item->name, "scope") ||
              (item->negated_selector != NULL && item->negated_selector->kind == TBOX_CSS_SIMPLE_SELECTOR_PSEUDO && tbox_string_view_equal_cstr(item->negated_selector->name, "scope")))) relative = false;
     }
-    return tbox_css_selector_matches_suffix(selector->simple_selectors, selector->simple_selector_count, node, root, relative);
+    return tbox_css_selector_matches_suffix(selector->simple_selectors, selector->simple_selector_count, node, root, relative, contextual);
 }
 
 static bool tbox_css_selector_scope_bound_matches(const tbox_css_selector *selectors, size_t count,
-    const tbox_html_node *node, const tbox_html_node *root) {
+    const tbox_html_node *node, const tbox_html_node *root, bool *contextual) {
     for (size_t i = 0; i < count; i++)
-        if (tbox_css_selector_matches_scoped(&selectors[i], node, root)) return true;
+        if (tbox_css_selector_matches_traced(&selectors[i], node, root, contextual)) return true;
     return false;
 }
 
 static bool tbox_css_selector_scope_instance(const tbox_css_scope *scope, const tbox_html_node *node,
-    const tbox_html_node *root, unsigned depth) {
+    const tbox_html_node *root, unsigned depth, bool *contextual) {
     if (depth > 64 || root->type != TBOX_HTML_NODE_ELEMENT) return false;
     bool start = false;
     if (scope->parent != NULL) {
         for (const tbox_html_node *outer = root; outer != NULL; outer = outer->parent) {
-            if (!tbox_css_selector_scope_instance(scope->parent, node, outer, depth + 1)) continue;
-            if (scope->start_count > 0 ? tbox_css_selector_scope_bound_matches(scope->start, scope->start_count, root, outer) : root == outer) {
+            if (!tbox_css_selector_scope_instance(scope->parent, node, outer, depth + 1, contextual)) continue;
+            if (scope->start_count > 0 ? tbox_css_selector_scope_bound_matches(scope->start, scope->start_count, root, outer, contextual) : root == outer) {
                 start = true;
                 break;
             }
         }
-    } else if (scope->start_count > 0) start = tbox_css_selector_scope_bound_matches(scope->start, scope->start_count, root, NULL);
-    else if (scope->implicit_root != NULL) start = root == scope->implicit_root;
+    } else if (scope->start_count > 0) start = tbox_css_selector_scope_bound_matches(scope->start, scope->start_count, root, NULL, contextual);
+    else if (scope->implicit_root != NULL) {
+        /* One node's identity, not its tag and attributes. */
+        if (contextual != NULL) *contextual = true;
+        start = root == scope->implicit_root;
+    }
     else start = root->parent != NULL && root->parent->type == TBOX_HTML_NODE_DOCUMENT;
     if (!start) return false;
     for (const tbox_html_node *n = node; n != NULL; n = n->parent) {
-        if (tbox_css_selector_scope_bound_matches(scope->limit, scope->limit_count, n, root)) return false;
+        if (tbox_css_selector_scope_bound_matches(scope->limit, scope->limit_count, n, root, contextual)) return false;
         if (n == root) break;
     }
     return true;
@@ -499,11 +528,11 @@ static bool tbox_css_selector_scope_instance(const tbox_css_scope *scope, const 
 /* Enumerate root instances, including overlapping scopes. Parent scopes
  * must enclose both this root and the subject; limits are exclusive. */
 bool tbox_css_selector_scope_matches(const tbox_css_scope *scope, const tbox_html_node *node,
-    const tbox_css_selector *selector, size_t *hops) {
-    if (scope == NULL) return tbox_css_selector_matches(selector, node);
+    const tbox_css_selector *selector, size_t *hops, bool *contextual) {
+    if (scope == NULL) return node != NULL && tbox_css_selector_matches_traced(selector, node, NULL, contextual);
     size_t distance = 1;
     for (const tbox_html_node *root = node; root != NULL; root = root->parent, distance++) {
-        if (!tbox_css_selector_scope_instance(scope, node, root, 0) || !tbox_css_selector_matches_scoped(selector, node, root)) continue;
+        if (!tbox_css_selector_scope_instance(scope, node, root, 0, contextual) || !tbox_css_selector_matches_traced(selector, node, root, contextual)) continue;
         *hops = distance;
         return true;
     }
@@ -515,7 +544,7 @@ static void tbox_css_selector_collect_recursive(const tbox_html_node *node, cons
         if (child->type == TBOX_HTML_NODE_ELEMENT) {
             for (size_t i = 0; i < selector_count; i++) {
                 size_t hops;
-                if (tbox_css_selector_scope_matches(scope, child, &selectors[i], &hops)) {
+                if (tbox_css_selector_scope_matches(scope, child, &selectors[i], &hops, NULL)) {
                     *(const tbox_html_node **)tbox_vector_push(out) = child;
                     break;
                 }

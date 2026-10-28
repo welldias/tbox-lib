@@ -31,7 +31,7 @@ bool tbox_layout_frame_change(const tbox_style *style) {
  * lands on, and since every vertical frame swaps the axes, widths become
  * heights. Backgrounds, shadows and transforms keep their screen values
  * (the transform is turned in tbox_layout_frame_transform). */
-void tbox_layout_frame_remap(tbox_style *out, const tbox_style *physical, tbox_style_frame frame) {
+void tbox_layout_frame_remap(tbox_arena *arena, tbox_style *out, const tbox_style *physical, tbox_style_frame frame) {
     *out              = *physical;
     out->layout_frame = frame;
     if (frame == TBOX_STYLE_FRAME_NONE)
@@ -41,11 +41,20 @@ void tbox_layout_frame_remap(tbox_style *out, const tbox_style *physical, tbox_s
         out->margin[i]          = physical->margin[p];
         out->padding[i]         = physical->padding[p];
         out->offset[i]          = physical->offset[p];
-        out->scroll_margin[i]   = physical->scroll_margin[p];
-        out->scroll_padding[i]  = physical->scroll_padding[p];
         out->border_widths[i]   = physical->border_per_side ? physical->border_widths[p] : physical->border_width;
         out->border_styles[i]   = tbox_style_border_side_style(physical, p);
         out->border_colors[i]   = tbox_style_border_side_color(physical, p);
+    }
+    if (physical->scroll_spacing != NULL) {
+        tbox_style_scroll_spacing *scroll = tbox_arena_alloc(arena, sizeof(*scroll));
+        if (scroll != NULL) {
+            for (size_t i = 0; i < 4; i++) {
+                size_t p                 = tbox_style_frame_side(frame, i);
+                scroll->scroll_margin[i]  = physical->scroll_spacing->scroll_margin[p];
+                scroll->scroll_padding[i] = physical->scroll_spacing->scroll_padding[p];
+            }
+            out->scroll_spacing = scroll;
+        }
     }
     out->border_per_side = true;
     out->border_width    = out->border_widths[0];
@@ -89,17 +98,17 @@ static size_t tbox_layout_count_elements(const tbox_html_node *node) {
     return count;
 }
 
-static void tbox_layout_fill_frame_styles(const tbox_html_node *node, const tbox_style_table *root, tbox_style_frame frame, tbox_style_table *out) {
+static void tbox_layout_fill_frame_styles(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *root, tbox_style_frame frame, tbox_style_table *out) {
     if (node->type == TBOX_HTML_NODE_ELEMENT) {
         const tbox_style *physical = tbox_style_table_find(root, node);
-        if (physical != NULL) {
-            tbox_style_entry *entry = &out->items[out->count++];
-            entry->node             = node;
-            tbox_layout_frame_remap(&entry->style, physical, frame);
+        tbox_style *style          = physical != NULL ? tbox_arena_alloc(arena, sizeof(*style)) : NULL;
+        if (style != NULL) {
+            tbox_layout_frame_remap(arena, style, physical, frame);
+            out->items[out->count++] = (tbox_style_entry){ node, style, true };
         }
     }
     for (const tbox_html_node *child = node->first_child; child != NULL; child = child->next_sibling)
-        tbox_layout_fill_frame_styles(child, root, frame, out);
+        tbox_layout_fill_frame_styles(arena, child, root, frame, out);
 }
 
 /* The styles of `node`'s subtree turned into `frame`, over `styles`. */
@@ -112,7 +121,7 @@ static tbox_style_table *tbox_layout_frame_styles(tbox_arena *arena, const tbox_
     if (count > 0 && table->items == NULL)
         return NULL;
     table->fallback = styles;
-    tbox_layout_fill_frame_styles(node, tbox_layout_root_table(styles), frame, table);
+    tbox_layout_fill_frame_styles(arena, node, tbox_layout_root_table(styles), frame, table);
     return table;
 }
 
@@ -152,7 +161,7 @@ tbox_layout_box *tbox_layout_build_orthogonal(tbox_arena *arena, const tbox_html
     tbox_style *inside = NULL;
     for (size_t i = 0; i < frame_styles->count; i++)
         if (frame_styles->items[i].node == node)
-            inside = &frame_styles->items[i].style;
+            inside = tbox_style_table_mutable(frame_styles, i, arena);
     if (inside == NULL)
         return NULL;
     if (inside->position != TBOX_STYLE_POSITION_STATIC)
@@ -197,7 +206,7 @@ tbox_layout_box *tbox_layout_build_orthogonal(tbox_arena *arena, const tbox_html
         inner_forced.width     = width - margins > 0.0 ? width - margins : 0.0;
     }
     tbox_rect origin = { 0.0, 0.0, inner_container.width, inner_container.height };
-    tbox_layout_positioned_context inner_context = { origin, origin, NULL };
+    tbox_layout_positioned_context inner_context = { origin, origin, NULL, NULL };
     tbox_layout_box *content = tbox_layout_build_element_sized(arena, node, frame_styles, fonts, images, inner_container, 0.0, inner_context, NULL, 0,
                                                                inner_forced.has_width || inner_forced.has_height ? &inner_forced : NULL);
     if (content == NULL)

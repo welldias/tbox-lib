@@ -580,9 +580,12 @@ static bool tbox_grid_apply(const tbox_css_resolved_declaration *decl, const tbo
     return true;
 }
 
+/* Whether `line` is `auto`, the initial value. */
+static bool tbox_grid_line_auto(const tbox_style_grid_line *line) {
+    return line->number == 0 && !line->span && line->name[0] == '\0';
+}
+
 void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox_style_units *units, tbox_style *style, tbox_arena *arena) {
-    for (int i = 0; i < 4; i++)
-        style->grid_units[i] = (tbox_style_grid_units){ units->font_size, units->root_font_size, units->viewport_width, units->viewport_height };
     static const char *const properties[] = { "grid", "grid-template", "grid-template-columns", "grid-template-rows", "grid-template-areas", "grid-auto-columns", "grid-auto-rows", "grid-auto-flow", "grid-area", "grid-row", "grid-column", "grid-row-start", "grid-row-end", "grid-column-start", "grid-column-end" };
     const tbox_css_resolved_declaration *decls[sizeof(properties) / sizeof(properties[0])];
     size_t count = 0;
@@ -608,10 +611,11 @@ void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox
     memcpy(values.grid_auto_rows, templates->grid_auto_rows, sizeof(values.grid_auto_rows));
     values.grid_auto_flow_column = style->grid_auto_flow_column;
     values.grid_auto_flow_dense  = style->grid_auto_flow_dense;
-    values.grid_row_start        = style->grid_row_start;
-    values.grid_row_end          = style->grid_row_end;
-    values.grid_column_start     = style->grid_column_start;
-    values.grid_column_end       = style->grid_column_end;
+    const tbox_style_grid_placement *placement = tbox_style_grid_placement_of(style);
+    values.grid_row_start                      = placement->grid_row_start;
+    values.grid_row_end                        = placement->grid_row_end;
+    values.grid_column_start                   = placement->grid_column_start;
+    values.grid_column_end                     = placement->grid_column_end;
     for (size_t i = 0; i < count; i++) {
         tbox_grid_values candidate = values;
         if (tbox_grid_apply(decls[i], units, &candidate))
@@ -619,10 +623,15 @@ void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox
     }
     style->grid_auto_flow_column = values.grid_auto_flow_column;
     style->grid_auto_flow_dense  = values.grid_auto_flow_dense;
-    style->grid_row_start        = values.grid_row_start;
-    style->grid_row_end          = values.grid_row_end;
-    style->grid_column_start     = values.grid_column_start;
-    style->grid_column_end       = values.grid_column_end;
+    /* All four auto is the initial (NULL) group. */
+    style->grid_placement = NULL;
+    if (!tbox_grid_line_auto(&values.grid_row_start) || !tbox_grid_line_auto(&values.grid_row_end) || !tbox_grid_line_auto(&values.grid_column_start) || !tbox_grid_line_auto(&values.grid_column_end)) {
+        tbox_style_grid_placement *copy = tbox_arena_alloc(arena, sizeof(*copy));
+        if (copy != NULL) {
+            *copy                 = (tbox_style_grid_placement){ values.grid_row_start, values.grid_row_end, values.grid_column_start, values.grid_column_end };
+            style->grid_placement = copy;
+        }
+    }
     /* No track text at all is the initial (NULL) group. */
     style->grid_templates = NULL;
     if (values.grid_template_columns[0] != '\0' || values.grid_template_rows[0] != '\0' || values.grid_template_areas[0] != '\0' || values.grid_auto_columns[0] != '\0' || values.grid_auto_rows[0] != '\0') {
@@ -633,6 +642,8 @@ void tbox_style_resolve_grid(const tbox_css_computed_style *computed, const tbox
             memcpy(copy->grid_template_areas, values.grid_template_areas, sizeof(copy->grid_template_areas));
             memcpy(copy->grid_auto_columns, values.grid_auto_columns, sizeof(copy->grid_auto_columns));
             memcpy(copy->grid_auto_rows, values.grid_auto_rows, sizeof(copy->grid_auto_rows));
+            for (int i = 0; i < 4; i++)
+                copy->grid_units[i] = (tbox_style_grid_units){ units->font_size, units->root_font_size, units->viewport_width, units->viewport_height };
             style->grid_templates = copy;
         }
     }

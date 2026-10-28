@@ -4,11 +4,13 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stddef.h>
 #include <string.h>
 
 #include <tbox/style.h>
 
 #include "base/tbox_string.h"
+#include "style/tbox_style_internal.h"
 
 #define BIT(p) (1ull << (p))
 #define SIDES(first) (BIT(first) | BIT((first) + 1) | BIT((first) + 2) | BIT((first) + 3))
@@ -352,7 +354,7 @@ void tbox_style_animatable_read(const tbox_style *style, tbox_style_animatable p
         break;
     case KIND_OFFSET_POSITION: {
         bool anchor = property <= TBOX_STYLE_ANIM_OFFSET_ANCHOR_Y;
-        const tbox_style_offset_position *p = anchor ? &style->offset_anchor : &style->offset_position;
+        const tbox_style_offset_position *p = anchor ? &tbox_style_transforms_of(style)->offset_anchor : &tbox_style_transforms_of(style)->offset_position;
         size_t axis = (size_t)(property - (anchor ? TBOX_STYLE_ANIM_OFFSET_ANCHOR_X : TBOX_STYLE_ANIM_OFFSET_POSITION_X));
         const tbox_style_length *l = &p->position[axis];
         out[0] = p->mode;
@@ -385,7 +387,7 @@ void tbox_style_animatable_read(const tbox_style *style, tbox_style_animatable p
         out[1] = style->has_scale ? style->scale[1] : 1.0;
         break;
     case KIND_TRANSFORM: {
-        const tbox_style_transform_function *f = &style->transforms[property - TBOX_STYLE_ANIM_TRANSFORM_0];
+        const tbox_style_transform_function *f = &tbox_style_transforms_of(style)->functions[property - TBOX_STYLE_ANIM_TRANSFORM_0];
         out[0] = (double)f->kind;
         for (int i = 0; i < 6; i++)
             out[1 + i] = f->v[i];
@@ -394,7 +396,7 @@ void tbox_style_animatable_read(const tbox_style *style, tbox_style_animatable p
     }
 }
 
-void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable property, const double value[TBOX_STYLE_ANIM_VALUE_SIZE]) {
+void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable property, const double value[TBOX_STYLE_ANIM_VALUE_SIZE], tbox_arena *arena) {
     if (style == NULL || property >= TBOX_STYLE_ANIM_COUNT)
         return;
     switch (tbox_style_animatable_kind_of(property)) {
@@ -447,11 +449,13 @@ void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable proper
         break;
     case KIND_OFFSET_POSITION: {
         bool anchor = property <= TBOX_STYLE_ANIM_OFFSET_ANCHOR_Y;
-        tbox_style_offset_position *p = anchor ? &style->offset_anchor : &style->offset_position;
+        size_t offset = anchor ? offsetof(tbox_style_transforms, offset_anchor) : offsetof(tbox_style_transforms, offset_position);
+        tbox_style_offset_position p = anchor ? tbox_style_transforms_of(style)->offset_anchor : tbox_style_transforms_of(style)->offset_position;
         size_t axis = (size_t)(property - (anchor ? TBOX_STYLE_ANIM_OFFSET_ANCHOR_X : TBOX_STYLE_ANIM_OFFSET_POSITION_X));
-        p->mode = (unsigned char)lround(value[0]);
-        p->position[axis] = (tbox_style_length){ .kind = TBOX_STYLE_LENGTH_PERCENT, .value = value[1], .px_offset = value[2],
+        p.mode = (unsigned char)lround(value[0]);
+        p.position[axis] = (tbox_style_length){ .kind = TBOX_STYLE_LENGTH_PERCENT, .value = value[1], .px_offset = value[2],
             .bounds = (unsigned char)lround(value[3]), .clamp_min = value[4], .clamp_max = value[5] };
+        tbox_style_group_set(style, TBOX_STYLE_GROUP_TRANSFORMS, arena, offset, &p, sizeof(p));
         break;
     }
     case KIND_LENGTH: {
@@ -477,11 +481,13 @@ void tbox_style_animatable_write(tbox_style *style, tbox_style_animatable proper
         style->scale[0] = value[0], style->scale[1] = value[1];
         break;
     case KIND_TRANSFORM: {
-        tbox_style_transform_function *f = &style->transforms[property - TBOX_STYLE_ANIM_TRANSFORM_0];
+        size_t slot = (size_t)(property - TBOX_STYLE_ANIM_TRANSFORM_0);
+        tbox_style_transform_function f = { 0 };
         long kind = lround(value[0]);
-        f->kind = kind > TBOX_STYLE_TRANSFORM_NONE && kind <= TBOX_STYLE_TRANSFORM_MATRIX ? (tbox_style_transform_kind)kind : TBOX_STYLE_TRANSFORM_NONE;
+        f.kind = kind > TBOX_STYLE_TRANSFORM_NONE && kind <= TBOX_STYLE_TRANSFORM_MATRIX ? (tbox_style_transform_kind)kind : TBOX_STYLE_TRANSFORM_NONE;
         for (int i = 0; i < 6; i++)
-            f->v[i] = value[1 + i];
+            f.v[i] = value[1 + i];
+        tbox_style_group_set(style, TBOX_STYLE_GROUP_TRANSFORMS, arena, offsetof(tbox_style_transforms, functions) + slot * sizeof(f), &f, sizeof(f));
         break;
     }
     }
@@ -591,8 +597,9 @@ double tbox_style_easing_apply(const tbox_style_easing *easing, double progress)
 const tbox_style_transition *tbox_style_transition_find(const tbox_style *style, tbox_style_animatable property) {
     if (style == NULL || property >= TBOX_STYLE_ANIM_COUNT)
         return NULL;
-    for (size_t i = style->transition_count; i > 0; i--) {
-        const tbox_style_transition *entry = &style->transitions[i - 1];
+    const tbox_style_animation_lists *lists = tbox_style_animation_lists_of(style);
+    for (size_t i = lists->transition_count; i > 0; i--) {
+        const tbox_style_transition *entry = &lists->transitions[i - 1];
         if (entry->properties & BIT(property))
             return entry->duration > 0.0 ? entry : NULL;
     }

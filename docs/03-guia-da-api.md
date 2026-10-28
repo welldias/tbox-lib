@@ -61,7 +61,7 @@ contexto, não um atributo HTML; seletores o consultam junto do nó focado.
 ### Grupos fora de linha de `tbox_style`
 
 Grupos de propriedades grandes e raros não ficam mais dentro de
-`tbox_style` (que caiu de ~39 KB para ~9,7 KB): ficam na arena em que o
+`tbox_style` (que caiu de ~39 KB para ~4 KB): ficam na arena em que o
 estilo foi resolvido, atrás de um ponteiro `const` que é `NULL` enquanto
 nenhuma propriedade do grupo foi declarada. Leia sempre pelo acessor, que
 devolve os valores iniciais do grupo para `NULL`:
@@ -77,15 +77,35 @@ devolve os valores iniciais do grupo para `NULL`:
 | `filters`, `backdrop_filters` | `tbox_style_filters_of`, `tbox_style_backdrop_filters_of` |
 | `border_image` | `tbox_style_border_image_of` |
 | `box_reflect` | `tbox_style_box_reflect_of` |
+| `animation_lists` (listas de `transition` e `animation`) | `tbox_style_animation_lists_of` |
+| `markers` (`list-style-image`, `list-style-type` personalizado, `marker-*` do SVG; herdado) | `tbox_style_markers_of` |
+| `background_source` (imagem ou gradiente da 1ª camada de fundo) | `tbox_style_background_source_of` |
+| `transforms` (`transform`, `offset-position`, `offset-anchor`) | `tbox_style_transforms_of` |
+| `font_settings` (`font-feature-settings`, `font-palette`; herdado) | `tbox_style_font_settings_of` |
+| `scroll_spacing` (`scroll-margin`, `scroll-padding`) | `tbox_style_scroll_spacing_of` |
+| `grid_placement` (`grid-row-*`, `grid-column-*`) | `tbox_style_grid_placement_of` |
+| `marker` (sobreposições de `::marker`; `NULL` = nenhuma, sem acessor) | — |
 
 - **Nunca escreva através do ponteiro:** estilos compartilham grupos (herança,
   cópias do layout); a camada de estilo copia o grupo antes de mudá-lo. Para
   montar um estilo à mão, preencha um grupo seu e aponte o campo para ele.
+  Um grupo herdado (`markers`, `font_settings`, `svg_paint`) é o mesmo
+  ponteiro do pai enquanto o elemento não muda nenhum valor dele.
+- `tbox_style_animatable_write` recebe uma arena: escrever um slot de
+  `transform` ou `offset-position`/`offset-anchor` copia o grupo nela.
 - **Vida:** a da arena da resolução — a `frame_arena` do contexto para a
   tabela do frame. `tbox_style_resolve` e `tbox_style_resolve_in_viewport`
   passaram a receber essa arena como primeiro parâmetro.
 - O antigo `tbox_style.mask` (cópia da primeira camada) saiu: use
   `tbox_style_masks_of(style)->layers[0].source`.
+- Saíram de `tbox_style` (2026-10-27): `transitions`/`transition_count`,
+  `animations`/`animation_count`, `list_style_image`, `list_style_custom`,
+  `marker_urls`, `background_image`, `background_gradient` (agora
+  `image`/`gradient` de `background_source`), `transforms` (agora
+  `functions`), `offset_position`, `offset_anchor`,
+  `font_feature_settings`, `font_palette`, `scroll_margin`,
+  `scroll_padding`, `grid_units` (agora em `grid_templates`),
+  `grid_row_*`/`grid_column_*` e os campos `marker_*` de `::marker`.
 
 `tbox_style.placeholder_style` é um ponteiro emprestado para o estilo de
 texto de `::placeholder`, na arena do frame, ou NULL quando não há texto

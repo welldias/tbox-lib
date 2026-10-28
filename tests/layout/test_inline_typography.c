@@ -204,7 +204,7 @@ int tbox_test_inline_typography_run(tbox_font_face_cache *fonts) {
         /* Rebuild layout with an exact measured width; styles are public values. */
         for (size_t i = 0; i < c.styles.count; i++)
             if (c.styles.items[i].node->type == TBOX_HTML_NODE_ELEMENT && tbox_string_view_equal_cstr(c.styles.items[i].node->element.tag_name, "p"))
-                c.styles.items[i].style.width = (tbox_style_length){ .kind = TBOX_STYLE_LENGTH_PX, .value = plain + 0.1 };
+                tbox_style_table_mutable(&c.styles, i, &c.arena)->width = (tbox_style_length){ .kind = TBOX_STYLE_LENGTH_PX, .value = plain + 0.1 };
         c.root                       = tbox_layout_build(&c.arena, tbox_html_document_root(c.doc), &c.styles, fonts, NULL, 800, 600);
         const tbox_layout_box *allow = tbox_typography_find(c.root, "allow"), *none = tbox_typography_find(c.root, "none"), *last = tbox_typography_find(c.root, "last");
         TBOX_TEST_REQUIRE(allow != NULL && none != NULL && last != NULL);

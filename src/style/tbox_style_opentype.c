@@ -179,13 +179,13 @@ static bool tbox_style_ot_alternate(tbox_string_view token, unsigned *seen) {
     return false;
 }
 
-bool tbox_style_parse_opentype(const char *property, tbox_string_view value, tbox_style *style) {
+bool tbox_style_parse_opentype(const char *property, tbox_string_view value, tbox_style *style, tbox_style_font_settings *settings) {
     value = tbox_string_view_trim_ascii_space(value);
     if (strcmp(property, "font-feature-settings") == 0) {
-        tbox_font_feature_settings settings;
-        if (!tbox_style_ot_settings(value, &settings))
+        tbox_font_feature_settings features;
+        if (!tbox_style_ot_settings(value, &features))
             return false;
-        style->font_feature_settings = settings;
+        settings->font_feature_settings = features;
         return true;
     }
     if (strcmp(property, "font-language-override") == 0) {
@@ -202,11 +202,11 @@ bool tbox_style_parse_opentype(const char *property, tbox_string_view value, tbo
     }
     if (strcmp(property, "font-palette") == 0) {
         if (tbox_style_is(value, "normal"))
-            style->font_palette[0] = '\0';
+            settings->font_palette[0] = '\0';
         else if (tbox_style_is(value, "light") || tbox_style_is(value, "dark") || (value.size > 2 && value.data[0] == '-' && value.data[1] == '-' && tbox_style_ot_ident(value))) {
-            if (value.size >= sizeof(style->font_palette))
+            if (value.size >= sizeof(settings->font_palette))
                 return false;
-            tbox_utf8_copy_truncated(style->font_palette, sizeof(style->font_palette), value);
+            tbox_utf8_copy_truncated(settings->font_palette, sizeof(settings->font_palette), value);
         } else
             return false;
         return true;
@@ -286,8 +286,10 @@ bool tbox_style_opentype_declaration_valid(tbox_string_view property, tbox_strin
     for (size_t i = 0; i + 4 <= value.size; i++)
         if (tbox_string_view_equal_ascii_ci(tbox_string_view_make(value.data + i, 4), tbox_string_view_from_cstr("var(")))
             return true;
-    tbox_style scratch; /* written, never read: only validity matters */
-    return tbox_style_parse_opentype(name, value, &scratch);
+    /* Written, never read: only validity matters. */
+    tbox_style scratch;
+    tbox_style_font_settings settings;
+    return tbox_style_parse_opentype(name, value, &scratch, &settings);
 }
 
 static void tbox_style_ot_add(tbox_font_shaping_options *out, uint32_t tag, uint32_t value) {
@@ -325,45 +327,53 @@ void tbox_style_shaping_options(const tbox_style *style, tbox_font_shaping_optio
     }
     if (style->font_variant_alternates)
         tbox_style_ot_add(out, tbox_style_ot_tag("hist"), 1);
-    for (size_t i = 0; i < style->font_feature_settings.count; i++)
-        tbox_style_ot_add(out, style->font_feature_settings.items[i].tag, style->font_feature_settings.items[i].value);
+    const tbox_font_feature_settings *features = &tbox_style_font_settings_of(style)->font_feature_settings;
+    for (size_t i = 0; i < features->count; i++)
+        tbox_style_ot_add(out, features->items[i].tag, features->items[i].value);
     out->language = style->font_language_override;
 }
 
 /* Resolve each field against both shorthands before copying it. A valid
  * font declaration resets even the settings it cannot express. */
-void tbox_style_resolve_opentype(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_css_resolved_declaration *font, tbox_string_view font_variant, tbox_style *style) {
+void tbox_style_resolve_opentype(const tbox_css_computed_style *computed, const tbox_style *parent, const tbox_css_resolved_declaration *font, tbox_string_view font_variant, tbox_style *style, tbox_arena *arena) {
+    /* A field of tbox_style, or of its tbox_style_font_settings (`group`). */
     static const struct {
         const char *name;
         size_t offset, size;
-        bool variant;
+        bool variant, group;
     } fields[] = {
-#define FIELD(name, member, variant) { name, offsetof(tbox_style, member), sizeof(((tbox_style *)0)->member), variant }
-        FIELD("font-feature-settings", font_feature_settings, false),
+#define FIELD(name, member, variant) { name, offsetof(tbox_style, member), sizeof(((tbox_style *)0)->member), variant, false }
+#define GROUP_FIELD(name, member) { name, offsetof(tbox_style_font_settings, member), sizeof(((tbox_style_font_settings *)0)->member), false, true }
+        GROUP_FIELD("font-feature-settings", font_feature_settings),
         FIELD("font-language-override", font_language_override, false),
-        FIELD("font-palette", font_palette, false),
+        GROUP_FIELD("font-palette", font_palette),
         FIELD("font-variant-ligatures", font_variant_ligatures, true),
         FIELD("font-variant-numeric", font_variant_numeric, true),
         FIELD("font-variant-east-asian", font_variant_east_asian, true),
         FIELD("font-variant-alternates", font_variant_alternates, true),
         FIELD("font-variant-caps", font_small_caps, true),
         FIELD("font-variant-position", font_variant_position, true),
+#undef GROUP_FIELD
 #undef FIELD
     };
     /* Scratch for the shorthand: only its variant fields are ever read, so
      * only those are zeroed (the whole struct is ~40 KB). */
     tbox_style variant;
+    tbox_style_font_settings variant_settings;
     const tbox_css_resolved_declaration *shorthand = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr("font-variant"));
     if (shorthand != NULL) {
         for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); i++)
             if (fields[i].variant)
                 memset((char *)&variant + fields[i].offset, 0, fields[i].size);
-        if (!tbox_style_parse_opentype("font-variant", shorthand->value, &variant))
+        if (!tbox_style_parse_opentype("font-variant", shorthand->value, &variant, &variant_settings))
             shorthand = NULL;
     }
+    tbox_style_font_settings settings;
     for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
-        char *dst = (char *)style + fields[i].offset;
-        if (parent != NULL)
+        char *dst = fields[i].group ? (char *)&settings + fields[i].offset : (char *)style + fields[i].offset;
+        if (fields[i].group)
+            memcpy(dst, (const char *)tbox_style_font_settings_of(parent) + fields[i].offset, fields[i].size);
+        else if (parent != NULL)
             memcpy(dst, (const char *)parent + fields[i].offset, fields[i].size);
         else
             memset(dst, 0, fields[i].size);
@@ -380,6 +390,8 @@ void tbox_style_resolve_opentype(const tbox_css_computed_style *computed, const 
         }
         const tbox_css_resolved_declaration *decl = tbox_css_computed_style_find(computed, tbox_string_view_from_cstr(fields[i].name));
         if (decl != NULL && (winner == NULL || tbox_css_cascade_priority_compare(decl, winner) > 0))
-            tbox_style_parse_opentype(fields[i].name, decl->value, style);
+            tbox_style_parse_opentype(fields[i].name, decl->value, style, &settings);
     }
+    style->font_settings = parent != NULL ? parent->font_settings : NULL;
+    tbox_style_group_set(style, TBOX_STYLE_GROUP_FONT, arena, 0, &settings, sizeof(settings));
 }

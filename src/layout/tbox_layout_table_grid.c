@@ -24,11 +24,6 @@ typedef struct tbox_table_column {
     double min_width, max_width, fixed, percent, width, x;
 } tbox_table_column;
 
-bool tbox_layout_tag(const tbox_html_node *node, const char *name) {
-    return node != NULL && node->type == TBOX_HTML_NODE_ELEMENT &&
-        tbox_string_view_equal_cstr(node->element.tag_name, name);
-}
-
 static bool tbox_layout_table_section(const tbox_html_node *node) {
     return tbox_layout_tag(node, "thead") || tbox_layout_tag(node, "tbody") ||
         tbox_layout_tag(node, "tfoot");
@@ -129,7 +124,9 @@ double tbox_layout_table_longest_word(const tbox_font_face *face, tbox_string_vi
     return longest;
 }
 
-double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node *table,
+/* The grid (rows, cells, columns) and the collapsed edges being found live
+ * in `scratch`; boxes and the edges the table keeps go in `arena`. */
+static double tbox_layout_build_table_in(tbox_arena *arena, tbox_arena *scratch, const tbox_html_node *table,
     const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images,
     double x, double y, double *table_width, tbox_layout_box *table_box,
     tbox_layout_positioned_context positioned_context) {
@@ -138,10 +135,10 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
     double sx = collapse ? 0.0 : table_style->border_spacing_x;
     double sy = collapse ? 0.0 : table_style->border_spacing_y;
     tbox_vector rows, cells, collapsed;
-    tbox_vector_init(&rows, arena, sizeof(tbox_table_row), 0);
-    tbox_vector_init(&cells, arena, sizeof(tbox_table_cell), 0);
-    tbox_vector_init(&collapsed, arena, sizeof(const tbox_html_node *), 0);
-    tbox_table_column *columns = tbox_arena_alloc_zero(arena,
+    tbox_vector_init(&rows, scratch, sizeof(tbox_table_row), 0);
+    tbox_vector_init(&cells, scratch, sizeof(tbox_table_cell), 0);
+    tbox_vector_init(&collapsed, scratch, sizeof(const tbox_html_node *), 0);
+    tbox_table_column *columns = tbox_arena_alloc_zero(scratch,
         sizeof(*columns) * TBOX_TABLE_MAX_COLUMNS);
     if (columns == NULL) return 0.0;
     size_t declared = 0, group_id = 0;
@@ -252,7 +249,7 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
     /* The cells that size the columns: the grid's, plus those of collapsed
      * rows, placed left to right (row SIZE_MAX). */
     tbox_vector measured;
-    tbox_vector_init(&measured, arena, sizeof(tbox_table_cell), cells.length);
+    tbox_vector_init(&measured, scratch, sizeof(tbox_table_cell), cells.length);
     for (size_t i = 0; i < cells.length; i++)
         *(tbox_table_cell *)tbox_vector_push(&measured) = *(const tbox_table_cell *)tbox_vector_at(&cells, i);
     for (size_t r = 0; r < collapsed.length; r++) {
@@ -265,6 +262,9 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
             cursor += span;
         }
     }
+    /* The words each grid cell's measurement collects, kept in `scratch`
+     * for its layout below (measured[i] is cells[i] for i < cells.length). */
+    tbox_layout_premeasured *premeasured = cells.length > 0 ? tbox_arena_alloc_zero(scratch, cells.length * sizeof(*premeasured)) : NULL;
     /* Single-column cells first, so a spanning cell only adds what its
      * columns lack. */
     for (int pass = 0; pass < 2; pass++) {
@@ -278,8 +278,11 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
                 tbox_layout_resolve_edge(style->padding[3], *table_width) +
                 tbox_style_border_side_width(style, 1) + tbox_style_border_side_width(style, 3);
             tbox_layout_intrinsic content = { 0.0, 0.0 };
+            tbox_layout_premeasured *kept = premeasured != NULL && i < cells.length ? &premeasured[i] : NULL;
+            if (kept != NULL)
+                tbox_vector_init(&kept->words, scratch, sizeof(tbox_layout_word), 0);
             if (!fixed)
-                content = tbox_layout_intrinsic_content(arena, cell->node, styles, fonts, images);
+                content = tbox_layout_intrinsic_content_keep(arena, cell->node, styles, fonts, images, kept);
             double minimum = content.min + edges, maximum = content.max + edges;
             double css_width = style->width.kind == TBOX_STYLE_LENGTH_PERCENT ? 0.0 : tbox_layout_table_css_width(style, *table_width);
             double css_outer = css_width > 0.0 ? css_width + (style->box_sizing == TBOX_STYLE_BOX_SIZING_BORDER_BOX ? 0.0 : edges) : 0.0;
@@ -404,8 +407,10 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
             .height = 0.0, .height_definite = false};
         /* The non-null marker asks build_element to fit the cell into the grid
          * even when CSS width supplied its earlier column constraint. */
+        tbox_layout_positioned_context cell_context = positioned_context;
+        cell_context.premeasured                    = premeasured != NULL && premeasured[i].node != NULL ? &premeasured[i] : NULL;
         cell->box = tbox_layout_build_element(arena, cell->node, styles, fonts, images,
-            container, 0.0, positioned_context, &width, 0);
+            container, 0.0, cell_context, &width, 0);
         if (cell->rows == 1) {
             tbox_table_row *row = tbox_vector_at(&rows, cell->row);
             if (cell->box->margin_box.height > row->height) row->height = cell->box->margin_box.height;
@@ -523,7 +528,7 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
     }
     if (collapse && rows.length > 0 && column_count > 0 &&
         rows.length <= SIZE_MAX / (column_count * sizeof(tbox_table_cell *))) {
-        tbox_table_cell **grid = tbox_arena_alloc_zero(arena,
+        tbox_table_cell **grid = tbox_arena_alloc_zero(scratch,
             sizeof(*grid) * rows.length * column_count);
         if (grid != NULL) {
             for (size_t i = 0; i < cells.length; i++) {
@@ -533,7 +538,7 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
                         grid[r * column_count + c] = cell;
             }
             tbox_vector edges;
-            tbox_vector_init(&edges, arena, sizeof(tbox_table_edge), 0);
+            tbox_vector_init(&edges, scratch, sizeof(tbox_table_edge), 0);
             for (size_t r = 0; r < rows.length; r++) {
                 const tbox_table_row *row = tbox_vector_at(&rows, r);
                 for (size_t c = 0; c <= column_count; c++) {
@@ -599,10 +604,24 @@ double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node 
                 }
             }
             table_box->table_suppress_border = true;
-            table_box->table_edges = edges.data;
-            table_box->table_edge_count = edges.length;
+            /* Kept at their exact count: the vector doubled in `scratch`. */
+            tbox_table_edge *kept = edges.length > 0 ? tbox_arena_alloc(arena, edges.length * sizeof(*kept)) : NULL;
+            if (kept != NULL) memcpy(kept, edges.data, edges.length * sizeof(*kept));
+            table_box->table_edges = kept;
+            table_box->table_edge_count = kept != NULL ? edges.length : 0;
         }
     }
     return grid_height + caption_height;
 }
 
+double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node *table,
+    const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images,
+    double x, double y, double *table_width, tbox_layout_box *table_box,
+    tbox_layout_positioned_context positioned_context) {
+    /* One per table, freed on return: a table in a cell opens its own. */
+    tbox_arena scratch = tbox_arena_create(0);
+    double height = tbox_layout_build_table_in(arena, &scratch, table, styles, fonts, images, x, y,
+        table_width, table_box, positioned_context);
+    tbox_arena_destroy(&scratch);
+    return height;
+}

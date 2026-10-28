@@ -6,6 +6,31 @@
 
 ## A árvore de caixas
 
+### Rascunho do layout
+
+A árvore de caixas, os runs, os glifos e as bordas colapsadas da tabela vivem
+na arena do frame. O trabalho intermediário não: `tbox_layout_build_text_runs`
+abre uma arena de rascunho por caixa (palavras, linhas, níveis bidi, saída do
+shaping e os runs enquanto são montados) e a destrói ao retornar;
+`tbox_layout_build_table_extended` faz o mesmo com a grade (linhas, células,
+colunas e as bordas colapsadas ainda em construção), e cada medida de tamanho
+intrínseco com as palavras que mede. Ao sair, runs, glifos e bordas são
+copiados para a arena do frame no tamanho exato. Uma caixa aninhada
+(inline-block, tabela dentro de célula) abre o próprio rascunho, então a
+memória intermediária nunca passa da profundidade da árvore. O que vai para
+a árvore precisa ser alocado com a arena do frame (`arena`), nunca com a de
+um vetor de rascunho (`vector->arena`).
+
+As palavras de uma célula de tabela são coletadas e medidas uma vez só: a
+medida intrínseca das colunas (`tbox_layout_intrinsic_content_keep`) as
+guarda no rascunho da tabela, e o layout da célula as recebe por
+`tbox_layout_positioned_context.premeasured` em vez de coletar de novo. O
+reaproveitamento vale só para o próprio nó, com o mesmo estilo e o
+conteúdo inteiro, e só quando todas as palavras são texto: inline-block,
+float e imagem dependem da largura que a célula recebe e são medidos de
+outro jeito na medida intrínseca (`has_min_width`), então a célula coleta
+de novo.
+
 ### SVG inline
 
 O SVG externo ocupa uma caixa atômica no layout HTML. Seu conteúdo usa
@@ -510,6 +535,15 @@ de caixas `absolute`/`fixed` vira um `clip-path: inset()` equivalente na
 Style) e matriz de cor (`filter` só de cor); `IMAGE`/`GRADIENT` levam
 também o `background-blend-mode` da camada. `opacity` e os filtros que
 espalham vão no `LAYER_BEGIN` da [camada](#camadas-de-composição).
+
+A lista cresce num rascunho, como o [do layout](#rascunho-do-layout), junto
+dos vetores de cada contexto de empilhamento, e é copiada para a arena do
+frame no tamanho exato ao final. O que uma op aponta (glifos, gradientes,
+estilos de decoração) vai direto para a arena do frame. Barras de rolagem,
+alças de `resize` e os desenhos dos controles de formulário e popups vêm
+depois, num vetor à parte que o contexto junta à lista numa cópia só, e
+nenhuma quando não há nada a juntar. Cada op tem 608 bytes (ver
+[Débito técnico](dev/debito-tecnico.md#tabelas-grandes)).
 
 ### Texto como glifos posicionados
 

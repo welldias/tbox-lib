@@ -171,7 +171,7 @@ int tbox_test_style_at_rules_run(void) {
         tbox_style_table table = tbox_style_resolve_tree(&arena, tbox_html_document_root(doc), &source, 1);
         size_t found = 0;
         const char *expected[] = { "A/A", "A/A.A" };
-        for (size_t i = 0; i < table.count; i++) if (table.items[i].style.generated) {
+        for (size_t i = 0; i < table.count; i++) if (table.items[i].style->generated) {
             TBOX_TEST_ASSERT(found < 2 && eq(table.items[i].node->first_child->text.text, expected[found]));
             found++;
         }

@@ -9,6 +9,7 @@
 #include "layout/tbox_layout_bidi.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <tbox/image.h>
 #include <tbox/layout.h>
 
@@ -27,10 +28,24 @@ typedef struct tbox_layout_floats tbox_layout_floats;
  * containing blocks of absolute/fixed descendants and the floats of the
  * block formatting context they lay out in (NULL until the root creates
  * one; a box that establishes a new context replaces it). */
+/* The words of one text box, collected before its layout (a table cell's
+ * intrinsic measurement) and handed to its tbox_layout_build_text_runs so
+ * they are not collected and measured again. Only text words: nothing
+ * that depends on the width the box gets (inline-blocks, floats, images).
+ * `node` NULL means nothing kept. */
+typedef struct tbox_layout_premeasured {
+    const tbox_html_node *node;
+    const tbox_style *style; /* the style they were collected with */
+    tbox_vector words;       /* tbox_layout_word, in the caller's scratch */
+} tbox_layout_premeasured;
+
 typedef struct tbox_layout_positioned_context {
     tbox_rect nearest_ancestor;
     tbox_rect viewport;
     tbox_layout_floats *floats;
+    /* Words already collected for one text box below (NULL for none);
+     * only that box uses them, see tbox_layout_premeasured. */
+    const tbox_layout_premeasured *premeasured;
 } tbox_layout_positioned_context;
 
 double tbox_layout_svg_auto_width(const tbox_html_node *node, const tbox_style *style, double vertical_edges);
@@ -245,7 +260,10 @@ bool tbox_layout_is_multicol(const tbox_style *style);
 double tbox_layout_build_multicol(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, tbox_layout_box *box, tbox_layout_positioned_context context);
 double tbox_layout_build_flex(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double content_width, double content_height, bool height_definite, double min_height, double max_height, tbox_layout_box *box, tbox_layout_positioned_context context);
 double tbox_layout_build_grid(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double content_width, double content_height, bool height_definite, double min_height, double max_height, tbox_layout_box *box, tbox_layout_positioned_context context);
-double tbox_layout_build_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_word_bidi *bidi, const tbox_layout_line *line, double line_y, double content_x, double available_width, size_t word_count, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs);
+/* The runs of one line, appended to `runs`; their glyphs and texts are kept
+ * in `arena`, the work in between (shaping, each run's glyphs while it
+ * grows) goes in `scratch`. */
+double tbox_layout_build_line_runs(tbox_arena *arena, tbox_arena *scratch, const tbox_layout_word *words, const tbox_layout_word_bidi *bidi, const tbox_layout_line *line, double line_y, double content_x, double available_width, size_t word_count, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs);
 /* Bidi (src/layout/tbox_layout_bidi.c, docs/09-texto-e-fontes.md "Texto
  * bidirecional"). mark_bidi wraps the words pushed since `first` (one
  * inline element's) in its `unicode-bidi` formatting characters. */
@@ -255,25 +273,33 @@ void tbox_layout_mark_bidi(tbox_vector *words, size_t first, const tbox_style *s
 tbox_layout_word_bidi *tbox_layout_resolve_bidi(tbox_arena *arena, const tbox_layout_word *words, size_t count, const tbox_style *container);
 bool tbox_layout_line_is_bidi(const tbox_layout_word *words, const tbox_layout_word_bidi *bidi, const tbox_layout_line *line);
 double tbox_layout_build_bidi_line_runs(tbox_arena *arena, const tbox_layout_word *words, const tbox_layout_word_bidi *bidi, const tbox_layout_line *line, double line_y, double content_x, double available_width, size_t word_count, const tbox_font_face *block_face, double justify_gap, tbox_vector *runs);
-void tbox_layout_push_run(tbox_vector *runs, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double start_x, double end_x, const tbox_font_face *face, const tbox_style *style, const tbox_image *image, double image_height, tbox_string_view text, const tbox_vector *glyphs);
+void tbox_layout_push_run(tbox_arena *arena, tbox_vector *runs, const tbox_layout_line *line, double line_y, double content_x, const tbox_font_face *block_face, double start_x, double end_x, const tbox_font_face *face, const tbox_style *style, const tbox_image *image, double image_height, tbox_string_view text, const tbox_vector *glyphs);
 double tbox_layout_append_glyphs(tbox_arena *arena, tbox_vector *glyphs, const tbox_font_face *face, tbox_string_view text, double letter_spacing, tbox_font_direction direction, double x, size_t cluster_base);
 double tbox_layout_atomic_top(const tbox_style *style, const tbox_font_face *face, double ascent, double height, const tbox_layout_line *line, double line_y, const tbox_font_face *block_face);
 double tbox_layout_build_table_children(tbox_arena *arena, const tbox_html_node *table_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double *content_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context);
 double tbox_layout_build_table_extended(tbox_arena *arena, const tbox_html_node *table, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double x, double y, double *table_width, tbox_layout_box *table_box, tbox_layout_positioned_context positioned_context);
 double tbox_layout_build_table_row_children(tbox_arena *arena, const tbox_html_node *row_node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, const double *column_widths, size_t column_count, tbox_layout_box *row_box, tbox_layout_positioned_context positioned_context);
+/* Block size of the scratch arena tbox_layout_build_text_runs and the
+ * intrinsic sizes open for one box's words, lines and runs; a cell of a
+ * table needs a few KB. */
+#define TBOX_LAYOUT_SCRATCH_BLOCK ((size_t)(8 * 1024))
 double tbox_layout_build_text_runs(tbox_arena *arena, const tbox_html_node *node, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double content_x, double content_y, double available_width, tbox_layout_box *box, const tbox_layout_positioned_context *context, const tbox_html_node *marker_node, const tbox_style *marker_style);
 void tbox_layout_collect_preformatted_words(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words);
 void tbox_layout_collect_words(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, tbox_vector *words);
 void tbox_layout_collect_words_in(tbox_arena *arena, const tbox_html_node *first_sibling, const tbox_html_node *end_exclusive, const tbox_style *style, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, double containing_width, bool inside_inline, bool measure_only, tbox_layout_inline_state *state, tbox_vector *words);
 double tbox_layout_constrain_height(const tbox_style *style, double height, double base, bool base_definite, double edges);
 double tbox_layout_constrain_width(const tbox_style *style, double width, double base, double edges);
-void tbox_layout_ellipsize_line(tbox_vector *runs, size_t first, double content_x, double available_width, const tbox_style *style, const tbox_font_face *face, const tbox_layout_line *line, double line_y, bool force);
+void tbox_layout_ellipsize_line(tbox_arena *arena, tbox_vector *runs, size_t first, double content_x, double available_width, const tbox_style *style, const tbox_font_face *face, const tbox_layout_line *line, double line_y, bool force);
 bool tbox_layout_has_escaping_positioned(const tbox_html_node *node, const tbox_style_table *styles, bool contained);
 const tbox_html_node *tbox_layout_inline_run_end(const tbox_html_node *run_start, const tbox_style_table *styles);
 bool tbox_layout_input_is_text_tag(const tbox_html_node *node);
 void tbox_layout_input_push_value_word(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, tbox_vector *words);
 tbox_layout_intrinsic tbox_layout_grid_intrinsic(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images);
 tbox_layout_intrinsic tbox_layout_intrinsic_content(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images);
+/* tbox_layout_intrinsic_content that, for a text box, also keeps the words
+ * it measured in `kept` (its `words` initialized by the caller) when they
+ * can stand for the box's layout. */
+tbox_layout_intrinsic tbox_layout_intrinsic_content_keep(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_premeasured *kept);
 tbox_layout_intrinsic tbox_layout_intrinsic_outer(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images);
 bool tbox_layout_is_hidden_input(const tbox_html_node *node);
 bool tbox_layout_is_replaced_image(const tbox_html_node *node);
@@ -295,7 +321,7 @@ void tbox_layout_push_words(tbox_vector *words, tbox_string_view collapsed, cons
 double tbox_layout_resolve_absolute_edge(tbox_style_length primary, tbox_style_length opposite, double container_origin, double container_size, double margin_box_size);
 double tbox_layout_resolve_edge(tbox_style_length length, double percent_base);
 double tbox_layout_resolve_offset(tbox_style_length primary, tbox_style_length opposite, double percent_base, bool percent_base_definite);
-void tbox_layout_split_overlong_words(tbox_arena *arena, tbox_vector *words, double available_width, double first_indent);
+void tbox_layout_split_overlong_words(tbox_vector *words, double available_width, double first_indent);
 void tbox_layout_prepare_initial(tbox_arena *arena, const tbox_html_node *node, const tbox_style *style, tbox_font_face_cache *fonts, double width, tbox_vector *words);
 double tbox_layout_hang_first(const tbox_layout_word *word);
 double tbox_layout_hang_end(const tbox_layout_word *word, bool last, bool overflow);
@@ -305,7 +331,13 @@ bool tbox_layout_table_cell_node(const tbox_html_node *node);
 bool tbox_layout_table_extended(const tbox_html_node *table, const tbox_style_table *styles);
 double tbox_layout_table_longest_word(const tbox_font_face *face, tbox_string_view text, double letter_spacing);
 void tbox_layout_table_shift_y(tbox_layout_box *box, double amount);
-bool tbox_layout_tag(const tbox_html_node *node, const char *name);
+/* Whether `node` is an element named `name` (a literal, whose strlen the
+ * compiler folds): inline, since layout asks it for every box, often
+ * through a list of names. */
+static inline bool tbox_layout_tag(const tbox_html_node *node, const char *name) {
+    size_t size = strlen(name);
+    return node != NULL && node->type == TBOX_HTML_NODE_ELEMENT && node->element.tag_name.size == size && memcmp(node->element.tag_name.data, name, size) == 0;
+}
 unsigned tbox_layout_textarea_size(const tbox_html_node *node, const char *name, unsigned fallback);
 tbox_string_view tbox_layout_expand_tabs(tbox_arena *arena, tbox_string_view text, const tbox_style *style, const tbox_font_face *face);
 tbox_string_view tbox_layout_transform_text(tbox_arena *arena, tbox_string_view text, tbox_style_text_transform transform);
@@ -313,7 +345,7 @@ void tbox_layout_translate(tbox_layout_box *box, double dx, double dy);
 /* Vertical writing modes (tbox_layout_writing.c). */
 bool tbox_layout_frame_change(const tbox_style *style);
 /* `physical` (in screen terms) turned into `frame`'s coordinates. */
-void tbox_layout_frame_remap(tbox_style *out, const tbox_style *physical, tbox_style_frame frame);
+void tbox_layout_frame_remap(tbox_arena *arena, tbox_style *out, const tbox_style *physical, tbox_style_frame frame);
 tbox_layout_box *tbox_layout_build_orthogonal(tbox_arena *arena, const tbox_html_node *node, const tbox_style_table *styles, tbox_font_face_cache *fonts, tbox_image_cache *images, tbox_layout_containing_block container, double cursor_y, tbox_layout_positioned_context positioned_context, const tbox_layout_forced_size *forced);
 bool tbox_layout_frame_transform(const tbox_style *style, tbox_rect border_box, const double offset[6], double out[6]);
 tbox_rect tbox_layout_frame_upright(const tbox_style *style, tbox_rect border_box, tbox_rect rect);

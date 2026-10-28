@@ -14,6 +14,7 @@
  * bold_data, same as before this cache understood any other family. */
 typedef struct tbox_font_face_cache_entry {
     char family[TBOX_FONT_FAMILY_CAPACITY];
+    size_t family_size; /* strlen(family) */
     bool kerning;
     int weight;
     double stretch;
@@ -163,11 +164,13 @@ static bool tbox_font_options_equal(const tbox_font_shaping_options *a, const tb
     return true;
 }
 
-static tbox_font_face_cache_entry *tbox_font_face_cache_find(tbox_font_face_cache *cache, const char *family, int weight, double stretch, bool italic, double size_px, bool kerning, const tbox_font_shaping_options *options) {
-    size_t entry_count = tbox_vector_length(&cache->entries);
+static tbox_font_face_cache_entry *tbox_font_face_cache_find(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px, bool kerning, const tbox_font_shaping_options *options) {
+    tbox_font_face_cache_entry *entries = cache->entries.data;
+    size_t entry_count                  = tbox_vector_length(&cache->entries);
     for (size_t i = 0; i < entry_count; i++) {
-        tbox_font_face_cache_entry *entry = tbox_vector_at(&cache->entries, i);
-        if (entry->generation == cache->generation && entry->weight == weight && entry->stretch == stretch && entry->italic == italic && entry->kerning == kerning && tbox_font_options_equal(&entry->face->options, options) && entry->size_px == size_px && strcmp(entry->family, family) == 0) {
+        tbox_font_face_cache_entry *entry = &entries[i];
+        if (entry->generation == cache->generation && entry->weight == weight && entry->stretch == stretch && entry->italic == italic && entry->kerning == kerning && entry->size_px == size_px &&
+            entry->family_size == family.size && (family.size == 0 || memcmp(entry->family, family.data, family.size) == 0) && tbox_font_options_equal(&entry->face->options, options)) {
             return entry;
         }
     }
@@ -177,7 +180,7 @@ static tbox_font_face_cache_entry *tbox_font_face_cache_find(tbox_font_face_cach
 static void tbox_font_face_cache_add(tbox_font_face_cache *cache, const char *family, int weight, double stretch, bool italic, double size_px, bool kerning, tbox_font_face *face, bool alias) {
     tbox_font_face_cache_entry *entry = tbox_vector_push(&cache->entries);
     entry->kerning                    = kerning;
-    tbox_utf8_copy_truncated(entry->family, sizeof(entry->family), tbox_string_view_from_cstr(family));
+    entry->family_size = tbox_utf8_copy_truncated(entry->family, sizeof(entry->family), tbox_string_view_from_cstr(family));
     entry->weight     = weight;
     entry->stretch    = stretch;
     entry->italic     = italic;
@@ -192,7 +195,7 @@ static void tbox_font_face_cache_add(tbox_font_face_cache *cache, const char *fa
 static const tbox_font_face *tbox_font_face_cache_get_one(tbox_font_face_cache *cache, const char *family_buf, int weight, double stretch, bool italic, double size_px, bool kerning, const tbox_font_shaping_options *options) {
     bool bold                         = weight >= 600;
     tbox_string_view family           = tbox_string_view_from_cstr(family_buf);
-    const tbox_font_face_cache_entry *found = tbox_font_face_cache_find(cache, family_buf, weight, stretch, italic, size_px, kerning, options);
+    const tbox_font_face_cache_entry *found = tbox_font_face_cache_find(cache, family, weight, stretch, italic, size_px, kerning, options);
     if (found != NULL)
         return found->face;
 
@@ -301,7 +304,7 @@ static const tbox_font_face *tbox_font_face_cache_get_one(tbox_font_face_cache *
 }
 
 const tbox_font_face *tbox_font_face_cache_get_shaped(tbox_font_face_cache *cache, tbox_string_view family, int weight, double stretch, bool italic, double size_px, bool kerning, const tbox_font_shaping_options *options) {
-    const tbox_font_shaping_options defaults = {0};
+    static const tbox_font_shaping_options defaults = {0};
     if (options == NULL) options = &defaults;
     if (options->count > TBOX_FONT_MAX_FEATURES) return NULL;
     if (cache == NULL) {
@@ -312,12 +315,17 @@ const tbox_font_face *tbox_font_face_cache_get_shaped(tbox_font_face_cache *cach
     if (stretch <= 0.0)
         stretch = 100.0;
 
+    /* A list that fits is its own key: the copy below would keep every
+     * byte. Hits, the common case, skip the copy. */
+    const tbox_font_face_cache_entry *found = family.size < TBOX_FONT_FAMILY_CAPACITY ? tbox_font_face_cache_find(cache, family, weight, stretch, italic, size_px, kerning, options) : NULL;
+    if (found != NULL)
+        return found->face;
     /* Truncate-not-reject, same posture as
      * tbox_font_source_fontconfig_family_cstr (src/font/tbox_font_source_fontconfig.c)
      * -- always NUL-terminated. */
     char list[TBOX_FONT_FAMILY_CAPACITY];
-    tbox_utf8_copy_truncated(list, sizeof(list), family);
-    const tbox_font_face_cache_entry *found = tbox_font_face_cache_find(cache, list, weight, stretch, italic, size_px, kerning, options);
+    tbox_string_view key = tbox_string_view_make(list, tbox_utf8_copy_truncated(list, sizeof(list), family));
+    found                = tbox_font_face_cache_find(cache, key, weight, stretch, italic, size_px, kerning, options);
     if (found != NULL)
         return found->face;
 
@@ -340,7 +348,7 @@ const tbox_font_face *tbox_font_face_cache_get_shaped(tbox_font_face_cache *cach
     }
     if (face == NULL)
         face = tbox_font_face_cache_get_one(cache, "", weight, stretch, italic, size_px, kerning, options);
-    if (face != NULL && tbox_font_face_cache_find(cache, list, weight, stretch, italic, size_px, kerning, options) == NULL)
+    if (face != NULL && tbox_font_face_cache_find(cache, key, weight, stretch, italic, size_px, kerning, options) == NULL)
         tbox_font_face_cache_add(cache, list, weight, stretch, italic, size_px, kerning, (tbox_font_face *)face, true);
     return face;
 }

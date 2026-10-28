@@ -1055,7 +1055,7 @@ static size_t tbox_render_next_layer(const tbox_vector *layers, const bool *done
 /* Paints `layers` whose z-index is negative (`negative`) or not, in
  * increasing z-index order, tree order among equals. */
 static void tbox_render_paint_layers(const tbox_vector *layers, bool negative, tbox_vector *items, tbox_arena *arena, tbox_rect viewport) {
-    bool *done = layers->length > 0 ? (bool *)tbox_arena_alloc_zero(arena, layers->length) : NULL;
+    bool *done = layers->length > 0 ? (bool *)tbox_arena_alloc_zero(layers->arena, layers->length) : NULL;
     for (size_t best; (best = tbox_render_next_layer(layers, done, negative)) < layers->length;) {
         done[best]                     = true;
         const tbox_render_layer *layer = (const tbox_render_layer *)tbox_vector_at_const(layers, best);
@@ -1358,7 +1358,7 @@ static tbox_rect tbox_render_mark_rect(double cx, double cy, double width, doubl
 }
 
 /* One mark centered at (cx, cy), `size` the em of the text. */
-static void tbox_render_push_emphasis_mark(tbox_vector *items, const tbox_layout_text_run *run, double cx, double cy, double size, tbox_css_rgba color) {
+static void tbox_render_push_emphasis_mark(tbox_vector *items, tbox_arena *arena, const tbox_layout_text_run *run, double cx, double cy, double size, tbox_css_rgba color) {
     const tbox_style *style = run->style;
     bool open = style->text_emphasis_open;
     double thickness = fmax(1.0, round(size * 0.05));
@@ -1414,7 +1414,7 @@ static void tbox_render_push_emphasis_mark(tbox_vector *items, const tbox_layout
         op->color = color;
         op->text  = mark;
         op->face  = run->emphasis_font;
-        tbox_font_shape_into(items->arena, run->emphasis_font, mark, 0.0, &op->glyphs, &op->glyph_count);
+        tbox_font_shape_into(arena, run->emphasis_font, mark, 0.0, &op->glyphs, &op->glyph_count);
         break;
     }
     default:
@@ -1455,7 +1455,7 @@ static void tbox_render_push_decoration(tbox_vector *items, const tbox_layout_te
     }
 }
 
-static void tbox_render_push_emphasis(tbox_vector *items, const tbox_layout_text_run *run) {
+static void tbox_render_push_emphasis(tbox_vector *items, tbox_arena *arena, const tbox_layout_text_run *run) {
     const tbox_style *style = run->style;
     if (style->text_emphasis_mark == TBOX_STYLE_EMPHASIS_NONE || run->font == NULL || run->text.size == 0)
         return;
@@ -1469,7 +1469,7 @@ static void tbox_render_push_emphasis(tbox_vector *items, const tbox_layout_text
     const tbox_glyph *glyphs = run->glyphs;
     size_t glyph_count       = run->glyph_count;
     if (glyph_count == 0)
-        tbox_font_shape_into(items->arena, run->font, run->text, style->letter_spacing, &glyphs, &glyph_count);
+        tbox_font_shape_into(arena, run->font, run->text, style->letter_spacing, &glyphs, &glyph_count);
     for (size_t g = 0; g < glyph_count; g++) {
         size_t at = glyphs[g].cluster;
         if (at >= run->text.size)
@@ -1478,7 +1478,7 @@ static void tbox_render_push_emphasis(tbox_vector *items, const tbox_layout_text
             continue;
         double left  = glyphs[g].x;
         double right = glyphs[g].x + glyphs[g].advance - style->letter_spacing;
-        tbox_render_push_emphasis_mark(items, run, run->rect.x + (left + right) / 2.0, cy, size, color);
+        tbox_render_push_emphasis_mark(items, arena, run, run->rect.x + (left + right) / 2.0, cy, size, color);
     }
 }
 
@@ -1494,7 +1494,8 @@ static tbox_paint_op *tbox_render_push_marker(tbox_vector *items, tbox_paint_op_
 }
 
 static bool tbox_render_has_box_decoration(const tbox_style *style) {
-    if (style->background_color.a != 0 || style->background_image[0] != '\0' || style->background_gradient.kind != TBOX_STYLE_GRADIENT_NONE || style->box_shadow_color.a != 0 || style->box_shadow_count > 0 || style->has_border_image) return true;
+    const tbox_style_background_source *source = tbox_style_background_source_of(style);
+    if (style->background_color.a != 0 || source->image[0] != '\0' || source->gradient.kind != TBOX_STYLE_GRADIENT_NONE || style->box_shadow_color.a != 0 || style->box_shadow_count > 0 || style->has_border_image) return true;
     for (size_t i = 0; i < 4; i++)
         if (tbox_style_border_side_width(style, i) > 0.0) return true;
     for (size_t i = 1; i < style->background_layer_count; i++)
@@ -1612,11 +1613,12 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
             if (layer->image[0] != '\0' || layer->gradient.kind != TBOX_STYLE_GRADIENT_NONE)
                 tbox_render_push_background_image(items, box, layer, box->background_layer_images[l - 2], background_box, background_h, background_v, rounded, viewport, box->style->background_origin);
         }
-        if (box->style->background_image[0] != '\0' || box->style->background_gradient.kind != TBOX_STYLE_GRADIENT_NONE) {
+        const tbox_style_background_source *source = tbox_style_background_source_of(box->style);
+        if (source->image[0] != '\0' || source->gradient.kind != TBOX_STYLE_GRADIENT_NONE) {
             tbox_style_background_layer *first = (tbox_style_background_layer *)tbox_arena_alloc(arena, sizeof(tbox_style_background_layer));
             if (first != NULL) {
-                memcpy(first->image, box->style->background_image, sizeof(first->image));
-                first->gradient    = box->style->background_gradient;
+                memcpy(first->image, source->image, sizeof(first->image));
+                first->gradient    = source->gradient;
                 first->size_kind   = box->style->background_size_kind;
                 first->size[0]     = box->style->background_size[0];
                 first->size[1]     = box->style->background_size[1];
@@ -1874,8 +1876,9 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
             op->has_clip = true;
             op->clip = child_clip;
         }
+    /* Scratch, like `items` itself (see tbox_render_build_display_list_in_viewport). */
     tbox_vector layers;
-    tbox_vector_init(&layers, arena, sizeof(tbox_render_layer), 0);
+    tbox_vector_init(&layers, items->arena, sizeof(tbox_render_layer), 0);
     if (context) {
         tbox_render_collect_layers(box->first_child, child_has_clip, child_clip, &layers);
         tbox_render_paint_layers(&layers, true, items, arena, viewport);
@@ -2114,7 +2117,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
     for (size_t i = 0; i < box->text_run_count; i++) {
         const tbox_layout_text_run *run = &box->text_runs[i];
         if (run->image == NULL && run->style != NULL && !run->style->visibility_hidden)
-            tbox_render_push_emphasis(items, run);
+            tbox_render_push_emphasis(items, arena, run);
     }
 
     if (tbox_render_clips(box)) {
@@ -2234,7 +2237,7 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
             begin->transform[4] = reflect->direction == TBOX_STYLE_REFLECT_RIGHT ? 2.0 * (r.x + r.width) + offset : 2.0 * r.x - offset;
         }
         size_t source_count = source_end - own_start;
-        tbox_paint_op *source = (tbox_paint_op *)tbox_arena_alloc(arena, source_count * sizeof(tbox_paint_op));
+        tbox_paint_op *source = (tbox_paint_op *)tbox_arena_alloc(items->arena, source_count * sizeof(tbox_paint_op)); /* swap space */
         if (source != NULL) {
             memcpy(source, (tbox_paint_op *)items->data + own_start, source_count * sizeof(tbox_paint_op));
             size_t reflection_count = items->length - source_end;
@@ -2255,17 +2258,29 @@ static void tbox_render_box(const tbox_layout_box *box, tbox_vector *items, bool
 }
 
 tbox_display_list tbox_render_build_display_list_in_viewport(tbox_arena *arena, const tbox_layout_box *root, double viewport_width, double viewport_height) {
+    /* The ops grow in a scratch arena, with the other per-call vectors
+     * (stacking layers), and are copied into `arena` at their exact count:
+     * a vector that doubles in `arena` would leave every outgrown copy
+     * there. What an op points at (glyphs, gradients, styles) goes to
+     * `arena` directly, never to items.arena. */
+    tbox_arena scratch = tbox_arena_create(0);
     tbox_vector items;
-    tbox_vector_init(&items, arena, sizeof(tbox_paint_op), 0);
+    tbox_vector_init(&items, &scratch, sizeof(tbox_paint_op), 0);
 
     /* The root is the outermost stacking context; its siblings (none in a
      * normal tree) paint in order after it. */
     for (const tbox_layout_box *box = root; box != NULL; box = box->next_sibling)
         tbox_render_box(box, &items, false, (tbox_rect){ 0 }, arena, (tbox_rect){ 0.0, 0.0, viewport_width, viewport_height });
 
-    tbox_display_list list;
-    list.items = (tbox_paint_op *)items.data;
-    list.count = items.length;
+    tbox_display_list list = { NULL, 0 };
+    if (items.length > 0) {
+        list.items = (tbox_paint_op *)tbox_arena_alloc(arena, items.length * sizeof(tbox_paint_op));
+        if (list.items != NULL) {
+            memcpy(list.items, items.data, items.length * sizeof(tbox_paint_op));
+            list.count = items.length;
+        }
+    }
+    tbox_arena_destroy(&scratch);
     return list;
 }
 

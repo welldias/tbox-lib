@@ -84,11 +84,22 @@ bool tbox_style_generated_wants(const tbox_style_generated *generated, int which
 }
 
 bool tbox_style_generated_allowed(const tbox_html_node *element) {
-    static const char *const excluded[] = { "img", "input", "select", "textarea", "br", "hr", "iframe", "video", "audio", "canvas", "embed", "object", "meta", "link", "base", "area", "source", "col", "wbr", "progress", "meter" };
+    /* With their sizes: asked for every element, most tags are ruled out
+     * by length alone. */
+#define TBOX_GENERATED_TAG(text) { text, sizeof(text) - 1 }
+    static const tbox_string_view excluded[] = {
+        TBOX_GENERATED_TAG("img"), TBOX_GENERATED_TAG("input"), TBOX_GENERATED_TAG("select"), TBOX_GENERATED_TAG("textarea"), TBOX_GENERATED_TAG("br"),
+        TBOX_GENERATED_TAG("hr"), TBOX_GENERATED_TAG("iframe"), TBOX_GENERATED_TAG("video"), TBOX_GENERATED_TAG("audio"), TBOX_GENERATED_TAG("canvas"),
+        TBOX_GENERATED_TAG("embed"), TBOX_GENERATED_TAG("object"), TBOX_GENERATED_TAG("meta"), TBOX_GENERATED_TAG("link"), TBOX_GENERATED_TAG("base"),
+        TBOX_GENERATED_TAG("area"), TBOX_GENERATED_TAG("source"), TBOX_GENERATED_TAG("col"), TBOX_GENERATED_TAG("wbr"), TBOX_GENERATED_TAG("progress"),
+        TBOX_GENERATED_TAG("meter"),
+    };
+#undef TBOX_GENERATED_TAG
     if (element == NULL || element->type != TBOX_HTML_NODE_ELEMENT)
         return false;
+    tbox_string_view tag = element->element.tag_name;
     for (size_t i = 0; i < sizeof(excluded) / sizeof(excluded[0]); i++)
-        if (tbox_string_view_equal_cstr(element->element.tag_name, excluded[i]))
+        if (excluded[i].size == tag.size && memcmp(excluded[i].data, tag.data, tag.size) == 0)
             return false;
     return true;
 }

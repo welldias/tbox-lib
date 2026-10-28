@@ -282,6 +282,11 @@ bool tbox_context_is_textarea(const tbox_html_node *node);
 bool tbox_context_is_summary(const tbox_html_node *node);
 bool tbox_context_toggle_details(tbox_context *ctx, const tbox_html_node *summary);
 const tbox_html_node *tbox_context_image_area_at(const tbox_context *ctx, const tbox_layout_box *box, double x, double y);
+/* The element `run` (one of `box`'s) comes from, NULL when not found.
+ * Inline elements have no box: the run's style leads to the entry, looked
+ * up within the nearest box's element, since elements alike in different
+ * boxes can share one style. */
+const tbox_html_node *tbox_context_run_element(const tbox_context *ctx, const tbox_layout_box *box, const tbox_layout_text_run *run);
 bool tbox_context_is_text_control(const tbox_html_node *node);
 bool tbox_context_is_select(const tbox_html_node *node);
 bool tbox_context_is_color_input(const tbox_html_node *node);
@@ -354,7 +359,8 @@ void tbox_context_apply_scroll(tbox_context *ctx, tbox_layout_box *box);
 void tbox_context_reveal_focused(tbox_context *ctx);
 void tbox_context_apply_sticky(tbox_context *ctx, double viewport_width, double viewport_height);
 tbox_rect tbox_context_rect_intersection(tbox_rect a, tbox_rect b);
-void tbox_context_append_scrollbars(tbox_context *ctx, tbox_display_list *list);
+/* Pushes the scrollbars and resize handles of the frame onto `items`. */
+void tbox_context_paint_scroll_overlay(tbox_context *ctx, tbox_vector *items);
 /* `resize` (tbox_context_resize.c): the handle's rect on `box` (false when
  * it has none), the dragged sizes applied over the frame's styles, the
  * handles painted, and the pointer press/drag/release on them. */

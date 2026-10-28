@@ -65,8 +65,9 @@ static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbo
 
             double text_width          = 0.0;
             double word_width          = 0.0;
+            tbox_arena scratch = tbox_arena_create(TBOX_LAYOUT_SCRATCH_BLOCK);
             tbox_vector words;
-            tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+            tbox_vector_init(&words, &scratch, sizeof(tbox_layout_word), 0);
             tbox_layout_collect_words(arena, cell->first_child, NULL, cell_style, styles, fonts, images, *content_width, &words);
             if (words.length > 0) {
                 double line_width = 0.0;
@@ -93,6 +94,7 @@ static void tbox_layout_table_compute_column_widths(tbox_arena *arena, const tbo
                     word_width = tbox_layout_table_longest_word(face, text, cell_style->letter_spacing);
                 }
             }
+            tbox_arena_destroy(&scratch);
 
             double edges = padding_left + padding_right + border_x;
             double natural_width = text_width + edges;

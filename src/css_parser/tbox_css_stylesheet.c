@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <tbox/css_parser.h>
 
@@ -22,8 +23,9 @@ tbox_css_stylesheet *tbox_css_stylesheet_create_empty(void) {
     stylesheet->ruleset_count = 0;
     stylesheet->pseudo_element_rulesets      = NULL;
     stylesheet->pseudo_element_ruleset_count = 0;
+    stylesheet->pseudo_elements              = NULL;
+    stylesheet->pseudo_element_count         = 0;
     stylesheet->element_index                = (tbox_css_rule_index){ 0 };
-    stylesheet->pseudo_element_index         = (tbox_css_rule_index){ 0 };
     stylesheet->font_palettes = NULL;
     stylesheet->font_palette_count = 0;
     stylesheet->font_faces = NULL;
@@ -77,6 +79,19 @@ static bool tbox_css_ruleset_has_pseudo_element(const tbox_css_ruleset *ruleset)
     return false;
 }
 
+/* The pseudo-element `selector` names, as the cascade reads it: its first
+ * "::" simple selector, without the colons. */
+static bool tbox_css_selector_pseudo_element_name(const tbox_css_selector *selector, tbox_string_view *out) {
+    for (size_t i = 0; i < selector->simple_selector_count; i++) {
+        tbox_string_view name = selector->simple_selectors[i].name;
+        if (selector->simple_selectors[i].kind == TBOX_CSS_SIMPLE_SELECTOR_PSEUDO && name.size >= 3 && name.data[0] == ':' && name.data[1] == ':') {
+            *out = tbox_string_view_make(name.data + 2, name.size - 2);
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool tbox_css_stylesheet_index_pseudo_elements(tbox_css_stylesheet *stylesheet) {
     size_t count = 0;
     for (size_t r = 0; r < stylesheet->ruleset_count; r++)
@@ -84,6 +99,8 @@ static bool tbox_css_stylesheet_index_pseudo_elements(tbox_css_stylesheet *style
             count++;
     stylesheet->pseudo_element_rulesets      = NULL;
     stylesheet->pseudo_element_ruleset_count = 0;
+    stylesheet->pseudo_elements              = NULL;
+    stylesheet->pseudo_element_count         = 0;
     if (count == 0)
         return true;
     stylesheet->pseudo_element_rulesets = tbox_arena_alloc(&stylesheet->arena, count * sizeof(size_t));
@@ -92,7 +109,60 @@ static bool tbox_css_stylesheet_index_pseudo_elements(tbox_css_stylesheet *style
     for (size_t r = 0; r < stylesheet->ruleset_count; r++)
         if (tbox_css_ruleset_has_pseudo_element(&stylesheet->rulesets[r]))
             stylesheet->pseudo_element_rulesets[stylesheet->pseudo_element_ruleset_count++] = r;
+    /* The names, as the cascade reads them: the first "::" simple
+     * selector of each selector. At most one per selector. */
+    size_t selectors = 0;
+    for (size_t p = 0; p < stylesheet->pseudo_element_ruleset_count; p++)
+        selectors += stylesheet->rulesets[stylesheet->pseudo_element_rulesets[p]].selector_count;
+    stylesheet->pseudo_elements = selectors > 0 ? tbox_arena_alloc_zero(&stylesheet->arena, selectors * sizeof(*stylesheet->pseudo_elements)) : NULL;
+    if (selectors > 0 && stylesheet->pseudo_elements == NULL)
+        return false;
+    for (size_t p = 0; p < stylesheet->pseudo_element_ruleset_count; p++) {
+        const tbox_css_ruleset *ruleset = &stylesheet->rulesets[stylesheet->pseudo_element_rulesets[p]];
+        for (size_t s = 0; s < ruleset->selector_count; s++) {
+            tbox_string_view name;
+            if (!tbox_css_selector_pseudo_element_name(&ruleset->selectors[s], &name))
+                continue;
+            bool known = false;
+            for (size_t n = 0; n < stylesheet->pseudo_element_count && !known; n++)
+                known = tbox_string_view_equal(stylesheet->pseudo_elements[n].name, name);
+            if (!known)
+                stylesheet->pseudo_elements[stylesheet->pseudo_element_count++].name = name;
+        }
+    }
+    /* Each name's rulesets: those with a selector naming it. */
+    for (size_t n = 0; n < stylesheet->pseudo_element_count; n++) {
+        tbox_css_pseudo_element_rules *rules = &stylesheet->pseudo_elements[n];
+        rules->rulesets                      = tbox_arena_alloc(&stylesheet->arena, stylesheet->pseudo_element_ruleset_count * sizeof(size_t));
+        if (rules->rulesets == NULL)
+            return false;
+        for (size_t p = 0; p < stylesheet->pseudo_element_ruleset_count; p++) {
+            const tbox_css_ruleset *ruleset = &stylesheet->rulesets[stylesheet->pseudo_element_rulesets[p]];
+            bool names                      = false;
+            for (size_t s = 0; s < ruleset->selector_count && !names; s++) {
+                tbox_string_view name;
+                names = tbox_css_selector_pseudo_element_name(&ruleset->selectors[s], &name) && tbox_string_view_equal(name, rules->name);
+            }
+            if (names)
+                rules->rulesets[rules->ruleset_count++] = stylesheet->pseudo_element_rulesets[p];
+        }
+    }
     return true;
+}
+
+const tbox_css_pseudo_element_rules *tbox_css_stylesheet_pseudo_element_rules(const tbox_css_stylesheet *stylesheet, tbox_string_view pseudo) {
+    for (size_t n = 0; stylesheet != NULL && n < stylesheet->pseudo_element_count; n++) {
+        tbox_string_view name = stylesheet->pseudo_elements[n].name;
+        /* Size and first byte first: this runs for every pseudo-element
+         * of every element. */
+        if (name.size == pseudo.size && name.size > 0 && name.data[0] == pseudo.data[0] && memcmp(name.data, pseudo.data, name.size) == 0)
+            return &stylesheet->pseudo_elements[n];
+    }
+    return NULL;
+}
+
+bool tbox_css_stylesheet_names_pseudo_element(const tbox_css_stylesheet *stylesheet, const char *pseudo) {
+    return tbox_css_stylesheet_pseudo_element_rules(stylesheet, tbox_string_view_from_cstr(pseudo)) != NULL;
 }
 
 /* The rule index key of `selector`: its rightmost compound's id, else its
@@ -217,11 +287,13 @@ static bool tbox_css_rule_index_build(tbox_css_stylesheet *stylesheet, const siz
 bool tbox_css_stylesheet_index_rules(tbox_css_stylesheet *stylesheet) {
     if (!tbox_css_stylesheet_index_pseudo_elements(stylesheet))
         return false;
-    if (!tbox_css_rule_index_build(stylesheet, NULL, stylesheet->ruleset_count, &stylesheet->element_index) ||
-        !tbox_css_rule_index_build(stylesheet, stylesheet->pseudo_element_rulesets, stylesheet->pseudo_element_ruleset_count, &stylesheet->pseudo_element_index)) {
-        /* Without an index the cascade looks at every ruleset. */
-        stylesheet->element_index        = (tbox_css_rule_index){ 0 };
-        stylesheet->pseudo_element_index = (tbox_css_rule_index){ 0 };
+    /* Without an index the cascade looks at every ruleset of the list. */
+    if (!tbox_css_rule_index_build(stylesheet, NULL, stylesheet->ruleset_count, &stylesheet->element_index))
+        stylesheet->element_index = (tbox_css_rule_index){ 0 };
+    for (size_t n = 0; n < stylesheet->pseudo_element_count; n++) {
+        tbox_css_pseudo_element_rules *rules = &stylesheet->pseudo_elements[n];
+        if (!tbox_css_rule_index_build(stylesheet, rules->rulesets, rules->ruleset_count, &rules->index))
+            rules->index = (tbox_css_rule_index){ 0 };
     }
     return true;
 }

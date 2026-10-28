@@ -82,7 +82,7 @@ static bool tbox_motion_shape(tbox_vector *segments, const tbox_style_clip_path 
 }
 
 static tbox_motion_point tbox_motion_origin(const tbox_style *style, tbox_rect box, tbox_rect reference) {
-    const tbox_style_offset_position *position = &style->offset_position;
+    const tbox_style_offset_position *position = &tbox_style_transforms_of(style)->offset_position;
     if (position->mode == 1) return (tbox_motion_point){ box.x - reference.x, box.y - reference.y };
     if (position->mode == 2) return (tbox_motion_point){ reference.width * 0.5, reference.height * 0.5 };
     return (tbox_motion_point){ tbox_style_length_resolve(position->position[0], reference.width), tbox_style_length_resolve(position->position[1], reference.height) };
@@ -158,9 +158,10 @@ bool tbox_style_motion_matrix(const tbox_style *style, tbox_rect box, tbox_rect 
     double ox = box.x + tbox_style_length_resolve(style->transform_origin[0], box.width);
     double oy = box.y + tbox_style_length_resolve(style->transform_origin[1], box.height);
     double ax = ox, ay = oy;
-    if (style->offset_anchor.mode == 0) {
-        ax = box.x + tbox_style_length_resolve(style->offset_anchor.position[0], box.width);
-        ay = box.y + tbox_style_length_resolve(style->offset_anchor.position[1], box.height);
+    const tbox_style_offset_position *anchor = &tbox_style_transforms_of(style)->offset_anchor;
+    if (anchor->mode == 0) {
+        ax = box.x + tbox_style_length_resolve(anchor->position[0], box.width);
+        ay = box.y + tbox_style_length_resolve(anchor->position[1], box.height);
     }
     double angle = style->offset_rotate.angle;
     if (style->offset_rotate.auto_rotate) angle += atan2(tangent.y, tangent.x) * 180.0 / TBOX_MOTION_PI;

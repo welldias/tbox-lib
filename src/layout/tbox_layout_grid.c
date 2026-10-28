@@ -106,8 +106,9 @@ static int tbox_grid_resolve_span(const tbox_style_grid_line *span, int opposite
 
 static void tbox_grid_resolve_item(tbox_layout_grid_item *item, const tbox_layout_grid_axis axes[2], const tbox_grid_areas *areas) {
     const tbox_style *s                   = item->style;
-    const tbox_style_grid_line *starts[2] = { &s->grid_column_start, &s->grid_row_start };
-    const tbox_style_grid_line *ends[2]   = { &s->grid_column_end, &s->grid_row_end };
+    const tbox_style_grid_placement *p   = tbox_style_grid_placement_of(s);
+    const tbox_style_grid_line *starts[2] = { &p->grid_column_start, &p->grid_row_start };
+    const tbox_style_grid_line *ends[2]   = { &p->grid_column_end, &p->grid_row_end };
     for (int d = 0; d < 2; d++) {
         int start = item->anonymous ? TBOX_GRID_AUTO_LINE : tbox_grid_resolve_line(starts[d], &axes[d], areas, d, false);
         int end   = item->anonymous ? TBOX_GRID_AUTO_LINE : tbox_grid_resolve_line(ends[d], &axes[d], areas, d, true);
@@ -607,10 +608,12 @@ static tbox_layout_grid_item *tbox_grid_collect(tbox_arena *arena, const tbox_ht
             tbox_grid_resolve_item(item, axes, areas);
             tbox_layout_intrinsic intrinsic;
             if (anonymous) {
+                tbox_arena scratch = tbox_arena_create(TBOX_LAYOUT_SCRATCH_BLOCK);
                 tbox_vector words;
-                tbox_vector_init(&words, arena, sizeof(tbox_layout_word), 0);
+                tbox_vector_init(&words, &scratch, sizeof(tbox_layout_word), 0);
                 tbox_layout_collect_words(arena, child, end, style, styles, fonts, images, content_width, &words);
                 intrinsic = tbox_layout_measure_words(words.data, words.length, tbox_layout_white_space_nowrap(style));
+                tbox_arena_destroy(&scratch);
             } else
                 intrinsic = tbox_layout_intrinsic_outer(arena, child, styles, fonts, images);
             item->min[0]      = intrinsic.min;
@@ -635,7 +638,7 @@ static tbox_layout_grid_item *tbox_grid_collect(tbox_arena *arena, const tbox_ht
 }
 
 static tbox_style_units tbox_grid_units(const tbox_style *style, int index, tbox_style_units fallback) {
-    const tbox_style_grid_units *units = &style->grid_units[index];
+    const tbox_style_grid_units *units = &tbox_style_grid_templates_of(style)->grid_units[index];
     if (units->font_size > 0)
         return (tbox_style_units){ units->font_size, units->root_font_size, units->viewport_width, units->viewport_height, style->direction_rtl, -1.0, -1.0, tbox_style_zoom(style), TBOX_STYLE_FRAME_NONE, style->ex_ratio, style->ch_ratio };
     return fallback;

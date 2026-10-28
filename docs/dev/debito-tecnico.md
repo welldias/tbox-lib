@@ -71,28 +71,50 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 
 ### Tabelas grandes
 
-- **O que é:** medido em 2026-10-26 (Release, tabela de 5 colunas). Depois
+- **O que é:** medido em 2026-10-27 (Release, tabela de 5 colunas). Depois
   do índice da tabela de estilos, do cache de runs que cresce e do estado
   de transição só para quem declara `transition`, da capacidade certa para
-  a tabela de estilos, do culling, do compartilhamento de estilo e do
-  índice de regras e do filtro dos validadores, o frame é linear (~46 ms
-  com 1000 linhas, ~96 ms com 2000). Restam estes custos:
-  - estilo e layout têm agora o mesmo peso (~20 ms cada com 1000 linhas);
-    a cascata ainda roda para todo elemento, inclusive os que
-    compartilham (o passo C em [Decisões](decisoes.md) a pularia);
-  - cada entrada da tabela de estilos ocupa 9,7 KB (`tbox_style` com
-    strings de 256 bytes e arrays fixos): ~56 MiB com 1000 linhas;
-  - o texto de cada célula é medido e moldado 2 a 3 vezes;
+  a tabela de estilos, do culling, do compartilhamento de estilo (agora por
+  endereço em nível de bloco), do índice de regras e do filtro dos
+  validadores e do rascunho do layout fora da arena do frame, o frame é
+  linear e a arena do frame tem ~8 MB com 1000 linhas (RSS ~27 MB).
+  Restam estes custos:
+  - a cascata é pulada entre elementos iguais (passo C em
+    [Decisões](decisoes.md)), as de pseudo-elemento só rodam quando
+    alguma regra pode servir ao elemento, e quem compartilha sem passo por
+    nó não copia o estilo; sobra a cópia própria de 4 KB de cada elemento
+    inline;
+  - o layout ocupa ~1 KB por célula (6,1 MB com 1000 linhas, depois do
+    rascunho fora da arena do frame): caixas de 424 B, glifos de 40 B cada
+    e runs de 152 B; uma `tbox_layout_word` tem 216 B, mas agora só vive no
+    rascunho;
+  - cada estilo próprio ocupa ~4 KB (era 9,7 KB antes dos grupos raros
+    fora de linha): pesa para inline (cada `<span>` numa célula tem o seu,
+    20,6 MB com 5000), elementos com dados por nó e cópias feitas no frame.
+    O que sobra de maior são os 45 `tbox_style_length` de 48 bytes (~2,1 KB;
+    ver [Decisões](decisoes.md#css-e-estilo) para por que não foram
+    compactados), `font_family` (192 B), sombras (320 B), `filter_matrix`
+    (160 B) e `parts` (144 B);
+  - a display list ocupa 9,9 MB com 17 mil operações numa tabela com
+    elementos inline por célula (era 38 MB antes do rascunho):
+    `tbox_paint_op` tem 608 bytes para todo tipo de op, embora um
+    `TEXT_RUN` use ~150; tirar de linha o recorte arredondado, a borda
+    interna do `FILL_RING` e a matriz da camada pouparia ~240 bytes por op.
+    As carets de campo focado ainda copiam a lista inteira (uma vez, no
+    tamanho exato);
+  - o texto de cada célula é coletado e medido uma vez (o shaping já era
+    único pelo cache de runs); a busca de face ainda monta as opções de
+    shaping do estilo a cada chamada (~310 instruções) e percorre o cache
+    de faces linearmente;
   - rolar ou passar o mouse sobre a tabela refaz estilo e layout inteiros
     (ver [Estilo e layout incrementais](#estilo-e-layout-incrementais)).
-- **Por que importa:** com 1000 linhas a arena do frame ainda ocupa
-  ~85 MB, e cada movimento do mouse sobre linhas com `:hover` custa um
-  frame inteiro.
-- **Quando revisitar:** já é um problema real; ordem proposta: medição
-  única por célula, pular a cascata no compartilhamento (C), dados raros
-  fora do `tbox_style`.
+- **Por que importa:** cada movimento do mouse sobre linhas com `:hover`
+  custa um frame inteiro, e uma tabela com elementos inline por célula
+  paga ~4 KB de estilo e ~0,6 KB por op da display list.
+- **Quando revisitar:** ordem proposta: op menor da display list.
 - **Toca:** `src/style/tbox_style.c`, `include/tbox/style.h`,
-  `src/layout/tbox_layout_table*.c`.
+  `src/layout/tbox_layout_table*.c`, `include/tbox/render.h`,
+  `src/output/tbox_raster*.c`.
 
 ### Screenshot headless incremental
 
@@ -637,9 +659,10 @@ visual não determina quando cada defeito foi introduzido.
   cortado.
 - **Por que importa:** perde texto silenciosamente. O tamanho deixou de ser
   o problema principal: em 2026-10-20 os grupos grandes e raros saíram do
-  struct (ver [Decisões](decisoes.md#css-e-estilo)), de ~39 KB para ~9,7 KB;
-  restam `marker_urls` (768 B), `list_style_image`/`list_style_custom`,
-  `background_image` (256 B cada) e os arrays de `transitions`/`animations`.
+  struct (ver [Decisões](decisoes.md#css-e-estilo)), de ~39 KB para ~9,7 KB,
+  e em 2026-10-27 para ~4 KB; os `char[256]` que restavam (`marker_urls`,
+  `list_style_image`, `list_style_custom`, `background_image`) estão agora
+  em grupos fora de linha.
 - **Quando revisitar:** quando um valor real passar do limite, ou na próxima
   revisão do ABI de `tbox_style`. A troca natural é `tbox_string_view`
   apontando para a arena do frame/folha, ou mais grupos fora de linha.

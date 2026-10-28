@@ -123,7 +123,7 @@ void tbox_layout_prepare_initial(tbox_arena *arena, const tbox_html_node *node, 
      * writing mode, turn it into the block's layout frame. */
     if (letter->layout_frame != style->layout_frame) {
         tbox_style physical = *letter;
-        tbox_layout_frame_remap(letter, &physical, style->layout_frame);
+        tbox_layout_frame_remap(arena, letter, &physical, style->layout_frame);
     }
     if (pseudo == NULL && !explicit_inline) {
         letter->initial_letter_size = style->initial_letter_size;
@@ -165,7 +165,7 @@ void tbox_layout_prepare_initial(tbox_arena *arena, const tbox_html_node *node, 
     if (box == NULL)
         return;
     tbox_vector expanded;
-    tbox_vector_init(&expanded, arena, sizeof(tbox_layout_word), words->length + 1);
+    tbox_vector_init(&expanded, words->arena, sizeof(tbox_layout_word), words->length + 1);
     for (size_t i = 0; i < first; i++)
         *(tbox_layout_word *)tbox_vector_push(&expanded) = items[i];
     tbox_layout_word *word = tbox_layout_new_word(&expanded);

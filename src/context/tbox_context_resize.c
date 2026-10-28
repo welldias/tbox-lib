@@ -103,7 +103,9 @@ void tbox_context_apply_resize(tbox_context *ctx, tbox_style_table *styles) {
         for (size_t i = 0; i < styles->count; i++) {
             if (styles->items[i].node != state->node)
                 continue;
-            tbox_style *style      = &styles->items[i].style;
+            tbox_style *style = tbox_style_table_mutable(styles, i, &ctx->frame_arena);
+            if (style == NULL)
+                continue;
             tbox_style_resize axes = tbox_style_resize_allowed(style, tbox_context_is_textarea(state->node));
             if (state->has_width && (axes == TBOX_STYLE_RESIZE_BOTH || axes == TBOX_STYLE_RESIZE_HORIZONTAL)) {
                 style->width         = (tbox_style_length){ TBOX_STYLE_LENGTH_PX, state->width, 0.0, 0, 0.0, 0.0 };
