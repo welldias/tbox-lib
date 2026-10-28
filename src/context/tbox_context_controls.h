@@ -50,6 +50,17 @@ tbox_html_node *tbox_context_table_insert_row(tbox_context *ctx, tbox_html_node 
                                               const tbox_string_view *cells, size_t count);
 bool tbox_context_table_remove_row(tbox_context *ctx, tbox_html_node *table, size_t index);
 void tbox_context_table_clear_body(tbox_context *ctx, tbox_html_node *table);
+/* Same type as in tbox_context_internal.h (C11 allows the repeat). */
+typedef void (*tbox_context_table_rows_handler)(tbox_context *ctx, tbox_html_node *table, size_t first,
+                                                tbox_html_node *const *rows, size_t count, void *userdata);
+bool tbox_context_table_virtualize(tbox_context *ctx, tbox_html_node *table, const tbox_html_node *row_template, size_t row_count,
+                                   tbox_context_table_rows_handler handler, void *userdata, tbox_destroy_notify destroy);
+bool tbox_context_table_set_row_total(tbox_context *ctx, tbox_html_node *table, size_t row_count);
+bool tbox_context_table_refresh_rows(tbox_context *ctx, tbox_html_node *table, size_t first, size_t count);
+tbox_html_node *tbox_context_table_virtual_row(tbox_context *ctx, const tbox_html_node *table, size_t index);
+ptrdiff_t tbox_context_table_virtual_index(tbox_context *ctx, const tbox_html_node *row);
+bool tbox_context_table_scroll_to_row(tbox_context *ctx, tbox_html_node *table, size_t index);
+bool tbox_context_table_unvirtualize(tbox_context *ctx, tbox_html_node *table);
 tbox_html_node *tbox_context_table_head(const tbox_html_node *table);
 tbox_html_node *tbox_context_table_foot(const tbox_html_node *table);
 size_t tbox_context_table_cell_count(const tbox_html_node *row);

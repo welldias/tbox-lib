@@ -292,6 +292,65 @@ seleção se faz com `tbox_control_set_class` e CSS. Para linhas com mais do
 que texto (ícone, botão), use um `<template>` com o `<tr>` e
 `tbox_control_instantiate` no `<tbody>` (próxima seção).
 
+#### Tabela virtual (linhas por demanda)
+
+Para tabelas grandes, o programa não precisa pôr todas as linhas no DOM.
+`tbox_table_virtualize` deixa no documento só as linhas à vista, mais uma
+margem de meia tela de cada lado, e pede ao programa, por um callback, as
+que vão aparecendo. Uma tabela de um milhão de linhas custa o mesmo que a
+parte visível: ~1,3 ms e 0,8 MB de arena por frame no `tbox_bench
+--virtual-table`, contra ~21 ms e 7,8 MB de uma tabela comum de mil linhas.
+
+| Função | Uso |
+|---|---|
+| `tbox_table_virtualize(app, t, template, total, handler, ud, destroy)` | Torna `t` virtual com `total` linhas, montadas a partir do `<tr>` do `<template>` (fora da tabela). As linhas e os `<tbody>` do corpo saem; entram três `<tbody>`: espaçador, linhas à vista, espaçador. |
+| `tbox_table_set_row_total(app, t, n)` | Novo total (dados que chegaram ou saíram no fim). |
+| `tbox_table_refresh_rows(app, t, primeira, n)` | Os dados dessas linhas mudaram: as que estão à vista são pedidas de novo. |
+| `tbox_table_virtual_row(app, t, i)` / `tbox_table_virtual_index(app, tr)` | O `<tr>` da linha lógica `i` enquanto à vista (senão `NULL`) / o inverso (`-1` fora da janela), para cliques. |
+| `tbox_table_scroll_to_row(app, t, i)` | Rola o contêiner até a linha `i`. |
+| `tbox_table_unvirtualize(app, t)` | Volta a tabela comum: as linhas à vista ficam, os espaçadores saem. |
+
+O handler recebe as linhas lógicas `[primeira, primeira + n)` e o `<tr>` de
+cada uma. Ele preenche na hora ou depois: com dados de banco ou de rede,
+guarda o intervalo, pede numa thread e entrega no thread de UI com
+`tbox_app_post`, preenchendo por `tbox_table_virtual_row` (`NULL` para a
+linha que saiu de vista enquanto isso; ela é pedida de novo se voltar).
+
+```c
+static void linhas(tbox_app *app, tbox_html_node *t, size_t primeira,
+                   tbox_html_node *const *rows, size_t n, void *ud) {
+    for (size_t i = 0; i < n; i++)
+        preencher(app, rows[i], primeira + i); /* tbox_html_node_set_text_content nas células */
+}
+
+tbox_table_virtualize(app, tbox_app_query(app, "#clientes", 9),
+                      tbox_app_query(app, "#linha", 6), 1000000, linhas, NULL, NULL);
+```
+
+- **Coloque a tabela num contêiner rolável** (`overflow-y: auto`); sem um,
+  a janela cobre a altura da viewport. A barra de rolagem cobre todas as
+  linhas, com a altura média medida das que estão à vista.
+- **`table-layout: fixed` é o recomendado**: as larguras vêm de
+  `<col>`/primeira linha/percentuais, acompanham a largura da janela e não
+  mudam ao rolar. Com `auto` funciona, mas as colunas seguem as linhas à
+  vista.
+- **Os `<tr>` são reciclados**: o que sai por cima volta por baixo com o
+  conteúdo antigo, e o handler o reescreve. `tbox_html_node_set_text_content`
+  (e o que passa por ela, como `tbox_table_set_cell_text`) reescreve o texto
+  no lugar quando cabe, então rolar não faz o documento crescer. Criar nós
+  novos a cada preenchimento faz; trocar classes ou atributos ainda copia o
+  valor a cada troca (poucos bytes).
+- **Alturas que mudam** (largura nova quebra o texto em mais linhas):
+  a linha no topo da área visível fica onde estava (âncora de rolagem).
+- **Zebra**: a janela começa sempre numa linha par, e os espaçadores ficam
+  em `<tbody>` próprios, então `tbody tr:nth-child(even)` não troca de cor
+  ao rolar.
+- `tbox_table_row_count` e afins veem o DOM como está: cabeçalho,
+  espaçadores e só as linhas à vista. Não acrescente nem remova linhas da
+  tabela virtual; o foco num campo de uma linha que sai de vista sai dele.
+
+Exemplo completo, com entrega por thread, em `example/table_virtual_demo.c`.
+
 ### Itens, classes e visibilidade — `controls.h`
 
 Para listas, cards e linhas que a aplicação monta conforme os dados. O HTML

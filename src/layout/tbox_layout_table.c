@@ -202,6 +202,11 @@ double tbox_layout_build_table_row_children(tbox_arena *arena, const tbox_html_n
         cursor_x += column_widths[column_index];
         column_index++;
     }
+    /* The row's px `height` is its minimum height (CSS 2.1 §17.5.3), as in
+     * tbox_layout_build_table_extended. */
+    const tbox_style *row_style = tbox_layout_style_or_default(styles, row_node);
+    if (row_style->height.kind == TBOX_STYLE_LENGTH_PX && row_style->height.value > max_height)
+        max_height = row_style->height.value;
 
     for (tbox_layout_box *cell_box = row_box->first_child; cell_box != NULL; cell_box = cell_box->next_sibling) {
         double growth = max_height - cell_box->margin_box.height;

@@ -446,6 +446,7 @@ tbox_context *tbox_context_open_with_options(const char *html, size_t html_lengt
     ctx->select_userdata                                    = NULL;
     ctx->select_destroy                                     = NULL;
     ctx->scroll_states                                      = NULL;
+    ctx->virtual_tables                                     = NULL;
     ctx->scroll_drag_node                                   = NULL;
     ctx->scroll_thumb_hover                                 = NULL;
     ctx->scroll_drag_grab_y                                 = 0.0;
@@ -502,6 +503,7 @@ void tbox_context_close(tbox_context *ctx) {
     tbox_release_add(&ctx->releases, ctx->input_destroy, ctx->input_userdata);
     tbox_release_add(&ctx->releases, ctx->select_destroy, ctx->select_userdata);
     tbox_release_add(&ctx->releases, ctx->submit_destroy, ctx->submit_userdata);
+    tbox_context_free_virtual_tables(ctx);
     tbox_release_finish(&ctx->releases);
 
     tbox_context_free_transitions(ctx);
@@ -590,6 +592,9 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * one shot -- no per-layer _destroy to call (see "Convenções" in
      * docs/dev/historico.md). Must happen before ctx->root is overwritten below:
      * the old tree lives in this same arena. */
+    /* Before the reset: a virtual table's handler may call anything,
+     * including what reads the last frame's boxes. */
+    tbox_context_virtual_tables_update(ctx);
     tbox_arena_reset(&ctx->frame_arena);
     ctx->styles = (tbox_style_table){ 0 };
 
@@ -675,6 +680,7 @@ void tbox_context_run_frame(tbox_context *ctx, double viewport_width, double vie
      * so tbox_context_hit_test has something to search (or not) between
      * frames. */
     ctx->root = tbox_layout_build(&ctx->frame_arena, root, &styles, ctx->fonts, ctx->images, viewport_width, viewport_height);
+    tbox_context_virtual_tables_measure(ctx, viewport_height);
     tbox_context_apply_scroll(ctx, ctx->root);
     tbox_context_reveal_focused(ctx);
     tbox_context_apply_sticky(ctx, viewport_width, viewport_height);

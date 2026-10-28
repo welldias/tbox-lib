@@ -3400,6 +3400,33 @@ int tbox_test_layout_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* A row's px height is its minimum height: it grows a row of short
+     * cells, gives a row without cells its height, and never shrinks a
+     * taller row -- in the plain table layout and in the grid one
+     * (border-collapse). */
+    for (int collapsed = 0; collapsed < 2; collapsed++) {
+        tbox_html_document *doc    = parse_html_cstr("<table><tr class='tall'><td>A</td></tr><tr class='empty'></tr><tr class='low'><td>B</td></tr></table>");
+        const tbox_html_node *root = tbox_html_document_root(doc);
+        tbox_css_stylesheet *sheet = parse_css_cstr(collapsed ? "table { border-collapse: collapse; } .tall { height: 50px; } .empty { height: 30px; } .low { height: 1px; }"
+                                                              : "table { border-spacing: 0; } .tall { height: 50px; } .empty { height: 30px; } .low { height: 1px; }");
+
+        tbox_arena arena               = tbox_arena_create(0);
+        tbox_css_cascade_source source = { sheet, TBOX_CSS_ORIGIN_AUTHOR };
+        tbox_style_table table         = tbox_style_resolve_tree(&arena, root, &source, 1);
+        tbox_layout_box *table_box     = tbox_layout_build(&arena, root, &table, fonts, NULL, 800.0, 600.0);
+        const tbox_layout_box *tall    = table_box != NULL ? table_box->first_child : NULL;
+        const tbox_layout_box *empty   = tall != NULL ? tall->next_sibling : NULL;
+        const tbox_layout_box *low     = empty != NULL ? empty->next_sibling : NULL;
+        TBOX_TEST_REQUIRE(tall != NULL && empty != NULL && low != NULL);
+        TBOX_TEST_ASSERT(tbox_test_double_approx_equal(tall->border_box.height, 50.0));
+        TBOX_TEST_ASSERT(tbox_test_double_approx_equal(empty->border_box.height, 30.0) && tbox_test_double_approx_equal(empty->border_box.y, tall->border_box.y + 50.0));
+        TBOX_TEST_ASSERT(low->border_box.height > 1.0 && tbox_test_double_approx_equal(low->border_box.y, empty->border_box.y + 30.0));
+
+        tbox_arena_destroy(&arena);
+        tbox_css_stylesheet_destroy(sheet);
+        tbox_html_document_destroy(doc);
+    }
+
     /* The long ragged row and wide final header must leave enough room for
      * styled inline words in the middle column. */
     {

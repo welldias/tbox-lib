@@ -157,8 +157,25 @@ saem da lista (o histórico deles está em [historico.md](historico.md)).
 - **Por que importa:** uma UI de vida longa com milhares de mutações só faz a
   arena crescer.
 - **Quando revisitar:** quando medido como problema real. Não resolver
-  preventivamente.
+  preventivamente. Em 2026-10-27 `set_text_content` passou a reescrever no
+  lugar o texto que ela mesma criou quando o novo cabe (o caso das linhas
+  recicladas de uma tabela virtual: rolar 2000 linhas não cresce a arena).
+  Falta o valor de atributo: na tabela virtual, cada troca de classe numa
+  linha reciclada ainda copia o valor.
 - **Toca:** `src/html_parser/`, `tbox_context`.
+
+### Tabela virtual: limites
+
+- **O que é:** só rolagem vertical num contêiner `overflow-y: auto` (ou a
+  altura da viewport); total conhecido (sem "carregar mais" de total
+  aberto); com `table-layout: auto` as colunas mudam conforme as linhas à
+  vista; a linha com o foco sai da janela e perde o foco; `colspan`/`rowspan`
+  entre linhas da janela e de fora não são tratados; `tbox_table_scroll_to_row`
+  só depois do primeiro frame.
+- **Por que importa:** uma tabela de dados de altura aberta (feed) ou com
+  células mescladas entre linhas não cabe no modelo.
+- **Quando revisitar:** quando um caso real pedir.
+- **Toca:** `src/context/tbox_context_table_virtual.c`.
 
 ### Restante da API de controles
 

@@ -186,7 +186,7 @@ ignorados sem erro — o parser é tolerante.
 | X* | grid-template-columns | Specifies the size of the columns, and how many columns in a grid layout |
 | X* | grid-template-rows | Specifies the size of the rows in a grid layout |
 | X | hanging-punctuation | Specifies whether a punctuation character may be placed outside the line box |
-| X | height | Sets the height of an element |
+| X | height | Sets the height of an element (on a `<tr>`, its minimum height) |
 | X* | hyphenate-character | Sets the character used at the end of line, before a hyphenation break |
 | X* | hyphens | Sets how to split words to improve the layout of text |
 | X | image-rendering | Specifies the type of algorithm to use for image scaling |

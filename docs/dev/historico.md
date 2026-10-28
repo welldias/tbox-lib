@@ -18,6 +18,28 @@ Cada versão foi uma "fatia vertical": um critério de pronto ponta a ponta,
 validado com `example/tbox_app_demo.html` e, a partir da v7, com screenshot
 headless.
 
+## Após v20 — Tabela virtual: linhas por demanda (2026-10-27)
+
+`tbox_table_virtualize` e companhia (`include/tbox/controls.h`, ver
+[Guia da API](../03-guia-da-api.md#tabela-virtual-linhas-por-demanda) e
+[Decisões](decisoes.md)): só as linhas à vista e uma margem de meia tela
+ficam no DOM, entre dois `<tbody>` espaçadores; o programa preenche os
+`<tr>` pedidos por um callback, na hora ou depois (exemplo com thread em
+`example/table_virtual_demo.c`). Os `<tr>` são reciclados, a janela começa
+em linha par (zebra estável) e a âncora de rolagem segura a linha do topo
+quando as alturas mudam. Para isso, o `height` em px de um `<tr>` virou
+altura mínima da linha (nos dois caminhos de layout de tabela), e
+`tbox_html_node_set_text_content` reescreve no lugar o texto que criou
+quando o novo cabe. Medido em Release (`tbox_bench --virtual-table`, mesma
+página do `--table`): ~1,3 ms e 0,8 MB de arena por frame com 1000, 100 000
+ou 1 000 000 linhas (contra ~21 ms e 7,8 MB da tabela comum de 1000);
+rolar 400 frames de 150 px não cresce a arena do documento. Testes novos
+na API de controles (janela, reciclagem, entrega tardia, refresh, total,
+volta à tabela comum, âncora com largura menor), no layout (altura de
+linha) e na árvore (texto no lugar). Os 9301 quadros de 131 documentos
+são idênticos; testes, `tbox_frame_dump` e o bench virtual passam com
+ASan+UBSan.
+
 ## Após v20 — Caminhada do estilo sem cópias para quem não muda (2026-10-27)
 
 Por elemento, a caminhada do estilo ainda gastava ~1600 instruções em

@@ -5,12 +5,14 @@
 
 #include "tbox_tool_support.h"
 
+#include "context/tbox_context_controls.h"
 #include "context/tbox_context_internal.h"
+#include "html_parser/tbox_html_document.h"
 
 /* A table like an application's: header, zebra rows, a hover rule, some
  * selected rows and a bold first column, inside a scroll container. */
-static char *tbox_bench_table(int rows, int viewport_height, size_t *out_size) {
-    size_t capacity = (size_t)rows * 200 + 2048;
+static char *tbox_bench_table(int rows, int viewport_height, bool virtual_rows, size_t *out_size) {
+    size_t capacity = (size_t)(virtual_rows ? 0 : rows) * 200 + 2048;
     char *html      = malloc(capacity);
     if (html == NULL)
         return NULL;
@@ -27,11 +29,12 @@ static char *tbox_bench_table(int rows, int viewport_height, size_t *out_size) {
         "</style></head><body><div id='scroll'><table>"
         "<thead><tr><th>Id</th><th>Name</th><th>E-mail</th><th>Status</th><th>Value</th></tr></thead><tbody>",
         viewport_height > 40 ? viewport_height - 40 : viewport_height);
-    for (int i = 0; i < rows; i++)
+    for (int i = 0; i < rows && !virtual_rows; i++)
         n += (size_t)snprintf(html + n, capacity - n,
             "<tr%s><td>%d</td><td>Person number %d</td><td>person%d@example.com</td><td>%s</td><td>%d.%02d</td></tr>",
             i % 7 == 3 ? " class='selected'" : "", i, i, i, i % 2 ? "active" : "inactive", i * 7, i % 100);
-    n += (size_t)snprintf(html + n, capacity - n, "</tbody></table></div></body></html>");
+    n += (size_t)snprintf(html + n, capacity - n, "</tbody></table></div>"
+        "<template id='row'><tr><td></td><td></td><td></td><td></td><td></td></tr></template></body></html>");
     *out_size = n;
     return html;
 }
@@ -48,6 +51,24 @@ static double tbox_bench_rss_mb(void) {
     return read == 2 ? (double)resident * 4096.0 / (1024.0 * 1024.0) : -1.0;
 }
 
+/* --virtual-table: fills each row as --table writes it. */
+static void tbox_bench_rows(tbox_context *ctx, tbox_html_node *table, size_t first, tbox_html_node *const *rows, size_t count, void *userdata) {
+    (void)table;
+    (void)userdata;
+    for (size_t r = 0; r < count; r++) {
+        size_t i = first + r;
+        char text[5][64];
+        int sizes[5] = {
+            snprintf(text[0], sizeof(text[0]), "%zu", i), snprintf(text[1], sizeof(text[1]), "Person number %zu", i),
+            snprintf(text[2], sizeof(text[2]), "person%zu@example.com", i), snprintf(text[3], sizeof(text[3]), "%s", i % 2 ? "active" : "inactive"),
+            snprintf(text[4], sizeof(text[4]), "%zu.%02zu", i * 7, i % 100),
+        };
+        size_t c = 0;
+        for (tbox_html_node *cell = tbox_html_node_first_element_child(rows[r]); cell != NULL && c < 5; cell = tbox_html_node_next_element_sibling(cell), c++)
+            tbox_html_node_set_text_content(ctx->document, cell, tbox_string_view_make(text[c], (size_t)sizes[c]));
+    }
+}
+
 static size_t tbox_bench_count_boxes(const tbox_layout_box *box) {
     size_t count = 0;
     for (; box != NULL; box = box->next_sibling)
@@ -57,8 +78,9 @@ static size_t tbox_bench_count_boxes(const tbox_layout_box *box) {
 
 static void tbox_bench_usage(void) {
     fprintf(stderr,
-        "usage: tbox_bench [--frames N] [--size WxH] [--scroll PX] (--table ROWS | PAGE.html [PAGE.css])\n"
+        "usage: tbox_bench [--frames N] [--size WxH] [--scroll PX] (--table ROWS | --virtual-table ROWS | PAGE.html [PAGE.css])\n"
         "  --table ROWS  synthetic table of ROWS rows in a scroll container\n"
+        "  --virtual-table ROWS  the same table, virtual (tbox_table_virtualize)\n"
         "  --frames N    measured frames, after one warm-up frame (default 20)\n"
         "  --size WxH    viewport (default 1280x800)\n"
         "  --scroll PX   scroll the viewport's center by PX between frames (default 0)\n");
@@ -66,6 +88,7 @@ static void tbox_bench_usage(void) {
 
 int main(int argc, char **argv) {
     int frames = 20, width = 1280, height = 800, rows = -1;
+    bool virtual_rows = false;
     double scroll       = 0.0;
     const char *page    = NULL, *page_css = NULL;
     for (int i = 1; i < argc; i++) {
@@ -80,6 +103,10 @@ int main(int argc, char **argv) {
             scroll = atof(argv[++i]);
         else if (strcmp(argv[i], "--table") == 0 && i + 1 < argc)
             rows = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--virtual-table") == 0 && i + 1 < argc) {
+            rows         = atoi(argv[++i]);
+            virtual_rows = true;
+        }
         else if (argv[i][0] == '-') {
             tbox_bench_usage();
             return 2;
@@ -97,7 +124,7 @@ int main(int argc, char **argv) {
     char *html = NULL, *css = NULL;
     char base_dir[4096] = ".";
     if (page == NULL) {
-        html = tbox_bench_table(rows, height, &html_size);
+        html = tbox_bench_table(rows, height, virtual_rows, &html_size);
     } else {
         html = tbox_tool_read_file(page, &html_size);
         tbox_tool_directory(page, base_dir, sizeof(base_dir));
@@ -117,6 +144,15 @@ int main(int argc, char **argv) {
         return 2;
     }
 
+    if (virtual_rows) {
+        tbox_html_node *table = tbox_context_query(ctx, "table", 5), *row = tbox_context_query(ctx, "#row", 4);
+        if (!tbox_context_table_virtualize(ctx, table, row, (size_t)rows, tbox_bench_rows, NULL, NULL)) {
+            fprintf(stderr, "cannot make the table virtual\n");
+            return 2;
+        }
+    }
+    size_t document_start = 0;
+
     uint32_t *pixels             = calloc((size_t)width * (size_t)height, sizeof(uint32_t));
     tbox_damage_tracker *tracker = tbox_damage_tracker_create();
     double frame_time = 0.0, diff_time = 0.0, raster_time = 0.0;
@@ -130,6 +166,8 @@ int main(int argc, char **argv) {
         double diffed      = tbox_tool_now();
         tbox_raster_display_list_damaged(pixels, width, height, &list, &damage);
         double painted = tbox_tool_now();
+        if (f == 1)
+            document_start = tbox_arena_bytes_used(&ctx->document->arena);
         if (f > 0) { /* frame 0 warms the caches up */
             frame_time += built - start;
             diff_time += diffed - built;
@@ -180,7 +218,7 @@ int main(int argc, char **argv) {
     }
 
     const double mb = 1024.0 * 1024.0;
-    printf("%s, %dx%d, %d frames%s\n", page == NULL ? "table" : page, width, height, frames, scroll != 0.0 ? ", scrolling" : "");
+    printf("%s, %dx%d, %d frames%s\n", page == NULL ? (virtual_rows ? "virtual table" : "table") : page, width, height, frames, scroll != 0.0 ? ", scrolling" : "");
     if (page == NULL)
         printf("  rows            %d\n", rows);
     printf("  elements        %zu (%zu boxes, %zu ops)\n", elements, boxes, ops);
@@ -191,6 +229,8 @@ int main(int argc, char **argv) {
     printf("  damage diff     %8.2f ms\n", diff_time / frames * 1e3);
     printf("  raster          %8.2f ms   (damaged regions only; %.2f ms for the whole viewport)\n", raster_time / frames * 1e3, full_time / frames * 1e3);
     printf("  frame arena     %8.1f MB\n", (double)frame_arena / mb);
+    printf("  document arena  %8.1f MB   (%+.1f KB over the measured frames)\n", (double)tbox_arena_bytes_used(&ctx->document->arena) / mb,
+           ((double)tbox_arena_bytes_used(&ctx->document->arena) - (double)document_start) / 1024.0);
     double rss = tbox_bench_rss_mb();
     if (rss >= 0.0)
         printf("  resident        %8.1f MB   (%.1f MB before opening the page)\n", rss, rss_before);

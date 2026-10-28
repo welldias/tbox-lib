@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <tbox/tbox.h>
 
@@ -426,6 +427,188 @@ static int tbox_test_generic_items(tbox_font_face_cache *fonts) {
     return failures;
 }
 
+/* What the virtual table's handler saw. `fill` writes "r<index>" into
+ * each row's cell at once; otherwise the rows are left for later. */
+typedef struct tbox_test_virtual {
+    tbox_html_document *document;
+    bool fill;
+    size_t calls, first, count;
+    tbox_html_node *seen[64];
+    size_t seen_count;
+    int destroyed;
+} tbox_test_virtual;
+
+static void tbox_test_virtual_fill(tbox_html_document *document, tbox_html_node *row, size_t index) {
+    char text[32];
+    int length = snprintf(text, sizeof(text), "r%zu", index);
+    tbox_html_node_set_text_content(document, tbox_html_node_first_element_child(row), tbox_string_view_make(text, (size_t)length));
+}
+
+static void tbox_test_virtual_rows(tbox_context *ctx, tbox_html_node *table, size_t first, tbox_html_node *const *rows, size_t count, void *userdata) {
+    (void)ctx;
+    (void)table;
+    tbox_test_virtual *seen = userdata;
+    seen->calls++;
+    seen->first = first;
+    seen->count = count;
+    for (size_t i = 0; i < count; i++) {
+        bool known = false;
+        for (size_t k = 0; k < seen->seen_count && !known; k++)
+            known = seen->seen[k] == rows[i];
+        if (!known && seen->seen_count < 64)
+            seen->seen[seen->seen_count++] = rows[i];
+        if (seen->fill)
+            tbox_test_virtual_fill(seen->document, rows[i], first + i);
+    }
+}
+
+static void tbox_test_virtual_destroy(void *userdata) {
+    ((tbox_test_virtual *)userdata)->destroyed++;
+}
+
+/* Whether the body holds rows [first, end), each <tr> filled with its index
+ * and among the ones created so far (recycled, never new while scrolling). */
+static bool tbox_test_virtual_window(tbox_context *ctx, tbox_html_node *table, const tbox_test_virtual *seen, size_t first, size_t end) {
+    for (size_t i = first; i < end; i++) {
+        tbox_html_node *row = tbox_context_table_virtual_row(ctx, table, i);
+        if (row == NULL || tbox_context_table_virtual_index(ctx, row) != (ptrdiff_t)i)
+            return false;
+        const tbox_html_node *cell = tbox_html_node_first_element_child(row);
+        char text[32];
+        int length = snprintf(text, sizeof(text), "r%zu", i);
+        if (cell == NULL || cell->first_child == NULL || !tbox_string_view_equal(cell->first_child->text.text, tbox_string_view_make(text, (size_t)length)))
+            return false;
+        bool known = false;
+        for (size_t k = 0; k < seen->seen_count && !known; k++)
+            known = seen->seen[k] == row;
+        if (!known)
+            return false;
+    }
+    return (first == 0 || tbox_context_table_virtual_row(ctx, table, first - 1) == NULL) && tbox_context_table_virtual_row(ctx, table, end) == NULL;
+}
+
+static tbox_string_view tbox_test_spacer_style(const tbox_html_node *section) {
+    const tbox_html_attribute *style = tbox_html_node_get_attribute(tbox_html_node_first_element_child(section), tbox_string_view_make("style", 5));
+    return style != NULL ? style->value : tbox_string_view_make(NULL, 0);
+}
+
+/* A virtual table of 10 000 rows of 20px in a 200px scroll container: the
+ * window holds what is in view plus half of it on each side, starts even,
+ * recycles its rows while scrolling, and takes rows filled later,
+ * refreshed rows, a new total and going back to an ordinary table. */
+static int tbox_test_virtual_table(tbox_font_face_cache *fonts) {
+    int failures = 0;
+    const char *css    = "body { margin: 0; } #s { height: 200px; overflow-y: auto; } table { width: 300px; border-collapse: collapse; table-layout: fixed; }"
+                         "tr { height: 20px; } td { padding: 0; line-height: 16px; }";
+    const char *markup = "<body><div id='s'><table id='t'><thead><tr><th>h</th></tr></thead><tbody><tr><td>old</td></tr></tbody></table></div>"
+                         "<template id='row'><tr><td>-</td></tr></template></body>";
+    tbox_context *ctx  = tbox_context_open(markup, strlen(markup), css, strlen(css), fonts, NULL);
+    TBOX_TEST_REQUIRE(ctx != NULL);
+    tbox_html_node *table = by_id(ctx, "t");
+    tbox_test_virtual seen = { .document = tbox_context_document(ctx), .fill = true };
+    TBOX_TEST_ASSERT(!tbox_context_table_virtualize(ctx, table, by_id(ctx, "s"), 10, tbox_test_virtual_rows, &seen, NULL));
+    TBOX_TEST_REQUIRE(tbox_context_table_virtualize(ctx, table, by_id(ctx, "row"), 10000, tbox_test_virtual_rows, &seen, tbox_test_virtual_destroy));
+    TBOX_TEST_ASSERT(!tbox_context_table_virtualize(ctx, table, by_id(ctx, "row"), 10, tbox_test_virtual_rows, &seen, NULL));
+
+    /* The first frame asks for a guess; the second fits the scrollport:
+     * below the 20px head, rows reach 180px of the 200px in view, plus
+     * 100px of margin: rows [0, 14). */
+    tbox_display_list list;
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    TBOX_TEST_ASSERT(seen.calls == 1 && seen.first == 0 && seen.count == 32);
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    TBOX_TEST_ASSERT(tbox_test_virtual_window(ctx, table, &seen, 0, 14));
+    TBOX_TEST_ASSERT(tbox_context_table_row_count(table) == 1 + 1 + 14 + 1); /* head, spacers, rows */
+    TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(tbox_test_spacer_style(tbox_context_table_head(table)->next_sibling), "height: 0.000px"));
+
+    /* Scrolled by 4000px: rows [194, 214) (the margin starts at 194),
+     * every <tr> one of those made before. */
+    size_t made = seen.seen_count;
+    TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 50.0, 50.0, 4000.0));
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    TBOX_TEST_ASSERT(tbox_test_virtual_window(ctx, table, &seen, 194, 214) && seen.seen_count == made);
+    const tbox_html_node *top = tbox_context_table_head(table)->next_sibling;
+    TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(tbox_test_spacer_style(top), "height: 3880.000px"));
+    TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(tbox_test_spacer_style(top->next_sibling->next_sibling), "height: 195720.000px"));
+    TBOX_TEST_ASSERT(tbox_context_table_virtual_row(ctx, table, 10) == NULL && tbox_context_table_virtual_index(ctx, by_id(ctx, "s")) == -1);
+
+    /* Filled later: the handler leaves the rows, the application fills
+     * the ones still in view. */
+    seen.fill = false;
+    TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 50.0, 50.0, 100.0));
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    size_t late_first = seen.first, late_count = seen.count;
+    TBOX_TEST_ASSERT(late_first == 214 && late_count == 5);
+    for (size_t i = late_first; i < late_first + late_count; i++)
+        tbox_test_virtual_fill(seen.document, tbox_context_table_virtual_row(ctx, table, i), i);
+    TBOX_TEST_ASSERT(tbox_test_virtual_window(ctx, table, &seen, 198, 219));
+
+    /* Refreshed rows in view are asked for again; nothing else is. */
+    size_t calls = seen.calls;
+    TBOX_TEST_ASSERT(tbox_context_table_refresh_rows(ctx, table, 210, 3));
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    TBOX_TEST_ASSERT(seen.calls == calls + 1 && seen.first == 210 && seen.count == 3);
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    TBOX_TEST_ASSERT(seen.calls == calls + 1);
+
+    /* A smaller total ends the window and the bottom spacer there. */
+    seen.fill = true;
+    TBOX_TEST_ASSERT(tbox_context_table_set_row_total(ctx, table, 212));
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    TBOX_TEST_ASSERT(tbox_context_table_virtual_row(ctx, table, 211) != NULL && tbox_context_table_virtual_row(ctx, table, 212) == NULL);
+    TBOX_TEST_ASSERT(tbox_string_view_equal_cstr(tbox_test_spacer_style(tbox_context_table_head(table)->next_sibling->next_sibling->next_sibling), "height: 0.000px"));
+
+    /* Back to an ordinary table: the rows in view stay, the spacers go,
+     * userdata is released once. */
+    size_t rows_in_view = tbox_context_table_row_count(table) - 3;
+    TBOX_TEST_ASSERT(tbox_context_table_unvirtualize(ctx, table) && !tbox_context_table_unvirtualize(ctx, table));
+    tbox_context_run_frame(ctx, 400.0, 400.0, &list);
+    TBOX_TEST_ASSERT(seen.destroyed == 1 && tbox_context_table_row_count(table) == rows_in_view + 1);
+    TBOX_TEST_ASSERT(tbox_context_table_virtual_row(ctx, table, 211) == NULL);
+    tbox_context_close(ctx);
+    TBOX_TEST_ASSERT(seen.destroyed == 1);
+    return failures;
+}
+
+static void tbox_test_virtual_words(tbox_context *ctx, tbox_html_node *table, size_t first, tbox_html_node *const *rows, size_t count, void *userdata) {
+    (void)ctx;
+    (void)table;
+    (void)first;
+    for (size_t i = 0; i < count; i++)
+        tbox_html_node_set_text_content(userdata, tbox_html_node_first_element_child(rows[i]), sv("several words that wrap when narrow"));
+}
+
+/* A narrower window wraps every row onto more lines: the rows get taller,
+ * and the row at the top of the scrollport stays the one there. */
+static int tbox_test_virtual_table_anchor(tbox_font_face_cache *fonts) {
+    int failures = 0;
+    const char *css    = "body { margin: 0; } #s { height: 200px; overflow-y: auto; } table { width: 100%; border-collapse: collapse; table-layout: fixed; }"
+                         "td { padding: 0; line-height: 16px; }";
+    const char *markup = "<body><div id='s'><table id='t'></table></div><template id='row'><tr><td>-</td></tr></template></body>";
+    tbox_context *ctx  = tbox_context_open(markup, strlen(markup), css, strlen(css), fonts, NULL);
+    TBOX_TEST_REQUIRE(ctx != NULL);
+    tbox_html_node *table = by_id(ctx, "t");
+    TBOX_TEST_REQUIRE(tbox_context_table_virtualize(ctx, table, by_id(ctx, "row"), 5000, tbox_test_virtual_words, tbox_context_document(ctx), NULL));
+    tbox_display_list list;
+    for (int i = 0; i < 3; i++)
+        tbox_context_run_frame(ctx, 600.0, 400.0, &list);
+    TBOX_TEST_ASSERT(tbox_context_scroll(ctx, 50.0, 50.0, 3000.0));
+    for (int i = 0; i < 3; i++)
+        tbox_context_run_frame(ctx, 600.0, 400.0, &list);
+    const tbox_layout_box *hit = tbox_context_hit_test(ctx, 5.0, 2.0);
+    ptrdiff_t before           = hit != NULL ? tbox_context_table_virtual_index(ctx, tbox_context_table_row_of(hit->node)) : -1;
+    TBOX_TEST_ASSERT(before > 100);
+    for (int i = 0; i < 4; i++)
+        tbox_context_run_frame(ctx, 120.0, 400.0, &list);
+    hit             = tbox_context_hit_test(ctx, 5.0, 2.0);
+    ptrdiff_t after = hit != NULL ? tbox_context_table_virtual_index(ctx, tbox_context_table_row_of(hit->node)) : -1;
+    TBOX_TEST_ASSERT_MSG(after == before, "the row at the top must stay there when rows get taller");
+    tbox_context_close(ctx);
+    return failures;
+}
+
 int tbox_test_controls_api_run(tbox_font_face_cache *fonts) {
     int failures = 0;
     failures += tbox_test_context_lookup(fonts);
@@ -434,5 +617,7 @@ int tbox_test_controls_api_run(tbox_font_face_cache *fonts) {
     failures += tbox_test_select_options(fonts);
     failures += tbox_test_table_api(fonts);
     failures += tbox_test_generic_items(fonts);
+    failures += tbox_test_virtual_table(fonts);
+    failures += tbox_test_virtual_table_anchor(fonts);
     return failures;
 }

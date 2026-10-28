@@ -140,6 +140,7 @@ rolagem nem a evolução das animações.
 ```sh
 build/tests/tbox_bench --table 1000                 # tabela sintética de 1000 linhas
 build/tests/tbox_bench --table 1000 --scroll 40     # rolando 40px entre frames
+build/tests/tbox_bench --virtual-table 1000000 --scroll 150  # a mesma tabela, virtual
 build/tests/tbox_bench example/file-explorer/index.html example/file-explorer/styles.css
 build/tests/tbox_bench --frames 50 --size 1024x768 pagina.html
 ```
@@ -160,7 +161,11 @@ aquecimento, e imprime a média de `--frames` frames (20 por padrão):
 
 `--table N` gera uma tabela de 5 colunas com cabeçalho, zebra
 (`:nth-child`), regra de `:hover`, algumas linhas com classe e a primeira
-coluna em negrito, dentro de um contêiner rolável da altura da janela. Uma
+coluna em negrito, dentro de um contêiner rolável da altura da janela.
+`--virtual-table N` é a mesma página com a tabela virtual
+(`tbox_table_virtualize`), preenchida por um handler; para ela a linha
+**document arena** mostra quanto a arena do documento cresceu durante os
+frames medidos (com `--scroll`, deve ficar estável). Uma
 página recebe a CSS da aplicação como segundo argumento e resolve
 `<link>`, imagens e `@font-face` a partir do diretório do HTML.
 

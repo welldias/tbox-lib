@@ -431,6 +431,14 @@ static double tbox_layout_build_table_in(tbox_arena *arena, tbox_arena *scratch,
             cell->box->empty_cell_hidden = empty;
         }
     }
+    /* A row's px `height` is its minimum height (CSS 2.1 §17.5.3), also
+     * for a row without cells. */
+    for (size_t r = 0; r < rows.length; r++) {
+        tbox_table_row *row         = tbox_vector_at(&rows, r);
+        const tbox_style *row_style = tbox_layout_style_or_default(styles, row->node);
+        if (row_style->height.kind == TBOX_STYLE_LENGTH_PX && row_style->height.value > row->height)
+            row->height = row_style->height.value;
+    }
     for (size_t i = 0; i < cells.length; i++) {
         tbox_table_cell *cell = tbox_vector_at(&cells, i);
         if (cell->rows == 1) continue;

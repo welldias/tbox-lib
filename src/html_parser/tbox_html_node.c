@@ -1,5 +1,8 @@
 #include "tbox_html_node.h"
 
+#include <stdint.h>
+#include <string.h>
+
 #include "base/tbox_string.h"
 #include "tbox_html_document.h"
 
@@ -274,13 +277,42 @@ void tbox_html_node_set_text_content(tbox_html_document *document, tbox_html_nod
         return;
     }
 
+    /* Rewritten in place when the only child is text this function stored
+     * (still pointing at its buffer) and the new text fits: content set
+     * over and over, as in a recycled table row, keeps its memory. */
+    tbox_string_view clean = tbox_utf8_sanitize(&document->arena, text);
+    tbox_html_node *only   = node->first_child;
+    if (only != NULL && only == node->last_child && only->type == TBOX_HTML_NODE_TEXT && only->text.buffer_ != NULL &&
+        only->text.text.data == only->text.buffer_ && clean.size <= only->text.capacity_) {
+        if (clean.size > 0)
+            memcpy(only->text.buffer_, clean.data, clean.size);
+        only->text.buffer_[clean.size] = '\0';
+        only->text.text                = tbox_string_view_make(only->text.buffer_, clean.size);
+        tbox_html_document_touch(node->owner_document);
+        return;
+    }
+
     /* Detached one by one (not by zeroing first_child/last_child) so each
      * old child has no stale parent/sibling pointers: the application may
      * keep and re-insert it. */
     tbox_html_node_remove_children(node);
 
+    /* Room to grow: a power of two of at least 32 bytes, plus the NUL. */
+    size_t capacity = 32;
+    while (capacity < clean.size && capacity <= SIZE_MAX / 2)
+        capacity *= 2;
     tbox_html_node *text_node = tbox_html_node_create(document, TBOX_HTML_NODE_TEXT);
-    text_node->text.text      = tbox_html_node_copy_string(&document->arena, text);
+    char *buffer              = capacity >= clean.size ? tbox_arena_alloc(&document->arena, capacity + 1) : NULL;
+    if (buffer != NULL) {
+        if (clean.size > 0)
+            memcpy(buffer, clean.data, clean.size);
+        buffer[clean.size]        = '\0';
+        text_node->text.text      = tbox_string_view_make(buffer, clean.size);
+        text_node->text.buffer_   = buffer;
+        text_node->text.capacity_ = capacity;
+    } else {
+        text_node->text.text = tbox_html_node_copy_string(&document->arena, text);
+    }
     tbox_html_node_append_child(node, text_node);
 }
 

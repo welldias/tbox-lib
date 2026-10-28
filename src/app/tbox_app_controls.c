@@ -3,6 +3,8 @@
 
 #include "context/tbox_context_controls.h"
 
+#include <stdlib.h>
+
 /* <tbox/controls.h> and the tbox_app_query lookups on the app's current
  * context. Only the public tbox_app_context is needed, so this file also
  * builds next to tbox_app_unavailable.c, where every call sees a NULL
@@ -195,4 +197,65 @@ ptrdiff_t tbox_table_row_index(const tbox_html_node *row) {
 
 ptrdiff_t tbox_table_cell_index(const tbox_html_node *cell) {
     return tbox_context_table_cell_index(cell);
+}
+
+/* The app's handler and userdata behind a virtual table's context one. */
+typedef struct tbox_app_table_rows_binding {
+    tbox_app *app;
+    tbox_table_rows_handler handler;
+    void *userdata;
+    tbox_destroy_notify destroy;
+} tbox_app_table_rows_binding;
+
+static void tbox_app_table_rows(tbox_context *ctx, tbox_html_node *table, size_t first, tbox_html_node *const *rows, size_t count, void *userdata) {
+    (void)ctx;
+    tbox_app_table_rows_binding *binding = userdata;
+    binding->handler(binding->app, table, first, rows, count, binding->userdata);
+}
+
+static void tbox_app_table_rows_destroy(void *userdata) {
+    tbox_app_table_rows_binding *binding = userdata;
+    if (binding->destroy != NULL)
+        binding->destroy(binding->userdata);
+    free(binding);
+}
+
+bool tbox_table_virtualize(tbox_app *app, tbox_html_node *table, const tbox_html_node *row_template, size_t row_count,
+                           tbox_table_rows_handler handler, void *userdata, tbox_destroy_notify destroy) {
+    tbox_context *ctx = tbox_app_context(app);
+    if (ctx == NULL || handler == NULL)
+        return false;
+    tbox_app_table_rows_binding *binding = malloc(sizeof(*binding));
+    if (binding == NULL)
+        return false;
+    *binding = (tbox_app_table_rows_binding){ app, handler, userdata, destroy };
+    if (!tbox_context_table_virtualize(ctx, table, row_template, row_count, tbox_app_table_rows, binding, tbox_app_table_rows_destroy)) {
+        free(binding); /* the caller keeps userdata */
+        return false;
+    }
+    return true;
+}
+
+bool tbox_table_set_row_total(tbox_app *app, tbox_html_node *table, size_t row_count) {
+    return tbox_context_table_set_row_total(tbox_app_context(app), table, row_count);
+}
+
+bool tbox_table_refresh_rows(tbox_app *app, tbox_html_node *table, size_t first, size_t count) {
+    return tbox_context_table_refresh_rows(tbox_app_context(app), table, first, count);
+}
+
+tbox_html_node *tbox_table_virtual_row(tbox_app *app, const tbox_html_node *table, size_t index) {
+    return tbox_context_table_virtual_row(tbox_app_context(app), table, index);
+}
+
+ptrdiff_t tbox_table_virtual_index(tbox_app *app, const tbox_html_node *row) {
+    return tbox_context_table_virtual_index(tbox_app_context(app), row);
+}
+
+bool tbox_table_scroll_to_row(tbox_app *app, tbox_html_node *table, size_t index) {
+    return tbox_context_table_scroll_to_row(tbox_app_context(app), table, index);
+}
+
+bool tbox_table_unvirtualize(tbox_app *app, tbox_html_node *table) {
+    return tbox_context_table_unvirtualize(tbox_app_context(app), table);
 }

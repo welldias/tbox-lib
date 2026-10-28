@@ -177,3 +177,6 @@ target_link_libraries(tbox_controls_demo PRIVATE tbox::tbox tbox_warnings tbox_s
 
 add_executable(tbox_table_demo table_demo.c)
 target_link_libraries(tbox_table_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers)
+
+add_executable(tbox_table_virtual_demo table_virtual_demo.c)
+target_link_libraries(tbox_table_virtual_demo PRIVATE tbox::tbox tbox_warnings tbox_sanitizers Threads::Threads)

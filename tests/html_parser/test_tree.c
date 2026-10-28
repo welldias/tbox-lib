@@ -540,6 +540,37 @@ int tbox_test_html_parser_tree_run(void) {
         tbox_html_document_destroy(doc);
     }
 
+    /* 36b: text set again that fits is rewritten in place (the same node,
+     * the document's revision still advancing); text that doesn't fit, a
+     * parsed text child and one rebound to other memory get a new node. */
+    {
+        tbox_html_document *doc = parse_cstr("<p>parsed</p>");
+        tbox_html_node *p       = (tbox_html_node *)tbox_html_document_root(doc)->first_child;
+        const tbox_html_node *parsed = p->first_child;
+
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("first"));
+        tbox_html_node *text = p->first_child;
+        TBOX_TEST_ASSERT(text != parsed && text->text.buffer_ != NULL && text->text.capacity_ >= 32);
+        uint64_t revision = tbox_html_document_revision(doc);
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("second, longer"));
+        TBOX_TEST_ASSERT(p->first_child == text && p->last_child == text && text_eq(text->text.text, "second, longer"));
+        TBOX_TEST_ASSERT(tbox_html_document_revision(doc) > revision);
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr(""));
+        TBOX_TEST_ASSERT(p->first_child == text && text->text.text.size == 0);
+
+        char wide[80];
+        memset(wide, 'x', sizeof(wide));
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_make(wide, sizeof(wide)));
+        TBOX_TEST_ASSERT(p->first_child != text && p->first_child->text.text.size == sizeof(wide) && p->first_child->text.capacity_ >= sizeof(wide));
+
+        text            = p->first_child;
+        static char other[] = "bound";
+        text->text.text = tbox_string_view_make(other, 5); /* as a text field binds its buffer */
+        tbox_html_node_set_text_content(doc, p, tbox_string_view_from_cstr("new"));
+        TBOX_TEST_ASSERT(p->first_child != text && strcmp(other, "bound") == 0 && text_eq(p->first_child->text.text, "new"));
+        tbox_html_document_destroy(doc);
+    }
+
     /* 37: set_text_content is a no-op on a TEXT node -- doesn't crash,
      * doesn't corrupt the union's text.text member. */
     {

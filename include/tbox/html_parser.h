@@ -68,6 +68,11 @@ typedef struct tbox_html_node {
          * holds only the doctype name (e.g. "html"). */
         struct {
             tbox_string_view text;
+            /* Private: the buffer tbox_html_node_set_text_content stored
+             * `text` in and its size, so a later call can rewrite it in
+             * place while `text` still points at it. NULL otherwise. */
+            char *buffer_;
+            size_t capacity_;
         } text;
     };
 } tbox_html_node;

@@ -19,7 +19,8 @@ do `<select>` fica no contexto (o atributo `selected` é só a inicial).
 A aplicação lê e altera tudo pela mesma API de `include/tbox/controls.h`,
 que recebe o `tbox_app` (`tbox_control_value/_set_value`, `_checked/_set_checked`,
 `tbox_select_add_option`… — ver [Guia da API](03-guia-da-api.md#controles--controlsh);
-para `<table>` há as `tbox_table_*`, ver [Tabelas](03-guia-da-api.md#tabelas--controlsh);
+para `<table>` há as `tbox_table_*`, ver [Tabelas](03-guia-da-api.md#tabelas--controlsh)
+(inclusive a tabela virtual, de linhas por demanda);
 para itens montados a partir de um `<template>`, classes e `hidden`, ver
 [Itens, classes e visibilidade](03-guia-da-api.md#itens-classes-e-visibilidade--controlsh)),
 que também mantém caret, popup e grupo de radios coerentes; mexer direto

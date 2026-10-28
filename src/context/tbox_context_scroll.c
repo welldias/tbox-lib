@@ -361,6 +361,19 @@ static tbox_scroll_state *tbox_context_existing_scroll_state(tbox_context *ctx, 
     return NULL;
 }
 
+double tbox_context_scroll_offset(tbox_context *ctx, const tbox_html_node *node) {
+    const tbox_scroll_state *state = node != NULL ? tbox_context_existing_scroll_state(ctx, node) : NULL;
+    return state != NULL ? state->y : 0.0;
+}
+
+void tbox_context_scroll_set_offset(tbox_context *ctx, const tbox_html_node *node, double y) {
+    tbox_scroll_state *state = node != NULL ? tbox_context_scroll_state(ctx, node) : NULL;
+    if (state == NULL) return;
+    state->y         = y > 0.0 ? y : 0.0;
+    state->animating = false;
+    tbox_context_wake_at(ctx, -INFINITY);
+}
+
 /* The track and thumb are the ::-tbox-scrollbar-track/-thumb parts; the
  * thumb's :active variant while it is dragged, :hover while the pointer is
  * on it. Undeclared colors fall back to scrollbar-color, then the built-in

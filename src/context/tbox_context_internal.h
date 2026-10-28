@@ -145,6 +145,43 @@ typedef struct tbox_scroll_state {
     struct tbox_scroll_state *next;
 } tbox_scroll_state;
 
+/* The rows of a virtual table's body (tbox_context_table_virtualize): the
+ * logical rows [first, first + the data body's <tr> count) are in the
+ * DOM, between two spacer <tbody>s whose single <tr> takes the height of
+ * the rows above and below. */
+typedef void (*tbox_context_table_rows_handler)(tbox_context *ctx, tbox_html_node *table, size_t first,
+                                                tbox_html_node *const *rows, size_t count, void *userdata);
+typedef struct tbox_virtual_table {
+    tbox_html_node *table, *top, *body, *bottom; /* the table and its three <tbody> */
+    tbox_html_node *top_spacer, *bottom_spacer;  /* their <tr> */
+    const tbox_html_node *row_template;
+    size_t total, first;
+    size_t refresh_first, refresh_end; /* rows to ask for again; empty when equal */
+    /* From the last frame's layout: a row's pitch (the spacers' unit),
+     * the one the spacers were sized with, the scroll container (NULL:
+     * the viewport), where the top spacer starts in its unscrolled
+     * content and how tall its scrollport is. */
+    bool measured;
+    double row_height, spacer_height;
+    const tbox_html_node *container;
+    double table_top, port_height;
+    /* Scroll anchoring: the row at the top of the scrollport, its offset
+     * from that top and the scroll offset then. */
+    bool has_anchor;
+    size_t anchor_index;
+    double anchor_offset, anchor_scroll;
+    /* Rows out of the window, kept detached for the next ones to need. */
+    tbox_html_node **spare;
+    size_t spare_count, spare_capacity;
+    /* The spacers' `style` values (the attributes point here). */
+    char spacer_style[2][48];
+    tbox_context_table_rows_handler handler;
+    void *userdata;
+    tbox_destroy_notify destroy;
+    bool busy, removed; /* in its handler; unvirtualized meanwhile */
+    struct tbox_virtual_table *next;
+} tbox_virtual_table;
+
 /* A `resize` the user dragged: the element's `width`/`height` (in its
  * box-sizing box) from then on, applied over its style every frame while
  * the axis stays resizable. */
@@ -233,6 +270,7 @@ struct tbox_context {
     double scroll_drag_grab_y;
     bool scroll_pointer_consumed;
     tbox_resize_state *resize_states;
+    tbox_virtual_table *virtual_tables;
     const tbox_html_node *resize_drag_node; /* whose resize handle the pointer holds */
     tbox_style_resize resize_drag_axes;
     bool resize_drag_rtl;
@@ -335,6 +373,18 @@ void tbox_context_sync_option_selectedness(tbox_context *ctx, const tbox_html_no
  * option under it (*changed when that moved). False when not over the list. */
 bool tbox_context_select_popup_hover(tbox_context *ctx, double x, double y, bool *changed);
 const tbox_layout_box *tbox_context_find_box(const tbox_layout_box *box, const tbox_html_node *node);
+/* Virtual tables (tbox_context_table_virtual.c): before the frame, with
+ * the last frame's geometry, move the window of rows and ask the
+ * application for the new ones; after layout (before scrolling is
+ * applied), measure the rows and where the table sits. */
+void tbox_context_virtual_tables_update(tbox_context *ctx);
+void tbox_context_virtual_tables_measure(tbox_context *ctx, double viewport_height);
+void tbox_context_free_virtual_tables(tbox_context *ctx);
+
+/* The vertical scroll offset of the scroll container `node` (0 when it
+ * never scrolled), and setting it at once (clamped by the next frame). */
+double tbox_context_scroll_offset(tbox_context *ctx, const tbox_html_node *node);
+void tbox_context_scroll_set_offset(tbox_context *ctx, const tbox_html_node *node, double y);
 void tbox_context_sync_select_boxes(tbox_context *ctx, tbox_layout_box *box);
 bool tbox_context_color_popup_visible(const tbox_context *ctx);
 bool tbox_context_color_popup_contains(const tbox_context *ctx, double x, double y);

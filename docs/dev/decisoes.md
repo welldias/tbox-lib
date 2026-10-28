@@ -1144,6 +1144,48 @@ aparecer o caso. As funções ficam em `controls.h`, ao lado das
 tabela não tem estado no contexto, então nada novo foi guardado. Ordenação
 ficou para outro momento.
 
+## Tabela virtual: janela no DOM com espaçadores — 2026-10-27
+
+Linhas por demanda (`tbox_table_virtualize`) como uma janela de `<tr>` no
+DOM entre dois `<tbody>` espaçadores com `height`, e não como um recurso do
+layout (pular linhas que não existem): assim estilo, layout, pintura,
+hit test, foco e as `tbox_table_*` funcionam sem saber da janela, e a
+barra de rolagem cobre o total porque os espaçadores têm a altura das
+linhas que faltam. Escolhido com o usuário: janela virtual (total
+conhecido) em vez de acréscimo ao fim; o callback preenche com a API atual
+em vez de devolver textos; entrega que pode vir depois (o handler só
+recebe os `<tr>`; o preenchimento tardio acha o seu por
+`tbox_table_virtual_row`); `<tr>` reciclados em vez de criados e removidos,
+porque nó removido fica na arena do documento; `table-layout: fixed`
+recomendado em vez de congelar larguras no `auto`. Decisões de
+implementação:
+- **Espaçadores em `<tbody>` próprios e janela começando em linha par**:
+  dentro do mesmo `<tbody>` eles mudariam o `:nth-child` das linhas.
+- **Altura dos espaçadores** = linhas fora × passo medido (o intervalo
+  entre a primeira linha da janela e o espaçador de baixo, dividido pelas
+  linhas: inclui `border-spacing`). O `style` do espaçador aponta para um
+  buffer do próprio estado, não para a arena do documento, porque muda a
+  cada rolagem.
+- **Âncora de rolagem** como nos navegadores: depois do layout, antes de
+  aplicar a rolagem, a linha que estava no topo volta à mesma distância
+  dele (somada a rolagem feita no meio), e a janela seguinte é calculada a
+  partir dessa linha, não do deslocamento, enquanto a rolagem desde a âncora
+  for menor que duas alturas da área visível (um salto pela barra usa o
+  deslocamento). A primeira versão compensava só a mudança do espaçador e
+  deixava a linha visível andar: as linhas já na janela também crescem.
+- **O passo roda antes de reiniciar a arena do frame**, porque o handler
+  pode chamar o que lê as caixas do frame anterior.
+- **Foco**: a linha com o campo focado não fica presa à janela; o foco sai
+  quando ela sai de vista, como em `tbox_control_remove`. Prender a linha
+  (como previsto no plano) deixaria a janela crescer sem limite.
+- **Texto reescrito no lugar** em `tbox_html_node_set_text_content`: o nó de
+  texto guarda o buffer que a função alocou (potência de 2, mínimo 32
+  bytes) e só é reescrito enquanto ainda aponta para ele, o que protege as
+  amarrações dos campos de texto ao próprio buffer. Valores de atributo não
+  foram tratados: `tbox_html_attribute` cresceria 16 bytes em todo documento
+  e quatro lugares criam atributos; trocar uma classe ainda copia poucos
+  bytes.
+
 ## tbox como subprojeto CMake — 2026-10-25
 
 O `add_subdirectory`/`FetchContent` foi escolhido como a forma principal de

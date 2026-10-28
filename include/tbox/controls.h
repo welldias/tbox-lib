@@ -212,6 +212,52 @@ tbox_html_node *tbox_table_cell_of(const tbox_html_node *node);
 ptrdiff_t tbox_table_row_index(const tbox_html_node *row);
 ptrdiff_t tbox_table_cell_index(const tbox_html_node *cell);
 
+/* Virtual tables: rows on demand. Only the rows in view, plus a margin,
+ * are in the DOM; tbox asks for them as they come into view and reuses
+ * the <tr>s of those that leave, so a table of a million rows costs what
+ * its visible part does. Put the table in a scroll container
+ * (overflow-y: auto); table-layout: fixed keeps the columns from moving
+ * as rows change. The scrollbar spans every row, sized with the measured
+ * height of those in view.
+ *
+ * The handler gets the logical rows [first, first + count): rows[i] is the
+ * <tr> of row first + i, a copy of the template's <tr> or one recycled
+ * from another row (with that row's content). Fill them now, or later --
+ * data from a database or the network: keep `first`/`count` and fill
+ * through tbox_table_virtual_row, which gives NULL for a row no longer in
+ * view. `rows` is borrowed for the call. Same contract as the other
+ * handlers (UI thread, no document replacement); don't add or remove
+ * rows of the table yourself. tbox_table_set_cell_text and the control
+ * functions rewrite a recycled row in place; building new nodes for every
+ * fill makes the document grow while scrolling. */
+typedef void (*tbox_table_rows_handler)(tbox_app *app, tbox_html_node *table, size_t first,
+                                        tbox_html_node *const *rows, size_t count, void *userdata);
+
+/* Makes `table` virtual with `row_count` rows, built from the <tr> of
+ * `row_template` (a <template>, outside the table). Its body rows and
+ * <tbody>s are removed; three <tbody>s take their place, before the
+ * <tfoot>: a spacer, the rows in view, a spacer (tbox_table_row_count and
+ * the like see them as they are). The rows start even, so
+ * tr:nth-child(even/odd) striping holds. destroy releases userdata when
+ * the table is unvirtualized, leaves the document or the document goes.
+ * False (userdata stays the caller's) for a NULL handler, an invalid
+ * table or template, or a table that is already virtual. */
+bool tbox_table_virtualize(tbox_app *app, tbox_html_node *table, const tbox_html_node *row_template, size_t row_count,
+                           tbox_table_rows_handler handler, void *userdata, tbox_destroy_notify destroy);
+/* A new number of rows (data added or removed at the end). */
+bool tbox_table_set_row_total(tbox_app *app, tbox_html_node *table, size_t row_count);
+/* Rows [first, first + count) changed: those in view are asked for again. */
+bool tbox_table_refresh_rows(tbox_app *app, tbox_html_node *table, size_t first, size_t count);
+/* The <tr> of row `index` while it is in view, else NULL; and the row
+ * index of a <tr> in view (-1 otherwise), for click handlers. */
+tbox_html_node *tbox_table_virtual_row(tbox_app *app, const tbox_html_node *table, size_t index);
+ptrdiff_t tbox_table_virtual_index(tbox_app *app, const tbox_html_node *row);
+/* Scrolls the table's scroll container so row `index` is at its top;
+ * false before the first frame laid the table out. */
+bool tbox_table_scroll_to_row(tbox_app *app, tbox_html_node *table, size_t index);
+/* Back to an ordinary table: the rows in view stay, the spacers go. */
+bool tbox_table_unvirtualize(tbox_app *app, tbox_html_node *table);
+
 #ifdef __cplusplus
 }
 #endif
